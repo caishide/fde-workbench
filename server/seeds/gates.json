@@ -1,0 +1,229 @@
+{
+  "meta": {
+    "generated_at": "2026-10-25T13:51:43+00:00",
+    "generator": "deliverables/fde-sop-v1.1/_tools/extract-sop-map.py",
+    "sources": {
+      "map": {
+        "path": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md",
+        "version": "v1.3",
+        "sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      },
+      "sop": {
+        "path": "deliverables/fde-sop-v1.1/FDE个人接单全流程SOP-双轨融合版-v2.4.6.md",
+        "version": "v2.4.6",
+        "sha256": "6f2b20a48da6ac448e8fa4bb8851f3c7433868db8a381b5d312619a465ef7724"
+      }
+    },
+    "conventions": [
+      "节点 15 行全抽（含 S7.5 常开）+ S0-B 补 1 条 = 16",
+      "S9 并入 G8 前执行，不建 Gate 记录；S13 为 value+receipts 闸门，非 G 编号门禁",
+      "SopNode 不存 T 代号（SOP 横切线 T1–T4 与设计文档开工触发 T1–T3 同码不同义，刻意排除）",
+      "segment 为抽取器按 v0.3.2 规则归类（售前/交付/交付后/横切），P1 建模时可复核",
+      "gates.json 是门禁定义模板（含证据清单），Gate 表按 project 实例化时引用"
+    ],
+    "warnings": []
+  },
+  "gates": [
+    {
+      "gate_key": "G1",
+      "gate_name": "线索资格门",
+      "node_key": "S1",
+      "exit_condition": "五问 ≥4",
+      "evidence_checklist": [
+        "评分记录"
+      ],
+      "evidence_location": "leads.md 该线索行",
+      "contract_payment": null,
+      "signer_role": "本人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "归档养鱼池，不免费初诊",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L11",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G2",
+      "gate_name": "真需求门",
+      "node_key": "S2",
+      "exit_condition": "真需求+小闭环+真付费三问成立；真需求卡七项",
+      "evidence_checklist": [
+        "真需求卡（leads.md 附）"
+      ],
+      "evidence_location": "leads.md 附真需求卡摘要",
+      "contract_payment": "无（免费；禁止碰数据/录音/入库）",
+      "signer_role": "本人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "回养鱼池（记录回访触发条件）",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L12",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G3",
+      "gate_name": "诊断开工门",
+      "node_key": "S3",
+      "exit_condition": "三件套齐全",
+      "evidence_checklist": [
+        "诊断报告（数字全 claimed）",
+        "SOW-A 签署",
+        "A 款预付到账",
+        "数据授权书四项勾选"
+      ],
+      "evidence_location": "合同+授权书+付款凭证",
+      "contract_payment": "SOW-A 签署 + A 款预付到账 + 数据授权书四项勾选",
+      "signer_role": "客户业务负责人 + 本人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过（无条件通过）",
+      "fail_exit": "缺任一件不启动；\"免费出方案\"拒绝",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L13",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G4",
+      "gate_name": "试点签约门",
+      "node_key": "S4",
+      "exit_condition": "范围/验收线/毕业条款书面确认",
+      "evidence_checklist": [
+        "SOW-B/SOW-C",
+        "结果合同页",
+        "报价单",
+        "里程碑计划",
+        "SOW-B 签署",
+        "B 预付 50%",
+        "C 独立 SOW-C"
+      ],
+      "evidence_location": "合同文件",
+      "contract_payment": "SOW-B 签署 + B 预付 50%；C 独立 SOW-C",
+      "signer_role": "客户有权签字人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "诊断结论存档为客户资产，可随时重启",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L14",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G5",
+      "gate_name": "建档门",
+      "node_key": "S5",
+      "exit_condition": "绑定核对三步 + 三跑全绿",
+      "evidence_checklist": [
+        "trust-profile/success/brief 等 .fde/ 全套"
+      ],
+      "evidence_location": ".fde/ 各文件 + doctor 输出",
+      "contract_payment": "无新增（G4 已完成签约）",
+      "signer_role": "本人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "绑定错客户→停，FDEOPS_ENGAGEMENT 显式纠正，不许反复 --init",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L15",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G6",
+      "gate_name": "发现门",
+      "node_key": "S6",
+      "exit_condition": "问题陈述一句话 + 基线是测量的 + 赞助人认可",
+      "evidence_checklist": [
+        "问题陈述（SCQA）",
+        "基线数字",
+        "非目标清单"
+      ],
+      "evidence_location": "brief.md + decisions.md",
+      "contract_payment": "无新增",
+      "signer_role": "客户赞助人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "基线测不到先补测量；不认可回 S2 口径重判",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L16",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G7",
+      "gate_name": "设计门",
+      "node_key": "S7",
+      "exit_condition": "成功标准可测 + 客户书面确认 + Eval 计划在位（含反指标）",
+      "evidence_checklist": [
+        "options 文档",
+        "success.md 定稿",
+        "Eval 计划",
+        "B 试点章程定稿"
+      ],
+      "evidence_location": "success.md + 客户确认邮件",
+      "contract_payment": "无新增",
+      "signer_role": "客户赞助人",
+      "decision_semantics": [
+        "pass",
+        "fail"
+      ],
+      "pass_status_raw": "过/不过",
+      "fail_exit": "\"先做出来再看标准\"拒绝；回 S6 重定义",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L17",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G8",
+      "gate_name": "试点毕业门",
+      "node_key": "S8",
+      "exit_condition": "PoC→Pilot 子检查五项 + pass/fail 有结论 + 三态书面拍板",
+      "evidence_checklist": [
+        "prototype-log",
+        "POC 验收表",
+        "business-case"
+      ],
+      "evidence_location": "POC 验收表 + decisions.md",
+      "contract_payment": "无新增（G4 已收 B 款；毕业拍板付 50%）",
+      "signer_role": "客户赞助人 + 本人",
+      "decision_semantics": [
+        "proceed",
+        "pivot",
+        "stop"
+      ],
+      "pass_status_raw": "proceed/pivot/stop 三态",
+      "fail_exit": "证据不足→延长时间盒（书面）或 stop；不允许无限\"再跑跑看\"",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L19",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    },
+    {
+      "gate_key": "G9",
+      "gate_name": "上线门",
+      "node_key": "S10",
+      "exit_condition": "Pilot→Production 子检查五项 + 验收线达成 + 回滚演练过 + 客户侧独立跑通 + 成本护栏在位",
+      "evidence_checklist": [
+        "生产环境",
+        "Runbook",
+        "Go-Live 单",
+        "演练记录",
+        "SOW-C 里程碑（40/40/20，末款绑 G9）"
+      ],
+      "evidence_location": "Go-Live 检查单 + delivery 账本 accepted 行",
+      "contract_payment": "SOW-C 里程碑（40/40/20，末款绑 G9）",
+      "signer_role": "客户侧 owner + 本人",
+      "decision_semantics": [
+        "pass",
+        "conditional_pass"
+      ],
+      "pass_status_raw": "过/有条件通过",
+      "fail_exit": "回滚上一段位；连续两段不达标→高管对话",
+      "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L21",
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+    }
+  ]
+}
