@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
+    func,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -41,11 +42,13 @@ class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL
     )
+    # v0.2 (PG 迁移): PG 没有 ON UPDATE CURRENT_TIMESTAMP，server_onupdate 在 PG 上不生效，
+    # 会导致 updated_at 永远冻结。改为 ORM 层 onupdate=func.now()（跨方言通用）。
     updated_at: Mapped[datetime] = mapped_column(
         UTCTimestamp(),
         nullable=False,
         server_default=CURRENT_TIMESTAMP_SQL,
-        server_onupdate=CURRENT_TIMESTAMP_SQL,
+        onupdate=func.now(),
     )
 
 

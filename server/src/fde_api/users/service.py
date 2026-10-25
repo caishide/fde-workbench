@@ -29,8 +29,13 @@ class UserServiceError(Exception):
 
 
 DISPLAY_NAME_MAX_LENGTH = 120
+# v0.2 (PG 迁移): 原为 MySQL 错误码。改为跨方言：
+#   MySQL 1062 = duplicate entry   / 1213 = deadlock
+#   PG  23505 = unique_violation   / 40P01 = deadlock_detected
 MYSQL_DUPLICATE_ENTRY = 1062
 MYSQL_DEADLOCK = 1213
+PG_DUPLICATE_ENTRY = "23505"
+PG_DEADLOCK = "40P01"
 NONTERMINAL_PROJECT_STATUSES = frozenset({"draft", "active", "paused"})
 
 
@@ -85,13 +90,13 @@ def create_user(
                 temporary_password=temporary_password,
             )
         except IntegrityError as error:
-            if _database_error_code(error) == MYSQL_DUPLICATE_ENTRY and _confirmed_username_winner(
+            if _is_duplicate_entry(error) and _confirmed_username_winner(
                 normalized_username
             ):
                 raise _duplicate_username_error() from None
             raise _user_creation_failed_error() from None
         except OperationalError as error:
-            if _database_error_code(error) == MYSQL_DEADLOCK:
+            if _is_deadlock(error):
                 if _confirmed_username_winner(normalized_username):
                     raise _duplicate_username_error() from None
                 if attempt == 0:
@@ -321,10 +326,30 @@ def _confirmed_username_winner(username: str) -> bool:
         raise _user_creation_failed_error() from None
 
 
-def _database_error_code(error: SQLAlchemyError) -> int | None:
+def _database_error_code(error: SQLAlchemyError) -> int | str | None:
+    """跨方言取原始驱动错误码。
+
+    v0.2 (PG 迁移): 原实现只认 int（MySQL）。psycopg 的 SQLSTATE 是字符串，
+    原实现会静默丢弃 → PG 上唯一约束冲突不再被识别为「用户名重复」。
+    """
     original = getattr(error, "orig", None)
     arguments = getattr(original, "args", ())
-    return arguments[0] if arguments and isinstance(arguments[0], int) else None
+    if not arguments:
+        return None
+    code = arguments[0]
+    return code if isinstance(code, (int, str)) else None
+
+
+def _is_duplicate_entry(error: SQLAlchemyError) -> bool:
+    """唯一约束冲突（MySQL 1062 / PG 23505）。"""
+    code = _database_error_code(error)
+    return code == MYSQL_DUPLICATE_ENTRY or code == PG_DUPLICATE_ENTRY
+
+
+def _is_deadlock(error: SQLAlchemyError) -> bool:
+    """死锁（MySQL 1213 / PG 40P01）。"""
+    code = _database_error_code(error)
+    return code == MYSQL_DEADLOCK or code == PG_DEADLOCK
 
 
 def _duplicate_username_error() -> UserServiceError:

@@ -1,30 +1,30 @@
+# v0.2 (PG 迁移): MySQL 服务已移除 —— 数据库改为复用 WSL 里 Twenty 已有的
+# PostgreSQL 16 实例（新增 fde_workbench 库），机器上数据库种类从 3 种降为 2 种
+# （SQLite=openfde / PostgreSQL=Twenty+fde_workbench），pg_dump 一套备份通吃。
+#
+# Redis 保留不动：实测该项目无 Celery（requirements.lock 无 celery），
+# 后台任务是自研极简 Redis list 队列（jobs/queue.py）+ 登录限流 + 健康检查，
+# 替换它等于制造第二处上游分叉，收益/风险比不划算。
+#
+# 网络：external = automation_qiflow-net（与 Twenty 同网，用 Docker DNS 的
+#   twenty-db 别名连库，不依赖会变的容器 IP，也不改 Twenty 的任何配置）。
 services:
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: fde_workbench
-      MYSQL_USER: fde
-      MYSQL_PASSWORD: fde_dev_password
-      MYSQL_ROOT_PASSWORD: fde_root_password
-      TZ: UTC
-    ports: ["3306:3306"]
-    volumes: ["fde_mysql:/var/lib/mysql"]
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ufde", "-pfde_dev_password"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
   redis:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    ports: ["6379:6379"]
+    ports: ["30119:6379"]
     volumes: ["fde_redis:/data"]
+    networks:
+      - automation_qiflow-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
 
+networks:
+  automation_qiflow-net:
+    external: true
+
 volumes:
-  fde_mysql:
   fde_redis:

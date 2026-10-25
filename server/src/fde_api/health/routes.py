@@ -28,11 +28,13 @@ def live():
 
 @health_blueprint.get("/ready")
 def ready():
-    mysql_status = "ok" if mysql_ping() else "unavailable"
+    # v0.2 (PG 迁移): 函数名保留 mysql_ping 以免大范围改动，
+    # 但实现已是方言无关的 db.ping()，文案同步改为「数据库」。
+    db_status = "ok" if mysql_ping() else "unavailable"
     redis_status = "ok" if redis_ping() else "degraded"
-    data = {"mysql": mysql_status, "redis": redis_status}
+    data = {"database": db_status, "redis": redis_status}
 
-    if mysql_status != "ok":
-        return error_response("service_unavailable", "MySQL is unavailable.", 503)
+    if db_status != "ok":
+        return error_response("service_unavailable", "Database is unavailable.", 503)
 
     return jsonify({"data": data, "error": None})

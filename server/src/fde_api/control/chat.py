@@ -39,7 +39,8 @@ class AIChatTurn(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     error_message: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     model_preference_id: Mapped[str | None] = mapped_column(String(36))
-    deep_thinking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # v0.2 (PG 迁移): PG 的 BOOLEAN DEFAULT 不接受字符串 '0'，改用 text('false')。
+    deep_thinking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
     metrics_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
 

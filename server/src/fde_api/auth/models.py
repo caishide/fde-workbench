@@ -5,8 +5,7 @@ from typing import Any
 from unicodedata import normalize
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, text
-from sqlalchemy.dialects import mysql
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import TypeDecorator
 
@@ -46,21 +45,28 @@ class UTCDateTime(TypeDecorator[datetime]):
 
 
 class UTCTimestamp(UTCDateTime):
-    """Use MySQL's UTC-normalized TIMESTAMP storage for auto-updated values."""
+    """Portable UTC-normalized TIMESTAMP storage.
 
-    impl = mysql.TIMESTAMP
+    v0.2 (PG 迁移): 原实现硬依赖 MySQL 的 TIMESTAMP(fsp=6)。改为在
+    PostgreSQL 上使用 TIMESTAMP(timezone=True)，其他方言回落原生 TIMESTAMP。
+    """
+
+    impl = DateTime
     cache_ok = True
 
     def load_dialect_impl(self, dialect: Any) -> Any:
-        return dialect.type_descriptor(mysql.TIMESTAMP(fsp=6))
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(DateTime(timezone=True))
+        return dialect.type_descriptor(DateTime())
 
 
 class Base(DeclarativeBase):
     pass
 
 
-UTC_TIMESTAMP_SQL = text("UTC_TIMESTAMP(6)")
-CURRENT_TIMESTAMP_SQL = text("CURRENT_TIMESTAMP(6)")
+# v0.2 (PG 迁移): MySQL 的 UTC_TIMESTAMP(6) 在 PG 不存在，改用 func.now()（PG 返回带时区）。
+UTC_TIMESTAMP_SQL = func.now()
+CURRENT_TIMESTAMP_SQL = func.now()
 
 
 class User(Base):

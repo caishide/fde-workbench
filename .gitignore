@@ -33,3 +33,9 @@ server/.fde-storage/
 __pycache__/
 *.egg-info/
 .DS_Store
+
+# v0.2 (PG 迁移) 新增忽略项
+server/.venv/
+server/.venv-wsl/
+server/.env
+server/.fde-storage/

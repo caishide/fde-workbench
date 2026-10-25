@@ -13,7 +13,7 @@ dependencies = [
   "gunicorn>=23,<24",
   "SQLAlchemy>=2.0,<3",
   "alembic>=1.14,<2",
-  "PyMySQL>=1.1,<2",
+  "psycopg[binary]>=3.2,<4",
   "redis>=5,<7",
   "requests>=2.34,<3",
   "defusedxml==0.7.1",

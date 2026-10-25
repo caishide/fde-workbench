@@ -272,7 +272,8 @@ class ProjectAIOpportunityProfile(Base, TimestampMixin):
     risk_level: Mapped[str | None] = mapped_column(String(12))
     next_action: Mapped[str] = mapped_column(Text, nullable=False, default="")
     evidence_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # v0.2 (PG 迁移): PG 的 BOOLEAN DEFAULT 不接受字符串 '0'，改用 text('false')。
+    ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
 
     subject: Mapped[ProjectResearchSubject] = relationship(back_populates="opportunity_profile")
     owner: Mapped[User | None] = relationship(foreign_keys=[owner_user_id])
