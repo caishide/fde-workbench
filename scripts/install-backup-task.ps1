@@ -14,7 +14,7 @@
 $ErrorActionPreference = "Stop"
 
 $TaskName = "FDE-Workbench-Backup"
-$RepoDir = "D:\test\FDE\_eval\fde-workbench"
+$RepoDir = "D:\test\fde-workbench"
 $LogDir = "D:\test\FDE\_backup\_logs"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -49,8 +49,11 @@ $Settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -AllowStartIfOnBatteries
 
-# 最高权限（备份需读 Docker 卷）
-$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+# 不显式指定 Principal：本机 Register-ScheduledTask 对显式 UserId 一律报
+# "参数错误 (x,8):UserId"（S4U/Interactive 均如此），默认主体（当前用户
+# P1 / Interactive / Limited）可用。备份只需用户级权限（读 D 盘 + wsl docker exec）。
+# 注意：Interactive = 仅登录时运行；错过的触发在下次登录可用时补跑（StartWhenAvailable）。
+# 也不能用 SYSTEM：WSL 发行版按用户注册，SYSTEM 下 wsl docker exec 找不到发行版。
 
 # 幂等：先删同名任务
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -60,7 +63,7 @@ if ($existing) {
 }
 
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger `
-    -Settings $Settings -Principal $Principal `
+    -Settings $Settings `
     -Description "FDE 工作台统一备份：PostgreSQL(Twenty+fde_workbench) + openfde 各 engagement ledger + fdeops 台账。产物在 D:\test\FDE\_backup\" | Out-Null
 
 Write-Output "已注册计划任务: $TaskName"

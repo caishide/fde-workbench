@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# 统一备份脚本：一次备份本机全部三类持久化数据
+# 统一备份脚本：一次备份本机全部四类持久化数据
 # ============================================================
-# 为什么需要：v0.2 PG 迁移后机器上有 3 个数据点，备份不能各记各的
-#   （漏一个 = 静默丢数据）。本脚本把三处收敛成一次执行 + 一个校验口径。
+# 为什么需要：v0.2 PG 迁移后机器上有 4 个数据点，备份不能各记各的
+#   （漏一个 = 静默丢数据）。本脚本把四处收敛成一次执行 + 一个校验口径。
 #
 #   1. PostgreSQL（Twenty 库 + fde_workbench 库，同一实例）
 #   2. SQLite（openfde 知识轨）
 #   3. 目录文件（fdeops 流程轨 .fde/ + fde-storage）
+#   4. leads.md（根目录线索唯一真相——不入 git，只能靠备份）
 #
 # 用法:
 #   bash scripts/backup-all.sh            # 正常备份
@@ -42,7 +43,10 @@ PG_USER="twenty"
 # 真身在 D 盘（D:\test\FDE\engagements\openfde），C 盘 ~/.openfde 是 symlink 指针
 OPENFDE_ROOT="$DROOT/engagements/openfde/engagements"
 FDEOPS_ROOT="$DROOT/engagements/fdeops"
-FDE_STORAGE="$DROOT/_eval/fde-workbench/server/.fde-storage"
+LEADS_MD="$DROOT/leads.md"
+# fde-storage 在本仓库（脚本随仓库走，按脚本位置定位，不写死绝对路径）
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FDE_STORAGE="$REPO_ROOT/server/.fde-storage"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -80,6 +84,11 @@ if [ "${1:-}" = "--verify" ]; then
   else
     log "  FAIL fdeops/ 为空"; ok=1
   fi
+  if [ -s "$LATEST/leads.md" ]; then
+    log "  OK   leads.md ($(wc -l < "$LATEST/leads.md" | tr -d ' ') 行)"
+  else
+    log "  WARN leads.md 缺失（2026-10-25 之前的旧备份无此项属正常）"
+  fi
   echo
   # 真恢复性验证：pg_dumpall 是全实例 dump（含 CREATE DATABASE 与 \connect），
   # 直接灌进已建好的临时库会因为库已存在而报错。改为：
@@ -111,7 +120,7 @@ mkdir -p "$OUT"
 log "备份目标: $OUT"
 
 # ---- 1. PostgreSQL：Twenty 库 + fde_workbench 库（同一实例，一次 pg_dumpall 更稳）----
-log "1/4 备份 PostgreSQL（Twenty + fde_workbench）"
+log "1/5 备份 PostgreSQL（Twenty + fde_workbench）"
 run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2>/tmp/pg_dumpall.err || {
   log "pg_dumpall 失败，改为分库 dump"
   run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql"
@@ -120,7 +129,7 @@ run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2
 [ -s "$OUT/pg_all.sql" ] && log "  pg_all.sql ($(du -h "$OUT/pg_all.sql" | cut -f1))"
 
 # ---- 2. SQLite：openfde 知识轨 ----
-log "2/4 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
+log "2/5 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
 if [ -d "$OPENFDE_ROOT" ]; then
   mkdir -p "$OUT/openfde"
   for db in "$OPENFDE_ROOT"/*/ledger.db; do
@@ -134,7 +143,7 @@ else
 fi
 
 # ---- 3. 目录：fdeops 流程轨 ----
-log "3/4 备份目录（fdeops .fde/）"
+log "3/5 备份目录（fdeops .fde/）"
 if [ -d "$FDEOPS_ROOT" ]; then
   mkdir -p "$OUT/fdeops"
   # 排除 .git（体积大且可重建），保留全部台账正文
@@ -145,10 +154,19 @@ else
 fi
 
 # ---- 4. fde-storage（上传件与生成物）----
-log "4/4 备份 fde-storage"
+log "4/5 备份 fde-storage"
 if [ -d "$FDE_STORAGE" ]; then
   (cd "$FDE_STORAGE" && tar -czf "$OUT/fde-storage.tgz" . 2>/dev/null) || log "  跳过：存储目录读取异常"
   log "  fde-storage.tgz"
+fi
+
+# ---- 5. leads.md（线索唯一真相：不入 git，丢了没处找）----
+log "5/5 备份 leads.md"
+if [ -f "$LEADS_MD" ]; then
+  cp "$LEADS_MD" "$OUT/leads.md"
+  log "  leads.md ($(du -h "$OUT/leads.md" | cut -f1))"
+else
+  log "  跳过：$LEADS_MD 未找到"
 fi
 
 # ---- 清单 ----
@@ -160,6 +178,7 @@ pg_container: $PG_CONTAINER
 pg_dbs:       twenty, fde_workbench
 sqlite:       openfde/engagements/*/ledger.db（每 engagement 一个）
 dirs:         fdeops (.fde), fde-storage
+files:        leads.md（根仓线索唯一真相，不入 git）
 note:         Redis 不入备份（队列是易态数据，job 真身在 PG 的 background_jobs 表）
 EOF
 
