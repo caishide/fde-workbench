@@ -18,14 +18,17 @@ from fde_api.auth.models import User
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.research.models import ProjectResearchForm, ProjectResearchSubject
 from fde_api.workbench.models import (
+    Contract,
     Gate,
     IndustryTemplateVersion,
     ModuleCatalog,
     OperationEvent,
+    Payment,
     Project,
     ProjectMember,
     ProjectModule,
     ProjectTask,
+    Quote,
 )
 
 
@@ -38,6 +41,9 @@ EventTarget: TypeAlias = (
     | ProjectModule
     | ProjectTask
     | Gate
+    | Quote
+    | Payment
+    | Contract
     | ProjectResearchForm
     | ProjectResearchSubject
     | ProjectFile
@@ -53,6 +59,9 @@ _TARGET_TYPES = {
     ProjectModule: "project_module",
     ProjectTask: "project_task",
     Gate: "gate",
+    Quote: "quote",
+    Payment: "payment",
+    Contract: "contract",
     ProjectResearchForm: "project_research_form",
     ProjectResearchSubject: "project_research_subject",
     ProjectFile: "project_file",
@@ -97,7 +106,7 @@ def _project_id_for_target(session: Session, target: EventTarget) -> str | None:
         return None
     if isinstance(target, Project):
         return target.id
-    if isinstance(target, (ProjectMember, ProjectModule, Gate)):
+    if isinstance(target, (ProjectMember, ProjectModule, Gate, Quote, Payment, Contract)):
         return target.project_id
     if isinstance(target, (ProjectResearchForm, ProjectResearchSubject)):
         return target.project_id

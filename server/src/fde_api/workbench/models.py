@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -300,6 +302,15 @@ class Project(Base, TimestampMixin, VersionedMixin):
     gates: Mapped[list["Gate"]] = relationship(
         back_populates="project", passive_deletes=True
     )
+    quotes: Mapped[list["Quote"]] = relationship(
+        back_populates="project", passive_deletes=True
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="project", passive_deletes=True
+    )
+    contracts: Mapped[list["Contract"]] = relationship(
+        back_populates="project", passive_deletes=True
+    )
 
 
 class ProjectMember(Base, TimestampMixin):
@@ -579,6 +590,195 @@ class Gate(Base, TimestampMixin, VersionedMixin):
     signer_role: Mapped[str | None] = mapped_column(String(120))
 
     project: Mapped[Project] = relationship(back_populates="gates")
+
+
+class Quote(Base, TimestampMixin, VersionedMixin):
+    """报价台账（P4，设计 §6；承接《报价计算卡-v1.1》——只程序化公式，卡一字不动）。
+
+    输入列 = 卡 §1–§5 的系数与单价（全部"初始假设，待回校"，卡 §九）；
+    输出列 = 服务层按卡公式计算（realistic=ideal×档内偏离×数据×合规×缓冲；
+    成本=现金+realistic×时薪；公式价=成本×1.4；锚点三分支 A/B/C）。
+    field_claims：每个数字字段 → claim_status ∈ {estimated, claimed, measured,
+    accepted}（§5.3 四值，accepted 之外黄标；默认全 estimated）。
+    对外报价单（draft HTML）不出现任何系数——客户看三档（卡 §十-3）。
+    """
+
+    __tablename__ = "quotes"
+    __table_args__ = (
+        UniqueConstraint("project_id", "quote_key", name="uq_quotes_project_key"),
+        CheckConstraint(
+            "tier IN ('light', 'standard', 'flagship')", name="ck_quotes_tier"
+        ),
+        CheckConstraint(
+            "anchor_mode IN ('cold_start', 'steady')", name="ck_quotes_anchor_mode"
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'finalized')", name="ck_quotes_status"
+        ),
+        CheckConstraint(
+            "b_layer_score >= 0 AND b_layer_score <= 10", name="ck_quotes_b_score"
+        ),
+        CheckConstraint(
+            "branch IN ('A', 'B', 'C')", name="ck_quotes_branch"
+        ),
+        CheckConstraint(
+            "c_handling IS NULL OR c_handling IN "
+            "('scope_cut', 'split_phases', 'external_collab', 'ticket_deal')",
+            name="ck_quotes_c_handling",
+        ),
+        Index("ix_quotes_project_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    quote_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    tier: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="draft", server_default="draft"
+    )
+    # ---- 输入（卡 §2/§4/§5；取值集合由服务层按卡校验） ----
+    ideal_hours: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False)
+    integration_factor: Mapped[Decimal] = mapped_column(
+        Numeric(4, 2), nullable=False, default=Decimal("1.00")
+    )
+    data_factor: Mapped[Decimal] = mapped_column(
+        Numeric(4, 2), nullable=False, default=Decimal("1.00")
+    )
+    compliance_factor: Mapped[Decimal] = mapped_column(
+        Numeric(4, 2), nullable=False, default=Decimal("1.00")
+    )
+    buffer_factor: Mapped[Decimal] = mapped_column(
+        Numeric(4, 2), nullable=False, default=Decimal("2.00")
+    )
+    hourly_rate: Mapped[int] = mapped_column(Integer, nullable=False)
+    cash_cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    margin_factor: Mapped[Decimal] = mapped_column(
+        Numeric(3, 2), nullable=False, default=Decimal("1.40")
+    )
+    b_layer_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    anchor_mode: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="cold_start"
+    )
+    preset: Mapped[str | None] = mapped_column(String(40))
+    # ---- 输出（服务层计算，禁止外部直写） ----
+    realistic_hours: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    labor_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    formula_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    b_layer_factor: Mapped[Decimal] = mapped_column(Numeric(4, 2), nullable=False)
+    anchor_low: Mapped[int] = mapped_column(Integer, nullable=False)
+    anchor_high: Mapped[int] = mapped_column(Integer, nullable=False)
+    branch: Mapped[str] = mapped_column(String(1), nullable=False)
+    quote_low: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    quote_high: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    c_handling: Mapped[str | None] = mapped_column(String(20))
+    # ---- 台账回填（卡 §八：成交后 48h 内） ----
+    final_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    final_deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    allowance_cap: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    allowance_paid: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0")
+    )
+    ticket_deal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    ticket_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # ---- 回校（卡 §九 #1：首单结项必回校缓冲 ×2.0，结项 checklist 固定一步） ----
+    actual_hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    deviation_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    calibrated_buffer_factor: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    # ---- 每个数字的 claim 状态（§5.3 四值） ----
+    field_claims: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+
+    project: Mapped[Project] = relationship(back_populates="quotes")
+
+
+class Payment(Base, TimestampMixin):
+    """收款与催款（P4，设计 §6；里程碑定义 = seeds/payment_milestones.json 投影）。
+
+    milestone_key 溯源映射表 v1.3（G3/G4/G8/SOW-C M1/M2/M3/D，各带 source_uri +
+    content_hash）。状态不落库：received_at 有值=已收，否则 invoice_no 有值=已开票、
+    无值=计划。dunning_level 同理读时现算（D+7/15/30/60 四级，工具包 §10 电子化）。
+    G8 stop 也按合同结算（SOP）→ settlement_reason='g8_stop' 由门禁引擎联动打标。
+    """
+
+    __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "milestone_key", name="uq_payments_project_milestone"
+        ),
+        CheckConstraint(
+            "sow_type IN ('a', 'b', 'c', 'd')", name="ck_payments_sow_type"
+        ),
+        CheckConstraint(
+            "settlement_reason IS NULL OR settlement_reason IN ('g8_stop')",
+            name="ck_payments_settlement_reason",
+        ),
+        Index("ix_payments_project_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    milestone_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    sow_type: Mapped[str] = mapped_column(String(1), nullable=False)
+    collects: Mapped[str] = mapped_column(String(80), nullable=False)
+    timing: Mapped[str] = mapped_column(String(160), nullable=False)
+    ratio: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    received_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    due_date: Mapped[date | None] = mapped_column(Date)
+    received_at: Mapped[date | None] = mapped_column(Date)
+    invoice_no: Mapped[str | None] = mapped_column(String(60))
+    settlement_reason: Mapped[str | None] = mapped_column(String(20))
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    project: Mapped[Project] = relationship(back_populates="payments")
+
+
+class Contract(Base, TimestampMixin, VersionedMixin):
+    """合同台账（P4，设计 §6）：只存指针与关键条款摘要，PDF 本体在 fdeops 文件系统。
+
+    每 (project, sow_type) 一行；source_uri 为 fdeops:// 指针（A4：不存内容本体）。
+    acceptance_window_days 默认 15（SOP §S4 既有验收窗口）。
+    """
+
+    __tablename__ = "contracts"
+    __table_args__ = (
+        UniqueConstraint("project_id", "sow_type", name="uq_contracts_project_sow"),
+        CheckConstraint(
+            "sow_type IN ('a', 'b', 'c', 'd')", name="ck_contracts_sow_type"
+        ),
+        CheckConstraint(
+            "acceptance_window_days >= 1", name="ck_contracts_acceptance_window"
+        ),
+        Index("ix_contracts_project_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    sow_type: Mapped[str] = mapped_column(String(1), nullable=False)
+    signed_at: Mapped[date | None] = mapped_column(Date)
+    payment_terms: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    acceptance_window_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=15
+    )
+    termination_terms: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_uri: Mapped[str | None] = mapped_column(String(500))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    project: Mapped[Project] = relationship(back_populates="contracts")
 
 
 class BridgeEngagement(Base, TimestampMixin):

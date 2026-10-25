@@ -32,6 +32,7 @@ from fde_api.workbench.models import (
     ProjectTask,
     ProjectTaskCollaborator,
     ProjectTaskDependency,
+    SopNode,
 )
 from fde_api.workbench.scheduling import (
     ScheduleTask,
@@ -161,6 +162,9 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
             _insert_project_dependencies(
                 session, task_definitions, selected_task_keys, task_rows
             )
+            # P5 模板化（设计 §7）：task_key 命中 SOP 节点稳定键（S0-B→s0_b 等）
+            # 时自动补挂点——sop_node 指向 SopNode、gate 填该节点门禁（9 门挂点）。
+            _annotate_sop_tasks(session, task_rows)
             _set_module_dates(module_rows, task_rows)
             if project.planned_end_date is None:
                 project.planned_end_date = max(
@@ -1440,6 +1444,32 @@ def _insert_project_dependencies(
                     successor_task_id=task_rows[task["task_key"]].id,
                 )
             )
+
+
+def _annotate_sop_tasks(
+    session: Session, task_rows: Mapping[str, ProjectTask]
+) -> int:
+    """P5：task_key 命中 SOP 节点时补 sop_node / gate 挂点，返回命中数。
+
+    稳定键规则：node_key 小写、'-'/'.' → '_'（S0-B→s0_b，与模板 task_key 同规）。
+    命不中的任务不动（通用模板任务不受影响）。
+    """
+    def _stable(node_key: str) -> str:
+        return node_key.lower().replace("-", "_").replace(".", "_")
+
+    nodes = {
+        _stable(node.node_key): node for node in session.scalars(select(SopNode))
+    }
+    matched = 0
+    for task_key, task in task_rows.items():
+        node = nodes.get(task_key)
+        if node is None or task.sop_node:
+            continue
+        task.sop_node = node.node_key
+        if node.gate_key:
+            task.gate = node.gate_key
+        matched += 1
+    return matched
 
 
 def _set_module_dates(

@@ -359,12 +359,23 @@ def decide_gate(
             gate.decided_at = datetime.now(timezone.utc)
             if note:
                 changes["note"] = note
+            # P4 承接（设计 §6）：G8 stop 也按合同结算（SOP §S8 三态）——
+            # 联动给 G8 尾款收款行打 settlement_reason，B 尾款照收。
+            settlement: dict[str, Any] | None = None
+            if gate.gate_key == "G8" and result == "pass" and decision == "stop":
+                from fde_api.projects.payment_service import flag_g8_stop_settlement
+
+                settlement = flag_g8_stop_settlement(session, actor, project.id)
+                changes["g8_stop_settlement"] = settlement
             record_event(session, actor, "gate_decided", gate, changes)
             session.flush()
             sop_nodes = {
                 node.node_key: node for node in session.scalars(select(SopNode))
             }
-            return _serialize_gate(gate, template, sop_nodes)
+            result_payload = _serialize_gate(gate, template, sop_nodes)
+            if settlement is not None:
+                result_payload["g8_stop_settlement"] = settlement
+            return result_payload
     except GateServiceError:
         raise
     except RuntimeError as error:

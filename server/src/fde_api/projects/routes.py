@@ -28,6 +28,26 @@ from fde_api.projects.gate_service import (
     list_project_gates,
     submit_gate_evidence,
 )
+from fde_api.projects.quote_service import (
+    QuoteServiceError,
+    calibrate_quote,
+    create_quote,
+    finalize_quote,
+    list_quotes,
+    render_quote_draft,
+    update_quote_claim,
+)
+from fde_api.projects.payment_service import (
+    PaymentServiceError,
+    generate_payment_plan,
+    payment_board,
+    update_payment,
+)
+from fde_api.projects.contract_service import (
+    ContractServiceError,
+    list_contracts,
+    record_contract,
+)
 from fde_api.projects.task_service import (
     TASK_STATUSES,
     TASK_UPDATE_FIELDS,
@@ -213,6 +233,180 @@ def decide_gate_route(project_id: str, gate_key: str):
         return jsonify({"data": data, "error": None})
     except GateServiceError as error:
         return _gate_error(error)
+
+
+# ---- P4 报价/收款/合同（设计 §6）----
+
+
+@projects_blueprint.get("/<project_id>/quotes")
+@require_auth
+def list_quotes_route(project_id: str):
+    """报价台账列表 + 最近报价事件。"""
+    try:
+        data = list_quotes(actor=g.current_user, project_id=project_id)
+        return jsonify({"data": data, "error": None})
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.post("/<project_id>/quotes")
+@require_auth
+def create_quote_route(project_id: str):
+    """建报价（报价卡 v1.1 系数输入 → 公式价 → 锚点三分支）；preset=first_order_defaults
+    走首单默认参数并强制三条硬约束。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = create_quote(
+            actor=g.current_user, project_id=project_id, payload=payload
+        )
+        return jsonify({"data": data, "error": None}), 201
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.post("/<project_id>/quotes/<quote_key>/claims")
+@require_auth
+def update_quote_claim_route(project_id: str, quote_key: str):
+    """单字段 claim 前进（estimated→claimed→measured→accepted，只进不退）。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = update_quote_claim(
+            actor=g.current_user,
+            project_id=project_id,
+            quote_key=quote_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.post("/<project_id>/quotes/<quote_key>/calibrate")
+@require_auth
+def calibrate_quote_route(project_id: str, quote_key: str):
+    """回校缓冲 ×2.0（首单结项 checklist 固定一步）：actual_hours + deviation_reason。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = calibrate_quote(
+            actor=g.current_user,
+            project_id=project_id,
+            quote_key=quote_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.post("/<project_id>/quotes/<quote_key>/finalize")
+@require_auth
+def finalize_quote_route(project_id: str, quote_key: str):
+    """成交回填：最终价人拍板；低于成本×1.25 必须门票单；算让利额度；C 层三道校验。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = finalize_quote(
+            actor=g.current_user,
+            project_id=project_id,
+            quote_key=quote_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.get("/<project_id>/quotes/<quote_key>/draft")
+@require_auth
+def quote_draft_route(project_id: str, quote_key: str):
+    """对外报价单 HTML 草稿（三档格式，无内部系数；草稿不自动发客户）。"""
+    try:
+        data = render_quote_draft(
+            actor=g.current_user, project_id=project_id, quote_key=quote_key
+        )
+        return jsonify({"data": data, "error": None})
+    except QuoteServiceError as error:
+        return _quote_error(error)
+
+
+@projects_blueprint.get("/<project_id>/payments")
+@require_auth
+def payment_board_route(project_id: str):
+    """收款看板：里程碑行 + 现算状态/催款级（D+7/15/30/60）+ 应收/已收/逾期汇总。"""
+    try:
+        data = payment_board(actor=g.current_user, project_id=project_id)
+        return jsonify({"data": data, "error": None})
+    except PaymentServiceError as error:
+        return _payment_error(error)
+
+
+@projects_blueprint.post("/<project_id>/payments/plan")
+@require_auth
+def payment_plan_route(project_id: str):
+    """按 SOW 生成收款计划（B 50/50、C 40/40/20、A 预付、D 月付；溯源映射表 v1.3）。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = generate_payment_plan(
+            actor=g.current_user, project_id=project_id, payload=payload
+        )
+        return jsonify({"data": data, "error": None}), 201
+    except PaymentServiceError as error:
+        return _payment_error(error)
+
+
+@projects_blueprint.post("/<project_id>/payments/<milestone_key>")
+@require_auth
+def update_payment_route(project_id: str, milestone_key: str):
+    """收款回填（金额/到账日/发票号）与到期日设置（催款级读时现算）。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = update_payment(
+            actor=g.current_user,
+            project_id=project_id,
+            milestone_key=milestone_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except PaymentServiceError as error:
+        return _payment_error(error)
+
+
+@projects_blueprint.get("/<project_id>/contracts")
+@require_auth
+def list_contracts_route(project_id: str):
+    """合同台账（四类 SOW 补位视图；只存指针，PDF 在 fdeops）。"""
+    try:
+        data = list_contracts(actor=g.current_user, project_id=project_id)
+        return jsonify({"data": data, "error": None})
+    except ContractServiceError as error:
+        return _contract_error(error)
+
+
+@projects_blueprint.post("/<project_id>/contracts")
+@require_auth
+def record_contract_route(project_id: str):
+    """登记/更新一份 SOW 合同台账（upsert by sow_type；source_uri 须 fdeops:// 指针）。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = record_contract(
+            actor=g.current_user, project_id=project_id, payload=payload
+        )
+        return jsonify({"data": data, "error": None})
+    except ContractServiceError as error:
+        return _contract_error(error)
 
 
 @projects_blueprint.get("/<project_id>/members")
@@ -575,4 +769,16 @@ def _service_error(error: ProjectServiceError):
 
 
 def _gate_error(error: GateServiceError):
+    return error_response(error.code, error.message, error.status)
+
+
+def _quote_error(error: QuoteServiceError):
+    return error_response(error.code, error.message, error.status)
+
+
+def _payment_error(error: PaymentServiceError):
+    return error_response(error.code, error.message, error.status)
+
+
+def _contract_error(error: ContractServiceError):
     return error_response(error.code, error.message, error.status)
