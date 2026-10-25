@@ -1509,3 +1509,6 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .contract-meta dt { color: var(--muted); }
 .contract-meta dd { margin: 0; word-break: break-all; }
 .inline-check { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-label); color: var(--muted); white-space: nowrap; }
+
+/* P4 审查补：fdeops 指针等宽显示 */
+.mono { font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; }

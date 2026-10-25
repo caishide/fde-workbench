@@ -207,9 +207,11 @@ def seed_workbench(session: Session) -> None:
             existing.description = module["description"]
             existing.sort_order = module["sort_order"]
     session.flush()
-    if set(catalogs) != set(GENERIC_TEMPLATE_TASKS):
+    # P1 起 module_catalog 还承载 sop_* 四段（load_seeds 灌入）——通用种子只要求
+    # 自己的五个模块齐且激活，不做全表等值比对（否则 seed_workbench/bootstrap 必炸）。
+    if not set(GENERIC_TEMPLATE_TASKS) <= set(catalogs):
         raise WorkbenchSeedError("generic template drift: required module missing")
-    if any(not module.is_active for module in catalogs.values()):
+    if any(not catalogs[key].is_active for key in GENERIC_TEMPLATE_TASKS):
         raise WorkbenchSeedError("required module inactive")
 
     existing_template = session.scalar(

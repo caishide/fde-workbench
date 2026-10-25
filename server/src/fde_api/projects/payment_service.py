@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from fde_api.auth.models import User
 from fde_api.extensions import db
@@ -83,6 +83,39 @@ def _milestone_templates() -> dict[str, dict[str, Any]]:
     return {row["milestone_key"]: row for row in rows}
 
 
+def _milestone_template(key: str) -> dict[str, Any]:
+    """取单条里程碑模板；种子缺失转服务错误（不裸 500/KeyError）。"""
+    try:
+        templates = _milestone_templates()
+    except RuntimeError as error:
+        raise PaymentServiceError(
+            "payment_seed_unavailable",
+            "收款里程碑种子不可用，请检查服务端 seeds/payment_milestones.json。",
+            500,
+        ) from error
+    template = templates.get(key)
+    if template is None:
+        raise PaymentServiceError(
+            "payment_milestone_missing",
+            f"收款里程碑种子缺少 {key}。",
+            500,
+        )
+    return template
+
+
+def _positive_amount(value: object, field: str) -> Decimal:
+    """金额入参：有限、正数、有上限（拦 NaN/Infinity——float 比较对 NaN 恒假）。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise PaymentServiceError("invalid_request", f"{field} 必须是正数金额。", 400)
+    try:
+        parsed = Decimal(str(value))
+    except ArithmeticError:
+        raise PaymentServiceError("invalid_request", f"{field} 必须是正数金额。", 400) from None
+    if not parsed.is_finite() or not Decimal("0") < parsed <= Decimal("10000000"):
+        raise PaymentServiceError("invalid_request", f"{field} 必须是正数金额。", 400)
+    return parsed
+
+
 def _parse_ratio(amount_structure: str) -> Decimal | None:
     if "50%" in amount_structure:
         return Decimal("0.50")
@@ -108,17 +141,17 @@ def generate_payment_plan(
     sow_type = payload.get("sow_type")
     if sow_type not in PLAN_MILESTONES:
         raise PaymentServiceError("invalid_request", "sow_type 必须是 a/b/c/d。", 400)
-    base = payload.get("base_amount")
-    if isinstance(base, bool) or not isinstance(base, (int, float)) or base <= 0:
-        raise PaymentServiceError("invalid_request", "base_amount 必须是正数金额。", 400)
-    base = Decimal(str(base))
+    base = _positive_amount(payload.get("base_amount"), "base_amount")
     replace = bool(payload.get("replace"))
     session = db.session()
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
+            # 串行化同项目的计划创建/重建（防并发双插撞唯一约束）
+            session.execute(
+                select(Project.id).where(Project.id == project.id).with_for_update()
+            )
             keys = PLAN_MILESTONES[sow_type]
-            templates = _milestone_templates()
             existing = list(
                 session.scalars(
                     select(Payment).where(
@@ -132,12 +165,28 @@ def generate_payment_plan(
                     f"{SOW_LABELS[sow_type]}收款计划已存在（replace=true 可重建）。",
                     409,
                 )
+            if existing and replace:
+                # 金额真相在台账（人回填）：已到账/已开票/G8 结算标记的行不许删
+                locked = [
+                    row.milestone_key
+                    for row in existing
+                    if row.received_at is not None
+                    or row.invoice_no
+                    or row.settlement_reason
+                ]
+                if locked:
+                    raise PaymentServiceError(
+                        "ledger_truth_present",
+                        f"{'、'.join(locked)} 已有收款事实（到账/开票/G8 结算标记），"
+                        "不许 replace 重建，请逐行修正。",
+                        409,
+                    )
             for row in existing:
                 session.delete(row)
             session.flush()
             created = []
             for key in keys:
-                template = templates[key]
+                template = _milestone_template(key)
                 ratio = _parse_ratio(template.get("amount_structure") or "")
                 if sow_type in ("a", "d"):
                     amount = _money(base)
@@ -207,10 +256,8 @@ def update_payment(
                 changes["invoice_no"] = row.invoice_no
             if "received_amount" in payload or "received_at" in payload:
                 amount = payload.get("received_amount")
-                if amount is not None and (
-                    isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0
-                ):
-                    raise PaymentServiceError("invalid_request", "received_amount 必须是正数。", 400)
+                if amount is not None:
+                    amount = _positive_amount(amount, "received_amount")
                 received_at = payload.get("received_at")
                 if received_at is None and amount is not None:
                     received_at = date.today().isoformat()
@@ -246,9 +293,9 @@ def flag_g8_stop_settlement(session: Session, actor: User, project_id: str) -> d
     无行（计划未建）→ 仅留事件，建计划时人工确认。
     """
     row = session.scalar(
-        select(Payment).where(
-            Payment.project_id == project_id, Payment.milestone_key == "G8"
-        )
+        select(Payment)
+        .where(Payment.project_id == project_id, Payment.milestone_key == "G8")
+        .with_for_update()
     )
     flagged = False
     if row is not None:
@@ -281,19 +328,29 @@ def payment_board(*, actor: User, project_id: str) -> dict[str, Any]:
             )
             today = date.today()
             serialized = [_serialize_payment(row, today=today) for row in rows]
-            receivable = sum(row["amount"] for row in serialized)
-            received = sum(row["received_amount"] or 0.0 for row in serialized)
+            # 汇总在 Decimal 域求和再转 float（避免 0.1+0.2 类显示毛刺）
+            receivable = sum((row.amount for row in rows), Decimal("0"))
+            received = sum(
+                (row.received_amount or Decimal("0") for row in rows), Decimal("0")
+            )
             overdue = sum(
-                row["amount"] for row in serialized if row["dunning_level"] is not None
+                (
+                    row.amount
+                    for row in rows
+                    if row.due_date is not None
+                    and row.due_date < today
+                    and row.received_at is None
+                ),
+                Decimal("0"),
             )
             events = _recent_payment_events(session, project.id)
         return {
             "payments": serialized,
             "summary": {
-                "receivable": receivable,
-                "received": received,
-                "outstanding": receivable - received,
-                "overdue": overdue,
+                "receivable": float(receivable),
+                "received": float(received),
+                "outstanding": float(receivable - received),
+                "overdue": float(overdue),
                 "dunning_counts": {
                     level: sum(1 for row in serialized if row["dunning_level"] == level)
                     for level in ("d7", "d15", "d30", "d60")
@@ -325,6 +382,12 @@ def _serialize_payment(row: Payment, *, today: date | None) -> dict[str, Any]:
     else:
         status = "planned"
     level = _dunning(row, today) if today is not None else None
+    overdue = bool(
+        today is not None
+        and row.due_date is not None
+        and row.due_date < today
+        and row.received_at is None
+    )
     return {
         "id": row.id,
         "milestone_key": row.milestone_key,
@@ -344,6 +407,8 @@ def _serialize_payment(row: Payment, *, today: date | None) -> dict[str, Any]:
         "note": row.note,
         "dunning_level": level,
         "dunning_label": DUNNING_LABELS.get(level, "未到期"),
+        # 已过到期日未收（D+7 才进催款级；0–6 天只标记不计催款，口径见 DUNNING_LEVELS）
+        "overdue": overdue,
         "source_uri": row.source_uri,
     }
 
@@ -358,6 +423,7 @@ PAYMENT_EVENT_TYPES = (
 def _recent_payment_events(session: Session, project_id: str) -> list[dict[str, Any]]:
     rows = session.execute(
         select(OperationEvent)
+        .options(joinedload(OperationEvent.actor))
         .where(
             OperationEvent.project_id == project_id,
             OperationEvent.event_type.in_(PAYMENT_EVENT_TYPES),
@@ -399,9 +465,9 @@ def _load_project(session: Session, actor: User, project_id: str, *, manage: boo
 
 def _load_payment(session: Session, project_id: str, milestone_key: str) -> Payment:
     row = session.scalar(
-        select(Payment).where(
-            Payment.project_id == project_id, Payment.milestone_key == milestone_key
-        )
+        select(Payment)
+        .where(Payment.project_id == project_id, Payment.milestone_key == milestone_key)
+        .with_for_update()
     )
     if row is None:
         raise PaymentServiceError("payment_not_found", f"收款里程碑 {milestone_key} 不存在。", 404)

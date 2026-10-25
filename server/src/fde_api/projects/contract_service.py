@@ -70,9 +70,11 @@ def record_contract(
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
             row = session.scalar(
-                select(Contract).where(
+                select(Contract)
+                .where(
                     Contract.project_id == project.id, Contract.sow_type == sow_type
                 )
+                .with_for_update()
             )
             created = row is None
             if row is None:
@@ -113,13 +115,15 @@ def record_contract(
                 changes["source_uri"] = source_uri
             if "content_hash" in payload:
                 content_hash = payload.get("content_hash")
-                if content_hash is not None and (
-                    not isinstance(content_hash, str)
-                    or not _HEX64_PATTERN.fullmatch(content_hash)
-                ):
-                    raise ContractServiceError(
-                        "invalid_request", "content_hash 必须是 64 位十六进制 sha256。", 400
-                    )
+                if content_hash is not None:
+                    if (
+                        not isinstance(content_hash, str)
+                        or not _HEX64_PATTERN.fullmatch(content_hash)
+                    ):
+                        raise ContractServiceError(
+                            "invalid_request", "content_hash 必须是 64 位十六进制 sha256。", 400
+                        )
+                    content_hash = content_hash.strip().lower()
                 row.content_hash = content_hash
                 changes["content_hash"] = content_hash
             if "note" in payload:

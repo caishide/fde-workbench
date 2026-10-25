@@ -261,10 +261,10 @@ def main() -> int:
         r = client.post(
             f"{gates_url}/G4/decision", json={"result": "fail", "note": "客户暂缓"}, headers=admin_headers
         )
-        data = r.get_json()["data"]
+        data = r.get_json().get("data") or {}
         check(
             "G4 fail → failed + 失败出口带出",
-            r.status_code == 200 and data["status"] == "failed" and "重启" in (data.get("fail_exit") or ""),
+            r.status_code == 200 and data.get("status") == "failed" and "重启" in (data.get("fail_exit") or ""),
             str(data.get("fail_exit")),
         )
         r = client.post(

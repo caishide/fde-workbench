@@ -120,6 +120,13 @@ def main() -> int:
     with app.app_context():
         session = db.session()
         try:
+            admin = session.scalars(
+                select(User).where(User.role == "admin", User.is_active.is_(True))
+            ).first()
+            if admin is None:
+                print("FAIL 找不到可用 admin 用户", file=sys.stderr)
+                return 1
+
             existing = session.scalars(
                 select(IndustryTemplate).where(IndustryTemplate.name == TEMPLATE_NAME)
             ).first()
@@ -130,18 +137,27 @@ def main() -> int:
                         IndustryTemplateVersion.status == "published",
                     )
                 )
-                print(
-                    f"SKIP 模板「{TEMPLATE_NAME}」已存在（"
-                    f"{'published ' + published.id if published else '无已发布版本'}）"
+                if published is not None:
+                    print(
+                        f"SKIP 模板「{TEMPLATE_NAME}」已存在（published {published.id}）"
+                    )
+                    return 0
+                # 上次发布失败留下的草稿不许永久卡死（create_template 已独立提交）：
+                # 重试发布最新版本，而不是 exit 0 掩盖问题。
+                draft = session.scalars(
+                    select(IndustryTemplateVersion)
+                    .where(IndustryTemplateVersion.template_id == existing.id)
+                    .order_by(IndustryTemplateVersion.version.desc())
+                    .limit(1)
+                ).first()
+                if draft is None:
+                    print("FAIL 模板存在但没有任何版本", file=sys.stderr)
+                    return 1
+                publish_template_version(
+                    actor=admin, version_id=draft.id, expected_version=draft.version
                 )
+                print(f"OK 补发布成功：{TEMPLATE_NAME} version_id={draft.id}")
                 return 0
-
-            admin = session.scalars(
-                select(User).where(User.role == "admin", User.is_active.is_(True))
-            ).first()
-            if admin is None:
-                print("FAIL 找不到可用 admin 用户", file=sys.stderr)
-                return 1
 
             payload = json.loads(
                 (SEED_DIR / "sop_nodes.json").read_text(encoding="utf-8")

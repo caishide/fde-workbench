@@ -938,6 +938,8 @@ def append_project_module(
                             successor_task_id=successor.id,
                         )
                     )
+            # P5（设计 §7）：后补模块的 SOP 任务同样补挂点，与 create_project 同规
+            _annotate_sop_tasks(session, new_tasks)
             module.planned_start_date = min(
                 task.planned_start_date for task in new_tasks.values()
             )

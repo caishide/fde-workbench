@@ -135,7 +135,7 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
   }, [load])
 
   const submitEvidence = useCallback(
-    async (gate: GateDto, items: Array<{ label: string; source_uri: string; content_hash: string }>) => {
+    async (gate: GateDto, items: Array<{ label: string; source_uri: string; content_hash: string }>): Promise<boolean> => {
       setBusyGate(gate.gate_key)
       setActionError("")
       try {
@@ -144,8 +144,10 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
           { method: "POST", body: { items }, retryAfterAuthRefresh: true },
         )
         await load()
+        return true
       } catch (caught) {
         setActionError(gateError(caught))
+        return false
       } finally {
         setBusyGate("")
       }
@@ -154,7 +156,7 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
   )
 
   const decide = useCallback(
-    async (gate: GateDto, payload: Record<string, unknown>) => {
+    async (gate: GateDto, payload: Record<string, unknown>): Promise<boolean> => {
       setBusyGate(gate.gate_key)
       setActionError("")
       try {
@@ -163,8 +165,10 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
           { method: "POST", body: payload, retryAfterAuthRefresh: true },
         )
         await load()
+        return true
       } catch (caught) {
         setActionError(gateError(caught))
+        return false
       } finally {
         setBusyGate("")
       }
@@ -227,8 +231,8 @@ interface GateCardProps {
   onSubmitEvidence: (
     gate: GateDto,
     items: Array<{ label: string; source_uri: string; content_hash: string }>,
-  ) => Promise<void>
-  onDecide: (gate: GateDto, payload: Record<string, unknown>) => Promise<void>
+  ) => Promise<boolean>
+  onDecide: (gate: GateDto, payload: Record<string, unknown>) => Promise<boolean>
 }
 
 function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCardProps) {
@@ -330,6 +334,7 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
                 type="button"
                 disabled={busy || !allFilled}
                 onClick={() => {
+                  // 失败不收表单：已填的指针与 sha256 不丢（核验 400 时用户重敲一遍是灾难）
                   void onSubmitEvidence(
                     gate,
                     gate.checklist.map((item) => ({
@@ -337,7 +342,9 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
                       source_uri: (uris[item.label] ?? "").trim(),
                       content_hash: (hashes[item.label] ?? "").trim().toLowerCase(),
                     })),
-                  ).then(() => setMode("idle"))
+                  ).then((ok) => {
+                    if (ok) setMode("idle")
+                  })
                 }}
               >
                 {busy ? "提交中…" : "提交证据（标 claimed）"}
@@ -399,7 +406,11 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
               <button
                 className="primary-button"
                 type="button"
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (result === "pass" && acceptedCount < gate.checklist.length) ||
+                  (result === "conditional_pass" && gate.checklist.some((item) => !item.claim_status))
+                }
                 onClick={() => {
                   const payload: Record<string, unknown> = {
                     result,
@@ -409,7 +420,10 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
                   }
                   if (isG8 && result === "pass") payload.decision = g8Decision
                   if (note.trim()) payload.note = note.trim()
-                  void onDecide(gate, payload).then(() => setMode("idle"))
+                  // 失败不收表单（拍板 400 时勾选与说明不丢）
+                  void onDecide(gate, payload).then((ok) => {
+                    if (ok) setMode("idle")
+                  })
                 }}
               >
                 {busy ? "提交中…" : `拍板（接受 ${acceptedCount}/${gate.checklist.length}）`}

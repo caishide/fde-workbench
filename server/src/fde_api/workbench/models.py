@@ -524,18 +524,18 @@ class SopNode(Base, TimestampMixin):
     segment: Mapped[str] = mapped_column(String(20), nullable=False)
     gate_key: Mapped[str | None] = mapped_column(String(10))
     gate_note: Mapped[str | None] = mapped_column(String(120))
-    trigger: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    human_action: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    trigger: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    human_action: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     # S7.5 无 ②/③ 小节出处，ai_action 为 NULL——工程层不得发明方法论层没有的东西
     ai_action: Mapped[str | None] = mapped_column(Text)
-    artifact: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    evidence_location: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    artifact: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    evidence_location: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     record_track: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
     signer_role: Mapped[str | None] = mapped_column(String(120))
-    fail_exit: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    next_node: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    fail_exit: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    next_node: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
     next_node_keys: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
@@ -679,7 +679,7 @@ class Quote(Base, TimestampMixin, VersionedMixin):
     final_deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     allowance_cap: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     allowance_paid: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=Decimal("0")
+        Numeric(12, 2), nullable=False, default=Decimal("0"), server_default=text("0")
     )
     ticket_deal: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
@@ -692,7 +692,7 @@ class Quote(Base, TimestampMixin, VersionedMixin):
     calibrated_buffer_factor: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     # ---- 每个数字的 claim 状态（§5.3 四值） ----
     field_claims: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict, server_default=text("'{}'")
+        JSON, nullable=False, default=dict
     )
 
     project: Mapped[Project] = relationship(back_populates="quotes")

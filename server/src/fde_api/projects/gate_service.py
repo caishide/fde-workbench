@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from fde_api.auth.models import User
 from fde_api.extensions import db
@@ -81,7 +81,13 @@ def _template_index() -> dict[str, dict[str, Any]]:
 
 
 def ensure_project_gates(session: Session, project: Project) -> int:
-    """按模板幂等实例化 9 行 Gate（已存在则不动），返回新建行数。"""
+    """按模板幂等实例化 9 行 Gate（已存在则不动），返回新建行数。
+
+    先锁项目行再计数：两个并发首访不会双份 9 行（撞唯一约束 500）。
+    """
+    session.execute(
+        select(Project.id).where(Project.id == project.id).with_for_update()
+    )
     existing = session.scalar(
         select(func.count()).select_from(Gate).where(Gate.project_id == project.id)
     )
@@ -108,28 +114,30 @@ def ensure_project_gates(session: Session, project: Project) -> int:
     return len(_gate_templates())
 
 
+def _ensure_gates_logged(session: Session, actor: User, project: Project) -> None:
+    """懒初始化（docstring 承诺「首次访问」）：list/submit/decide 入口统一走这里。"""
+    created = ensure_project_gates(session, project)
+    if created:
+        record_event(
+            session,
+            actor,
+            "gates_instantiated",
+            project,
+            {"gate_count": created, "source": "seeds/gates.json"},
+        )
+
+
 def list_project_gates(*, actor: User, project_id: str) -> dict[str, Any]:
     session = db.session()
     try:
         with session.begin():
             project = _load_project_for_gates(session, actor, project_id, manage=False)
-            created = ensure_project_gates(session, project)
-            if created:
-                record_event(
-                    session,
-                    actor,
-                    "gates_instantiated",
-                    project,
-                    {"gate_count": created, "source": "seeds/gates.json"},
-                )
+            _ensure_gates_logged(session, actor, project)
             gates = list(
                 session.scalars(select(Gate).where(Gate.project_id == project.id))
             )
             templates = _template_index()
-            sop_nodes = {
-                node.node_key: node
-                for node in session.scalars(select(SopNode))
-            }
+            sop_nodes = _sop_nodes_for_templates(session, templates)
             order = {row["gate_key"]: index for index, row in enumerate(_gate_templates())}
             gates.sort(key=lambda gate: order.get(gate.gate_key, 99))
             items = [
@@ -170,6 +178,7 @@ def submit_gate_evidence(
     try:
         with session.begin():
             project = _load_project_for_gates(session, actor, project_id, manage=True)
+            _ensure_gates_logged(session, actor, project)
             gate = _load_gate(session, project.id, gate_key)
             if gate.status in ("passed", "conditional_pass"):
                 raise GateServiceError(
@@ -219,9 +228,7 @@ def submit_gate_evidence(
             )
             session.flush()
             templates = _template_index()
-            sop_nodes = {
-                node.node_key: node for node in session.scalars(select(SopNode))
-            }
+            sop_nodes = _sop_nodes_for_templates(session, templates)
             return _serialize_gate(gate, templates.get(gate.gate_key), sop_nodes)
     except GateServiceError:
         raise
@@ -268,13 +275,20 @@ def decide_gate(
     try:
         with session.begin():
             project = _load_project_for_gates(session, actor, project_id, manage=True)
+            _ensure_gates_logged(session, actor, project)
             gate = _load_gate(session, project.id, gate_key)
             if gate.status != "evidence":
                 raise GateServiceError(
                     "invalid_gate_state", "该门禁尚无待核验证据，先提交证据再核验。", 409
                 )
             templates = _template_index()
-            template = templates[gate.gate_key]
+            template = templates.get(gate.gate_key)
+            if template is None:
+                raise GateServiceError(
+                    "gate_template_unavailable",
+                    f"门禁 {gate.gate_key} 的模板定义缺失，请检查服务端 seeds/gates.json。",
+                    500,
+                )
             if gate.gate_key == "G8":
                 if result != "pass" and decision is not None:
                     raise GateServiceError(
@@ -310,15 +324,26 @@ def decide_gate(
                 "result": result,
             }
             if result == "pass":
+                # claimed ≠ accepted（SOP 铁律）：核验只能「接受已提交证据的项」，
+                # 不许把从未提交的清单项直接追认 accepted 空证据过门。
+                claimed = {
+                    item["label"]
+                    for item in checklist
+                    if item["claim_status"] == "claimed"
+                }
                 accepted = (
                     set(accepted_labels_raw)
                     if accepted_labels_raw is not None
-                    else {
-                        item["label"]
-                        for item in checklist
-                        if item["claim_status"] == "claimed"
-                    }
+                    else claimed
                 )
+                not_claimed = sorted(accepted - claimed)
+                if not_claimed:
+                    raise GateServiceError(
+                        "accepted_labels_not_claimed",
+                        "accepted_labels 只能核验已提交证据的清单项："
+                        f"{'、'.join(not_claimed)} 尚未提交。",
+                        400,
+                    )
                 for item in checklist:
                     if item["label"] in accepted:
                         item["claim_status"] = "accepted"
@@ -369,9 +394,7 @@ def decide_gate(
                 changes["g8_stop_settlement"] = settlement
             record_event(session, actor, "gate_decided", gate, changes)
             session.flush()
-            sop_nodes = {
-                node.node_key: node for node in session.scalars(select(SopNode))
-            }
+            sop_nodes = _sop_nodes_for_templates(session, templates)
             result_payload = _serialize_gate(gate, template, sop_nodes)
             if settlement is not None:
                 result_payload["g8_stop_settlement"] = settlement
@@ -406,11 +429,32 @@ def _load_gate(session: Session, project_id: str, gate_key: str) -> Gate:
     if not isinstance(gate_key, str) or not _GATE_KEY_PATTERN.fullmatch(gate_key):
         raise GateServiceError("invalid_request", "门禁编号格式不正确。", 400)
     gate = session.scalar(
-        select(Gate).where(Gate.project_id == project_id, Gate.gate_key == gate_key)
+        select(Gate)
+        .where(Gate.project_id == project_id, Gate.gate_key == gate_key)
+        .with_for_update()
     )
     if gate is None:
         raise GateServiceError("gate_not_found", "该门禁不存在。", 404)
     return gate
+
+
+def _sop_nodes_for_templates(
+    session: Session, templates: Mapping[str, dict[str, Any]]
+) -> dict[str, SopNode]:
+    """只取模板引用到的节点（避免每次请求全表扫 SopNode）。"""
+    node_keys = {
+        template.get("node_key")
+        for template in templates.values()
+        if template.get("node_key")
+    }
+    if not node_keys:
+        return {}
+    return {
+        node.node_key: node
+        for node in session.scalars(
+            select(SopNode).where(SopNode.node_key.in_(node_keys))
+        )
+    }
 
 
 def _normalize_submission_items(
@@ -506,6 +550,7 @@ def _recent_gate_events(session: Session, project_id: str) -> list[dict[str, Any
     events = list(
         session.scalars(
             select(OperationEvent)
+            .options(joinedload(OperationEvent.actor))
             .where(
                 OperationEvent.project_id == project_id,
                 OperationEvent.event_type.in_(GATE_EVENT_TYPES),
@@ -517,7 +562,7 @@ def _recent_gate_events(session: Session, project_id: str) -> list[dict[str, Any
     return [
         {
             "event_type": event.event_type,
-            "occurred_at": event.occurred_at.isoformat(),
+            "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
             "actor_display_name": event.actor.display_name if event.actor else None,
             "changes": event.changes,
         }

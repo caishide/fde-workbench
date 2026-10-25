@@ -45,6 +45,23 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _cleanup_users(app, *user_ids: str) -> None:
+    """提前返回路径也要删临时用户（不留脏账号）。"""
+    with app.app_context():
+        session = db.session()
+        try:
+            with session.begin():
+                from fde_api.auth.models import User as UserModel
+
+                for uid in user_ids:
+                    if uid:
+                        session.execute(
+                            UserModel.__table__.delete().where(UserModel.id == uid)
+                        )
+        except Exception as error:  # noqa: BLE001
+            print(f"用户清理失败：{error!r}")
+
+
 def main() -> int:
     app = create_app()
     app.config.update(TESTING=True)
@@ -94,9 +111,11 @@ def main() -> int:
     check("建演练项目 201", created.status_code == 201, str(created.status_code))
     if created.status_code != 201:
         print(created.get_data(as_text=True)[:400])
+        _cleanup_users(app, admin_id, viewer_id)
         return 1
     project_id = created.get_json()["data"]["id"]
     p5_id: str | None = None
+    p5b_id: str | None = None
     base = f"/api/v1/projects/{project_id}"
 
     try:
@@ -168,6 +187,28 @@ def main() -> int:
             "缓冲不许随手改（回校走 calibrate）",
             r.status_code == 400 and r.get_json()["error"]["code"] == "invalid_buffer",
         )
+        # 严格数字解析负例（审查修复：负数/非法串/NaN 不许静默洗白成默认值）
+        r = client.post(
+            f"{base}/quotes",
+            json={"tier": "light", "anchor_mode": "cold_start", "hourly_rate": 150, "ideal_hours": -5},
+            headers=admin_headers,
+        )
+        check("负工时拒 400（防负成本击穿底线）", r.status_code == 400, str(r.status_code))
+        r = client.post(
+            f"{base}/quotes",
+            json={"tier": "light", "anchor_mode": "cold_start", "hourly_rate": 150, "integration_factor": "abc"},
+            headers=admin_headers,
+        )
+        check(
+            "非法系数串拒 400（不静默落默认）",
+            r.status_code == 400 and r.get_json()["error"]["code"] == "invalid_request",
+        )
+        r = client.post(
+            f"{base}/quotes",
+            json={"tier": "light", "anchor_mode": "cold_start", "hourly_rate": 150, "ideal_hours": "NaN"},
+            headers=admin_headers,
+        )
+        check("NaN 工时拒 400（is_finite）", r.status_code == 400)
         # C 分支（卡 §5.3 示例：标准档 D×1.6 + 合规×1.35 + 档内×1.4）
         r = client.post(
             f"{base}/quotes",
@@ -205,6 +246,34 @@ def main() -> int:
             and q2.get("computed", {}).get("branch") == "C"
             and q2.get("computed", {}).get("formula_price") == 70504.0,
             str(q2.get("computed", {}).get("formula_price")),
+        )
+
+        # ---- 2b) B 分支 + B 层建议点（卡 §5.3「B 层系数在此生效」）----
+        r = client.post(
+            f"{base}/quotes",
+            json={
+                "tier": "standard",
+                "anchor_mode": "cold_start",
+                "hourly_rate": 180,
+                "ideal_hours": 60,
+                "b_layer_score": 4,
+            },
+            headers=admin_headers,
+        )
+        q3 = r.get_json().get("data") or {}
+        # realistic 120h → 成本 26600 → 公式价 37240 ∈ [35000,50000] → B 分支
+        check(
+            "B 分支区间 [33516, 44688]",
+            r.status_code == 201
+            and q3.get("computed", {}).get("branch") == "B"
+            and q3.get("computed", {}).get("quote_low") == 33516.0
+            and q3.get("computed", {}).get("quote_high") == 44688.0,
+            str((q3.get("computed", {}).get("quote_low"), q3.get("computed", {}).get("quote_high"))),
+        )
+        check(
+            "B 层建议点 = 公式价×1.02 = 37984.8",
+            q3.get("computed", {}).get("b_reference_price") == 37984.8,
+            str(q3.get("computed", {}).get("b_reference_price")),
         )
 
         # ---- 3) claims 单调前进 ----
@@ -265,6 +334,26 @@ def main() -> int:
         )
         check("重复回校 409", r.status_code == 409)
 
+        # ---- 4b) 首单身份服务端判定（审查修复：不依赖 preset 自报）----
+        # Q-002 是不带 preset 建的高集成 C 分支报价：工作室尚无成交单，它就是事实首单，
+        # 即使回校了也不许以 ×1.4 高集成成交（卡 §5.4 硬约束①）。
+        r = client.post(
+            f"{base}/quotes/Q-002/calibrate",
+            json={"actual_hours": 100, "deviation_reason": "演练：绕过首单约束的尝试"},
+            headers=admin_headers,
+        )
+        check("Q-002（非 preset）先回校 200", r.status_code == 200, str(r.status_code))
+        r = client.post(
+            f"{base}/quotes/Q-002/finalize",
+            json={"final_amount": 60000},
+            headers=admin_headers,
+        )
+        check(
+            "事实首单高集成 finalize 拒 409（服务端判定）",
+            r.status_code == 409 and r.get_json()["error"]["code"] == "first_order_constraint",
+            str((r.status_code, r.get_json().get("error", {}).get("code"))),
+        )
+
         # ---- 5) finalize（三条线 + 让利额度）----
         r = client.post(
             f"{base}/quotes/Q-001/finalize",
@@ -298,6 +387,7 @@ def main() -> int:
             and data.get("checks", {}).get("within_approval_cap") is True,
             str(data.get("checks")),
         )
+        check("首单标记进 checks（服务端判定）", data.get("checks", {}).get("first_order") is True)
 
         # ---- 6) 对外草稿：三档无系数 ----
         r = client.get(f"{base}/quotes/Q-001/draft", headers=admin_headers)
@@ -338,6 +428,12 @@ def main() -> int:
         check("重复生成 409", r.status_code == 409)
         r = client.post(
             f"{base}/payments/plan",
+            json={"sow_type": "a", "base_amount": "NaN"},
+            headers=admin_headers,
+        )
+        check("NaN 基数拒 400（is_finite）", r.status_code == 400)
+        r = client.post(
+            f"{base}/payments/plan",
             json={"sow_type": "b", "base_amount": 22000, "replace": True},
             headers=admin_headers,
         )
@@ -353,6 +449,7 @@ def main() -> int:
         board = client.get(f"{base}/payments", headers=admin_headers).get_json()["data"]
         g4 = next(p for p in board["payments"] if p["milestone_key"] == "G4")
         check("逾期 20 天 → D+15 级", g4["dunning_level"] == "d15", str(g4["dunning_level"]))
+        check("行级 overdue 标记（已过期未收）", g4.get("overdue") is True)
         check("汇总逾期 11000", board["summary"]["overdue"] == 11000.0, str(board["summary"]["overdue"]))
 
         d60 = (date.today() - timedelta(days=70)).isoformat()
@@ -371,12 +468,91 @@ def main() -> int:
         board = client.get(f"{base}/payments", headers=admin_headers).get_json()["data"]
         g4 = next(p for p in board["payments"] if p["milestone_key"] == "G4")
         check("已收不再催款", g4["dunning_level"] is None)
+        check("已收后 overdue 复位", g4.get("overdue") is False)
         check("汇总已收 11000", board["summary"]["received"] == 11000.0)
+
+        # ---- 9b) 台账保护：已回填的行不许 replace 重建（审查修复）----
+        r = client.post(
+            f"{base}/payments/plan",
+            json={"sow_type": "b", "base_amount": 30000, "replace": True},
+            headers=admin_headers,
+        )
+        check(
+            "已有收款事实 replace 拒 409（金额真相在台账）",
+            r.status_code == 409 and r.get_json()["error"]["code"] == "ledger_truth_present",
+            str((r.status_code, r.get_json().get("error", {}).get("code"))),
+        )
 
         # ---- 10) G8 stop 联动结算 ----
         gates_url = f"{base}/gates"
         gates = client.get(gates_url, headers=admin_headers).get_json()["data"]["gates"]
         check("P4 项目懒实例化 9 门", len(gates) == 9)
+
+        # ---- 10a) accepted_labels 越集追认拒（审查修复 P0）----
+        # 只提交 1 项证据就把全部清单项塞进 accepted_labels → 必须拒；
+        # 只核验已提交项 → pass 因其余未 accepted 也要拒。
+        g3gate = next(g for g in gates if g["gate_key"] == "G3")
+        first_label = g3gate["checklist"][0]["label"]
+        all_labels = [i["label"] for i in g3gate["checklist"]]
+        r = client.post(
+            f"{gates_url}/G3/evidence",
+            json={
+                "items": [
+                    {
+                        "label": first_label,
+                        "source_uri": f"fdeops://p4/{first_label}",
+                        "content_hash": sha256(first_label),
+                    }
+                ]
+            },
+            headers=admin_headers,
+        )
+        check("G3 部分提交（1 项）进 evidence", r.status_code == 200, str(r.status_code))
+        r = client.post(
+            f"{gates_url}/G3/decision",
+            json={"result": "pass", "accepted_labels": all_labels},
+            headers=admin_headers,
+        )
+        check(
+            "未提交项塞 accepted_labels 拒 400",
+            r.status_code == 400
+            and r.get_json()["error"]["code"] == "accepted_labels_not_claimed",
+            str((r.status_code, r.get_json().get("error", {}).get("code"))),
+        )
+        r = client.post(
+            f"{gates_url}/G3/decision",
+            json={"result": "pass", "accepted_labels": [first_label]},
+            headers=admin_headers,
+        )
+        check(
+            "部分核验 pass 拒 400（还有项未 accepted）",
+            r.status_code == 400
+            and r.get_json()["error"]["code"] == "gate_evidence_incomplete",
+            str((r.status_code, r.get_json().get("error", {}).get("code"))),
+        )
+        r = client.post(
+            f"{gates_url}/G3/evidence",
+            json={
+                "items": [
+                    {
+                        "label": i["label"],
+                        "source_uri": f"fdeops://p4/{i['label']}",
+                        "content_hash": sha256(i["label"]),
+                    }
+                    for i in g3gate["checklist"]
+                    if i["label"] != first_label
+                ]
+            },
+            headers=admin_headers,
+        )
+        check("G3 补齐其余证据", r.status_code == 200, str(r.status_code))
+        r = client.post(
+            f"{gates_url}/G3/decision",
+            json={"result": "pass"},
+            headers=admin_headers,
+        )
+        check("G3 全量提交后默认全核验过门", r.status_code == 200 and r.get_json()["data"]["status"] == "passed")
+
         g8gate = next(g for g in gates if g["gate_key"] == "G8")
         r = client.post(
             f"{gates_url}/G8/evidence",
@@ -468,9 +644,11 @@ def main() -> int:
                     IndustryTemplateVersion.status == "published",
                 )
             ).first()
-            template_version_id = version.id
+            template_version_id = version.id if version is not None else None
             s.close()
         check("模板已发布", version is not None)
+        if version is None:
+            raise SystemExit(1)
 
         r = client.post(
             "/api/v1/projects",
@@ -519,6 +697,48 @@ def main() -> int:
         ).get_json()["data"]["gates"]
         check("派生项目 9 门懒实例化", len(gates) == 9)
 
+        # ---- P5b) 后补模块同样补挂点（审查修复：append_project_module 注记缺口）----
+        r = client.post(
+            "/api/v1/projects",
+            json={
+                "name": f"P5追加模块冒烟{uuid.uuid4().hex[:6]}",
+                "enterprise_code": "客户Z·追加演练·内部",
+                "planned_start_date": date.today().isoformat(),
+                "leader_user_id": admin_id,
+                "creation_source": "template",
+                "template_version_id": template_version_id,
+                "module_keys": ["sop_presale"],
+            },
+            headers=admin_headers,
+        )
+        check("P5b 子集模块建项目 201", r.status_code == 201, str(r.status_code))
+        if r.status_code == 201:
+            p5b_id = r.get_json()["data"]["id"]
+            p5b_version = client.get(
+                f"/api/v1/projects/{p5b_id}", headers=admin_headers
+            ).get_json()["data"]["version"]
+            r = client.post(
+                f"/api/v1/projects/{p5b_id}/modules",
+                json={
+                    "module_key": "sop_delivery",
+                    "planned_start_date": date.today().isoformat(),
+                    "version": p5b_version,
+                },
+                headers=admin_headers,
+            )
+            check("追加 sop_delivery 模块 201", r.status_code == 201, str(r.status_code))
+            tasks_b = client.get(
+                f"/api/v1/projects/{p5b_id}/tasks", headers=admin_headers
+            ).get_json()["data"]["items"]
+            appended = [t for t in tasks_b if t["task_key"] in ("s3", "s6", "s8")]
+            check(
+                "追加模块任务同样挂 sop_node/gate（与立项同规）",
+                len(appended) == 3
+                and all(t["sop_node"] for t in appended)
+                and next(t for t in tasks_b if t["task_key"] == "s3")["gate"] == "G3",
+                str([(t["task_key"], t["sop_node"], t["gate"]) for t in appended]),
+            )
+
     finally:
         # ---- 清理：两个演练项目 + 临时用户；模板与种子保留 ----
         with app.app_context():
@@ -535,7 +755,7 @@ def main() -> int:
                         ProjectTask,
                     )
 
-                    for pid in (project_id, p5_id):
+                    for pid in (project_id, p5_id, p5b_id):
                         if not pid:
                             continue
                         module_ids = list(

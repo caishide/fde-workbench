@@ -31,6 +31,7 @@ interface QuoteDto {
     total_cost: number
     formula_price: number
     b_layer_factor: number
+    b_reference_price: number | null
     anchor_low: number
     anchor_high: number
     branch: string
@@ -75,6 +76,7 @@ interface PaymentDto {
   note: string
   dunning_level: string | null
   dunning_label: string
+  overdue?: boolean
 }
 
 interface PaymentBoardDto {
@@ -151,6 +153,19 @@ const SOW_OPTIONS: Array<{ value: string; label: string }> = [
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? "—" : `¥${value.toLocaleString("zh-CN")}`
+
+// 表单数字入参统一走这里（NaN/负数/0 前端就拦，错误消息进 actionError 展示）
+function parsePositive(raw: string, label: string): number {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} 必须是正数`)
+  return value
+}
+
+function parsePositiveInt(raw: string, label: string): number {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1) throw new Error(`${label} 必须是 ≥1 的整数`)
+  return value
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -246,7 +261,12 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
   }, [board])
 
   if (loading) return <div className="panel">加载报价 / 收款 / 合同……</div>
-  if (error) return <div className="panel error-text">{error}</div>
+  if (error)
+    return (
+      <div className="panel">
+        <p className="form-error banner" role="alert">{error}</p>
+      </div>
+    )
 
   return (
     <div className="commercial-board">
@@ -336,7 +356,7 @@ type Post = (path: string, body: unknown) => Promise<unknown>
 type Mutate = (run: () => Promise<unknown>) => Promise<void>
 
 function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
-  const [presetting, setPresetting] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [tier, setTier] = useState("light")
   const [anchorMode, setAnchorMode] = useState("cold_start")
   const [hourly, setHourly] = useState(150)
@@ -345,6 +365,13 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
   const [integration, setIntegration] = useState(1.0)
   const [bScore, setBScore] = useState(3)
   const [cHandling, setCHandling] = useState("scope_cut")
+
+  // 防重入：建报价无服务端幂等键，双击会产出删不掉的重复台账行
+  const run = (action: () => Promise<void>): void => {
+    if (busy) return
+    setBusy(true)
+    void action().finally(() => setBusy(false))
+  }
 
   const submitPreset = (): Promise<void> =>
     mutate(() => post("/quotes", { preset: "first_order_defaults" }))
@@ -359,13 +386,14 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
         compliance_factor: compliance,
         integration_factor: integration,
         b_layer_score: bScore,
-        ...(tier === "flagship" && integration === 1.4 ? { c_handling: cHandling } : {}),
+        // 与上方渲染条件同判：任意档位出现 C 分支都必须带上四选一
+        ...(integration === 1.4 ? { c_handling: cHandling } : {}),
       }),
     )
 
   return (
     <div className="quote-create">
-      <button type="button" className="primary-button compact" onClick={() => void submitPreset()} disabled={presetting}>
+      <button type="button" className="primary-button compact" disabled={busy} onClick={() => run(submitPreset)}>
         首单默认参数（轻量 / ¥150/h / ×1.0 / 冷启动锚点）
       </button>
       <details className="quote-advanced">
@@ -381,7 +409,15 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
           </label>
           <label>
             锚点
-            <select value={anchorMode} onChange={(e) => setAnchorMode(e.target.value)}>
+            <select
+              value={anchorMode}
+              onChange={(e) => {
+                const mode = e.target.value
+                setAnchorMode(mode)
+                // 冷启动上限 5 分：切回冷启动时把越界的分数夹回来（HTML max 拦不住键盘输入）
+                setBScore((score) => Math.min(score, mode === "cold_start" ? 5 : 10))
+              }}
+            >
               <option value="cold_start">冷启动（前 3 单）</option>
               <option value="steady">稳态（第 4 单起）</option>
             </select>
@@ -440,7 +476,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
             </label>
           ) : null}
         </div>
-        <button type="button" className="secondary-button compact" onClick={() => void submitCustom()}>
+        <button type="button" className="secondary-button compact" disabled={busy} onClick={() => run(submitCustom)}>
           按上述系数建报价
         </button>
       </details>
@@ -472,6 +508,7 @@ function QuoteCard({
   const [approvalCap, setApprovalCap] = useState("")
   const [ticketDeal, setTicketDeal] = useState(false)
   const [ticketNote, setTicketNote] = useState("")
+  const [draftError, setDraftError] = useState("")
   const allAccepted = quote.claims_summary.accepted === quote.claims_summary.total
   const needsCalibration = quote.preset === "first_order_defaults" && quote.calibration.actual_hours === null
 
@@ -480,12 +517,14 @@ function QuoteCard({
       setDraftHtml(null)
       return
     }
+    setDraftError("")
     setDraftHtml({ key: quote.quote_key, html: "" })
     try {
       const html = await loadDraft(quote.quote_key)
       setDraftHtml({ key: quote.quote_key, html })
-    } catch {
+    } catch (caught) {
       setDraftHtml(null)
+      setDraftError(errorText(caught))
     }
   }
 
@@ -517,6 +556,9 @@ function QuoteCard({
         {quote.computed.quote_low !== null ? (
           <span>
             建议报价 {fmt(quote.computed.quote_low)} – {fmt(quote.computed.quote_high)}
+            {quote.computed.branch === "B" && quote.computed.b_reference_price !== null
+              ? `（B 层建议点 ${fmt(quote.computed.b_reference_price)}）`
+              : ""}
           </span>
         ) : (
           <span className="supporting-copy">超锚点不许硬报（缩范围/拆分期/协作/门票单）</span>
@@ -524,18 +566,27 @@ function QuoteCard({
       </div>
       <div className="quote-claims">
         {Object.entries(quote.field_claims).map(([field, status]) => {
-          const next = CLAIM_ORDER[Math.min(CLAIM_ORDER.indexOf(status as (typeof CLAIM_ORDER)[number]) + 1, 3)]
-          const canAdvance = canManage && next !== status
+          const index = CLAIM_ORDER.indexOf(status as (typeof CLAIM_ORDER)[number])
+          // 未知状态不提供前进按钮（服务端只写四个合法值，防御）
+          const next = index >= 0 ? CLAIM_ORDER[Math.min(index + 1, 3)] : null
+          const canAdvance = canManage && next !== null && next !== status
           return (
             <button
               key={field}
               type="button"
               className={`claim-chip ${status === "accepted" ? "accepted" : "yellow"}`}
               disabled={!canAdvance}
-              title={canAdvance ? `前进到 ${CLAIM_LABEL[next]}` : CLAIM_LABEL[status]}
-              onClick={() => void mutate(() => post(`/quotes/${encodeURIComponent(quote.quote_key)}/claims`, { field, claim_status: next }))}
+              title={canAdvance && next ? `前进到 ${CLAIM_LABEL[next]}` : CLAIM_LABEL[status] ?? status}
+              onClick={() =>
+                void mutate(() =>
+                  post(`/quotes/${encodeURIComponent(quote.quote_key)}/claims`, {
+                    field,
+                    claim_status: next,
+                  }),
+                )
+              }
             >
-              {CLAIM_FIELD_LABEL[field] ?? field}·{CLAIM_LABEL[status]}
+              {CLAIM_FIELD_LABEL[field] ?? field}·{CLAIM_LABEL[status] ?? status}
             </button>
           )
         })}
@@ -568,7 +619,7 @@ function QuoteCard({
                 onClick={() =>
                   void mutate(() =>
                     post(`/quotes/${encodeURIComponent(quote.quote_key)}/calibrate`, {
-                      actual_hours: Number(calActual),
+                      actual_hours: parsePositive(calActual, "实际工时"),
                       deviation_reason: calReason,
                     }),
                   )
@@ -596,9 +647,9 @@ function QuoteCard({
                 onClick={() =>
                   void mutate(() =>
                     post(`/quotes/${encodeURIComponent(quote.quote_key)}/finalize`, {
-                      final_amount: Number(finalAmount),
-                      ...(firstYear ? { first_year_recoverable_value: Number(firstYear) } : {}),
-                      ...(approvalCap ? { approval_cap: Number(approvalCap) } : {}),
+                      final_amount: parsePositive(finalAmount, "成交价"),
+                      ...(firstYear ? { first_year_recoverable_value: parsePositive(firstYear, "首年可回收价值") } : {}),
+                      ...(approvalCap ? { approval_cap: parsePositive(approvalCap, "审批上限") } : {}),
                       ...(ticketDeal ? { ticket_deal: true, ticket_note: ticketNote } : {}),
                     }),
                   )
@@ -613,6 +664,7 @@ function QuoteCard({
           </button>
         </div>
       ) : null}
+      {draftError ? <p className="form-error banner" role="alert">{draftError}</p> : null}
       {draftHtml?.key === quote.quote_key ? (
         draftHtml.html ? (
           <iframe title="报价单草稿" sandbox="" srcDoc={draftHtml.html} className="quote-draft-frame" />
@@ -644,7 +696,7 @@ function PlanForm({ post, mutate }: { post: Post; mutate: Mutate }) {
         className="primary-button compact"
         disabled={!base}
         onClick={() =>
-          void mutate(() => post("/payments/plan", { sow_type: sow, base_amount: Number(base), replace }))
+          void mutate(() => post("/payments/plan", { sow_type: sow, base_amount: parsePositive(base, "合同基数金额"), replace }))
         }
       >
         生成收款计划
@@ -702,6 +754,9 @@ function PaymentRow({
       </td>
       <td>
         <span className={dunningClass}>{payment.dunning_label}</span>
+        {payment.overdue && !payment.dunning_level ? (
+          <div className="badge warning">已逾期（未到 D+7 催款级）</div>
+        ) : null}
       </td>
       {canManage ? (
         <td className="payment-ops">
@@ -725,7 +780,7 @@ function PaymentRow({
                 onClick={() =>
                   void mutate(() =>
                     post(`/payments/${encodeURIComponent(payment.milestone_key)}`, {
-                      ...(received ? { received_amount: Number(received) } : {}),
+                      ...(received ? { received_amount: parsePositive(received, "实收金额") } : {}),
                       ...(invoiceNo ? { invoice_no: invoiceNo } : {}),
                     }),
                   )
@@ -808,7 +863,7 @@ function ContractCard({
                 post("/contracts", {
                   sow_type: contract.sow_type,
                   ...(signedAt ? { signed_at: signedAt } : {}),
-                  acceptance_window_days: Number(window) || 15,
+                  acceptance_window_days: window.trim() === "" ? 15 : parsePositiveInt(window, "验收窗口"),
                   ...(terms ? { payment_terms: terms } : {}),
                   ...(termination ? { termination_terms: termination } : {}),
                   source_uri: sourceUri,

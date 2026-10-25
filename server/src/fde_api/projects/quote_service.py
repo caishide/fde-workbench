@@ -30,7 +30,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from fde_api.auth.models import User
 from fde_api.extensions import db
@@ -113,6 +113,10 @@ CLAIMABLE_FIELDS = (
 
 TWO_PLACES = Decimal("0.01")
 
+# 数值入参的合理上限（工程防御，非方法论取值）：超出即视为录入错误拒 400
+MAX_INPUT_HOURS = Decimal("10000")
+MAX_INPUT_MONEY = Decimal("10000000")
+
 
 class QuoteServiceError(Exception):
     def __init__(self, code: str, message: str, status: int):
@@ -180,6 +184,15 @@ def _quote_range(branch: str, formula: Decimal, anchor_low: int, anchor_high: in
     return (None, None)
 
 
+def _b_reference_price(quote: Quote) -> float | None:
+    """B 分支建议报价点（卡 §5.3：B 层系数在 B 区间内生效）。"""
+    if quote.branch != "B" or quote.quote_low is None or quote.quote_high is None:
+        return None
+    candidate = _money(quote.formula_price * quote.b_layer_factor)
+    clamped = min(max(candidate, quote.quote_low), quote.quote_high)
+    return float(clamped)
+
+
 def _tier_defaults(tier: str, anchor_mode: str) -> tuple[Decimal, int, int, int]:
     spec = TIERS[tier]
     anchor_low, anchor_high = spec["anchors"][anchor_mode]
@@ -187,15 +200,33 @@ def _tier_defaults(tier: str, anchor_mode: str) -> tuple[Decimal, int, int, int]
 
 
 def _decimal_input(payload: Mapping[str, Any], key: str) -> Decimal | None:
+    """解析数字入参：缺省返回 None；提供即必须可解析为有限数，否则 400。
+
+    不许「非法输入静默落默认」——封闭集合/正负校验必须看到调用方真实传的值，
+    否则 0、负数、NaN、Infinity 会被 or 兜底或比较恒假洗白（负成本会击穿成交底线）。
+    """
+    if key not in payload or payload.get(key) is None:
+        return None
     value = payload.get(key)
-    if value is None:
-        return None
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        return None
+        raise QuoteServiceError("invalid_request", f"{key} 必须是数字。", 400)
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
     except ArithmeticError:
-        return None
+        raise QuoteServiceError("invalid_request", f"{key} 必须是数字。", 400) from None
+    if not parsed.is_finite():
+        raise QuoteServiceError("invalid_request", f"{key} 必须是有限数字。", 400)
+    return parsed
+
+
+def _advance_claims(quote: Quote, updates: Mapping[str, str]) -> None:
+    """内部写手（calibrate/finalize）与 API 同守 claim 单调前进（§5.3）：只升不降。"""
+    claims = dict(quote.field_claims)
+    for field, status in updates.items():
+        current = claims.get(field, "estimated")
+        if _CLAIM_ORDER[status] > _CLAIM_ORDER[current]:
+            claims[field] = status
+    quote.field_claims = claims
 
 
 def _next_quote_key(session: Session, project_id: str) -> str:
@@ -212,6 +243,10 @@ def create_quote(*, actor: User, project_id: str, payload: Mapping[str, Any]) ->
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
+            # 串行化同项目的报价创建（quote_key 按 count+1 生成，防并发撞唯一键）
+            session.execute(
+                select(Project.id).where(Project.id == project.id).with_for_update()
+            )
             preset = payload.get("preset")
             if preset is not None and preset != FIRST_ORDER_PRESET:
                 raise QuoteServiceError("invalid_request", "未知的报价预设。", 400)
@@ -228,16 +263,34 @@ def create_quote(*, actor: User, project_id: str, payload: Mapping[str, Any]) ->
                 tier, anchor_mode
             )
 
-            ideal = _decimal_input(payload, "ideal_hours") or default_ideal
+            ideal = _decimal_input(payload, "ideal_hours")
+            if ideal is None:
+                ideal = default_ideal
+            if not Decimal("0") < ideal <= MAX_INPUT_HOURS:
+                raise QuoteServiceError(
+                    "invalid_request",
+                    f"ideal_hours 必须在 0–{MAX_INPUT_HOURS} h 内。",
+                    400,
+                )
             cash_cost = payload.get("cash_cost")
             cash_cost = default_cash if cash_cost is None else cash_cost
             if isinstance(cash_cost, bool) or not isinstance(cash_cost, int) or cash_cost < 0:
-                raise QuoteServiceError("invalid_request", "现金成本必须是正整数金额。", 400)
-            integration = _decimal_input(payload, "integration_factor") or Decimal("1.00")
-            data = _decimal_input(payload, "data_factor") or Decimal("1.00")
-            compliance = _decimal_input(payload, "compliance_factor") or Decimal("1.00")
-            buffer = _decimal_input(payload, "buffer_factor") or DEFAULT_BUFFER
-            hourly_rate = payload.get("hourly_rate") or (150 if preset else None)
+                raise QuoteServiceError("invalid_request", "现金成本必须是不为负的整数金额。", 400)
+            integration = _decimal_input(payload, "integration_factor")
+            if integration is None:
+                integration = Decimal("1.00")
+            data = _decimal_input(payload, "data_factor")
+            if data is None:
+                data = Decimal("1.00")
+            compliance = _decimal_input(payload, "compliance_factor")
+            if compliance is None:
+                compliance = Decimal("1.00")
+            buffer = _decimal_input(payload, "buffer_factor")
+            if buffer is None:
+                buffer = DEFAULT_BUFFER
+            hourly_rate = payload.get("hourly_rate")
+            if hourly_rate is None:
+                hourly_rate = 150 if preset else None
             if hourly_rate not in HOURLY_RATES:
                 raise QuoteServiceError(
                     "invalid_hourly_rate", "时薪必须是 150 / 180 / 400（卡 §4 两档）。", 400
@@ -400,7 +453,7 @@ def update_quote_claim(
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
-            quote = _load_quote(session, project.id, quote_key)
+            quote = _load_quote(session, project.id, quote_key, for_update=True)
             current = quote.field_claims.get(field, "estimated")
             if _CLAIM_ORDER[status] < _CLAIM_ORDER[current]:
                 raise QuoteServiceError(
@@ -435,7 +488,7 @@ def calibrate_quote(
     calibrated_buffer_factor = 2.0 × actual ÷ realistic（回校后只改系数不改结构）。
     """
     actual = _decimal_input(payload, "actual_hours")
-    if actual is None or actual <= 0:
+    if actual is None or not Decimal("0") < actual <= MAX_INPUT_HOURS:
         raise QuoteServiceError("invalid_request", "actual_hours 必须是正数。", 400)
     reason = (payload.get("deviation_reason") or "").strip()
     if not reason:
@@ -446,7 +499,7 @@ def calibrate_quote(
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
-            quote = _load_quote(session, project.id, quote_key)
+            quote = _load_quote(session, project.id, quote_key, for_update=True)
             if quote.actual_hours is not None:
                 raise QuoteServiceError(
                     "already_calibrated", "该报价已回校（回校一次为准）。", 409
@@ -456,13 +509,20 @@ def calibrate_quote(
             quote.actual_hours = actual
             quote.deviation_pct = deviation
             quote.deviation_reason = reason
-            quote.calibrated_buffer_factor = (quote.buffer_factor * actual / realistic).quantize(
+            calibrated = (quote.buffer_factor * actual / realistic).quantize(
                 Decimal("0.01")
             )
-            claims = dict(quote.field_claims)
-            claims["actual_hours"] = "measured"
-            claims["buffer_factor"] = "measured"
-            quote.field_claims = claims
+            # Numeric(4,2) 上限 99.99；更大的比例只可能是录入错误
+            if calibrated > Decimal("99.99"):
+                raise QuoteServiceError(
+                    "invalid_request",
+                    "actual_hours 与 realistic 比例失衡（回校缓冲超出存储上限），请核对实际工时。",
+                    400,
+                )
+            quote.calibrated_buffer_factor = calibrated
+            _advance_claims(
+                quote, {"actual_hours": "measured", "buffer_factor": "measured"}
+            )
             session.flush()
             record_event(
                 session,
@@ -491,22 +551,50 @@ def finalize_quote(
     C 层校验（算得过账/不超审批上限）为提示性返回，不落库。
     """
     final_amount = _decimal_input(payload, "final_amount")
-    if final_amount is None or final_amount <= 0:
+    if final_amount is None or not Decimal("0") < final_amount <= MAX_INPUT_MONEY:
         raise QuoteServiceError("invalid_request", "final_amount 必须是正数。", 400)
     session = db.session()
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
-            quote = _load_quote(session, project.id, quote_key)
+            quote = _load_quote(session, project.id, quote_key, for_update=True)
             if quote.status == "finalized":
                 raise QuoteServiceError("already_finalized", "该报价已成交回填。", 409)
-            # 结项 checklist 固定一步：首单（preset）未回校不许 finalize（设计 §6）
-            if quote.preset == FIRST_ORDER_PRESET and quote.actual_hours is None:
+            # 首单身份不依赖调用方自报 preset：工作室首笔成交（尚无任何已 finalize
+            # 报价）即首单——卡 §5.4 三条硬约束 + 卡 §9 #1 回校义务在此服务端强制，
+            # 手填系数建出的"事实首单"绕不过去。
+            finalized_count = session.scalar(
+                select(func.count())
+                .select_from(Quote)
+                .where(Quote.status == "finalized")
+            )
+            first_order = (finalized_count or 0) == 0
+            if first_order and quote.actual_hours is None:
                 raise QuoteServiceError(
                     "calibration_required",
-                    "首单结项必须先回校缓冲系数 ×2.0（calibrate），再成交回填（设计 §6）。",
+                    "本单为工作室首单：结项必须先回校缓冲系数 ×2.0（calibrate），"
+                    "再成交回填（卡 §9 #1 / 设计 §6）。",
                     409,
                 )
+            if first_order:
+                if quote.integration_factor == Decimal("1.40"):
+                    raise QuoteServiceError(
+                        "first_order_constraint",
+                        "首单硬约束①：不接高集成/跨系统事务（档内升级请改按上一档报价）。",
+                        409,
+                    )
+                if quote.data_factor == Decimal("1.6"):
+                    raise QuoteServiceError(
+                        "first_order_constraint",
+                        "首单硬约束②：不接 D 档脏数据（数据治理段须单列，首单不碰）。",
+                        409,
+                    )
+                if quote.realistic_hours > Decimal("120"):
+                    raise QuoteServiceError(
+                        "first_order_constraint",
+                        f"首单硬约束③：realistic {quote.realistic_hours} h 超过 120 h，请拆分期。",
+                        409,
+                    )
             floor = _money(quote.total_cost * DEAL_FLOOR_FACTOR)
             ticket_deal = bool(payload.get("ticket_deal"))
             ticket_note = (payload.get("ticket_note") or "").strip()
@@ -521,11 +609,19 @@ def finalize_quote(
             quote.final_deviation_pct = (
                 (final_amount - Decimal(quote.anchor_low)) / Decimal(quote.anchor_low)
             ).quantize(Decimal("0.0001"))
+            # 卡 §七：冷启动（前 3 单）50% / 稳态 40%——首单必属冷启动，锚点报稳态也不许用 40%
+            allowance_rate = (
+                ALLOWANCE_RATES["cold_start"]
+                if first_order
+                else ALLOWANCE_RATES[quote.anchor_mode]
+            )
             quote.allowance_cap = max(
                 Decimal("0"),
-                _money((final_amount - quote.total_cost) * ALLOWANCE_RATES[quote.anchor_mode]),
+                _money((final_amount - quote.total_cost) * allowance_rate),
             )
-            allowance_paid = _decimal_input(payload, "allowance_paid") or Decimal("0")
+            allowance_paid = _decimal_input(payload, "allowance_paid")
+            if allowance_paid is None:
+                allowance_paid = Decimal("0")
             if allowance_paid < 0 or allowance_paid > quote.allowance_cap:
                 raise QuoteServiceError(
                     "allowance_exceeded",
@@ -536,13 +632,14 @@ def finalize_quote(
             quote.ticket_deal = ticket_deal
             quote.ticket_note = ticket_note
             quote.status = "finalized"
-            claims = dict(quote.field_claims)
-            claims["final_amount"] = "claimed"
-            quote.field_claims = claims
+            _advance_claims(quote, {"final_amount": "claimed"})
             session.flush()
 
             # 卡 §6 C 层三道校验（提示性）：算得过账 / 不亏 / 不超审批上限
-            checks: dict[str, Any] = {"not_below_floor": final_amount >= floor}
+            checks: dict[str, Any] = {
+                "not_below_floor": final_amount >= floor,
+                "first_order": first_order,
+            }
             first_year_value = _decimal_input(payload, "first_year_recoverable_value")
             if first_year_value:
                 ratio = (final_amount / first_year_value).quantize(Decimal("0.0001"))
@@ -690,6 +787,9 @@ def _serialize_quote(quote: Quote) -> dict[str, Any]:
             "total_cost": float(quote.total_cost),
             "formula_price": float(quote.formula_price),
             "b_layer_factor": float(quote.b_layer_factor),
+            # 卡 §5.3「B 层系数在此生效」：B 分支建议报价点 = 公式价 × B 层系数，
+            # 夹在 B 区间 [公式×0.9, min(公式×1.2, 锚点上沿)] 内。
+            "b_reference_price": _b_reference_price(quote),
             "anchor_low": quote.anchor_low,
             "anchor_high": quote.anchor_high,
             "branch": quote.branch,
@@ -732,6 +832,7 @@ QUOTE_EVENT_TYPES = (
 def _recent_quote_events(session: Session, project_id: str) -> list[dict[str, Any]]:
     rows = session.execute(
         select(OperationEvent)
+        .options(joinedload(OperationEvent.actor))
         .where(
             OperationEvent.project_id == project_id,
             OperationEvent.event_type.in_(QUOTE_EVENT_TYPES),
@@ -760,10 +861,15 @@ def _load_project(session: Session, actor: User, project_id: str, *, manage: boo
     return project
 
 
-def _load_quote(session: Session, project_id: str, quote_key: str) -> Quote:
-    quote = session.scalar(
-        select(Quote).where(Quote.project_id == project_id, Quote.quote_key == quote_key)
+def _load_quote(
+    session: Session, project_id: str, quote_key: str, *, for_update: bool = False
+) -> Quote:
+    stmt = select(Quote).where(
+        Quote.project_id == project_id, Quote.quote_key == quote_key
     )
+    if for_update:
+        stmt = stmt.with_for_update()
+    quote = session.scalar(stmt)
     if quote is None:
         raise QuoteServiceError("quote_not_found", "该报价不存在。", 404)
     return quote
