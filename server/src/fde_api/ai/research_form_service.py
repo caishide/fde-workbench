@@ -142,7 +142,7 @@ def generate_project_research_form(*, actor: User, payload: object, on_event: Ca
         context = {
             "project": {
                 "name": project.name,
-                "enterprise_name": project.enterprise_name,
+                "enterprise_code": project.enterprise_code,
                 "background": project.background,
                 "industry_name": (
                     project.source_template_version.industry_name

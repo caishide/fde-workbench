@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any, TypedDict
@@ -54,10 +56,9 @@ PROJECT_MEMBER_ROLES = frozenset({"member", "viewer"})
 
 class ProjectCreateInput(TypedDict, total=False):
     name: str
-    enterprise_name: str
-    contact_name: str
-    contact_phone: str
-    address: str
+    enterprise_code: str
+    openfde_engagement: str | None
+    fdeops_workspace: str | None
     background: str
     notes: str
     project_code: str
@@ -105,10 +106,9 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
             project = Project(
                 project_code=values["project_code"] or _generated_project_code(),
                 name=values["name"],
-                enterprise_name=values["enterprise_name"],
-                enterprise_contact_name=values["contact_name"],
-                enterprise_contact_phone=values["contact_phone"],
-                enterprise_address=values["address"],
+                enterprise_code=values["enterprise_code"],
+                openfde_engagement=values["openfde_engagement"],
+                fdeops_workspace=values["fdeops_workspace"],
                 background=values["background"],
                 notes=values["notes"],
                 status="draft",
@@ -225,7 +225,7 @@ def list_projects(
             filters.append(
                 or_(
                     Project.name.like(pattern, escape="!"),
-                    Project.enterprise_name.like(pattern, escape="!"),
+                    Project.enterprise_code.like(pattern, escape="!"),
                 )
             )
         if query.get("status"):
@@ -353,10 +353,10 @@ def update_project(
                 project.status = next_status
             field_map = {
                 "name": "name",
-                "enterprise_name": "enterprise_name",
-                "contact_name": "enterprise_contact_name",
-                "contact_phone": "enterprise_contact_phone",
-                "address": "enterprise_address",
+                "enterprise_code": "enterprise_code",
+                "openfde_engagement": "openfde_engagement",
+                "fdeops_workspace": "fdeops_workspace",
+                "sop_phase": "sop_phase",
                 "background": "background",
                 "notes": "notes",
                 "project_code": "project_code",
@@ -1070,12 +1070,13 @@ def _normalize_create_input(input: Mapping[str, Any]) -> dict[str, Any]:
     try:
         values = {
             "name": _required_text(input.get("name"), maximum=160),
-            "enterprise_name": _required_text(
-                input.get("enterprise_name"), maximum=160
+            "enterprise_code": _enterprise_code(input.get("enterprise_code")),
+            "openfde_engagement": (
+                _optional_text(input.get("openfde_engagement", ""), 100) or None
             ),
-            "contact_name": _optional_text(input.get("contact_name", ""), 120),
-            "contact_phone": _optional_text(input.get("contact_phone", ""), 60),
-            "address": _optional_text(input.get("address", ""), 255),
+            "fdeops_workspace": (
+                _optional_text(input.get("fdeops_workspace", ""), 160) or None
+            ),
             "background": _optional_text(input.get("background", "")),
             "notes": _optional_text(input.get("notes", "")),
             "project_code": _optional_text(input.get("project_code", ""), 40),
@@ -1105,6 +1106,21 @@ def _creation_source(value: object) -> str:
     if value not in {"template", "presurvey", "manual"}:
         raise ValueError
     return str(value)
+
+
+# SOP 节点键全集（映射表 v1.3 / 种子 sop_nodes.json：S0–S13 含 S0-B、S7.5，共 16 键；
+# 新增键只能随 SOP 发版 + 种子重灌，不许工程层私加）
+_SOP_NODE_KEY_PATTERN = r"S(?:0-B|0|7\.5|1[0-3]|[1-9])"
+_GATE_KEY_PATTERN = r"G[1-9]"
+
+
+def _enterprise_code(value: object) -> str:
+    code = _required_text(value, maximum=80)
+    # 代号规则（设计 §3.1 v0.3.2 钉死）：立项时手工录入 + 唯一索引，
+    # 格式沿用「客户A·行业·城市」——三段、两枚「·」；实名映射只存 fdeops/openfde
+    if code.count("·") != 2:
+        raise ValueError
+    return code
 
 
 def _normalize_project_snapshot(session: Session, value: object, creation_source: str) -> dict[str, Any]:
@@ -1172,7 +1188,6 @@ def _normalize_update_input(changes: Mapping[str, Any]) -> dict[str, Any]:
         normalized_changes: dict[str, Any] = {}
         text_limits = {
             "name": 160,
-            "enterprise_name": 160,
             "project_code": 40,
         }
         for key, maximum in text_limits.items():
@@ -1180,16 +1195,26 @@ def _normalize_update_input(changes: Mapping[str, Any]) -> dict[str, Any]:
                 normalized_changes[key] = _required_text(
                     changes[key], maximum=maximum
                 )
+        if "enterprise_code" in changes:
+            normalized_changes["enterprise_code"] = _enterprise_code(
+                changes["enterprise_code"]
+            )
         optional_text_limits = {
-            "contact_name": 120,
-            "contact_phone": 60,
-            "address": 255,
+            "openfde_engagement": 100,
+            "fdeops_workspace": 160,
             "background": None,
             "notes": None,
         }
         for key, maximum in optional_text_limits.items():
             if key in changes:
                 normalized_changes[key] = _optional_text(changes[key], maximum)
+        if "sop_phase" in changes:
+            sop_phase = changes["sop_phase"]
+            if not isinstance(sop_phase, str) or not re.fullmatch(
+                _SOP_NODE_KEY_PATTERN, sop_phase
+            ):
+                raise ValueError
+            normalized_changes["sop_phase"] = sop_phase
         if "planned_start_date" in changes:
             normalized_changes["planned_start_date"] = _date_value(
                 changes["planned_start_date"]
@@ -1472,10 +1497,11 @@ def _serialize_project(
         "id": project.id,
         "project_code": project.project_code,
         "name": project.name,
-        "enterprise_name": project.enterprise_name,
-        "contact_name": project.enterprise_contact_name,
-        "contact_phone": project.enterprise_contact_phone,
-        "address": project.enterprise_address,
+        "enterprise_code": project.enterprise_code,
+        "openfde_engagement": project.openfde_engagement,
+        "fdeops_workspace": project.fdeops_workspace,
+        "sop_phase": project.sop_phase,
+        "business_line": project.business_line,
         "background": project.background,
         "notes": project.notes,
         "status": project.status,

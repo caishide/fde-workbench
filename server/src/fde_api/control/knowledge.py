@@ -62,7 +62,7 @@ def build_project_snapshot(
             "id": project.id,
             "code": project.project_code,
             "name": project.name,
-            "enterprise_name": project.enterprise_name,
+            "enterprise_code": project.enterprise_code,
             "background": project.background,
             "notes": project.notes,
             "status": project.status,

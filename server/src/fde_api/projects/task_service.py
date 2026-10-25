@@ -15,7 +15,11 @@ from fde_api.auth.permissions import role_at_least
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
-from fde_api.projects.service import ProjectServiceError
+from fde_api.projects.service import (
+    _GATE_KEY_PATTERN,
+    _SOP_NODE_KEY_PATTERN,
+    ProjectServiceError,
+)
 from fde_api.workbench.models import (
     ModuleCatalog,
     Project,
@@ -51,8 +55,15 @@ TASK_MANAGER_FIELDS = frozenset(
     }
 )
 TASK_DESCRIPTION_FIELD = "description"
+# P1（设计 §3.1）：SOP 节点挂点与门禁证据出处指针，仅管理员/项目负责人可改
+TASK_SOP_EVIDENCE_FIELDS = frozenset(
+    {"sop_node", "gate", "evidence_uri", "evidence_hash"}
+)
 TASK_UPDATE_FIELDS = (
-    TASK_EXECUTION_FIELDS | TASK_MANAGER_FIELDS | {TASK_DESCRIPTION_FIELD}
+    TASK_EXECUTION_FIELDS
+    | TASK_MANAGER_FIELDS
+    | TASK_SOP_EVIDENCE_FIELDS
+    | {TASK_DESCRIPTION_FIELD}
 )
 
 
@@ -548,6 +559,10 @@ def create_project_task(
                 progress=0,
                 blocked_reason="",
                 sort_order=sort_order,
+                sop_node=values["sop_node"],
+                gate=values["gate"],
+                evidence_uri=values["evidence_uri"],
+                evidence_hash=values["evidence_hash"],
             )
             session.add(task)
             session.flush()
@@ -650,6 +665,13 @@ def _normalize_create_task_input(input: Mapping[str, Any]) -> dict[str, Any]:
             normalize_workday(date.fromisoformat(planned_start_date))
         except ValueError:
             raise _invalid_request_error() from None
+    sop_evidence = _sop_evidence_values(
+        {
+            key: None
+            for key in ("sop_node", "gate", "evidence_uri", "evidence_hash")
+        }
+        | dict(input)
+    )
     return {
         "name": normalized_name,
         "description": normalized_description,
@@ -658,6 +680,7 @@ def _normalize_create_task_input(input: Mapping[str, Any]) -> dict[str, Any]:
         "collaborator_user_ids": collaborator_ids,
         "dependency_ids": dependency_ids,
         "planned_start_date": planned_start_date,
+        **sop_evidence,
     }
 
 
@@ -682,6 +705,45 @@ def _next_task_sort_order(session: Session, module_id: str) -> int:
         )
     )
     return (int(latest or 0)) + 10
+
+
+def _sop_evidence_values(source: Mapping[str, Any]) -> dict[str, str | None]:
+    """规范化 SOP 挂点/证据字段；只处理 source 里出现的键（缺省 = 不改）。"""
+    values: dict[str, str | None] = {}
+    for key, maximum in (
+        ("sop_node", 20),
+        ("gate", 10),
+        ("evidence_uri", 500),
+        ("evidence_hash", 64),
+    ):
+        if key not in source:
+            continue
+        value = source[key]
+        if value is None:
+            values[key] = None
+            continue
+        if not isinstance(value, str):
+            raise _invalid_request_error()
+        value = value.strip()
+        if not value:
+            values[key] = None
+            continue
+        if len(value) > maximum:
+            raise _invalid_request_error()
+        values[key] = value
+    if values.get("sop_node") is not None and not re.fullmatch(
+        _SOP_NODE_KEY_PATTERN, values["sop_node"]
+    ):
+        raise _invalid_request_error()
+    if values.get("gate") is not None and not re.fullmatch(
+        _GATE_KEY_PATTERN, values["gate"]
+    ):
+        raise _invalid_request_error()
+    if values.get("evidence_hash") is not None and not re.fullmatch(
+        r"[0-9a-fA-F]{64}", values["evidence_hash"]
+    ):
+        raise _invalid_request_error()
+    return values
 
 
 def _normalized_scalar_values(
@@ -799,6 +861,7 @@ def _normalized_scalar_values(
             else task.assignee_user_id
         ),
     }
+    scalar_values.update(_sop_evidence_values(changes))
     event_changes = {
         key: _json_value(value)
         for key, value in scalar_values.items()
@@ -812,6 +875,10 @@ def _normalized_scalar_values(
             "planned_start_date",
             "planned_end_date",
             "duration_days",
+            "sop_node",
+            "gate",
+            "evidence_uri",
+            "evidence_hash",
         }
         and (
             key in changes
@@ -1055,6 +1122,10 @@ def _serialize_tasks(
                     else None
                 ),
                 "sort_order": task.sort_order,
+                "sop_node": task.sop_node,
+                "gate": task.gate,
+                "evidence_uri": task.evidence_uri,
+                "evidence_hash": task.evidence_hash,
                 "dependency_ids": predecessors,
                 "dependency_keys": sorted(dependency_keys[task.id]),
                 "dependency_risk": bool(incomplete),

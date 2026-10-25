@@ -133,7 +133,7 @@ export function ProjectsPage() {
                   <span className="project-card-code">{project.project_code}</span>
                 </div>
                 <div className="project-card-meta">
-                  <div><span className="project-card-label">企业 / 行业</span><span>{project.enterprise_name} · {project.industry}</span></div>
+                  <div><span className="project-card-label">代号 / 行业</span><span>{project.enterprise_code} · {project.industry}</span></div>
                   <div><span className="project-card-label">状态</span><span className={`badge ${projectStatusClass(project.status)}`}>{projectStatusLabel(project.status)}</span></div>
                   <div><span className="project-card-label">负责人</span><span>{project.leader.display_name}</span></div>
                 </div>

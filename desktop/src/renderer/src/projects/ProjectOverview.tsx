@@ -24,10 +24,10 @@ const transitions: Record<ProjectStatus, ProjectStatus[]> = {
 
 interface OverviewDraft {
   name: string
-  enterprise_name: string
-  contact_name: string
-  contact_phone: string
-  address: string
+  enterprise_code: string
+  openfdeEngagement: string
+  fdeopsWorkspace: string
+  sopPhase: string
   background: string
   notes: string
   plannedStartDate: string
@@ -199,17 +199,17 @@ export function ProjectOverview({ project, canManage, onProjectChange, onRefresh
               <Field label="项目名称" id="overview-edit-name">
                 <input id="overview-edit-name" type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
               </Field>
-              <Field label="企业" id="overview-edit-enterprise">
-                <input id="overview-edit-enterprise" type="text" value={draft.enterprise_name} onChange={(event) => setDraft({ ...draft, enterprise_name: event.target.value })} />
+              <Field label="客户代号" id="overview-edit-enterprise">
+                <input id="overview-edit-enterprise" type="text" maxLength={80} placeholder="客户A·行业·城市" value={draft.enterprise_code} onChange={(event) => setDraft({ ...draft, enterprise_code: event.target.value })} />
               </Field>
-              <Field label="联系人" id="overview-edit-contact-name">
-                <input id="overview-edit-contact-name" type="text" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} />
+              <Field label="SOP 节点" id="overview-edit-sop-phase">
+                <input id="overview-edit-sop-phase" type="text" maxLength={20} placeholder="S3–S13（留空不改）" value={draft.sopPhase} onChange={(event) => setDraft({ ...draft, sopPhase: event.target.value })} />
               </Field>
-              <Field label="联系方式" id="overview-edit-contact-phone">
-                <input id="overview-edit-contact-phone" type="text" value={draft.contact_phone} onChange={(event) => setDraft({ ...draft, contact_phone: event.target.value })} />
+              <Field label="openfde engagement" id="overview-edit-openfde">
+                <input id="overview-edit-openfde" type="text" maxLength={100} value={draft.openfdeEngagement} onChange={(event) => setDraft({ ...draft, openfdeEngagement: event.target.value })} />
               </Field>
-              <Field label="地址" id="overview-edit-address">
-                <input id="overview-edit-address" type="text" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} />
+              <Field label="fdeops 工作区" id="overview-edit-fdeops">
+                <input id="overview-edit-fdeops" type="text" maxLength={160} value={draft.fdeopsWorkspace} onChange={(event) => setDraft({ ...draft, fdeopsWorkspace: event.target.value })} />
               </Field>
               <Field label="计划开始日期" id="overview-edit-start">
                 <input id="overview-edit-start" type="date" value={draft.plannedStartDate} onChange={(event) => setDraft({ ...draft, plannedStartDate: event.target.value })} />
@@ -234,11 +234,11 @@ export function ProjectOverview({ project, canManage, onProjectChange, onRefresh
           </form>
         ) : (
           <dl className="detail-definition-grid">
-            <div><dt>企业</dt><dd>{project.enterprise_name || "—"}</dd></div>
+            <div><dt>客户代号</dt><dd>{project.enterprise_code || "—"}</dd></div>
             <div><dt>行业</dt><dd>{project.industry || "—"}</dd></div>
-            <div><dt>联系人</dt><dd>{project.contact_name}</dd></div>
-            <div><dt>联系方式</dt><dd>{project.contact_phone}</dd></div>
-            <div><dt>地址</dt><dd>{project.address}</dd></div>
+            <div><dt>SOP 节点</dt><dd>{project.sop_phase || "—"}</dd></div>
+            <div><dt>openfde</dt><dd>{project.openfde_engagement || "—"}</dd></div>
+            <div><dt>fdeops</dt><dd>{project.fdeops_workspace || "—"}</dd></div>
             <div><dt>负责人</dt><dd>{project.leader.display_name}</dd></div>
             <div className="wide-detail"><dt>项目背景</dt><dd>{project.background}</dd></div>
             <div className="wide-detail"><dt>备注</dt><dd>{project.notes}</dd></div>
@@ -257,10 +257,10 @@ function Field({ label, id, wide = false, children }: { label: string; id: strin
 function overviewDraft(project: ProjectDto): OverviewDraft {
   return {
     name: project.name,
-    enterprise_name: project.enterprise_name,
-    contact_name: project.contact_name,
-    contact_phone: project.contact_phone,
-    address: project.address,
+    enterprise_code: project.enterprise_code,
+    openfdeEngagement: project.openfde_engagement ?? "",
+    fdeopsWorkspace: project.fdeops_workspace ?? "",
+    sopPhase: project.sop_phase ?? "",
     background: project.background,
     notes: project.notes,
     plannedStartDate: project.planned_start_date,
@@ -271,10 +271,11 @@ function overviewDraft(project: ProjectDto): OverviewDraft {
 function changedFields(project: ProjectDto, draft: OverviewDraft): Record<string, unknown> {
   const changed: Record<string, unknown> = {}
   if (draft.name !== project.name) changed.name = draft.name
-  if (draft.enterprise_name !== project.enterprise_name) changed.enterprise_name = draft.enterprise_name
-  if (draft.contact_name !== project.contact_name) changed.contact_name = draft.contact_name
-  if (draft.contact_phone !== project.contact_phone) changed.contact_phone = draft.contact_phone
-  if (draft.address !== project.address) changed.address = draft.address
+  if (draft.enterprise_code !== project.enterprise_code) changed.enterprise_code = draft.enterprise_code
+  if (draft.openfdeEngagement !== (project.openfde_engagement ?? "")) changed.openfde_engagement = draft.openfdeEngagement
+  if (draft.fdeopsWorkspace !== (project.fdeops_workspace ?? "")) changed.fdeops_workspace = draft.fdeopsWorkspace
+  // sop_phase 留空表示不改（PATCH null 会被路由拒，空串又过不了节点键校验）
+  if (draft.sopPhase.trim() && draft.sopPhase !== project.sop_phase) changed.sop_phase = draft.sopPhase.trim()
   if (draft.background !== project.background) changed.background = draft.background
   if (draft.notes !== project.notes) changed.notes = draft.notes
   if (draft.plannedStartDate !== project.planned_start_date) changed.planned_start_date = draft.plannedStartDate

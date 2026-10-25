@@ -205,10 +205,11 @@ export interface ProjectDto {
   id: string
   project_code: string
   name: string
-  enterprise_name: string
-  contact_name: string
-  contact_phone: string
-  address: string
+  enterprise_code: string
+  openfde_engagement: string | null
+  fdeops_workspace: string | null
+  sop_phase: string
+  business_line: string
   background: string
   notes: string
   status: ProjectStatus

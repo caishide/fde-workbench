@@ -44,10 +44,12 @@ export function isModuleCatalogDto(value: unknown): value is ModuleCatalogDto {
 export function isProjectDto(value: unknown): value is ProjectDto {
   return isRecord(value)
     && hasStrings(value, [
-      "id", "project_code", "name", "enterprise_name", "contact_name", "contact_phone", "address",
+      "id", "project_code", "name", "enterprise_code", "sop_phase", "business_line",
       "background", "notes", "planned_start_date", "leader_user_id", "industry",
       "created_at", "updated_at",
     ])
+    && isNullableString(value.openfde_engagement)
+    && isNullableString(value.fdeops_workspace)
     && isProjectStatus(value.status)
     && isNullableString(value.template_version_id)
     && isNullableString(value.planned_end_date)

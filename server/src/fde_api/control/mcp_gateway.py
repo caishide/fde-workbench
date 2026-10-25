@@ -149,12 +149,12 @@ def call_tool(session, *, user, claims, allowed, name, arguments):
         if claims.get("project_id"):
             statement = statement.where(Project.id == claims["project_id"])
         if query:
-            statement = statement.where(or_(Project.name.contains(query, autoescape=True), Project.enterprise_name.contains(query, autoescape=True)))
+            statement = statement.where(or_(Project.name.contains(query, autoescape=True), Project.enterprise_code.contains(query, autoescape=True)))
         projects = session.scalars(statement.order_by(Project.updated_at.desc()).limit(100))
-        return {"items": [{"id": p.id, "name": p.name, "enterprise_name": p.enterprise_name, "status": p.status}
+        return {"items": [{"id": p.id, "name": p.name, "enterprise_code": p.enterprise_code, "status": p.status}
                           for p in projects if project_access(user, p).can_view and
                           (not claims.get("project_id") or p.id == claims["project_id"]) and
-                          (not query or query in p.name.lower() or query in p.enterprise_name.lower())][:100]}
+                          (not query or query in p.name.lower() or query in p.enterprise_code.lower())][:100]}
     if name in {"project_read", "file_search", "file_read"}:
         project = _project(session, user, claims, arguments.get("project_id"))
         if name == "project_read":

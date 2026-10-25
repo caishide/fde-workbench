@@ -237,6 +237,11 @@ class Project(Base, TimestampMixin, VersionedMixin):
             "status IN ('draft', 'active', 'paused', 'completed', 'cancelled')",
             name="ck_projects_status",
         ),
+        CheckConstraint(
+            "business_line IN ('FDE')",
+            name="ck_projects_business_line",
+        ),
+        UniqueConstraint("enterprise_code", name="uq_projects_enterprise_code"),
         Index("ix_projects_status", "status"),
         Index("ix_projects_leader_user_id", "leader_user_id"),
         Index("ix_projects_planned_dates", "planned_start_date", "planned_end_date"),
@@ -245,15 +250,22 @@ class Project(Base, TimestampMixin, VersionedMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     project_code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    enterprise_name: Mapped[str] = mapped_column(String(160), nullable=False)
-    enterprise_contact_name: Mapped[str] = mapped_column(
-        String(120), nullable=False, default=""
+    # P1 代号化（设计 §3.1/§3.2，SOP 红线 A2）：workbench 不存客户明文，
+    # 只存代号（格式「客户A·行业·城市」，两段「·」由服务层校验，立项时手工录入），
+    # 实名映射只存在于 fdeops / openfde（真相层）。
+    enterprise_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    openfde_engagement: Mapped[str | None] = mapped_column(String(100))
+    fdeops_workspace: Mapped[str | None] = mapped_column(String(160))
+    # §1 分工铁律：G3 之后项目才在 workbench 立项，故默认挂在 S3（深度诊断）节点。
+    sop_phase: Mapped[str] = mapped_column(
+        ForeignKey("sop_nodes.node_key", ondelete="RESTRICT"),
+        nullable=False,
+        default="S3",
+        server_default="S3",
     )
-    enterprise_contact_phone: Mapped[str] = mapped_column(
-        String(60), nullable=False, default=""
-    )
-    enterprise_address: Mapped[str] = mapped_column(
-        String(255), nullable=False, default=""
+    # §11.1 拍板：业务线当前单值 FDE；未来加值走 schema migration（改 ck_projects_business_line）。
+    business_line: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="FDE", server_default="FDE"
     )
     background: Mapped[str] = mapped_column(Text, nullable=False, default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -284,6 +296,9 @@ class Project(Base, TimestampMixin, VersionedMixin):
     research_forms: Mapped[list["ProjectResearchForm"]] = relationship(
         back_populates="project",
         passive_deletes=True,
+    )
+    gates: Mapped[list["Gate"]] = relationship(
+        back_populates="project", passive_deletes=True
     )
 
 
@@ -406,6 +421,14 @@ class ProjectTask(Base, TimestampMixin, VersionedMixin):
     blocked_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # P1（设计 §3.1）：任务可挂 SOP 节点与门禁证据提交点；证据只存出处指针（A4），
+    # 内容本体在 fdeops .fde/ 或 openfde assets/。
+    sop_node: Mapped[str | None] = mapped_column(
+        ForeignKey("sop_nodes.node_key", ondelete="RESTRICT")
+    )
+    gate: Mapped[str | None] = mapped_column(String(10))
+    evidence_uri: Mapped[str | None] = mapped_column(String(500))
+    evidence_hash: Mapped[str | None] = mapped_column(String(64))
 
     project_module: Mapped[ProjectModule] = relationship(back_populates="tasks")
     source_template_task: Mapped[TemplateTask | None] = relationship()
@@ -463,6 +486,99 @@ class ProjectTaskDependency(Base, TimestampMixin):
     successor_task: Mapped[ProjectTask] = relationship(
         foreign_keys=[successor_task_id]
     )
+
+
+class SopNode(Base, TimestampMixin):
+    """SOP 节点定义（投影层，非真相）。
+
+    数据源：server/seeds/sop_nodes.json（16 条，SOP v2.4.6 + 映射表 v1.3 快照），
+    由 server/load_seeds.py 灌入并按 node_key 幂等更新；方法论真相永远在
+    SOP 三件套（A1），每条带出处指针（A4：source_uri + content_hash）。
+    口径（设计 §5.0）：S9 并入 G8、S13 无编号门禁——均不建 Gate 记录；
+    trigger 只存「核心进入条件」原文，不存 T 代号（横切线与开工触发同码不同义）。
+    """
+
+    __tablename__ = "sop_nodes"
+    __table_args__ = (
+        CheckConstraint(
+            "segment IN ('售前段', '交付段', '交付后段', '横切线')",
+            name="ck_sop_nodes_segment",
+        ),
+        UniqueConstraint("node_key", name="uq_sop_nodes_node_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    node_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    segment: Mapped[str] = mapped_column(String(20), nullable=False)
+    gate_key: Mapped[str | None] = mapped_column(String(10))
+    gate_note: Mapped[str | None] = mapped_column(String(120))
+    trigger: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    human_action: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # S7.5 无 ②/③ 小节出处，ai_action 为 NULL——工程层不得发明方法论层没有的东西
+    ai_action: Mapped[str | None] = mapped_column(Text)
+    artifact: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_location: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    record_track: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    signer_role: Mapped[str | None] = mapped_column(String(120))
+    fail_exit: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    next_node: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    next_node_keys: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    contract_payment_auth: Mapped[str | None] = mapped_column(Text)
+    # A4 出处指针：映射表行（source_*）与 SOP 主文档 ②/③ 小节（human_ai_*）分开留痕
+    source_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    human_ai_source_uri: Mapped[str | None] = mapped_column(String(500))
+    human_ai_content_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class Gate(Base, TimestampMixin, VersionedMixin):
+    """门禁执行状态（每项目每门一条；P1 只建表，状态机由 P3 门禁引擎驱动）。
+
+    状态语义（设计 §5.1，照搬 SOP）：pending → evidence → passed/conditional_pass/failed；
+    conditional_pass 仅 G9（SOP 原文「有条件通过」）；G8 过门必带 decision ∈
+    {proceed, pivot, stop}——工程层不得增删状态（v0.2 已删无出处的 waived）。
+    evidence_checklist 是门禁模板快照（种子 gates.json 程序化生成，P3 灌入）。
+    """
+
+    __tablename__ = "gates"
+    __table_args__ = (
+        UniqueConstraint("project_id", "gate_key", name="uq_gates_project_gate"),
+        CheckConstraint(
+            "status IN ('pending', 'evidence', 'passed', 'conditional_pass', 'failed')",
+            name="ck_gates_status",
+        ),
+        CheckConstraint(
+            "decision IS NULL OR decision IN ('proceed', 'pivot', 'stop')",
+            name="ck_gates_decision",
+        ),
+        Index("ix_gates_project_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    gate_key: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    evidence_checklist: Mapped[list[Any]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    # 证据出处指针（A4）：指向 fdeops .fde/ 或 openfde assets/ 的文件
+    evidence_uri: Mapped[str | None] = mapped_column(String(500))
+    evidence_hash: Mapped[str | None] = mapped_column(String(64))
+    submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    decision: Mapped[str | None] = mapped_column(String(10))
+    signer_role: Mapped[str | None] = mapped_column(String(120))
+
+    project: Mapped[Project] = relationship(back_populates="gates")
 
 
 class OperationEvent(Base, TimestampMixin):

@@ -224,7 +224,7 @@ def organize_solution(*, actor: User, project_id: str, payload: dict[str, Any]) 
         if not decision.allowed:
             _error(decision.reason, "当前账号尚未开通 AI 方案整理权限。", 403)
         opportunities = _selected_opportunities(session, project.id, draft.pop("opportunity_ids"))
-        context = {"project": {"name": project.name, "enterprise_name": project.enterprise_name},
+        context = {"project": {"name": project.name, "enterprise_code": project.enterprise_code},
                    "opportunities": [_opportunity_snapshot(item) for item in opportunities], "reference": reference.strip(), "draft": draft,
                    "research_sources": _research_sources(session, project.id, opportunities)}
         if len(json.dumps(context, ensure_ascii=False)) > 160000:

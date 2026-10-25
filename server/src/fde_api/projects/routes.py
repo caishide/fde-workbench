@@ -38,10 +38,9 @@ projects_blueprint = Blueprint("projects", __name__, url_prefix="/api/v1/project
 CREATE_FIELDS = frozenset(
     {
         "name",
-        "enterprise_name",
-        "contact_name",
-        "contact_phone",
-        "address",
+        "enterprise_code",
+        "openfde_engagement",
+        "fdeops_workspace",
         "background",
         "notes",
         "project_code",
@@ -57,7 +56,7 @@ CREATE_FIELDS = frozenset(
 REQUIRED_CREATE_FIELDS = frozenset(
     {
         "name",
-        "enterprise_name",
+        "enterprise_code",
         "planned_start_date",
         "leader_user_id",
         "module_keys",
@@ -67,10 +66,10 @@ UPDATE_FIELDS = frozenset(
     {
         "version",
         "name",
-        "enterprise_name",
-        "contact_name",
-        "contact_phone",
-        "address",
+        "enterprise_code",
+        "openfde_engagement",
+        "fdeops_workspace",
+        "sop_phase",
         "background",
         "notes",
         "project_code",
@@ -424,6 +423,10 @@ def create_project_task_route(project_id: str, module_identifier: str):
             "assignee_user_id",
             "collaborator_user_ids",
             "dependency_ids",
+            "sop_node",
+            "gate",
+            "evidence_uri",
+            "evidence_hash",
         }
         or not isinstance(payload.get("name"), str)
         or type(payload.get("duration_days")) is not int

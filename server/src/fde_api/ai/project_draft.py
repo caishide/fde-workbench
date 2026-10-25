@@ -58,7 +58,9 @@ def _messages(content: str, catalog_text: str) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": (
             "你是 FDE 项目创建助手。只依据上传预调研表提取项目草稿，不得编造。"
-            "输出 JSON：project(name,enterprise_name,contact_name,contact_phone,address,background,notes,industry_name)，"
+            "输出 JSON：project(name,enterprise_code,background,notes,industry_name)，"
+            "其中 enterprise_code 是客户代号（格式「客户A·行业·城市」，行业/城市可用文件信息，客户序号留待人工定），"
+            "绝不输出真实企业名/联系人/电话/地址（A2 代号化红线），无法确定留空。"
             f"modules 数组，每项为 module_key,name,description,tasks。module_key 只能从当前系统模块目录选择：{catalog_text}；"
             "tasks 每项为 task_key,name,description,duration_days,default_assignee_role,dependency_keys,sort_order。"
             "无法确认的字符串留空。只输出 JSON。"
@@ -76,7 +78,7 @@ def _normalize(value: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
         normalized_modules = ([{"module_key": fallback_key, "name": "预调研", "description": "整理并确认已有预调研信息。", "tasks": []}] if fallback_key else [])
     return {
         "project": {key: str(project.get(key) or "")[:4000] for key in (
-            "name", "enterprise_name", "contact_name", "contact_phone", "address", "background", "notes", "industry_name"
+            "name", "enterprise_code", "background", "notes", "industry_name"
         )},
         "modules": normalized_modules,
     }

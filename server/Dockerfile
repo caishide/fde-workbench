@@ -27,6 +27,9 @@ RUN pip install -e . --no-deps
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+# P1：种子数据与加载器烘进镜像（docker exec <api> python load_seeds.py 手动灌，不随启动自动跑）
+COPY seeds ./seeds
+COPY load_seeds.py ./load_seeds.py
 
 EXPOSE 8010
 

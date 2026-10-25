@@ -245,7 +245,7 @@ def _form_context(form: ProjectResearchForm) -> dict[str, Any]:
 
 
 def _ai_summary(project: Project, subject: ProjectResearchSubject, forms: list[dict[str, Any]]) -> dict[str, Any]:
-    messages = [{"role": "system", "content": "你是 FDE 调研报告助手。仅依据提供的答案生成 JSON，字段 executive_summary、key_findings、recommendations；后两项为字符串数组。信息不足要明确写待确认，不得编造。"}, {"role": "user", "content": json.dumps({"enterprise": project.enterprise_name, "subject": subject.name, "forms": forms}, ensure_ascii=False)}]
+    messages = [{"role": "system", "content": "你是 FDE 调研报告助手。仅依据提供的答案生成 JSON，字段 executive_summary、key_findings、recommendations；后两项为字符串数组。信息不足要明确写待确认，不得编造。"}, {"role": "user", "content": json.dumps({"enterprise": project.enterprise_code, "subject": subject.name, "forms": forms}, ensure_ascii=False)}]
     try:
         raw = _client().complete_json(messages=messages, request_id=f"research-export-{uuid4()}", max_tokens=4096)
     except DeepSeekError as error:
@@ -269,7 +269,8 @@ def _build_docx(
     template_bytes = _published_research_template(session)
     document = Document(io.BytesIO(template_bytes)) if template_bytes else Document()
     values = {
-        "企业名称": project.enterprise_name,
+        # 模板占位符沿用「企业名称」，值只放代号（A2：报告生成物不带实名）
+        "企业名称": project.enterprise_code,
         "项目名称": project.name,
         "调研对象": subject.name,
         "生成时间": datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M"),

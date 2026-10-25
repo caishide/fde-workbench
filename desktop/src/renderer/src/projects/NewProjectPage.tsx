@@ -147,8 +147,8 @@ export function NewProjectPage() {
     setStepError("")
     setSubmitError("")
     if (step === 1) {
-      if (!basics.name.trim() || !basics.enterpriseName.trim() || !basics.plannedStartDate) {
-        setStepError("请填写项目名称、企业名称和计划开始日期。")
+      if (!basics.name.trim() || !basics.enterpriseCode.trim() || !basics.plannedStartDate) {
+        setStepError("请填写项目名称、客户代号和计划开始日期。")
         return
       }
       if (basics.plannedEndDate && basics.plannedEndDate < basics.plannedStartDate) {
@@ -222,10 +222,9 @@ export function NewProjectPage() {
         method: "POST",
         body: {
           name: basics.name.trim(),
-          enterprise_name: basics.enterpriseName.trim(),
-          contact_name: basics.contactName.trim(),
-          contact_phone: basics.contactPhone.trim(),
-          address: basics.address.trim(),
+          enterprise_code: basics.enterpriseCode.trim(),
+          openfde_engagement: basics.openfdeEngagement.trim() || null,
+          fdeops_workspace: basics.fdeopsWorkspace.trim() || null,
           background: basics.background.trim(),
           notes: basics.notes.trim(),
           project_code: basics.projectCode.trim(),

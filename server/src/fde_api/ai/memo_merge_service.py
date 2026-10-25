@@ -81,7 +81,7 @@ def merge_research_memos(
         if not sources:
             raise MemoMergeError("memo_content_required", "共用备忘录和个人备忘录都还没有内容。", 400)
         context = {
-            "project": {"name": project.name, "enterprise_name": project.enterprise_name},
+            "project": {"name": project.name, "enterprise_code": project.enterprise_code},
             "subject": {"id": subject.id, "type": subject.subject_type, "name": subject.name},
             "sources": sources,
         }

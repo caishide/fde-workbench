@@ -75,7 +75,6 @@ export function NewProjectPageV2() {
     setSelectedKeys(next.modules.map((item) => String(item.module_key ?? "")).filter(Boolean))
     const known = next.known_information ?? {}
     setBasics((current) => ({ ...current,
-      enterpriseName: text(known.enterprise) || current.enterpriseName,
       name: text(known.project_name) || current.name,
       background: next.description || text(known.requirement) || current.background,
     }))
@@ -94,11 +93,10 @@ export function NewProjectPageV2() {
       if (!isPresurveyDraft(value)) throw new Error("invalid draft")
       setSourceFile(file)
       applyAIDraft({ industry_name: value.project.industry_name, description: value.project.background, modules: value.modules })
-      setBasics((current) => ({ ...current,
-        name: value.project.name || current.name, enterpriseName: value.project.enterprise_name || current.enterpriseName,
-        contactName: value.project.contact_name || current.contactName, contactPhone: value.project.contact_phone || current.contactPhone,
-        address: value.project.address || current.address, background: value.project.background || current.background, notes: value.project.notes || current.notes,
-      }))
+    setBasics((current) => ({ ...current,
+      name: value.project.name || current.name, enterpriseCode: value.project.enterprise_code || current.enterpriseCode,
+      background: value.project.background || current.background, notes: value.project.notes || current.notes,
+    }))
     } catch (caught) { if (startedGeneration === generation.current) setError(caught instanceof ApiClientError ? caught.message : "预调研表解析失败，请检查文件后重试。") }
     finally { if (startedGeneration === generation.current) setBusy(false) }
   }
@@ -106,7 +104,7 @@ export function NewProjectPageV2() {
   function next() {
     setError("")
     if (!mode) return
-    if (step === 1 && (!basics.name.trim() || !basics.enterpriseName.trim() || !basics.plannedStartDate)) { setError("请填写项目名称、企业名称和计划开始日期。"); return }
+    if (step === 1 && (!basics.name.trim() || !basics.enterpriseCode.trim() || !basics.plannedStartDate)) { setError("请填写项目名称、客户代号和计划开始日期。"); return }
     if (step === 1 && basics.plannedEndDate && basics.plannedEndDate < basics.plannedStartDate) { setError("计划结束日期不能早于开始日期。"); return }
     if (step === 2 && (loading || resourceError || !leader)) { setError("请选择有效的项目负责人，并等待数据加载完成。"); return }
     if (step === 3 && !selectedKeys.length) { setError("请至少选择一个首期模块。"); return }
@@ -120,7 +118,7 @@ export function NewProjectPageV2() {
     setBusy(true); setError("")
     try {
       const body: Record<string, unknown> = {
-        name: basics.name.trim(), enterprise_name: basics.enterpriseName.trim(), contact_name: basics.contactName.trim(), contact_phone: basics.contactPhone.trim(), address: basics.address.trim(), background: basics.background.trim(), notes: basics.notes.trim(), project_code: basics.projectCode.trim(), planned_start_date: basics.plannedStartDate, planned_end_date: basics.plannedEndDate || null,
+        name: basics.name.trim(), enterprise_code: basics.enterpriseCode.trim(), openfde_engagement: basics.openfdeEngagement.trim() || null, fdeops_workspace: basics.fdeopsWorkspace.trim() || null, background: basics.background.trim(), notes: basics.notes.trim(), project_code: basics.projectCode.trim(), planned_start_date: basics.plannedStartDate, planned_end_date: basics.plannedEndDate || null,
         leader_user_id: leader.id, module_keys: selectedKeys, creation_source: mode,
         template_version_id: null,
         project_snapshot: snapshotPayload(configuration, selectedKeys),
@@ -129,7 +127,7 @@ export function NewProjectPageV2() {
       if (startedGeneration !== generation.current) return
       if (!isProjectDto(created)) throw new Error("invalid project")
       if (mode === "manual" && window.confirm("项目已创建。是否把本次项目配置另存为新的行业模板草稿？")) {
-        const name = window.prompt("请输入新模板名称", `${basics.enterpriseName || basics.name}项目模板`)?.trim()
+        const name = window.prompt("请输入新模板名称", `${basics.enterpriseCode || basics.name}项目模板`)?.trim()
         if (name) {
           try {
             await apiRequest("/api/v1/industry-templates", { method: "POST", body: { name, industry_name: configuration.industry_name || "通用", description: configuration.description || basics.background, modules: snapshotPayload(configuration, selectedKeys).modules } })

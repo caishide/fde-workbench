@@ -1,10 +1,9 @@
 export interface ProjectBasics {
   name: string
-  enterpriseName: string
+  enterpriseCode: string
   projectCode: string
-  contactName: string
-  contactPhone: string
-  address: string
+  openfdeEngagement: string
+  fdeopsWorkspace: string
   background: string
   notes: string
   plannedStartDate: string
@@ -13,11 +12,10 @@ export interface ProjectBasics {
 
 export const emptyProjectBasics: ProjectBasics = {
   name: "",
-  enterpriseName: "",
+  enterpriseCode: "",
   projectCode: "",
-  contactName: "",
-  contactPhone: "",
-  address: "",
+  openfdeEngagement: "",
+  fdeopsWorkspace: "",
   background: "",
   notes: "",
   plannedStartDate: "",
@@ -34,25 +32,23 @@ export function ProjectBasicsStep({
   return (
     <section className="panel wizard-panel" aria-labelledby="project-basics-title">
       <h2 id="project-basics-title">1. 基础信息</h2>
-      <p className="supporting-copy">先确定项目、企业和起始日期；其他资料可现在补齐，也可稍后在项目中维护。</p>
+      <p className="supporting-copy">先确定项目和客户代号；联系人/电话/地址等实名信息不进本系统（A2 代号化），只在 fdeops/openfde 里维护。</p>
       <div className="wizard-form-grid">
         <Field label="项目名称" id="project-name" required>
           <input id="project-name" required maxLength={160} value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} />
         </Field>
-        <Field label="企业名称" id="enterprise-name" required>
-          <input id="enterprise-name" required maxLength={160} value={value.enterpriseName} onChange={(event) => onChange({ ...value, enterpriseName: event.target.value })} />
+        <Field label="客户代号" id="enterprise-code" required>
+          <input id="enterprise-code" required maxLength={80} placeholder="客户A·行业·城市" value={value.enterpriseCode} onChange={(event) => onChange({ ...value, enterpriseCode: event.target.value })} />
+          <small className="field-hint">格式「客户A·行业·城市」，三段两枚「·」；实名映射只在 fdeops/openfde。</small>
         </Field>
         <Field label="项目编号" id="project-code">
           <input id="project-code" maxLength={40} value={value.projectCode} onChange={(event) => onChange({ ...value, projectCode: event.target.value })} />
         </Field>
-        <Field label="联系人" id="contact-name">
-          <input id="contact-name" maxLength={120} value={value.contactName} onChange={(event) => onChange({ ...value, contactName: event.target.value })} />
+        <Field label="openfde engagement" id="openfde-engagement">
+          <input id="openfde-engagement" maxLength={100} placeholder="知识轨 slug（可后补）" value={value.openfdeEngagement} onChange={(event) => onChange({ ...value, openfdeEngagement: event.target.value })} />
         </Field>
-        <Field label="联系电话" id="contact-phone">
-          <input id="contact-phone" maxLength={60} value={value.contactPhone} onChange={(event) => onChange({ ...value, contactPhone: event.target.value })} />
-        </Field>
-        <Field label="企业地址" id="enterprise-address">
-          <input id="enterprise-address" maxLength={255} value={value.address} onChange={(event) => onChange({ ...value, address: event.target.value })} />
+        <Field label="fdeops 工作区" id="fdeops-workspace">
+          <input id="fdeops-workspace" maxLength={160} placeholder="流程轨目录名（可后补）" value={value.fdeopsWorkspace} onChange={(event) => onChange({ ...value, fdeopsWorkspace: event.target.value })} />
         </Field>
         <Field label="计划开始日期" id="planned-start-date" required>
           <input id="planned-start-date" required type="date" value={value.plannedStartDate} onChange={(event) => onChange({ ...value, plannedStartDate: event.target.value })} />

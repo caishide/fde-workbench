@@ -152,10 +152,7 @@ def _serialize_project(project: Project) -> dict[str, Any]:
         "id": project.id,
         "project_code": project.project_code,
         "name": project.name,
-        "enterprise_name": project.enterprise_name,
-        "contact_name": project.enterprise_contact_name,
-        "contact_phone": project.enterprise_contact_phone,
-        "address": project.enterprise_address,
+        "enterprise_code": project.enterprise_code,
         "industry_name": str(template_snapshot.get("industry_name") or ""),
         "background": project.background,
         "notes": project.notes,
@@ -171,11 +168,9 @@ def _serialize_project(project: Project) -> dict[str, Any]:
 
 
 def _serialize_enterprise(project: Project) -> dict[str, Any]:
+    # A2 代号化：快照只携带代号，联系人/电话/地址不进任何投影或 AI 上下文
     return {
-        "name": project.enterprise_name,
-        "contact_name": project.enterprise_contact_name,
-        "contact_phone": project.enterprise_contact_phone,
-        "address": project.enterprise_address,
+        "enterprise_code": project.enterprise_code,
     }
 
 

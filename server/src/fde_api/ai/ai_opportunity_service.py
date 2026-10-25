@@ -97,7 +97,7 @@ def discover_ai_opportunities(*, actor: User, payload: object, on_event: Callabl
             raise AIOpportunityDiscoveryError("research_answers_required", "当前对象及下级对象还没有可用于分析的调研表或备忘录。", 400)
         existing = [item.name for item in subjects if item.subject_type == "opportunity"]
         context = {
-            "project": {"name": project.name, "enterprise_name": project.enterprise_name},
+            "project": {"name": project.name, "enterprise_code": project.enterprise_code},
             "scope": {"subject_id": selected.id, "subject_type": selected.subject_type, "name": selected.name},
             "included_forms": evidence_forms,
             "included_memos": evidence_memos,
