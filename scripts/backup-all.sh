@@ -19,18 +19,44 @@
 # ============================================================
 set -euo pipefail
 
-BACKUP_ROOT="${FDE_BACKUP_ROOT:-/mnt/d/test/FDE/_backup}"
+# --- 运行环境适配 ---
+# 脚本可能从 Windows（Git Bash）或 WSL 内部被调用。
+# WSL 内部调用时不能再套 `wsl -e bash -lc`（会报 command not found，退出码 127）。
+IN_WSL=0
+if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then
+  IN_WSL=1
+fi
+# 路径按运行环境切换：Windows Git Bash 用 /d/...，WSL 内部用 /mnt/d/...
+if [ "$IN_WSL" = "1" ]; then
+  DROOT="/mnt/d/test/FDE"
+else
+  DROOT="/d/test/FDE"
+fi
+
+BACKUP_ROOT="${FDE_BACKUP_ROOT:-$DROOT/_backup}"
 STAMP="$(date +%Y%m%d-%H%M)"
 OUT="$BACKUP_ROOT/$STAMP"
 PG_CONTAINER="qiflow-twenty-db"
 PG_USER="twenty"
 # openfde 不是单一 sqlite 文件：每个 engagement 一个 ledger.db
-# 真身在 D 盘（D://test//FDE//engagements//openfde），C 盘 \.openfde 是 symlink 指针
-OPENFDE_ROOT="/d/test/FDE/engagements/openfde/engagements"
-FDEOPS_ROOT="/d/test/FDE/engagements/fdeops"
-FDE_STORAGE="/mnt/d/test/FDE/_eval/fde-workbench/server/.fde-storage"
+# 真身在 D 盘（D:\test\FDE\engagements\openfde），C 盘 ~/.openfde 是 symlink 指针
+OPENFDE_ROOT="$DROOT/engagements/openfde/engagements"
+FDEOPS_ROOT="$DROOT/engagements/fdeops"
+FDE_STORAGE="$DROOT/_eval/fde-workbench/server/.fde-storage"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+
+# run_wsl <cmd>：在 WSL 内部直接跑，在 Windows 侧则套一层 wsl -e bash -lc
+# （IN_WSL 判定见文件上方）
+run_wsl() {
+  if [ "$IN_WSL" = "1" ]; then
+    bash -lc "$1"
+  else
+    wsl -e bash -lc "$1"
+  fi
+}
+
+
 
 if [ "${1:-}" = "--verify" ]; then
   LATEST="$(ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | head -1)"
@@ -60,15 +86,15 @@ if [ "${1:-}" = "--verify" ]; then
   #   1) 灌进 postgres 库（让 dump 自带的 CREATE DATABASE 生效）
   #   2) 再逐库查表数量
   log "恢复性验证：pg_dumpall 灌入实例（含 CREATE DATABASE）"
-  wsl -e bash -lc "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
+  run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
   # 把 dump 里的库名改成探针名，避免覆盖真实库
   sed -e 's/\\connect twenty/\\connect _restore_probe/g' \
       -e 's/\\connect fde_workbench/\\connect _restore_probe/g' \
       -e 's/CREATE DATABASE twenty/CREATE DATABASE _restore_probe/g' \
       -e 's/CREATE DATABASE fde_workbench/CREATE DATABASE _restore_probe/g' \
       "$LATEST/pg_all.sql" > "$LATEST/.pg_probe.sql"
-  if wsl -e bash -lc "docker exec -i $PG_CONTAINER psql -U $PG_USER -d postgres" < "$LATEST/.pg_probe.sql" >/dev/null 2>&1; then
-    TABLES=$(wsl -e bash -lc "docker exec $PG_CONTAINER psql -U $PG_USER -d _restore_probe -t -c \"select count(*) from information_schema.tables where table_schema='public';\"" 2>/dev/null | tr -d '\000\r\n ')
+  if run_wsl "docker exec -i $PG_CONTAINER psql -U $PG_USER -d postgres" < "$LATEST/.pg_probe.sql" >/dev/null 2>&1; then
+    TABLES=$(run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d _restore_probe -t -c \"select count(*) from information_schema.tables where table_schema='public';\"" 2>/dev/null | tr -d '\000\r\n ')
     log "  OK   pg_all.sql 可恢复，_restore_probe public schema 有 ${TABLES} 张表"
     if [ "${TABLES:-0}" -lt 60 ]; then
       log "  WARN 期望 >=60 张表（实测 66），恢复内容可能不完整"; ok=1
@@ -76,7 +102,7 @@ if [ "${1:-}" = "--verify" ]; then
   else
     log "  FAIL pg_all.sql 恢复失败"; ok=1
   fi
-  wsl -e bash -lc "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
+  run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
   rm -f "$LATEST/.pg_probe.sql"
   exit $ok
 fi
@@ -86,10 +112,10 @@ log "备份目标: $OUT"
 
 # ---- 1. PostgreSQL：Twenty 库 + fde_workbench 库（同一实例，一次 pg_dumpall 更稳）----
 log "1/4 备份 PostgreSQL（Twenty + fde_workbench）"
-wsl -e bash -lc "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2>/tmp/pg_dumpall.err || {
+run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2>/tmp/pg_dumpall.err || {
   log "pg_dumpall 失败，改为分库 dump"
-  wsl -e bash -lc "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql"
-  wsl -e bash -lc "docker exec $PG_CONTAINER pg_dump -U $PG_USER fde_workbench" > "$OUT/pg_fde_workbench.sql"
+  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql"
+  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER fde_workbench" > "$OUT/pg_fde_workbench.sql"
 }
 [ -s "$OUT/pg_all.sql" ] && log "  pg_all.sql ($(du -h "$OUT/pg_all.sql" | cut -f1))"
 

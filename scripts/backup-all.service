@@ -1,0 +1,14 @@
+[Unit]
+Description=FDE Workbench unified backup (PostgreSQL + openfde ledgers + fdeops)
+# 注意：WSL 里的 Docker 是手动启动的，没有 docker.service unit，
+# 所以这里不能写 Requires=docker.service（会导致 unit 启动失败）。
+# 备份脚本自身会检查 docker 是否可用，失败时立即退出并留日志。
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/d/test/FDE/_eval/fde-workbench
+ExecStart=/bin/bash /mnt/d/test/FDE/_eval/fde-workbench/scripts/backup-all.sh
+# 日志落 Windows 盘
+StandardOutput=append:/mnt/d/test/FDE/_backup/_logs/backup-systemd.log
+StandardError=append:/mnt/d/test/FDE/_backup/_logs/backup-systemd.log
