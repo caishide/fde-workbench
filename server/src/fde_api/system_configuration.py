@@ -5,7 +5,7 @@ import json
 from typing import Any
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, g, request
+from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import JSON, String, Text, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, mapped_column
@@ -135,7 +135,8 @@ def apply_persisted_configuration(app) -> None:
 @require_role(ROLE_ADMIN)
 def get_configuration():
     with db.session() as session:
-        return _serialize(session.get(SystemConfiguration, ROW_ID), current_app.config["SETTINGS"]), 200
+        payload = _serialize(session.get(SystemConfiguration, ROW_ID), current_app.config["SETTINGS"])
+    return jsonify({"data": payload, "error": None}), 200
 
 
 @blueprint.put("")
@@ -179,4 +180,4 @@ def put_configuration():
         session.flush()
         result = _serialize(item, current_app.config["SETTINGS"])
     _apply(current_app._get_current_object(), item)
-    return result, 200
+    return jsonify({"data": result, "error": None}), 200
