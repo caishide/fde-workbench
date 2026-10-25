@@ -1,6 +1,7 @@
 # v0.2 (PG 迁移): MySQL 服务已移除 —— 数据库改为复用 WSL 里 Twenty 已有的
-# PostgreSQL 16 实例（新增 fde_workbench 库），机器上数据库种类从 3 种降为 2 种
-# （SQLite=openfde / PostgreSQL=Twenty+fde_workbench），pg_dump 一套备份通吃。
+# PostgreSQL 16 实例（新增 fde_workbench 库 + 独立角色 fde），机器上数据库种类
+# 从 3 种降为 2 种（SQLite=openfde / PostgreSQL=Twenty+fde_workbench），
+# pg_dump 一套备份通吃。
 #
 # Redis 保留不动：实测该项目无 Celery（requirements.lock 无 celery），
 # 后台任务是自研极简 Redis list 队列（jobs/queue.py）+ 登录限流 + 健康检查，
@@ -22,9 +23,40 @@ services:
       timeout: 3s
       retries: 20
 
+  api:
+    build:
+      context: ./server
+    env_file:
+      - ./server/.env
+    environment:
+      # 容器内用 Docker 网络别名（stable），而非 localhost
+      FDE_DATABASE_URL: postgresql+psycopg://fde:fde_dev_password_2026@twenty-db:5432/fde_workbench
+      FDE_REDIS_URL: redis://redis:6379/0
+      FDE_API_HOST: 0.0.0.0
+      FDE_API_PORT: "8010"
+    ports:
+      - "8010:8010"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - automation_qiflow-net
+    volumes:
+      - fde_storage:/app/.fde-storage
+      # 把 migrations 目录挂出来：alembic revision 生成的迁移文件在容器内，
+      # 挂载后宿主机可直接看到并纳入 git（否则生成物会随容器销毁）
+      - ./server/migrations:/app/migrations
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/api/v1/health/live').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 networks:
   automation_qiflow-net:
     external: true
 
 volumes:
   fde_redis:
+  fde_storage:

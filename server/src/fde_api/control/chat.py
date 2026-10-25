@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, select
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from fde_api.auth.decorators import require_auth

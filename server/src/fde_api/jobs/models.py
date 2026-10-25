@@ -23,9 +23,14 @@ OUTBOX_STATUSES = ("pending", "dispatched", "completed", "failed")
 BACKGROUND_JOB_STATUSES = ("pending", "queued", "running", "succeeded", "failed")
 
 # Terminal statuses free the (job_type, target_id) slot for a fresh active job.
+# v0.2 (PG 迁移): 原用 CONCAT(job_type, ':', target_id)。PG 的 concat() 是 STABLE
+# 而非 IMMUTABLE，而 PG 要求生成列（GENERATED ... AS ... STORED）的表达式必须
+# immutable —— 迁移会直接报 "generation expression is not immutable"。
+# 改用 || 运算符拼接：MySQL 与 PG 下 || 均为 immutable（MySQL 需非 PIPES_AS_CONCAT
+# 模式；SQLAlchemy 的 concat 运算符在两个方言下都翻译为各自的可变表达式）。
 _ACTIVE_JOB_SQL_EXPR = (
     "CASE WHEN status IN ('pending', 'queued', 'running') "
-    "THEN CONCAT(job_type, ':', target_id) ELSE NULL END"
+    "THEN job_type || ':' || target_id ELSE NULL END"
 )
 
 

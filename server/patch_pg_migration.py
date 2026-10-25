@@ -31,7 +31,9 @@ PATCHES: list[tuple[Path, str, str, str]] = []
 
 
 def add(rel: str, old: str, new: str, tag: str) -> None:
-    PATCHES.append((SRC / rel, old, new, tag))
+    # migrations/ 不在 src/ 下，走 server 根目录
+    base = ROOT if rel.startswith("migrations/") else SRC
+    PATCHES.append((base / rel, old, new, tag))
 
 
 # ---------- 1+2+3: auth/models.py 时间戳 ----------
@@ -116,9 +118,28 @@ add(
 
 add(
     "research/models.py",
+    """    Text,
+    UniqueConstraint,
+)""",
+    """    Text,
+    text,
+    UniqueConstraint,
+)""",
+    "P7a-research 引入 text",
+)
+
+add(
+    "research/models.py",
     'ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")',
     "# v0.2 (PG 迁移): PG 的 BOOLEAN DEFAULT 不接受字符串 '0'，改用 text('false')。\n    ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))",
     "P7-research Boolean default",
+)
+
+add(
+    "control/chat.py",
+    "from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, select",
+    "from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, select, text",
+    "P6a-chat 引入 text",
 )
 
 # ---------- 6: MySQL 错误码 -> PG ----------
@@ -185,6 +206,70 @@ add(
     "            if _database_error_code(error) == MYSQL_DEADLOCK:",
     "            if _is_deadlock(error):",
     "P8d-死锁判定",
+)
+
+
+# ---------- 7: 生成列表达式（PG 要求 immutable） ----------
+add(
+    "jobs/models.py",
+    """_ACTIVE_JOB_SQL_EXPR = (
+    "CASE WHEN status IN ('pending', 'queued', 'running') "
+    "THEN CONCAT(job_type, ':', target_id) ELSE NULL END"
+)""",
+    """# v0.2 (PG 迁移): 原用 CONCAT(job_type, ':', target_id)。PG 的 concat() 是 STABLE
+# 而非 IMMUTABLE，而 PG 要求生成列（GENERATED ... AS ... STORED）的表达式必须
+# immutable —— 迁移会直接报 "generation expression is not immutable"。
+# 改用 || 运算符拼接：两个方言下均为 immutable。
+_ACTIVE_JOB_SQL_EXPR = (
+    "CASE WHEN status IN ('pending', 'queued', 'running') "
+    "THEN job_type || ':' || target_id ELSE NULL END"
+)""",
+    "P9-生成列 CONCAT→||",
+)
+
+# ---------- 8: alembic env.py render_item（自定义类型 import） ----------
+add(
+    "migrations/env.py",
+    """settings = config.attributes.get("settings") or Settings()
+target_metadata = Base.metadata""",
+    """settings = config.attributes.get("settings") or Settings()
+target_metadata = Base.metadata
+
+
+def render_custom_types(type_: str, obj: object, autogen_context) -> str | bool:
+    \"\"\"v0.2 (PG 迁移): 自定义类型在迁移文件里的渲染。
+
+    autogenerate 默认把 UTCDateTime() 渲染成 fde_api.auth.models.UTCDateTime()，
+    但不会生成对应 import，迁移文件执行时直接 NameError: name 'fde_api' is not defined。
+    \"\"\"
+    if type_ == "type" and type(obj).__name__ in ("UTCDateTime", "UTCTimestamp"):
+        autogen_context.imports.add("import fde_api.auth.models")
+        return "sa.DateTime(timezone=True)"
+    return False""",
+    "P10-env.py render_item",
+)
+
+add(
+    "migrations/env.py",
+    """        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )""",
+    """        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        render_item=render_custom_types,
+    )""",
+    "P11-env.py offline render_item",
+)
+
+add(
+    "migrations/env.py",
+    """        context.configure(connection=connection, target_metadata=target_metadata)""",
+    """        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_item=render_custom_types,
+        )""",
+    "P12-env.py online render_item",
 )
 
 
