@@ -50,6 +50,7 @@ export function AppShell({
         </div>
         <nav aria-label="主导航">
           <NavLink route={route} target={{ kind: "projects" }} label="项目工作台" icon={<GridIcon />} />
+          <NavLink route={route} target={{ kind: "bridge" }} label="集成桥" icon={<BridgeIcon />} />
           <NavLink route={route} target={{ kind: "task-center" }} label="任务中心" icon={<TaskIcon />} />
           <NavLink route={route} target={{ kind: "extensions" }} label="AI 与扩展" icon={<ExtensionIcon />} />
           {isAdmin ? <>
@@ -136,6 +137,16 @@ function GridIcon() {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  )
+}
+
+function BridgeIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M2 12h4M18 12h4" />
+      <rect x="6" y="7" width="12" height="10" rx="2" />
+      <path d="M10 12h4" />
     </svg>
   )
 }

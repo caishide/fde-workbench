@@ -581,6 +581,66 @@ class Gate(Base, TimestampMixin, VersionedMixin):
     project: Mapped[Project] = relationship(back_populates="gates")
 
 
+class BridgeEngagement(Base, TimestampMixin):
+    """集成桥投影（P2，设计 §4）：真相层 engagement 在 PG 的单向投影。
+
+    A1 铁律：真相在文件（openfde 每 slug 一个 ledger.db / fdeops .registry + 目录），
+    本表只是投影，删掉可由宿主采集器（scripts/bridge-poll.mjs）重新采集重建；
+    文件永远赢——slug 从最新采集里消失时本行标 stale 由 UI 一键清理，绝不动文件。
+    A4 出处指针按轨道分列：source_uri 记采集命令/文件，content_hash 为原始输出 sha256。
+    """
+
+    __tablename__ = "bridge_engagements"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_bridge_engagements_slug"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    # openfde 轨：status -e <slug> --json 的规范化结果
+    openfde_status: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    openfde_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    openfde_source_uri: Mapped[str | None] = mapped_column(String(500))
+    openfde_content_hash: Mapped[str | None] = mapped_column(String(64))
+    # fdeops 轨：.registry 绑定 + engagement 目录/.fde 探针（CLI 未装机，文件级探针）
+    fdeops_state: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    fdeops_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    fdeops_source_uri: Mapped[str | None] = mapped_column(String(500))
+    fdeops_content_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class BridgeSyncRun(Base, TimestampMixin):
+    """集成桥同步日志（P2）：每次采集入库/手动重投影各一行。
+
+    payload 保留原始采集快照——手动「重新投影」用它重放 adapters，
+    不触发宿主采集（容器 subprocess 不到 Windows CLI，采集只在宿主侧发生）。
+    """
+
+    __tablename__ = "bridge_sync_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "trigger IN ('poller', 'manual_reproject')",
+            name="ck_bridge_sync_runs_trigger",
+        ),
+        Index("ix_bridge_sync_runs_started_at", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    engagements_seen: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # {openfde_slugs: [...], fdeops_slugs: [...], orphan_projects: N, unlinked: N}
+    summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+
 class OperationEvent(Base, TimestampMixin):
     __tablename__ = "operation_events"
     __table_args__ = (

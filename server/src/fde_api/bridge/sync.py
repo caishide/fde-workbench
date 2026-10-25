@@ -1,0 +1,295 @@
+"""sync：单向投影器 + orphan 判定（设计 §4.3，A1「文件永远赢」）。
+
+apply_snapshot 幂等 upsert bridge_engagements（按 slug），并把原始快照存进
+bridge_sync_runs.payload——手动「重新投影」用它重放，不触发宿主采集。
+orphan 语义：
+  - vanished：bridge 行的 slug 在最近一次成功采集的存活集里消失（文件已删）→ 清投影候选
+  - unlinked：engagement 存活但无 workbench 项目引用 → 可立项/绑定（不是垃圾）
+  - orphan_openfde / orphan_fdeops：项目指针指向不存在的 engagement/目录
+  - stale：openfde_synced_at 距今超过 STALE_AFTER_MINUTES（采集链路断连，如 WSL 停机）
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+
+from fde_api.extensions import db
+from fde_api.workbench.models import BridgeEngagement, BridgeSyncRun, Project
+
+from fde_api.bridge.adapters import normalize_fdeops_dir, normalize_openfde_status
+
+# 采集节奏默认 15 min（计划任务），3 个周期没采到 = 断连
+STALE_AFTER_MINUTES = 45
+
+
+class BridgeSyncError(Exception):
+    """同步失败（对外 500 / 404 / 409 由 routes 翻译）。"""
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_captured_at(payload: dict[str, Any]) -> datetime:
+    raw = payload.get("captured_at")
+    if not isinstance(raw, str) or not raw:
+        raise BridgeSyncError("captured_at missing")
+    text = raw.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise BridgeSyncError(f"captured_at not ISO format: {raw!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _live_sets(payload: dict[str, Any]) -> tuple[set[str], set[str]]:
+    """从快照推存活集：openfde=engagement list 成员（含 status 报错的）；fdeops=目录存在。"""
+    openfde = payload.get("openfde") or {}
+    engagements = openfde.get("engagements") or []
+    openfde_live = {
+        entry["slug"] for entry in engagements if isinstance(entry, dict) and isinstance(entry.get("slug"), str)
+    }
+    fdeops = payload.get("fdeops") or {}
+    dirs = fdeops.get("dirs") or []
+    fdeops_live = {
+        entry["slug"]
+        for entry in dirs
+        if isinstance(entry, dict) and entry.get("slug") and entry.get("exists") is True
+    }
+    return openfde_live, fdeops_live
+
+
+def _last_successful_payload(session) -> tuple[str | None, dict[str, Any] | None]:
+    run = session.scalar(
+        select(BridgeSyncRun)
+        .where(BridgeSyncRun.ok.is_(True), BridgeSyncRun.payload.is_not(None))
+        .order_by(BridgeSyncRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        return None, None
+    return run.id, run.payload
+
+
+def apply_snapshot(payload: dict[str, Any], trigger: str) -> dict[str, Any]:
+    """快照落库。注意 db.session() 是 sessionmaker 语义（每次新开），
+    摘要必须等投影提交后再取视图——分三段：①upsert+提交 ②标记 run ok+提交
+    ③取视图算 flags 回写 summary。②③失败只缺摘要，不影响投影本身。"""
+    captured = _parse_captured_at(payload)
+    session = db.session()
+    run = BridgeSyncRun(trigger=trigger, payload=payload, started_at=_utcnow())
+    session.add(run)
+    try:
+        openfde = payload.get("openfde") or {}
+        fdeops = payload.get("fdeops") or {}
+        seen_slugs: set[str] = set()
+
+        for entry in openfde.get("engagements") or []:
+            slug = entry.get("slug")
+            if not isinstance(slug, str) or not slug:
+                continue
+            seen_slugs.add(slug)
+            row = session.scalar(select(BridgeEngagement).where(BridgeEngagement.slug == slug))
+            if row is None:
+                row = BridgeEngagement(slug=slug)
+                session.add(row)
+            if entry.get("ok") is True:
+                row.openfde_status = normalize_openfde_status(entry.get("status"))
+                row.openfde_synced_at = captured
+                row.openfde_source_uri = entry.get("source_uri") or f"cli://openfde/status?engagement={slug}"
+                row.openfde_content_hash = entry.get("stdout_sha256")
+            else:
+                # CLI 对该 slug 报错：保留旧投影，只记错误（A1——采集失败不等于文件没了）
+                merged = dict(row.openfde_status or {})
+                merged["capture_error"] = (entry.get("error") or "capture failed")[:500]
+                row.openfde_status = merged
+
+        fdeops_hash = fdeops.get("registry_sha256")
+        fdeops_uri = fdeops.get("source_uri")
+        for entry in fdeops.get("dirs") or []:
+            slug = entry.get("slug")
+            if not isinstance(slug, str) or not slug:
+                continue
+            seen_slugs.add(slug)
+            row = session.scalar(select(BridgeEngagement).where(BridgeEngagement.slug == slug))
+            if row is None:
+                row = BridgeEngagement(slug=slug)
+                session.add(row)
+            if entry.get("exists") is True:
+                row.fdeops_state = normalize_fdeops_dir(entry)
+                row.fdeops_synced_at = captured
+                row.fdeops_source_uri = fdeops_uri or f"file://fdeops/{slug}"
+                row.fdeops_content_hash = fdeops_hash
+            else:
+                merged = dict(row.fdeops_state or {})
+                merged["capture_error"] = "directory missing"
+                row.fdeops_state = merged
+
+        run.engagements_seen = len(seen_slugs)
+        session.commit()
+    except BridgeSyncError as exc:
+        session.rollback()
+        raise exc
+    except Exception as exc:  # noqa: BLE001 —— 失败也要落一行日志再上抛
+        session.rollback()
+        failed = db.session()
+        failed.add(BridgeSyncRun(trigger=trigger, ok=False, error=str(exc)[:2000], started_at=_utcnow()))
+        failed.commit()
+        raise BridgeSyncError(f"snapshot apply failed: {exc}") from exc
+
+    # ② 标记成功（视图算 vanished/orphan 依赖「最近一次成功 run」，必须先落 ok）
+    run_id = run.id
+    mark = db.session()
+    mark.get(BridgeSyncRun, run_id).ok = True
+    mark.get(BridgeSyncRun, run_id).finished_at = _utcnow()
+    mark.commit()
+
+    # ③ 提交后取视图算摘要并回写
+    view = engagement_view()
+    summary = {
+        "engagements_seen": len(seen_slugs),
+        "openfde_slugs": sorted(_live_sets(payload)[0]),
+        "fdeops_slugs": sorted(_live_sets(payload)[1]),
+        "vanished": sum("vanished" in e["flags"] for e in view["engagements"]),
+        "unlinked": sum("unlinked" in e["flags"] for e in view["engagements"]),
+        "orphan_projects": sum(1 for p in view["projects"] if p["flags"]),
+    }
+    finish = db.session()
+    finish.get(BridgeSyncRun, run_id).summary = summary
+    finish.commit()
+    return {"run_id": run_id, "engagements_seen": len(seen_slugs), "summary": summary}
+
+
+def reproject_last() -> dict[str, Any]:
+    """手动重投影：重放最近一次成功采集的原始快照（不触发宿主采集）。"""
+    session = db.session()
+    run_id, payload = _last_successful_payload(session)
+    if payload is None:
+        raise BridgeSyncError("no successful snapshot to reproject")
+    return apply_snapshot(payload, trigger="manual_reproject")
+
+
+def engagement_view() -> dict[str, Any]:
+    """双轨状态一屏看的后端视图：bridge 行 + 项目指针审计 + flags。"""
+    session = db.session()
+    rows = session.scalars(select(BridgeEngagement).order_by(BridgeEngagement.slug)).all()
+    _, last_payload = _last_successful_payload(session)
+    openfde_live: set[str] = set()
+    fdeops_live: set[str] = set()
+    if last_payload is not None:
+        openfde_live, fdeops_live = _live_sets(last_payload)
+
+    projects = session.scalars(select(Project).order_by(Project.created_at.desc())).all()
+    openfde_links: dict[str, list[dict[str, str]]] = {}
+    fdeops_links: dict[str, list[dict[str, str]]] = {}
+    for project in projects:
+        if project.openfde_engagement:
+            openfde_links.setdefault(project.openfde_engagement, []).append(
+                {"project_id": project.id, "project_name": project.name}
+            )
+        if project.fdeops_workspace:
+            fdeops_links.setdefault(project.fdeops_workspace, []).append(
+                {"project_id": project.id, "project_name": project.name}
+            )
+
+    now = _utcnow()
+    engagements = []
+    for row in rows:
+        flags: list[str] = []
+        has_data = row.openfde_synced_at is not None or row.fdeops_synced_at is not None
+        if last_payload is not None and has_data and row.slug not in openfde_live and row.slug not in fdeops_live:
+            flags.append("vanished")
+        if (
+            row.openfde_synced_at is not None
+            and row.slug in openfde_live
+            and (now - row.openfde_synced_at).total_seconds() > STALE_AFTER_MINUTES * 60
+        ):
+            flags.append("stale")
+        linked = openfde_links.get(row.slug, []) + [
+            item for item in fdeops_links.get(row.slug, [])
+            if item not in openfde_links.get(row.slug, [])
+        ]
+        if not linked:
+            flags.append("unlinked")
+        engagements.append({
+            "slug": row.slug,
+            "openfde_status": row.openfde_status,
+            "openfde_synced_at": row.openfde_synced_at.isoformat() if row.openfde_synced_at else None,
+            "openfde_source_uri": row.openfde_source_uri,
+            "openfde_content_hash": row.openfde_content_hash,
+            "fdeops_state": row.fdeops_state,
+            "fdeops_synced_at": row.fdeops_synced_at.isoformat() if row.fdeops_synced_at else None,
+            "fdeops_source_uri": row.fdeops_source_uri,
+            "fdeops_content_hash": row.fdeops_content_hash,
+            "linked_projects": linked,
+            "flags": flags,
+        })
+
+    project_flags = []
+    for project in projects:
+        flags: list[str] = []
+        if last_payload is not None:
+            if project.openfde_engagement:
+                if project.openfde_engagement not in openfde_live:
+                    flags.append("orphan_openfde")
+            else:
+                flags.append("missing_openfde_pointer")
+            if project.fdeops_workspace and project.fdeops_workspace not in fdeops_live:
+                flags.append("orphan_fdeops")
+        project_flags.append({
+            "project_id": project.id,
+            "project_name": project.name,
+            "enterprise_code": project.enterprise_code,
+            "openfde_engagement": project.openfde_engagement,
+            "fdeops_workspace": project.fdeops_workspace,
+            "flags": flags,
+        })
+
+    return {
+        "captured_at": (
+            _parse_captured_at(last_payload).isoformat() if last_payload is not None else None
+        ),
+        "stale_after_minutes": STALE_AFTER_MINUTES,
+        "engagements": engagements,
+        "projects": project_flags,
+    }
+
+
+def delete_projection(slug: str) -> None:
+    """清投影：只删 bridge 行，绝不动真相文件。文件仍存活的拒绝删（下一轮采集会复活）。"""
+    session = db.session()
+    row = session.scalar(select(BridgeEngagement).where(BridgeEngagement.slug == slug))
+    if row is None:
+        raise BridgeSyncError("projection not found")
+    _, last_payload = _last_successful_payload(session)
+    if last_payload is not None:
+        openfde_live, fdeops_live = _live_sets(last_payload)
+        if slug in openfde_live or slug in fdeops_live:
+            raise BridgeSyncError("engagement still live in files; projection cannot be removed")
+    session.delete(row)
+    session.commit()
+
+
+def recent_runs(limit: int = 5) -> list[dict[str, Any]]:
+    session = db.session()
+    runs = session.scalars(
+        select(BridgeSyncRun).order_by(BridgeSyncRun.started_at.desc()).limit(limit)
+    ).all()
+    return [
+        {
+            "id": run.id,
+            "trigger": run.trigger,
+            "ok": run.ok,
+            "started_at": run.started_at.isoformat(),
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "engagements_seen": run.engagements_seen,
+            "summary": run.summary,
+            "error": run.error,
+        }
+        for run in runs
+    ]

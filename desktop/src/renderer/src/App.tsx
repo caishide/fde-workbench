@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 
 import { AuthProvider, useAuth } from "./auth/AuthProvider"
+import { BridgePage } from "./bridge/BridgePage"
 import { ChangePasswordPage } from "./auth/ChangePasswordPage"
 import { LoginPage } from "./auth/LoginPage"
 import { DangerConfirmProvider } from "./common/DangerConfirmProvider"
@@ -69,6 +70,7 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "templates") return <TemplatesPage />
   if (route.kind === "document-templates") return <DocumentTemplatesPage />
   if (route.kind === "projects") return <ProjectsPage />
+  if (route.kind === "bridge") return <BridgePage />
   if (route.kind === "new-project") return <NewProjectPageV2 />
   return <ProjectDetailPage projectId={route.projectId} tab={route.tab ?? "overview"} solutionId={route.solution} solutionMode={route.mode} opportunityId={route.opportunity} />
 }

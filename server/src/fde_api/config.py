@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     dsh_market_max_catalog_bytes: int = Field(default=25_000_000, ge=100_000, le=100_000_000)
     clawbot_enabled: bool = False
     clawbot_gateway_token: SecretStr | None = Field(default=None, repr=False)
+    # P2 集成桥：宿主采集器（scripts/bridge-poll.mjs）推快照用的静态令牌；
+    # 未配置时 POST /api/v1/bridge/snapshots 返回 503（桥关闭）
+    bridge_token: SecretStr | None = Field(default=None, repr=False)
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

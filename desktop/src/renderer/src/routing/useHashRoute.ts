@@ -5,6 +5,7 @@ import { canAcceptHashNavigation } from "./navigationGuard"
 
 export type AppRoute =
   | { kind: "projects" }
+  | { kind: "bridge" }
   | { kind: "new-project" }
   | { kind: "project"; projectId: string; tab?: ProjectDetailTab; opportunity?: string; solution?: string; mode?: 'edit' }
   | { kind: "templates" }
@@ -17,6 +18,7 @@ export type AppRoute =
   | { kind: "account" }
 
 const projectsRoute: AppRoute = { kind: "projects" }
+const bridgeRoute: AppRoute = { kind: "bridge" }
 export const PROJECT_DETAIL_TABS = ["overview", "tasks", "research", "delivery", "library", "management"] as const
 export type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number]
 
@@ -35,6 +37,7 @@ export function normalizeLegacyProjectTab(tab: string): ProjectDetailTab | null 
 
 export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#projects") return projectsRoute
+  if (hash === "#bridge") return bridgeRoute
   if (hash === "#projects/new") return { kind: "new-project" }
   if (hash === "#templates") return { kind: "templates" }
   if (hash === "#document-templates") return { kind: "document-templates" }
@@ -101,6 +104,7 @@ export function parseHashRoute(hash: string): AppRoute {
 export function routeHash(route: AppRoute): string {
   switch (route.kind) {
     case "projects": return "#projects"
+    case "bridge": return "#bridge"
     case "new-project": return "#projects/new"
     case "project": return `#projects/${encodeURIComponent(route.projectId)}${route.tab && route.tab !== "overview" ? `?tab=${route.tab}` : ""}${(route.tab === 'delivery' || route.tab === 'research') && route.opportunity ? `&opportunity=${encodeURIComponent(route.opportunity)}` : ''}${route.tab === 'delivery' && route.solution ? `&solution=${encodeURIComponent(route.solution)}${route.mode === 'edit' && route.solution !== 'new' ? '&mode=edit' : ''}` : ''}`
     case "templates": return "#templates"

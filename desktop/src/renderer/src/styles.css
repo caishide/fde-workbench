@@ -1435,3 +1435,6 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .system-config-check { min-height: 42px; align-self: end; }
 .system-configuration-page .inline-check { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 13px; }
 .system-configuration-page .inline-check input { width: auto; }
+
+/* P2 集成桥：文件已删（vanished）的投影行置灰——文件永远赢 */
+.bridge-vanished td { opacity: 0.55; }
