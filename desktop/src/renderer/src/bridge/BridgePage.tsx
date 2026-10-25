@@ -95,18 +95,17 @@ export function BridgePage() {
     setLoading(true)
     setError("")
     void Promise.all([
-      apiRequest<{ data: unknown }>("/api/v1/bridge/engagements", { method: "GET" }),
-      apiRequest<{ data: unknown }>("/api/v1/bridge/status", { method: "GET" }),
+      apiRequest<unknown>("/api/v1/bridge/engagements", { method: "GET" }),
+      apiRequest<unknown>("/api/v1/bridge/status", { method: "GET" }),
     ])
-      .then(([viewResponse, statusResponse]) => {
+      .then(([nextView, statusData]) => {
         if (sequence !== requestSequence.current) return
-        const nextView = viewResponse.data
-        const nextRuns = (statusResponse.data as { runs?: unknown } | null)?.runs
         if (!isBridgeView(nextView)) {
           setError("集成桥数据格式异常")
           return
         }
         setView(nextView)
+        const nextRuns = (statusData as { runs?: unknown } | null)?.runs
         setRuns(Array.isArray(nextRuns) ? (nextRuns as BridgeRun[]).slice(0, 5) : [])
       })
       .catch((caught) => {
