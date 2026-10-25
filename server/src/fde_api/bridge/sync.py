@@ -21,8 +21,8 @@ from fde_api.workbench.models import BridgeEngagement, BridgeSyncRun, Project
 
 from fde_api.bridge.adapters import normalize_fdeops_dir, normalize_openfde_status
 
-# 采集节奏默认 15 min（计划任务），3 个周期没采到 = 断连
-STALE_AFTER_MINUTES = 45
+# 采集节奏每 4 小时（计划任务，2026-10-25 用户裁决放宽），一个周期加余量 = 断连
+STALE_AFTER_MINUTES = 360
 
 
 class BridgeSyncError(Exception):

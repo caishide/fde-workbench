@@ -50,6 +50,7 @@ interface BridgeRun {
 
 interface BridgeView {
   captured_at: string | null
+  stale_after_minutes?: number
   engagements: BridgeEngagement[]
   projects: BridgeProjectAudit[]
 }
@@ -146,7 +147,7 @@ export function BridgePage() {
           <h1>双轨状态</h1>
           <p className="supporting-copy">
             openfde 知识轨 + fdeops 流程轨 → 本页为只读投影；真相在文件，文件永远赢。
-            采集节奏：宿主计划任务每 15 分钟（bridge-poll.mjs）。
+            采集节奏：宿主计划任务每 4 小时（bridge-poll.mjs）。
             {view?.captured_at ? ` 最近采集：${formatTime(view.captured_at)}` : " 尚无采集记录"}
           </p>
         </div>
@@ -167,7 +168,10 @@ export function BridgePage() {
       </header>
 
       {anyStale ? (
-        <p className="empty-state">⚠ 采集断连：超过 45 分钟没有新快照（宿主计划任务或 WSL 服务可能停了），下表数据可能过期。</p>
+        <p className="empty-state">
+          ⚠ 采集断连：超过 {view ? Math.round((view.stale_after_minutes ?? 360) / 60) : 6} 小时没有新快照
+          （宿主计划任务或 WSL 服务可能停了），下表数据可能过期。
+        </p>
       ) : null}
       {error ? <p className="empty-state" role="alert">{error}</p> : null}
 
