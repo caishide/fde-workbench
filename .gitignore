@@ -39,3 +39,6 @@ server/.venv/
 server/.venv-wsl/
 server/.env
 server/.fde-storage/
+
+# electron-builder 下载缓存（含 150MB electron zip）
+.ebcache/
