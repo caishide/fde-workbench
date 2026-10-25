@@ -1,0 +1,465 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+
+import { ApiClientError } from "../api/client"
+import { useAuth } from "../auth/AuthProvider"
+
+// P3 门禁引擎（设计 §5）：只读投影 + 证据提交/人工核验。
+// 状态语义照搬 SOP——pending/evidence/passed/conditional_pass/failed 五态，
+// G8 过门必带 proceed/pivot/stop，conditional_pass 仅 G9；
+// claimed ≠ accepted：清单项 accepted 之外一律黄标（§5.3）。
+
+interface ChecklistItem {
+  label: string
+  claim_status: string | null
+  source_uri: string | null
+  content_hash: string | null
+}
+
+interface GateDto {
+  gate_key: string
+  status: string
+  decision: string | null
+  submitted_at: string | null
+  decided_at: string | null
+  checklist: ChecklistItem[]
+  gate_name: string | null
+  node_key: string | null
+  exit_condition: string | null
+  evidence_location: string | null
+  contract_payment: string | null
+  signer_role: string | null
+  fail_exit: string | null
+  decision_semantics: string[] | null
+  template_source_uri: string | null
+}
+
+interface GateEventDto {
+  event_type: string
+  occurred_at: string
+  actor_display_name: string | null
+  changes: Record<string, unknown>
+}
+
+interface GatesView {
+  project_id: string
+  sop_phase: string
+  gates: GateDto[]
+  events: GateEventDto[]
+}
+
+interface GateBoardProps {
+  projectId: string
+  canManage: boolean
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: "待证据",
+  evidence: "待核验",
+  passed: "已过门",
+  conditional_pass: "有条件通过",
+  failed: "未过门",
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  pending: "muted",
+  evidence: "warning",
+  passed: "success",
+  conditional_pass: "warning",
+  failed: "danger",
+}
+
+const DECISION_LABEL: Record<string, string> = {
+  proceed: "proceed 继续",
+  pivot: "pivot 转向",
+  stop: "stop 停止",
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  gates_instantiated: "门禁实例化",
+  gate_evidence_submitted: "提交证据",
+  gate_decided: "门禁拍板",
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isGatesView(value: unknown): value is GatesView {
+  if (!isRecord(value) || typeof value.project_id !== "string") return false
+  if (typeof value.sop_phase !== "string" || !Array.isArray(value.gates)) return false
+  return value.gates.every(
+    (gate) =>
+      isRecord(gate) &&
+      typeof gate.gate_key === "string" &&
+      typeof gate.status === "string" &&
+      Array.isArray(gate.checklist) &&
+      gate.checklist.every(
+        (item) => isRecord(item) && typeof item.label === "string",
+      ),
+  )
+}
+
+export function GateBoard({ projectId, canManage }: GateBoardProps) {
+  const { apiRequest } = useAuth()
+  const [view, setView] = useState<GatesView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [actionError, setActionError] = useState("")
+  const [busyGate, setBusyGate] = useState("")
+  const sequenceRef = useRef(0)
+
+  const load = useCallback(async (): Promise<void> => {
+    const sequence = ++sequenceRef.current
+    try {
+      const data = await apiRequest<unknown>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/gates`,
+        { method: "GET" },
+      )
+      if (sequence !== sequenceRef.current) return
+      if (!isGatesView(data)) throw new Error("invalid gates view")
+      setView(data)
+      setError("")
+    } catch (caught) {
+      if (sequence !== sequenceRef.current) return
+      setError(gateError(caught))
+    } finally {
+      if (sequence === sequenceRef.current) setLoading(false)
+    }
+  }, [apiRequest, projectId])
+
+  useEffect(() => {
+    setLoading(true)
+    setView(null)
+    setActionError("")
+    void load()
+  }, [load])
+
+  const submitEvidence = useCallback(
+    async (gate: GateDto, items: Array<{ label: string; source_uri: string; content_hash: string }>) => {
+      setBusyGate(gate.gate_key)
+      setActionError("")
+      try {
+        await apiRequest<unknown>(
+          `/api/v1/projects/${encodeURIComponent(projectId)}/gates/${gate.gate_key}/evidence`,
+          { method: "POST", body: { items }, retryAfterAuthRefresh: true },
+        )
+        await load()
+      } catch (caught) {
+        setActionError(gateError(caught))
+      } finally {
+        setBusyGate("")
+      }
+    },
+    [apiRequest, load, projectId],
+  )
+
+  const decide = useCallback(
+    async (gate: GateDto, payload: Record<string, unknown>) => {
+      setBusyGate(gate.gate_key)
+      setActionError("")
+      try {
+        await apiRequest<unknown>(
+          `/api/v1/projects/${encodeURIComponent(projectId)}/gates/${gate.gate_key}/decision`,
+          { method: "POST", body: payload, retryAfterAuthRefresh: true },
+        )
+        await load()
+      } catch (caught) {
+        setActionError(gateError(caught))
+      } finally {
+        setBusyGate("")
+      }
+    },
+    [apiRequest, load, projectId],
+  )
+
+  const summary = useMemo(() => {
+    if (!view) return null
+    const counts: Record<string, number> = {}
+    for (const gate of view.gates) counts[gate.status] = (counts[gate.status] ?? 0) + 1
+    return counts
+  }, [view])
+
+  if (loading) return <p role="status">正在加载门禁…</p>
+  if (error) return <p className="form-error banner" role="alert">{error}</p>
+  if (!view) return null
+
+  return (
+    <div className="page-stack">
+      <div className="gate-summary">
+        <p className="supporting-copy">
+          SOP 阶段：<strong>{view.sop_phase}</strong> · 证据真相在 fdeops .fde/ 与 openfde assets/（文件永远赢），
+          本页只存出处指针（A4）。清单项未标 accepted 一律视为 claimed 黄标（claimed ≠ accepted）。
+        </p>
+        {summary ? (
+          <div className="gate-summary-badges">
+            {(["passed", "conditional_pass", "evidence", "pending", "failed"] as const).map((status) =>
+              summary[status] ? (
+                <span key={status} className={`badge ${STATUS_CLASS[status]}`}>
+                  {STATUS_LABEL[status]} {summary[status]}
+                </span>
+              ) : null,
+            )}
+          </div>
+        ) : null}
+      </div>
+      {actionError ? <p className="form-error banner" role="alert">{actionError}</p> : null}
+      <div className="gate-card-grid">
+        {view.gates.map((gate) => (
+          <GateCard
+            key={gate.gate_key}
+            gate={gate}
+            canManage={canManage}
+            busy={busyGate === gate.gate_key}
+            onSubmitEvidence={submitEvidence}
+            onDecide={decide}
+          />
+        ))}
+      </div>
+      <GateEventFeed events={view.events} />
+    </div>
+  )
+}
+
+interface GateCardProps {
+  gate: GateDto
+  canManage: boolean
+  busy: boolean
+  onSubmitEvidence: (
+    gate: GateDto,
+    items: Array<{ label: string; source_uri: string; content_hash: string }>,
+  ) => Promise<void>
+  onDecide: (gate: GateDto, payload: Record<string, unknown>) => Promise<void>
+}
+
+function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCardProps) {
+  const [mode, setMode] = useState<"idle" | "submit" | "decide">("idle")
+  const [uris, setUris] = useState<Record<string, string>>({})
+  const [hashes, setHashes] = useState<Record<string, string>>({})
+  const [accepted, setAccepted] = useState<Record<string, boolean>>({})
+  const [result, setResult] = useState<string>("pass")
+  const [g8Decision, setG8Decision] = useState<string>("proceed")
+  const [note, setNote] = useState("")
+
+  const submittable = gate.status === "pending" || gate.status === "failed"
+  const decidable = gate.status === "evidence"
+  const isG8 = gate.gate_key === "G8"
+  const isG9 = gate.gate_key === "G9"
+  const allFilled = gate.checklist.every(
+    (item) =>
+      (uris[item.label] ?? "").trim().length > 0 &&
+      /^[0-9a-fA-F]{64}$/.test((hashes[item.label] ?? "").trim()),
+  )
+  const acceptedCount = gate.checklist.filter((item) => accepted[item.label] !== false).length
+
+  function openMode(next: "submit" | "decide"): void {
+    setMode(next)
+    setUris({})
+    setHashes({})
+    setAccepted(Object.fromEntries(gate.checklist.map((item) => [item.label, true])))
+    setResult("pass")
+    setG8Decision("proceed")
+    setNote("")
+  }
+
+  return (
+    <article className={`gate-card status-${gate.status}`}>
+      <header className="gate-card-header">
+        <div>
+          <h3>{gate.gate_key} · {gate.gate_name ?? ""}</h3>
+          <p className="gate-card-exit">{gate.exit_condition}</p>
+        </div>
+        <span className={`badge ${STATUS_CLASS[gate.status] ?? "muted"}`}>
+          {STATUS_LABEL[gate.status] ?? gate.status}
+          {gate.decision ? ` · ${gate.decision}` : ""}
+        </span>
+      </header>
+
+      <ul className="gate-checklist">
+        {gate.checklist.map((item) => (
+          <li key={item.label} className={`claim-${item.claim_status ?? "none"}`}>
+            <span className="gate-check-label">{item.label}</span>
+            <span className={`badge ${item.claim_status === "accepted" ? "success" : item.claim_status === "claimed" ? "warning" : "muted"}`}>
+              {item.claim_status === "accepted" ? "accepted" : item.claim_status === "claimed" ? "claimed" : "未提交"}
+            </span>
+            {item.source_uri ? <small className="gate-evidence-uri">{item.source_uri}</small> : null}
+          </li>
+        ))}
+      </ul>
+
+      <dl className="gate-meta">
+        <div><dt>证据位置</dt><dd>{gate.evidence_location ?? "—"}</dd></div>
+        <div><dt>签核角色</dt><dd>{gate.signer_role ?? "—"}</dd></div>
+        {gate.contract_payment ? <div><dt>合同/收款</dt><dd>{gate.contract_payment}</dd></div> : null}
+        {gate.submitted_at ? <div><dt>提交于</dt><dd>{formatTime(gate.submitted_at)}</dd></div> : null}
+        {gate.decided_at ? <div><dt>拍板于</dt><dd>{formatTime(gate.decided_at)}</dd></div> : null}
+      </dl>
+
+      {gate.status === "failed" && gate.fail_exit ? (
+        <p className="gate-fail-exit">失败出口：{gate.fail_exit}</p>
+      ) : null}
+      {gate.status === "conditional_pass" ? (
+        <p className="gate-fail-exit conditional">有条件通过（仅 G9 语义）：条件与回补动作按 SOP 上线门执行。</p>
+      ) : null}
+
+      {canManage && submittable ? (
+        mode === "submit" ? (
+          <div className="gate-form">
+            <p className="supporting-copy">
+              逐项填出处指针与 sha256（certutil -hashfile 文件 SHA256 可生成）：
+            </p>
+            {gate.checklist.map((item) => (
+              <div key={item.label} className="gate-form-row">
+                <span className="gate-check-label">{item.label}</span>
+                <input
+                  value={uris[item.label] ?? ""}
+                  onChange={(event) => setUris((current) => ({ ...current, [item.label]: event.target.value }))}
+                  placeholder="fdeops://engagements/<代号>/.fde/…"
+                  maxLength={500}
+                />
+                <input
+                  value={hashes[item.label] ?? ""}
+                  onChange={(event) => setHashes((current) => ({ ...current, [item.label]: event.target.value }))}
+                  placeholder="sha256（64 位）"
+                  maxLength={64}
+                />
+              </div>
+            ))}
+            <div className="gate-form-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={busy || !allFilled}
+                onClick={() => {
+                  void onSubmitEvidence(
+                    gate,
+                    gate.checklist.map((item) => ({
+                      label: item.label,
+                      source_uri: (uris[item.label] ?? "").trim(),
+                      content_hash: (hashes[item.label] ?? "").trim().toLowerCase(),
+                    })),
+                  ).then(() => setMode("idle"))
+                }}
+              >
+                {busy ? "提交中…" : "提交证据（标 claimed）"}
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setMode("idle")}>取消</button>
+            </div>
+          </div>
+        ) : (
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => openMode("submit")}>
+            {gate.status === "failed" ? "重新提交证据" : "提交证据"}
+          </button>
+        )
+      ) : null}
+
+      {canManage && decidable ? (
+        mode === "decide" ? (
+          <div className="gate-form">
+            <p className="gate-form-hint">人工核验：勾选 = 接受为 accepted；过门要求全部接受。</p>
+            {gate.checklist.map((item) => (
+              <label key={item.label} className="gate-form-row checkbox">
+                <input
+                  type="checkbox"
+                  checked={accepted[item.label] !== false}
+                  onChange={(event) => setAccepted((current) => ({ ...current, [item.label]: event.target.checked }))}
+                />
+                <span className="gate-check-label">{item.label}</span>
+                <span className={`badge ${item.claim_status === "accepted" ? "success" : "warning"}`}>
+                  {item.claim_status === "accepted" ? "accepted" : "claimed"}
+                </span>
+              </label>
+            ))}
+            <div className="gate-form-row">
+              <label>
+                核验结论
+                <select value={result} onChange={(event) => setResult(event.target.value)}>
+                  <option value="pass">pass 过门</option>
+                  {isG9 ? <option value="conditional_pass">conditional_pass 有条件通过</option> : null}
+                  <option value="fail">fail 未过门</option>
+                </select>
+              </label>
+              {isG8 && result === "pass" ? (
+                <label>
+                  G8 三态拍板
+                  <select value={g8Decision} onChange={(event) => setG8Decision(event.target.value)}>
+                    <option value="proceed">{DECISION_LABEL.proceed}</option>
+                    <option value="pivot">{DECISION_LABEL.pivot}</option>
+                    <option value="stop">{DECISION_LABEL.stop}</option>
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <input
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="拍板说明（可选，500 字内）"
+              maxLength={500}
+            />
+            <div className="gate-form-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const payload: Record<string, unknown> = {
+                    result,
+                    accepted_labels: gate.checklist
+                      .filter((item) => accepted[item.label] !== false)
+                      .map((item) => item.label),
+                  }
+                  if (isG8 && result === "pass") payload.decision = g8Decision
+                  if (note.trim()) payload.note = note.trim()
+                  void onDecide(gate, payload).then(() => setMode("idle"))
+                }}
+              >
+                {busy ? "提交中…" : `拍板（接受 ${acceptedCount}/${gate.checklist.length}）`}
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setMode("idle")}>取消</button>
+            </div>
+          </div>
+        ) : (
+          <button className="primary-button" type="button" disabled={busy} onClick={() => openMode("decide")}>
+            人工核验拍板
+          </button>
+        )
+      ) : null}
+    </article>
+  )
+}
+
+function GateEventFeed({ events }: { events: GateEventDto[] }) {
+  if (events.length === 0) return null
+  return (
+    <section className="gate-events" aria-label="门禁事件留痕">
+      <h2>事件留痕（最近 30 条）</h2>
+      <ul>
+        {events.map((event, index) => (
+          <li key={`${event.occurred_at}-${index}`}>
+            <span className="gate-event-time">{formatTime(event.occurred_at)}</span>
+            <strong>{EVENT_LABEL[event.event_type] ?? event.event_type}</strong>
+            {typeof event.changes.gate_key === "string" ? ` · ${event.changes.gate_key}` : ""}
+            {event.actor_display_name ? ` · ${event.actor_display_name}` : ""}
+            {event.event_type === "gate_decided" && typeof event.changes.result === "string"
+              ? ` · ${event.changes.result}${typeof event.changes.decision === "string" ? `/${event.changes.decision}` : ""}`
+              : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function formatTime(iso: string): string {
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) return iso
+  return parsed.toLocaleString("zh-CN", { hour12: false })
+}
+
+function gateError(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    if (error.code === "project_not_found") return "项目不存在或已被删除。"
+    if (error.code === "forbidden") return "你没有该项目门禁的操作权限。"
+    return `门禁操作失败：${error.message}`
+  }
+  return "门禁数据加载失败，请稍后重试。"
+}

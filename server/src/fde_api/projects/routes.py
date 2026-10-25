@@ -22,6 +22,12 @@ from fde_api.projects.service import (
     update_project,
 )
 from fde_api.projects.gantt import get_project_gantt
+from fde_api.projects.gate_service import (
+    GateServiceError,
+    decide_gate,
+    list_project_gates,
+    submit_gate_evidence,
+)
 from fde_api.projects.task_service import (
     TASK_STATUSES,
     TASK_UPDATE_FIELDS,
@@ -158,6 +164,55 @@ def update_project_route(project_id: str):
         return jsonify({"data": project, "error": None})
     except ProjectServiceError as error:
         return _service_error(error)
+
+
+@projects_blueprint.get("/<project_id>/gates")
+@require_auth
+def list_project_gates_route(project_id: str):
+    """P3 门禁引擎：项目 9 门禁状态 + 证据清单 + 最近门禁事件（全程可追溯）。"""
+    try:
+        data = list_project_gates(actor=g.current_user, project_id=project_id)
+        return jsonify({"data": data, "error": None})
+    except GateServiceError as error:
+        return _gate_error(error)
+
+
+@projects_blueprint.post("/<project_id>/gates/<gate_key>/evidence")
+@require_auth
+def submit_gate_evidence_route(project_id: str, gate_key: str):
+    """提交门禁证据（A4 出处指针）：pending/failed → evidence，清单项 claim_status=claimed。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = submit_gate_evidence(
+            actor=g.current_user,
+            project_id=project_id,
+            gate_key=gate_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except GateServiceError as error:
+        return _gate_error(error)
+
+
+@projects_blueprint.post("/<project_id>/gates/<gate_key>/decision")
+@require_auth
+def decide_gate_route(project_id: str, gate_key: str):
+    """人工核验（evidence → passed/conditional_pass/failed；G8 必带三态 decision）。"""
+    payload = _json_payload()
+    if payload is None:
+        return _invalid_request()
+    try:
+        data = decide_gate(
+            actor=g.current_user,
+            project_id=project_id,
+            gate_key=gate_key,
+            payload=payload,
+        )
+        return jsonify({"data": data, "error": None})
+    except GateServiceError as error:
+        return _gate_error(error)
 
 
 @projects_blueprint.get("/<project_id>/members")
@@ -516,4 +571,8 @@ def _invalid_request():
 
 
 def _service_error(error: ProjectServiceError):
+    return error_response(error.code, error.message, error.status)
+
+
+def _gate_error(error: GateServiceError):
     return error_response(error.code, error.message, error.status)

@@ -6,6 +6,7 @@ import type { ProjectDetailTab } from "../routing/useHashRoute"
 import { isProjectDto } from "../workbench/runtimeValidation"
 import type { ProjectDto, ProjectTaskDto } from "../workbench/types"
 import { ProjectGantt } from "./GanttChart"
+import { GateBoard } from "./GateBoard"
 import { ProjectManagement } from "./ProjectManagement"
 import { ProjectOverview } from "./ProjectOverview"
 import { isProjectMemberDto, isProjectTaskDto } from "./projectRuntimeValidation"
@@ -22,6 +23,7 @@ interface ProjectDetailPageProps { projectId: string; tab: ProjectDetailTab; sol
 const tabs: Array<{ id: ProjectDetailTab; label: string }> = [
   { id: "overview", label: "概览" },
   { id: "tasks", label: "任务" },
+  { id: "gates", label: "门禁" },
   { id: "research", label: "调研" },
   { id: "delivery", label: "方案设计" },
   { id: "library", label: "文件库" },
@@ -167,6 +169,7 @@ export function ProjectDetailPage({ projectId, tab, solutionId, solutionMode, op
         <div id="project-detail-tabpanel" role="tabpanel" aria-labelledby={`project-tab-${tab}`}>
           {tab === "overview" ? <div className="page-stack"><ProjectOverview project={project} canManage={canManage} onProjectChange={handleProjectChange} onRefresh={loadProject} guidanceSlot={<ProjectGuidanceCard projectId={project.id} canManage={canManage} />} /><ProjectGantt projectId={project.id} /></div> : null}
           {tab === "tasks" ? <TaskTable projectId={project.id} initialTasks={project.tasks ?? []} modules={project.modules} members={project.members ?? []} canManage={canManage} onTasksChange={handleTasksChange} /> : null}
+          {tab === "gates" ? <GateBoard projectId={project.id} canManage={canManage} /> : null}
           {tab === "management" ? <ProjectManagement project={project} canManage={canManage} onProjectChange={handleProjectChange} onRefresh={loadProject} /> : null}
           {tab === "library" ? <ProjectLibrary projectId={project.id} canManage={canManage} /> : null}
           {tab === "research" ? <ResearchWorkspace project={project} canFill={canFillResearch} canManage={canManage} onDirtyChange={setResearchDirty} initialOpportunityId={opportunityId} /> : null}

@@ -1438,3 +1438,37 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 
 /* P2 集成桥：文件已删（vanished）的投影行置灰——文件永远赢 */
 .bridge-vanished td { opacity: 0.55; }
+
+/* P3 门禁引擎：门禁看板（claimed 黄标 = §5.3 claimed ≠ accepted） */
+.badge.danger { background: var(--danger-soft); color: var(--danger); }
+.gate-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.gate-summary-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.gate-card-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 14px; }
+.gate-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.gate-card.status-passed { border-color: var(--success-border); }
+.gate-card.status-failed { border-color: var(--danger-border); }
+.gate-card.status-evidence { border-color: var(--warning-border); }
+.gate-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.gate-card-header h3 { font-size: var(--font-section); font-weight: var(--weight-semibold); margin: 0; }
+.gate-card-exit { color: var(--muted); font-size: var(--font-label); margin: 4px 0 0; }
+.gate-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gate-checklist li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gate-checklist .gate-check-label { flex: 1 1 auto; }
+.gate-checklist li.claim-claimed .gate-check-label { color: var(--warning); }
+.gate-evidence-uri { flex-basis: 100%; color: var(--muted); font-size: var(--font-caption); word-break: break-all; }
+.gate-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+.gate-meta dt { color: var(--muted); font-size: var(--font-caption); }
+.gate-meta dd { margin: 0; font-size: var(--font-label); }
+.gate-fail-exit { margin: 0; padding: 9px 11px; border-left: 3px solid var(--danger); background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-sm); font-size: var(--font-label); }
+.gate-fail-exit.conditional { border-left-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
+.gate-form { display: flex; flex-direction: column; gap: 8px; border-top: 1px dashed var(--line-dashed); padding-top: 10px; }
+.gate-form-hint { margin: 0; color: var(--muted); font-size: var(--font-label); }
+.gate-form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gate-form-row.checkbox { cursor: pointer; }
+.gate-form-row .gate-check-label { flex: 1 1 auto; }
+.gate-form input[type="text"], .gate-form input:not([type]), .gate-form select { flex: 1 1 160px; }
+.gate-form-actions { display: flex; gap: 8px; }
+.gate-events h2 { font-size: var(--font-section); }
+.gate-events ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gate-events li { border-bottom: 1px solid var(--line); padding: 6px 0; color: var(--muted); font-size: var(--font-label); }
+.gate-event-time { color: var(--text); margin-right: 8px; }
