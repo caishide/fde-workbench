@@ -51,11 +51,12 @@ const task: ProjectTaskDto = {
 const project: ProjectDto = {
   id: projectId,
   project_code: "XH-001",
+  enterprise_code: "客户测·测试·内部",
+  openfde_engagement: null,
+  fdeops_workspace: null,
+  sop_phase: "S3",
+  business_line: "FDE",
   name: "星河 AI 落地项目",
-  enterprise_name: "星河制造",
-  contact_name: "陈总",
-  contact_phone: "13800000000",
-  address: "深圳市",
   background: "设备知识库建设",
   notes: "每周演示",
   status: "active",
@@ -146,6 +147,8 @@ describe("project detail workspace", () => {
     expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([
       "概览",
       "任务",
+      "门禁",
+      "报价收款",
       "调研",
       "方案设计",
       "文件库",
@@ -198,16 +201,17 @@ describe("project detail workspace", () => {
     expect(await screen.findByText(message)).toHaveAttribute("role", "alert")
   })
 
-  it("leaves empty overview values blank", async () => {
+  it("renders dash placeholders for unset pointers in the overview", async () => {
     renderProjectDetail({
       role: "viewer",
       tab: "overview",
-      rawProject: { ...project, contact_name: "", contact_phone: "", address: "", background: "", notes: "" },
+      rawProject: { ...project, openfde_engagement: null, fdeops_workspace: null, background: "", notes: "" },
     })
 
     const overview = (await screen.findByRole("heading", { name: "企业与项目信息" })).closest("section")
     expect(overview).not.toBeNull()
-    expect(within(overview as HTMLElement).queryAllByText("—")).toHaveLength(0)
+    // P1 代号化后未设的 openfde/fdeops 指针以「—」占位；空文本字段渲染空 dd
+    expect(within(overview as HTMLElement).queryAllByText("—")).toHaveLength(2)
   })
 
   it("accepts a project created from an uploaded presurvey without template identifiers", async () => {
@@ -427,7 +431,7 @@ describe("project detail workspace", () => {
     const apiRequest = renderProjectDetail({ role: "project_lead", tab: "overview" })
     const user = userEvent.setup()
 
-    expect(await screen.findByText("星河制造")).toBeVisible()
+    expect(await screen.findByText("客户测·测试·内部")).toBeVisible()
     expect(screen.getByText("20%")).toBeVisible()
     await user.selectOptions(screen.getByLabelText("项目状态"), "paused")
     await user.click(screen.getByRole("button", { name: "更新项目状态" }))
@@ -461,7 +465,7 @@ describe("project detail workspace", () => {
     const apiRequest = renderProjectDetail({ role: "project_lead", tab: "overview" })
     const user = userEvent.setup()
 
-    expect(await screen.findByText("星河制造")).toBeVisible()
+    expect(await screen.findByText("客户测·测试·内部")).toBeVisible()
     await user.selectOptions(screen.getByLabelText("项目状态"), "cancelled")
     await user.click(screen.getByRole("button", { name: "更新项目状态" }))
     const dialog = await screen.findByRole("dialog", { name: "取消项目" })
@@ -1117,22 +1121,22 @@ describe("project detail workspace", () => {
     const apiRequest = renderProjectDetail({
       role: "project_lead",
       tab: "overview",
-      projectPatch: apiOk({ ...project, enterprise_name: "星河智造", version: 6 }),
+      projectPatch: apiOk({ ...project, enterprise_code: "客户乙·智造·东莞", version: 6 }),
     })
     const user = userEvent.setup()
 
-    expect(await screen.findByText("星河制造")).toBeVisible()
+    expect(await screen.findByText("客户测·测试·内部")).toBeVisible()
     await user.click(screen.getByRole("button", { name: "编辑" }))
-    const enterpriseInput = screen.getByLabelText("企业")
+    const enterpriseInput = screen.getByLabelText("客户代号")
     await user.clear(enterpriseInput)
-    await user.type(enterpriseInput, "星河智造")
+    await user.type(enterpriseInput, "客户乙·智造·东莞")
     await user.click(screen.getByRole("button", { name: "保存" }))
 
     await waitFor(() => expect(mutationBodies(apiRequest, "PATCH")).toContainEqual({
-      enterprise_name: "星河智造",
+      enterprise_code: "客户乙·智造·东莞",
       version: 5,
     }))
-    expect(await screen.findByText("星河智造")).toBeVisible()
+    expect(await screen.findByText("客户乙·智造·东莞")).toBeVisible()
     expect(screen.getByRole("button", { name: "编辑" })).toBeVisible()
   })
 
@@ -1145,14 +1149,14 @@ describe("project detail workspace", () => {
     await user.click(screen.getByRole("button", { name: "取消" }))
 
     expect(screen.queryByLabelText("项目名称")).not.toBeInTheDocument()
-    expect(screen.getByText("星河制造")).toBeVisible()
+    expect(screen.getByText("客户测·测试·内部")).toBeVisible()
     expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(0)
   })
 
   it("hides the overview edit control for viewers", async () => {
     renderProjectDetail({ role: "viewer", tab: "overview" })
 
-    expect(await screen.findByText("星河制造")).toBeVisible()
+    expect(await screen.findByText("客户测·测试·内部")).toBeVisible()
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument()
   })
 
@@ -1165,9 +1169,9 @@ describe("project detail workspace", () => {
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole("button", { name: "编辑" }))
-    const enterpriseInput = screen.getByLabelText("企业")
+    const enterpriseInput = screen.getByLabelText("客户代号")
     await user.clear(enterpriseInput)
-    await user.type(enterpriseInput, "星河智造")
+    await user.type(enterpriseInput, "客户乙·智造·东莞")
     await user.click(screen.getByRole("button", { name: "保存" }))
 
     expect(await screen.findByText("内容已被其他人更新，请刷新后重试")).toBeVisible()

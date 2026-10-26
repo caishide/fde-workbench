@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
+from redis.exceptions import RedisError
 
 from fde_api.auth.decorators import require_auth
 from fde_api.auth.models import User
@@ -21,6 +22,49 @@ from fde_api.errors import error_response
 
 auth_blueprint = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
+# 登录失败限流（Redis 计数，按用户名）：连续失败 5 次锁 15 分钟，成功即清零。
+# API 已只绑回环，这层是纵深防御（防本机脚本/误配置暴破）。
+LOGIN_RATE_MAX_ATTEMPTS = 5
+LOGIN_RATE_WINDOW_SECONDS = 900
+
+
+def _login_fail_key(username: str) -> str:
+    return f"auth:login_fail:{username}"
+
+
+def _login_throttle(username: str) -> int | None:
+    """记一次尝试；若已超限返回应等待秒数（未超限/Redis 不可用返回 None 放行）。
+
+    在校验密码之前调用：被锁的请求不再做 argon2 计算。Redis 挂了不能挡登录
+    （认证不依赖限流器），静默放行。
+    """
+    try:
+        redis = current_app.extensions["fde_api_redis"]
+    except KeyError:
+        return None
+    try:
+        key = _login_fail_key(username)
+        attempts = redis.incr(key)
+        if attempts == 1:
+            redis.expire(key, LOGIN_RATE_WINDOW_SECONDS)
+        if attempts > LOGIN_RATE_MAX_ATTEMPTS:
+            return max(int(redis.ttl(key) or LOGIN_RATE_WINDOW_SECONDS), 1)
+    except RedisError:
+        return None
+    return None
+
+
+def _login_clear(username: str) -> None:
+    """登录成功清零失败计数。"""
+    try:
+        redis = current_app.extensions["fde_api_redis"]
+    except KeyError:
+        return
+    try:
+        redis.delete(_login_fail_key(username))
+    except RedisError:
+        pass
+
 
 @auth_blueprint.post("/login")
 def login_route():
@@ -28,10 +72,18 @@ def login_route():
     values = _required_strings(payload, "username", "password", "device_label")
     if values is None:
         return _invalid_request()
+    retry_after = _login_throttle(values[0])
+    if retry_after is not None:
+        return error_response(
+            "login_rate_limited",
+            f"登录失败次数过多，请约 {retry_after // 60 + 1} 分钟后再试。",
+            429,
+        )
     try:
         user, pair = login_user(*values)
     except AuthServiceError as error:
         return _service_error(error)
+    _login_clear(values[0])
     return jsonify(
         {
             "data": {"user": _serialize_user(user), **_serialize_token_pair(pair)},

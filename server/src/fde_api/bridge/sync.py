@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from fde_api.extensions import db
 from fde_api.workbench.models import BridgeEngagement, BridgeSyncRun, Project
@@ -166,6 +166,14 @@ def apply_snapshot(payload: dict[str, Any], trigger: str) -> dict[str, Any]:
     }
     finish = db.session()
     finish.get(BridgeSyncRun, run_id).summary = summary
+    # 采集每 4h 存全量 payload（50 文件名 × 200 目录），只留最近 200 行防膨胀
+    keep_ids = list(
+        finish.scalars(
+            select(BridgeSyncRun.id).order_by(BridgeSyncRun.started_at.desc()).limit(200)
+        )
+    )
+    if keep_ids:
+        finish.execute(delete(BridgeSyncRun).where(BridgeSyncRun.id.not_in(keep_ids)))
     finish.commit()
     return {"run_id": run_id, "engagements_seen": len(seen_slugs), "summary": summary}
 

@@ -12,7 +12,7 @@
     "icon:mac": "bash scripts/generate-icon.sh",
     "package:mac": "npm run build && npm run icon:mac && electron-builder --mac dmg --arm64",
     "package:win": "npm run build && electron-builder --win nsis --x64",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --no-file-parallelism",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "devDependencies": {

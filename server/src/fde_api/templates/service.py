@@ -95,8 +95,25 @@ def list_template_versions(
             .join(IndustryTemplateVersion.template)
             .where(*filters)
         )
+        # 当页批量加载（原先逐行 _load_version，每页多 3-4 倍查询）
+        by_id: dict[str, IndustryTemplateVersion] = {}
+        if versions:
+            page_rows = session.scalars(
+                select(IndustryTemplateVersion)
+                .where(IndustryTemplateVersion.id.in_([v.id for v in versions]))
+                .options(
+                    selectinload(IndustryTemplateVersion.template),
+                    selectinload(IndustryTemplateVersion.modules).selectinload(
+                        TemplateModule.module_catalog
+                    ),
+                    selectinload(IndustryTemplateVersion.modules).selectinload(
+                        TemplateModule.tasks
+                    ),
+                )
+            )
+            by_id = {row.id: row for row in page_rows}
         return [
-            _serialize_template_version(session, _load_version(session, version.id))
+            _serialize_template_version(session, by_id[version.id])
             for version in versions
         ], int(total or 0)
     finally:

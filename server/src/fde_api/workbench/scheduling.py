@@ -39,6 +39,9 @@ def normalize_workday(value: date) -> date:
 
 def add_workdays(start: date, days: int) -> date:
     """Return the final date when ``start`` is counted as workday one."""
+    if days < 1:
+        # days-1 为 -1 时 while 恒真——上游三道校验都拦了，这里是防直接调用的死循环
+        raise SchedulingError("invalid_duration", "duration must be at least 1 workday")
     current = normalize_workday(start)
     remaining = days - 1
     while remaining:

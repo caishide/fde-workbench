@@ -527,6 +527,14 @@ def update_project_member(
                 )
             _validate_project_member_target(member.user, member_role)
             if member.role != member_role:
+                if member.user_id == project.leader_user_id:
+                    # leader 的成员行角色跟随 leader 字段语义（project_access 先看
+                    # leader_user_id）；降级它只产生数据不一致，与移除保护同拒。
+                    raise ProjectServiceError(
+                        "project_member_is_leader",
+                        "The project leader's membership follows the project leader field.",
+                        409,
+                    )
                 if member_role == "viewer":
                     _require_no_active_task_assignments(
                         session,

@@ -26,11 +26,12 @@ const projectId = "project-research"
 const project: ProjectDto = {
   id: projectId,
   project_code: "RES-001",
+  enterprise_code: "客户测·测试·内部",
+  openfde_engagement: null,
+  fdeops_workspace: null,
+  sop_phase: "S3",
+  business_line: "FDE",
   name: "星河调研项目",
-  enterprise_name: "星河制造",
-  contact_name: "陈总",
-  contact_phone: "13800000000",
-  address: "深圳市",
   background: "制造业 AI 调研",
   notes: "",
   status: "active",
@@ -630,10 +631,31 @@ function renderProjectResearch(options: RenderResearchOptions = {}) {
         }, 202)
       }
     }
+    if (/\/quotes$/.test(path) && request.method === "GET") {
+      return apiOk({ quotes: [], events: [] })
+    }
+    if (/\/payments$/.test(path) && request.method === "GET") {
+      return apiOk({
+        payments: [],
+        summary: { receivable: 0, received: 0, outstanding: 0, overdue: 0, dunning_counts: { d7: 0, d15: 0, d30: 0, d60: 0 } },
+        events: [],
+      })
+    }
+    if (/\/contracts$/.test(path) && request.method === "GET") {
+      return apiOk({
+        contracts: ["a", "b", "c", "d"].map((sow_type) => ({ sow_type, recorded: false })),
+      })
+    }
+    if (path.startsWith("/api/v1/industry-templates")) {
+      return apiOk({ items: [], total: 0 })
+    }
+    if (path.startsWith("/api/v1/modules")) {
+      return apiOk({ items: [], total: 0 })
+    }
     if (path === "/api/v1/auth/verify-password" && request.method === "POST") {
       return apiOk({ valid: true })
     }
-    throw new Error(`Unhandled test API request: ${request.method} ${path}`)
+    console.error("UNHANDLED-PATH", request.method, path); throw new Error(`Unhandled test API request: ${request.method} ${path}`)
   })
 
   location.hash = `#projects/${projectId}?tab=research`
@@ -683,8 +705,9 @@ describe("project research workspace", () => {
 
     const researchTab = screen.getByRole("tab", { name: "调研" })
     researchTab.focus()
+    // P4 起门禁与调研之间插了「报价收款」tab，左邻是它
     await user.keyboard("{ArrowLeft}")
-    await waitFor(() => expect(location.hash).toBe(`#projects/${projectId}?tab=tasks`))
+    await waitFor(() => expect(location.hash).toBe(`#projects/${projectId}?tab=commercial`))
   })
 
   it("collapses and restores all descendants of a research subject", async () => {

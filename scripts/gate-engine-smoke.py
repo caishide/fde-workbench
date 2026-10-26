@@ -117,6 +117,11 @@ def main() -> int:
         check("G3 清单 4 项", len(g3["checklist"]) == 4, str(len(g3["checklist"])))
         check("清单项未提交(None)", all(i["claim_status"] is None for i in g3["checklist"]))
         check("模板字段带出(fail_exit/出处)", bool(g3["fail_exit"]) and bool(g3["template_source_uri"]))
+        check(
+            "Gate 行冻结 gates.json 哈希（64hex）",
+            isinstance(g3.get("template_hash"), str) and len(g3["template_hash"]) == 64,
+            str(g3.get("template_hash")),
+        )
         again = client.get(gates_url, headers=admin_headers)
         check(
             "重复 GET 不重复实例化",

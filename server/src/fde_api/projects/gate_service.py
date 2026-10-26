@@ -80,6 +80,14 @@ def _template_index() -> dict[str, dict[str, Any]]:
     return {row["gate_key"]: row for row in _gate_templates()}
 
 
+@lru_cache(maxsize=1)
+def _gates_file_hash() -> str:
+    """gates.json 文件级 sha256（Gate 行实例化时冻结，审计清单版本漂移）。"""
+    import hashlib
+
+    return hashlib.sha256((_SEEDS_DIR / "gates.json").read_bytes()).hexdigest()
+
+
 def ensure_project_gates(session: Session, project: Project) -> int:
     """按模板幂等实例化 9 行 Gate（已存在则不动），返回新建行数。
 
@@ -109,6 +117,7 @@ def ensure_project_gates(session: Session, project: Project) -> int:
                     for label in template.get("evidence_checklist") or []
                 ],
                 signer_role=template.get("signer_role"),
+                template_hash=_gates_file_hash(),
             )
         )
     return len(_gate_templates())
@@ -538,6 +547,7 @@ def _serialize_gate(
         "fail_exit": template.get("fail_exit") if template else None,
         "decision_semantics": template.get("decision_semantics") if template else None,
         "template_source_uri": template.get("source_uri") if template else None,
+        "template_hash": gate.template_hash,
         "next_node_keys": node.next_node_keys if node else [],
     }
 

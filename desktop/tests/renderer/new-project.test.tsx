@@ -126,10 +126,11 @@ function createdProject(): ProjectDto {
     id: "created-project",
     project_code: "XH-POV-001",
     name: "星河 PoV",
-    enterprise_name: "星河制造",
-    contact_name: "林总",
-    contact_phone: "13800000000",
-    address: "示例地址",
+    enterprise_code: "客户星·质检·深圳",
+    sop_phase: "S3",
+    business_line: "FDE",
+    openfde_engagement: null,
+    fdeops_workspace: null,
     background: "验证质检场景",
     notes: "周五例会",
     status: "draft",
@@ -185,11 +186,9 @@ async function completeBasics(user: ReturnType<typeof userEvent.setup>, mode = "
   await screen.findByRole("heading", { name: "新建项目" })
   await user.click(screen.getByRole("button", { name: new RegExp(mode) }))
   await user.type(screen.getByLabelText("项目名称"), "星河 PoV")
-  await user.type(screen.getByLabelText("企业名称"), "星河制造")
+  // P1 代号化：客户代号必填（客户A·行业·城市），实名三件套不进本系统
+  await user.type(screen.getByLabelText("客户代号"), "客户星·质检·深圳")
   await user.type(screen.getByLabelText("项目编号"), "XH-POV-001")
-  await user.type(screen.getByLabelText("联系人"), "林总")
-  await user.type(screen.getByLabelText("联系电话"), "13800000000")
-  await user.type(screen.getByLabelText("企业地址"), "示例地址")
   await user.type(screen.getByLabelText("项目背景"), "验证质检场景")
   await user.type(screen.getByLabelText("备注"), "周五例会")
   await user.type(screen.getByLabelText("计划开始日期"), "2026-08-21")
@@ -251,7 +250,7 @@ describe("四步项目创建向导", () => {
     await user.click(screen.getByRole("button", { name: "下一步" }))
 
     const review = await screen.findByRole("region", { name: "创建摘要" })
-    expect(within(review).getByText("星河制造")).toBeVisible()
+    expect(within(review).getByText("客户星·质检·深圳")).toBeVisible()
     expect(within(review).getByText("通用企业 AI 落地模板 v2")).toBeVisible()
     expect(within(review).getByText("项目负责人王工")).toBeVisible()
     expect(within(review).getByText("预诊断、PoV")).toBeVisible()
@@ -264,10 +263,9 @@ describe("四步项目创建向导", () => {
       method: "POST",
       body: {
         name: "星河 PoV",
-        enterprise_name: "星河制造",
-        contact_name: "林总",
-        contact_phone: "13800000000",
-        address: "示例地址",
+        enterprise_code: "客户星·质检·深圳",
+        openfde_engagement: null,
+        fdeops_workspace: null,
         background: "验证质检场景",
         notes: "周五例会",
         project_code: "XH-POV-001",
@@ -281,7 +279,7 @@ describe("四步项目创建向导", () => {
     expect(location.hash).toBe("#projects/created-project")
   })
 
-  it("项目名称、企业名称和开始日期缺失时不允许进入下一步", async () => {
+  it("项目名称、客户代号和开始日期缺失时不允许进入下一步", async () => {
     const apiRequest = vi.fn(defaultApi)
     renderNewProject(apiRequest)
     const user = userEvent.setup()
@@ -289,7 +287,7 @@ describe("四步项目创建向导", () => {
     await screen.findByRole("heading", { name: "新建项目" })
     await user.click(screen.getByRole("button", { name: /从模板新建/ }))
     await user.click(screen.getByRole("button", { name: "下一步" }))
-    expect(await screen.findByRole("alert")).toHaveTextContent("请填写项目名称、企业名称和计划开始日期")
+    expect(await screen.findByRole("alert")).toHaveTextContent("请填写项目名称、客户代号和计划开始日期")
     expect(screen.getByRole("heading", { name: "1. 基础信息" })).toBeVisible()
   })
 

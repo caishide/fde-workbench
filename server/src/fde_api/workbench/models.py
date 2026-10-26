@@ -581,6 +581,8 @@ class Gate(Base, TimestampMixin, VersionedMixin):
     evidence_checklist: Mapped[list[Any]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
+    # sha256 of gates.json at instantiation time (audit: which checklist version)
+    template_hash: Mapped[str | None] = mapped_column(String(64))
     # 证据出处指针（A4）：指向 fdeops .fde/ 或 openfde assets/ 的文件
     evidence_uri: Mapped[str | None] = mapped_column(String(500))
     evidence_hash: Mapped[str | None] = mapped_column(String(64))

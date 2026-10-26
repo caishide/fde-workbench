@@ -31,6 +31,11 @@ COPY migrations ./migrations
 COPY seeds ./seeds
 COPY load_seeds.py ./load_seeds.py
 
+# 非 root 运行（审计遗留项）：应用代码 root 装好，运行身份降到专用账号；
+# .fde-storage 属主在镜像里预设，首次新建的卷会继承，存量卷需一次性 chown。
+RUN useradd --system --create-home --uid 1001 fde     && mkdir -p /app/.fde-storage     && chown -R fde:fde /app/.fde-storage /home/fde
+USER fde
+
 EXPOSE 8010
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8010", "--workers", "2", "--timeout", "120", "fde_api.wsgi:app"]

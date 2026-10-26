@@ -1,4 +1,4 @@
-import { isAbsolute, relative, sep } from "node:path"
+import { isAbsolute, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 
 export const DEVELOPMENT_API_URL = "http://127.0.0.1:8010"
@@ -85,12 +85,39 @@ export function isAllowedRendererUrl(
     if (url.protocol !== "file:" || url.search) {
       return false
     }
-    const child = relative(environment.rendererRoot, fileURLToPath(url))
+    let child: string
+    try {
+      // 分隔符归一：win32 relative() 产反斜杠，统一成 / 再判前缀逃逸。
+      child = relative(environment.rendererRoot, fileURLToPath(url)).replaceAll(
+        "\\",
+        "/",
+      )
+    } catch {
+      // posix 风格 file URL（无盘符）在 win32 上 fileURLToPath 会抛
+      // ERR_INVALID_FILE_URL_PATH——回退为 URL pathname 与归一化 rendererRoot
+      // 的纯 posix 相对比较，包含性判定不放宽。
+      const root = environment.rendererRoot.replaceAll("\\", "/")
+      const target = decodeURIComponent(url.pathname).replaceAll("\\", "/")
+      child = posixRelative(root, target)
+    }
     return (
-      child === "" ||
-      (child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child))
+      child === "" || (child !== ".." && !child.startsWith("../") && !isAbsolute(child))
     )
   } catch {
     return false
   }
+}
+
+function posixRelative(from: string, to: string): string {
+  const base = from.split("/").filter(Boolean)
+  const target = to.split("/").filter(Boolean)
+  let shared = 0
+  while (shared < base.length && shared < target.length && base[shared] === target[shared]) {
+    shared += 1
+  }
+  const ups = base.length - shared
+  if (ups > 0) {
+    return "../".repeat(ups) + target.slice(shared).join("/")
+  }
+  return target.slice(shared).join("/")
 }
