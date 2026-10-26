@@ -214,13 +214,17 @@ def _normalize_candidates(raw: dict[str, Any], forms: list[dict[str, Any]], *, f
         evidence = item.get("evidence")
         if not isinstance(evidence, list): continue
         normalized_evidence = [entry for entry in evidence if isinstance(entry, dict) and entry.get("form_id") in valid_form_ids and all(isinstance(entry.get(key), str) for key in ("form_name", "field_key", "question", "answer_excerpt", "reason"))]
+        # E3 引文可溯源：answer_excerpt 必须逐字来自被选中的原文，否则该证据
+        # 不成立。原先这条校验只在 format-only 分支内（默认 expand=True 模式
+        # 完全不校验），LLM 可以把「腾讯/华为」之类凭空内容写进证据，并一路
+        # 进入 SOW。两种模式都必须溯源。
+        source_texts = [str(answer.get("value", "")) for source in forms for answer in source.get("answers", [])]
+        def quoted(value):
+            return isinstance(value, str) and bool(value.strip()) and any(value.strip() in source for source in source_texts)
+        normalized_evidence = [entry for entry in normalized_evidence if quoted(entry["answer_excerpt"])]
         if format_only:
             # Format-only is extractive: generated claims are never silently
             # accepted as user-supplied facts. Validate against selected sources.
-            source_texts = [str(answer.get("value", "")) for source in forms for answer in source.get("answers", [])]
-            def quoted(value):
-                return isinstance(value, str) and bool(value.strip()) and any(value.strip() in source for source in source_texts)
-            normalized_evidence = [entry for entry in normalized_evidence if quoted(entry["answer_excerpt"])]
             if normalized_evidence:
                 excerpt = normalized_evidence[0]["answer_excerpt"].strip()
                 item = dict(item)

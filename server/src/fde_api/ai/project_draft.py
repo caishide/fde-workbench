@@ -11,6 +11,7 @@ from sqlalchemy import select
 from fde_api.ai.kimi import KimiError, KimiFileClient
 from fde_api.config import Settings
 from fde_api.extensions import db
+from fde_api.guidance.redaction import SensitiveCredentialDetected, redact_text
 from fde_api.workbench.models import ModuleCatalog
 
 
@@ -27,6 +28,8 @@ def draft_from_presurvey(*, stream: BinaryIO, filename: str) -> dict[str, Any]:
         api_key=settings.kimi_project_presurvey_api_key,
         model=settings.kimi_project_presurvey_model,
         timeout_seconds=settings.kimi_timeout_seconds,
+        local_extract=settings.kimi_local_docx_extract,
+        openai_compatible=settings.kimi_openai_compatible,
     )
     session = db.session()
     try:
@@ -51,10 +54,17 @@ def draft_from_presurvey(*, stream: BinaryIO, filename: str) -> dict[str, Any]:
     except KimiError as error:
         status = {"ai_timeout": 504, "ai_rate_limited": 429, "ai_output_invalid": 502}.get(error.code, 503)
         raise ProjectDraftError(error.code, error.public_message, status) from error
+    except SensitiveCredentialDetected as error:
+        # E4：预调研文件里出现疑似密码/密钥/令牌 → 明确拒绝，不把原文送出去。
+        raise ProjectDraftError("sensitive_content_detected", str(error), 400) from None
     return _normalize(result, allowed)
 
 
 def _messages(content: str, catalog_text: str) -> list[dict[str, str]]:
+    # E4 脱敏一致：预调研 DOCX 全文进 LLM 前必须走 guidance 路径同一套
+    # redact_text（邮箱/手机/证件/座机脱敏，疑似凭据直接拒绝）——此前这条
+    # 路径未脱敏，与 guidance/jobs.py 行为不一致。
+    redacted = redact_text(content)
     return [
         {"role": "system", "content": (
             "你是 FDE 项目创建助手。只依据上传预调研表提取项目草稿，不得编造。"
@@ -65,7 +75,7 @@ def _messages(content: str, catalog_text: str) -> list[dict[str, str]]:
             "tasks 每项为 task_key,name,description,duration_days,default_assignee_role,dependency_keys,sort_order。"
             "无法确认的字符串留空。只输出 JSON。"
         )},
-        {"role": "user", "content": f"请从以下预调研文件内容生成可人工调整的项目草稿：\n\n{content[:120000]}"},
+        {"role": "user", "content": f"请从以下预调研文件内容生成可人工调整的项目草稿：\n\n{redacted[:120000]}"},
     ]
 
 

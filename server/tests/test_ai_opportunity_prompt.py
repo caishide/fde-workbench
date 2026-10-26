@@ -70,7 +70,10 @@ def test_ai_opportunity_candidate_accepts_memo_as_its_only_evidence():
         }],
     }]}
 
-    candidate = _normalize_candidates(raw, [{"form_id": "memo:subject-sales"}])[0]
+    candidate = _normalize_candidates(raw, [{
+        "form_id": "memo:subject-sales",
+        "answers": [{"field_key": "memo", "value": "现场记录：报价依赖人工经验"}],
+    }])[0]
 
     assert candidate["name"] == "智能报价"
     assert candidate["evidence"][0]["form_name"] == "销售部备忘录"
@@ -123,7 +126,10 @@ def test_ai_opportunity_candidates_include_complete_research_answers():
         }],
     }]}
 
-    candidates = _normalize_candidates(raw, [{"form_id": "form-1"}])
+    candidates = _normalize_candidates(raw, [{
+        "form_id": "form-1",
+        "answers": [{"field_key": "pain", "value": "排程耗时，班组靠口头协调。"}],
+    }])
 
     assert candidates[0]["research_answers"] == {
         key: research_answers[key] for key in OPPORTUNITY_RESEARCH_ANSWER_KEYS
@@ -143,7 +149,10 @@ def test_ai_opportunity_candidates_fill_missing_research_answers_for_format_tole
         }],
     }]}
 
-    candidate = _normalize_candidates(raw, [{"form_id": "form-1"}])[0]
+    candidate = _normalize_candidates(raw, [{
+        "form_id": "form-1",
+        "answers": [{"field_key": "pain", "value": "人工排程耗时，班组长手动排。"}],
+    }])[0]
 
     assert candidate["research_answers"]["pain_points"] == "人工排程耗时。"
     assert candidate["research_answers"]["current_state"] == "人工排程耗时"

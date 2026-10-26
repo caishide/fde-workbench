@@ -20,7 +20,9 @@ def build_ai_opportunity_messages(context: dict[str, Any]) -> list[dict[str, str
                 "owner_role（负责人/角色）、technical_prereqs（技术前提）这 6 个字符串字段。内容必须依据调研表或备忘录；资料不足的字段应明确写明"
                 "尚待确认的具体内容，不得臆造。此阶段只识别机会，不设计交付方案，不输出交付范围、交付物、验收标准或计划排期；这些内容由关联机会的方案设计承担。"
                 "三个评分均为 1-5 整数。evidence 是数组，每项包含 form_id、form_name、field_key、"
-                "question、answer_excerpt、reason。没有充分证据时返回空 candidates。最多 8 个候选，"
+                "question、answer_excerpt、reason。answer_excerpt 必须逐字摘录来源原文，"
+                "不得改写、概括或补充来源里没有的内容；无法逐字摘录就不要输出这条证据。"
+                "没有充分证据时返回空 candidates。最多 8 个候选，"
                 "候选之间应去重，也不要重复已有机会。"
             ),
         },
