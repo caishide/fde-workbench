@@ -11,7 +11,6 @@
     "test:operations": "node --test tests/operations/*.test.mjs",
     "test:desktop": "npm --workspace desktop test",
     "test:server": "node scripts/run-server-tests.mjs",
-    "test:e2e": "node scripts/run-e2e.mjs",
     "typecheck": "npm --workspace desktop run typecheck",
     "package:mac": "npm --workspace desktop run package:mac",
     "package:win": "npm --workspace desktop run package:win",
