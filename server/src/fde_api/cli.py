@@ -121,8 +121,13 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("outbox-dispatch")
     @click.option("--limit", default=100, type=int, show_default=True)
     def outbox_dispatch(limit: int) -> None:
+        from fde_api.jobs.handlers import ensure_default_handlers
         from fde_api.jobs.outbox import dispatch_pending
         from fde_api.jobs.queue import get_queue
+
+        # 模块导入期的自动注册可能被循环导入吞掉（见 handlers.py 尾部日志）；
+        # worker 入口显式补注册，保证任务不会全部 no_handler。
+        ensure_default_handlers()
 
         session = db.session()
         try:
@@ -134,9 +139,13 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("worker")
     @click.option("--once", is_flag=True, help="Process a single job with a short wait.")
     def worker(once: bool) -> None:
+        from fde_api.jobs.handlers import ensure_default_handlers
         from fde_api.jobs.outbox import dispatch_pending
         from fde_api.jobs.queue import get_queue
         from fde_api.jobs.worker import run_job
+
+        # 同 outbox-dispatch：入口处显式补注册。
+        ensure_default_handlers()
 
         queue = get_queue()
         click.echo("worker started")

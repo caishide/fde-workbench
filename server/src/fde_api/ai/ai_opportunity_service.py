@@ -107,12 +107,21 @@ def discover_ai_opportunities(*, actor: User, payload: object, on_event: Callabl
             "expand": expand,
         }
         try:
-            raw = _client().complete_json(
-                messages=build_ai_opportunity_messages(context),
-                request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
-                on_event=on_event,
-                **({"deep_thinking": False} if not expand else {}),
-            )
+            # 非展开模式显式关掉深度思考；不用 **dict 展开——mypy 无法验证
+            # 动态 kwargs 的形参类型。
+            if expand:
+                raw = _client().complete_json(
+                    messages=build_ai_opportunity_messages(context),
+                    request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
+                    on_event=on_event,
+                )
+            else:
+                raw = _client().complete_json(
+                    messages=build_ai_opportunity_messages(context),
+                    request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
+                    on_event=on_event,
+                    deep_thinking=False,
+                )
         except DeepSeekError as error:
             status = {"ai_timeout": 504, "ai_output_invalid": 502, "ai_empty_response": 502}.get(error.code, 503)
             raise AIOpportunityDiscoveryError(error.code, error.public_message, status) from error
@@ -282,4 +291,5 @@ def _client() -> DeepSeekClient:
         api_key=settings.deepseek_api_key,
         model=settings.deepseek_ai_opportunity_model,
         timeout_seconds=settings.deepseek_timeout_seconds,
+        fallback_model=settings.deepseek_fallback_model,
     )

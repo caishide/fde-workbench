@@ -79,3 +79,11 @@ def test_prompt_requires_traceable_evidence():
     system = messages[0]["content"]
     assert "原文" in system
     assert "answer_excerpt" in system
+
+import pytest
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_test_schema():
+    """离线评测子树：覆盖仓库级迁移夹具，避免初始化共享 PG 测试库。"""
+    yield

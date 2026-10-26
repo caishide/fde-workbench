@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, select, text
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, delete, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from fde_api.auth.decorators import require_auth
@@ -141,6 +141,14 @@ def execute_chat_turn(turn_id):
                                    all_projects=True, return_metadata=True)
         answer = output["text"] if isinstance(output, dict) else output
         metrics = {"model": output.get("model", {}), "provider_usage": output.get("provider_usage", {})} if isinstance(output, dict) else {}
+        if isinstance(output, dict) and output.get("degraded"):
+            # 没有 DSH 运行时时的降级回答：本地工具循环仍可查项目/文件。
+            metrics["degraded"] = True
+            metrics["degraded_reason"] = output.get("degraded_reason", "")
+            metrics["tools_available"] = bool(output.get("tools_available", False))
+            trace = output.get("tool_trace")
+            if isinstance(trace, list) and trace:
+                metrics["tool_trace"] = trace
         if metrics:
             from fde_api.control.chat_cost import estimate_chat_cost
             metrics["cost"] = estimate_chat_cost(metrics["provider_usage"])
@@ -215,6 +223,34 @@ def conversation_details(conversation_id):
         turns = session.scalars(select(AIChatTurn).where(AIChatTurn.conversation_id == row.id)
             .order_by(AIChatTurn.created_at.desc(), AIChatTurn.id.desc()).limit(200)).all()
         return jsonify({"data": {"id": row.id, "title": row.title, "items": [_turn(t) for t in reversed(turns)]}, "error": None})
+
+
+@chat_blueprint.delete("/conversations/<conversation_id>")
+@require_auth
+def delete_conversation(conversation_id):
+    """Delete one of the caller's own conversations and all its turns.
+
+    Turns carry a CASCADE foreign key, so removing the conversation removes
+    the transcript with it. Deleting someone else's conversation must be
+    indistinguishable from deleting a non-existent one, otherwise the route
+    leaks which conversation ids exist.
+    """
+    with db.session() as session, session.begin():
+        row = session.get(AIConversation, conversation_id)
+        if row is None or row.user_id != g.current_user.id:
+            return error_response("not_found", "会话不存在。", 404)
+        # A turn that is still queued/running owns a background job; drop the
+        # pending work first so the worker cannot resurrect the transcript.
+        pending = session.scalars(select(AIChatTurn.id).where(
+            AIChatTurn.conversation_id == row.id,
+            AIChatTurn.status.in_(["queued", "running"]))).all()
+        if pending:
+            from fde_api.jobs.models import BackgroundJob
+            session.execute(delete(BackgroundJob).where(
+                BackgroundJob.job_type == "ai.chat",
+                BackgroundJob.target_id.in_(pending)))
+        session.delete(row)
+    return jsonify({"data": {"id": conversation_id, "deleted": True}, "error": None})
 
 
 @chat_blueprint.post("/messages")

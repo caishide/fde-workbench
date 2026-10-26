@@ -26,7 +26,7 @@ from conftest import SERVER_ROOT, seed_reference_data
 
 
 GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51647e6"
-HEAD_REVISION = "b8d4f2a6c0e8"
+HEAD_REVISION = "e5b8a1c9d3f7"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",

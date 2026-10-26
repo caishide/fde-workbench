@@ -110,3 +110,93 @@ def test_invalid_completion_is_reported_and_remote_file_is_removed():
         make_client(session).analyze_docx_json(stream=io.BytesIO(), filename="a.docx", request_id="job", build_messages=lambda _: [])
     assert caught.value.code == "ai_empty_response"
     assert session.calls[-1][0] == "delete"
+
+
+def _docx_bytes(paragraph: str = "FDE 预调研：客户希望 AI 落地", table_cell: str = "50万") -> io.BytesIO:
+    from docx import Document
+
+    document = Document()
+    document.add_paragraph(paragraph)
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "预算"
+    table.rows[0].cells[1].text = table_cell
+    buffer = io.BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def make_openai_compatible_client(session):
+    """MiniMax 等通用 OpenAI 兼容端点：本地提取 DOCX + max_tokens。"""
+    return KimiFileClient(
+        base_url="https://api.minimaxi.example/v1",
+        api_key="secret",
+        model="MiniMax-M3",
+        timeout_seconds=30,
+        session=session,
+        local_extract=True,
+        openai_compatible=True,
+    )
+
+
+def test_local_extract_skips_upload_and_sends_docx_text():
+    """MiniMax 没有 file-extract 接口：不得调用 /files，改为本地提取正文。"""
+    result = {"customer_vision": "长期目标"}
+    session = FakeSession(
+        completion=FakeResponse(stream_lines=[
+            ("data: " + json.dumps({"choices": [{"delta": {"content": json.dumps(result, ensure_ascii=False)}}]}, ensure_ascii=False)).encode("utf-8"),
+            b"data: [DONE]",
+        ]),
+    )
+    messages_seen = []
+
+    parsed = make_openai_compatible_client(session).analyze_docx_json(
+        stream=_docx_bytes(), filename="预调研表.docx", request_id="job-1",
+        build_messages=lambda content: messages_seen.append(content) or [{"role": "system", "content": content}],
+    )
+
+    assert parsed == result
+    # 段落与表格内容都被提取出来
+    assert len(messages_seen) == 1
+    assert "FDE 预调研" in messages_seen[0]
+    assert "50万" in messages_seen[0]
+    # 全程没有 /files 上传与删除
+    assert not any(call[1].endswith("/files") for call in session.calls)
+    assert not any(call[0] == "delete" for call in session.calls)
+
+
+def test_openai_compatible_payload_uses_max_tokens_and_no_reasoning_effort():
+    """MiniMax 侧不识别 reasoning_effort / max_completion_tokens。"""
+    session = FakeSession(
+        completion=FakeResponse(stream_lines=[
+            ("data: " + json.dumps({"choices": [{"delta": {"content": "{}"}}]}, ensure_ascii=False)).encode("utf-8"),
+            b"data: [DONE]",
+        ]),
+    )
+
+    make_openai_compatible_client(session).analyze_docx_json(
+        stream=_docx_bytes(), filename="a.docx", request_id="job-1",
+        build_messages=lambda content: [{"role": "user", "content": content}],
+    )
+
+    chat = next(call for call in session.calls if call[1].endswith("/chat/completions"))
+    payload = chat[2]["json"]
+    assert chat[1] == "https://api.minimaxi.example/v1/chat/completions"
+    assert payload["model"] == "MiniMax-M3"
+    assert payload["max_tokens"] == 32768
+    assert "max_completion_tokens" not in payload
+    assert "reasoning_effort" not in payload
+    assert payload["response_format"] == {"type": "json_object"}
+
+
+def test_local_extract_reports_unparsable_docx():
+    """DOCX 解析失败要给可重试的中文错误，不能抛裸异常。"""
+    session = FakeSession()
+    with pytest.raises(KimiError) as caught:
+        make_openai_compatible_client(session).analyze_docx_json(
+            stream=io.BytesIO(b"not-a-docx"), filename="坏文件.docx", request_id="job-1",
+            build_messages=lambda content: [{"role": "user", "content": content}],
+        )
+    assert caught.value.code == "kimi_file_extract_failed"
+    assert caught.value.retryable is True
+    assert not any(call[1].endswith("/chat/completions") for call in session.calls)

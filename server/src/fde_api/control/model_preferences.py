@@ -179,4 +179,25 @@ def resolve_model_preference(session: Session, user_id: str, preference_id: str 
     if not key:
         raise ControlServiceError("model_not_configured", "请先在 AI 与扩展的模型管理中配置模型。", 409)
     plaintext = key.get_secret_value() if hasattr(key, "get_secret_value") else key
-    return {"id": "system-default", "provider": "deepseek", "base_url": getattr(settings, "deepseek_base_url", "https://api.deepseek.com"), "model": settings.deepseek_industry_template_model, "api_key": plaintext, "supports_tools": True}
+    base_url = getattr(settings, "deepseek_base_url", "https://api.deepseek.com")
+    return {"id": "system-default", "provider": _provider_for_base_url(base_url),
+            "base_url": base_url, "model": settings.deepseek_industry_template_model,
+            "api_key": plaintext, "supports_tools": True}
+
+
+def _provider_for_base_url(base_url: str) -> str:
+    """Name the real provider behind the configured endpoint.
+
+    The slot is historically called "deepseek_*", but the endpoint can point at
+    any OpenAI-compatible vendor (MiniMax, DeepSeek, a self-hosted gateway).
+    Reporting "deepseek" for a MiniMax endpoint mislabels the model in the
+    usage panel and wrongly unlocks the DeepSeek-only depth-thinking switch.
+    """
+    host = urlparse(base_url).netloc.lower()
+    if "minimax" in host:
+        return "minimax"
+    if "minimaxi" in host:
+        return "minimax"
+    if "deepseek" in host:
+        return "deepseek"
+    return "openai-compatible"

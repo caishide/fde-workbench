@@ -162,4 +162,5 @@ def _client() -> DeepSeekClient:
         api_key=settings.deepseek_api_key,
         model=settings.deepseek_ai_opportunity_model,
         timeout_seconds=settings.deepseek_timeout_seconds,
+        fallback_model=settings.deepseek_fallback_model,
     )

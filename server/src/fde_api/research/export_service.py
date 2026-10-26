@@ -438,4 +438,4 @@ def _client() -> DeepSeekClient:
     injected = current_app.extensions.get("fde_api_research_export_deepseek")
     if injected is not None: return injected
     settings: Settings = current_app.config["SETTINGS"]
-    return DeepSeekClient(base_url=settings.deepseek_base_url, api_key=settings.deepseek_api_key, model=settings.deepseek_research_export_model, timeout_seconds=settings.deepseek_timeout_seconds)
+    return DeepSeekClient(base_url=settings.deepseek_base_url, api_key=settings.deepseek_api_key, model=settings.deepseek_research_export_model, timeout_seconds=settings.deepseek_timeout_seconds, fallback_model=settings.deepseek_fallback_model)

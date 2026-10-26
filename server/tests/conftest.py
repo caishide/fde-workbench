@@ -113,18 +113,37 @@ def engine(test_settings):
         database_engine.dispose()
 
 
+_SESSION_LOCK_KEY = "fde_workbench_test_session"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def migrated_test_schema(test_settings):
     assert test_settings.env == "test"
     assert make_url(test_settings.database_url).database.endswith("_test")
-    config = Config(str(SERVER_ROOT / "alembic.ini"))
-    config.attributes["settings"] = test_settings
-    command.downgrade(config, "base")
-    command.upgrade(config, "head")
-    # 项目建行的 projects.sop_phase 外键指向 sop_nodes.node_key，生产环境由
-    # load_seeds.py 灌入 SOP 快照；测试库迁移后同样灌入，保证同一行为。
-    seed_reference_data(test_settings.database_url)
-    yield
+    # 会话级 PG advisory lock：本机/CI 上若有两个 pytest 进程同时指向同一
+    # 测试库（运行器重复派发、并行任务），迁移 downgrade/upgrade 与每用例
+    # 清理会互相踩踏（死锁/表消失的假失败）。持锁串行化整个测试会话。
+    lock_engine = create_engine(test_settings.database_url)
+    lock_conn = lock_engine.connect()
+    try:
+        lock_conn.execute(text(f"SELECT pg_advisory_lock(hashtext('{_SESSION_LOCK_KEY}'))"))
+    except Exception:
+        lock_conn.close()
+        lock_engine.dispose()
+        raise
+    try:
+        config = Config(str(SERVER_ROOT / "alembic.ini"))
+        config.attributes["settings"] = test_settings
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        # 项目建行的 projects.sop_phase 外键指向 sop_nodes.node_key，生产环境由
+        # load_seeds.py 灌入 SOP 快照；测试库迁移后同样灌入，保证同一行为。
+        seed_reference_data(test_settings.database_url)
+        yield
+    finally:
+        lock_conn.execute(text(f"SELECT pg_advisory_unlock(hashtext('{_SESSION_LOCK_KEY}'))"))
+        lock_conn.close()
+        lock_engine.dispose()
 
 
 def seed_reference_data(database_url: str) -> None:

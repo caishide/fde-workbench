@@ -32,11 +32,24 @@ class Settings(BaseSettings):
     deepseek_ai_opportunity_model: str = "deepseek-v4-pro"
     deepseek_research_export_model: str = "deepseek-v4-pro"
     deepseek_document_generation_model: str = "deepseek-v4-pro"
+    # E5 降级链：主模型瞬时故障（超时/限流/5xx）时切换的备用模型；
+    # 留空表示不降级（行为与旧版一致）。主备都失败 → ai_manual_handoff 转人工。
+    deepseek_fallback_model: str = "deepseek-v4"
     deepseek_timeout_seconds: int = Field(default=90, ge=5, le=300)
+    # E7 月度 token 预算（按用户、自然月，审计表汇总核算）。0 = 不限额——
+    # 默认配置不锁死现有用户；设置正数后超限调用被拒且不发起供应商请求。
+    ai_monthly_token_budget: int = Field(default=0, ge=0)
     kimi_base_url: str = "https://api.moonshot.cn/v1"
     kimi_project_presurvey_api_key: SecretStr | None = Field(default=None, repr=False)
     kimi_project_presurvey_model: str = "kimi-k3"
     kimi_timeout_seconds: int = Field(default=180, ge=10, le=600)
+    # Kimi 槽位切到非 Moonshot 供应商（如 MiniMax）时的两个协议开关：
+    # - kimi_local_docx_extract=True：供应商不提供 file-extract 文件接口，
+    #   改为服务端本地解析 DOCX 取文本后送模型（文件不出本机）
+    # - kimi_openai_compatible=True：按通用 OpenAI 兼容端点发请求
+    #   （用 max_tokens 而非 max_completion_tokens，不发 reasoning_effort）
+    kimi_local_docx_extract: bool = False
+    kimi_openai_compatible: bool = False
     dsh_enabled: bool = False
     dsh_base_url: str = "http://127.0.0.1:8020"
     dsh_service_token: SecretStr | None = Field(default=None, repr=False)

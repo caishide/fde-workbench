@@ -1,0 +1,109 @@
+"""E7：AI 调用审计与月度 token 预算。
+
+每次供应商调用落一条 ``ai_call_audits``（模型/耗时/token/结果状态），预算按
+「当前自然月、按用户」汇总该表核算。约束：
+
+- 审计只记录元数据，绝不落密钥或提示词/上下文明文。
+- 预算默认 0 = 不限额（默认配置不锁死现有用户）；配置正数后，当月已用量
+  达到预算即拒绝后续调用（不发起任何供应商请求）。
+- 审计写入尽力而为：审计自身的失败不能打断业务 AI 调用。
+"""
+from __future__ import annotations
+
+import logging
+import time
+from datetime import UTC, datetime
+from typing import Any
+
+from flask import g, has_app_context
+
+from fde_api.extensions import db
+from fde_api.workbench.models import AICallAudit
+
+logger = logging.getLogger(__name__)
+
+
+def current_actor_id() -> str | None:
+    """请求上下文里的当前用户 id；后台任务等无请求场景返回 None。"""
+    if has_app_context():
+        actor = getattr(g, "current_user", None) or getattr(g, "_current_user", None)
+        if actor is not None and getattr(actor, "id", None):
+            return str(actor.id)
+    return None
+
+
+def tokens_used_this_month(session: Any, actor_id: str) -> int:
+    """当前自然月该用户的 AI token 消耗总量（审计表汇总）。"""
+    from sqlalchemy import func, select
+
+    month_start = datetime.now(UTC).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    total = session.scalar(
+        select(func.coalesce(func.sum(AICallAudit.input_tokens + AICallAudit.output_tokens), 0)).where(
+            AICallAudit.actor_user_id == actor_id,
+            AICallAudit.created_at >= month_start,
+            AICallAudit.status.in_(("succeeded", "budget_blocked")),
+        )
+    )
+    return int(total or 0)
+
+
+def budget_exceeded(session: Any, actor_id: str | None, budget: int) -> bool:
+    """月度预算是否已用尽。actor 未知或预算非正数时一律放行。"""
+    if not budget or budget <= 0 or not actor_id:
+        return False
+    return tokens_used_this_month(session, actor_id) >= budget
+
+
+def record_audit(
+    *,
+    request_id: str,
+    actor_id: str | None,
+    purpose: str | None,
+    model: str,
+    used_fallback: bool,
+    duration_ms: int,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    status: str,
+    error_code: str | None,
+) -> None:
+    """落一条审计。尽力而为：任何失败只记日志，不打断业务调用。"""
+    try:
+        if not has_app_context():
+            return
+        session = db.session()
+        try:
+            with session.begin():
+                session.add(
+                    AICallAudit(
+                        request_id=request_id[:120],
+                        actor_user_id=actor_id,
+                        purpose=purpose[:60] if purpose else None,
+                        model=model[:120],
+                        used_fallback=used_fallback,
+                        duration_ms=int(duration_ms),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        status=status,
+                        error_code=error_code[:60] if error_code else None,
+                    )
+                )
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001 - 审计失败不阻塞业务
+        logger.warning(
+            "AI call audit write failed request_id=%s status=%s", request_id, status,
+            exc_info=True,
+        )
+
+
+class Timer:
+    """最小耗时计时器（毫秒）。"""
+
+    def __init__(self) -> None:
+        self._start = time.monotonic()
+
+    def elapsed_ms(self) -> int:
+        return int((time.monotonic() - self._start) * 1000)

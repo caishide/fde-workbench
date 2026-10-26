@@ -62,3 +62,11 @@ def test_project_draft_and_guidance_paths_share_exact_redaction_output():
     assert "13800001111" not in draft_user_message
     assert "0755-88889999" not in draft_user_message
     assert "11010119900307001X" not in draft_user_message
+
+import pytest
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_test_schema():
+    """离线评测子树：覆盖仓库级迁移夹具，避免初始化共享 PG 测试库。"""
+    yield

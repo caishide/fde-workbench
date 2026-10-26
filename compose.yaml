@@ -56,6 +56,55 @@ services:
       retries: 12
       start_period: 30s
 
+  worker:
+    # v0.3: 补齐后台任务执行器。
+    # 此前 compose 只有 api，而所有后台任务（ai.chat / document.generate /
+    # file.scan / file.preview / project.presurvey.analyze / research.export /
+    # automation.execute）都靠 `flask worker` 消费 Redis 队列。没有 worker 时
+    # 事件只写进 outbox_events 且永远停在 pending —— 表现是前端一直显示
+    # 「正在排队…」，而数据库里 background_jobs 是空表。
+    # 注意：worker 不监听端口，只跑容器内循环。
+    build:
+      context: ./server
+    env_file:
+      - ./server/.env
+    environment:
+      FDE_DATABASE_URL: postgresql+psycopg://fde:${FDE_DB_PASSWORD:?FDE_DB_PASSWORD missing in .env}@twenty-db:5432/fde_workbench
+      FDE_REDIS_URL: redis://redis:6379/0
+      FDE_API_HOST: 0.0.0.0
+      FDE_API_PORT: "8010"
+    command: ["flask", "--app", "fde_api.wsgi:app", "worker"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - automation_qiflow-net
+    volumes:
+      - fde_storage:/app/.fde-storage
+
+  scheduler:
+    # v0.3: 自动化调度器。与 worker 分开：worker 只消费已入队的事件，
+    # 定时触发 automation.execute 靠 scheduler 周期性扫描到期任务。
+    build:
+      context: ./server
+    env_file:
+      - ./server/.env
+    environment:
+      FDE_DATABASE_URL: postgresql+psycopg://fde:${FDE_DB_PASSWORD:?FDE_DB_PASSWORD missing in .env}@twenty-db:5432/fde_workbench
+      FDE_REDIS_URL: redis://redis:6379/0
+      FDE_API_HOST: 0.0.0.0
+      FDE_API_PORT: "8010"
+    command: ["flask", "--app", "fde_api.wsgi:app", "scheduler"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - automation_qiflow-net
+    volumes:
+      - fde_storage:/app/.fde-storage
+
 networks:
   automation_qiflow-net:
     external: true

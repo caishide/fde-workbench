@@ -870,3 +870,36 @@ class OperationEvent(Base, TimestampMixin):
 
 
 from fde_api.research import models as research_models  # noqa: E402, F401
+
+
+class AICallAudit(Base, TimestampMixin):
+    """E7：每次 AI 供应商调用落一条审计（不含密钥与明文上下文）。
+
+    记录模型/耗时/token 用量/结果状态，供月度 token 预算核算与调用追溯；
+    预算超限时也落一条 status='budget_blocked'（未发起任何供应商请求）。
+    """
+
+    __tablename__ = "ai_call_audits"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('succeeded', 'failed', 'budget_blocked')",
+            name="ck_ai_call_audits_status",
+        ),
+        Index("ix_ai_call_audits_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    request_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    purpose: Mapped[str | None] = mapped_column(String(60))
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    used_fallback: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(60))

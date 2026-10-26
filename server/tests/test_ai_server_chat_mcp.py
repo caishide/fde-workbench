@@ -411,3 +411,52 @@ def test_weixin_callback_has_durable_per_user_idempotency(ai_context, db_session
     rows = db_session.scalars(select(AIConversation)).all()
     assert len(rows) == 2 and {c.user_id for c in rows} == {users["alice"].id, users["bob"].id}
     assert all(c.source == "wechat" for c in rows)
+
+
+def test_chat_conversation_can_be_deleted_by_its_owner(ai_context, client, settings, db_session):
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("Alice 要删的对话"))
+    headers = access_headers(users["alice"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"], headers=headers)
+
+    assert response.status_code == 200
+    assert response.json["data"]["deleted"] is True
+    db_session.rollback()
+    assert db_session.get(AIConversation, turn["conversation_id"]) is None
+    assert db_session.get(AIChatTurn, turn["id"]) is None
+    listing = client.get(CHAT_PATH + "/conversations", headers=headers)
+    assert listing.json["data"]["items"] == []
+
+
+def test_chat_conversation_delete_is_scoped_to_the_owner(ai_context, client, settings, db_session):
+    """Deleting someone else's conversation must look exactly like a 404."""
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("Alice 私有"))
+    bob_headers = access_headers(users["bob"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"], headers=bob_headers)
+
+    assert response.status_code == 404
+    assert response.json["error"]["code"] == "not_found"
+    db_session.rollback()
+    # Alice's conversation survives Bob's attempt.
+    assert db_session.get(AIConversation, turn["conversation_id"]) is not None
+
+
+def test_chat_conversation_delete_requires_authentication(ai_context, client, settings):
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("未授权删除"))
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"])
+
+    assert response.status_code == 401
+
+
+def test_chat_conversation_delete_of_missing_id_is_not_found(ai_context, client, settings):
+    users, _ = ai_context
+    headers = access_headers(users["alice"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + str(uuid4()), headers=headers)
+
+    assert response.status_code == 404
