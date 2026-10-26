@@ -29,7 +29,7 @@ import html
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from fde_api.auth.models import User
@@ -563,6 +563,14 @@ def finalize_quote(
             # 首单身份不依赖调用方自报 preset：工作室首笔成交（尚无任何已 finalize
             # 报价）即首单——卡 §5.4 三条硬约束 + 卡 §9 #1 回校义务在此服务端强制，
             # 手填系数建出的"事实首单"绕不过去。
+            #
+            # B3 TOCTOU：finalized_count 的统计与随后的判定之间没有行锁，两个
+            # 并发 finalize 都能读到 0 → 双双按「首单」放行，绕过「必须回校」
+            # 与三条硬约束。事务级 advisory lock 让「统计 + 判定 + 写 finalized」
+            # 这一段完全串行（先例：bridge/sync.py 的 fde_bridge_apply）。
+            session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext('fde_quote_first_order'))")
+            )
             finalized_count = session.scalar(
                 select(func.count())
                 .select_from(Quote)
