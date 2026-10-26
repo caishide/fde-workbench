@@ -182,3 +182,45 @@ it("keeps the filled evidence form and shows the error when the server rejects",
   )
   expect(evidenceRequestBodies()).toHaveLength(1)
 })
+
+it("C2: opening the verify panel defaults every checklist item to unchecked", async () => {
+  const user = userEvent.setup()
+  mocks.apiRequest.mockResolvedValue(
+    gateView({
+      gates: [
+        {
+          gate_key: "G6",
+          status: "evidence",
+          decision: null,
+          submitted_at: "2026-10-20T08:00:00+00:00",
+          decided_at: null,
+          checklist: [
+            { label: "问题陈述（SCQA）", claim_status: "claimed", source_uri: "fdeops://x/y", content_hash: "a".repeat(64) },
+            { label: "解决方案概要", claim_status: "claimed", source_uri: "fdeops://x/z", content_hash: "b".repeat(64) },
+          ],
+          gate_name: "提案门",
+          node_key: "S4",
+          exit_condition: "提案书确认",
+          evidence_location: "openfde assets/",
+          contract_payment: null,
+          signer_role: null,
+          fail_exit: null,
+          decision_semantics: null,
+          template_source_uri: null,
+        },
+      ],
+    }),
+  )
+  render(<GateBoard projectId="gate-project" canManage />)
+
+  await user.click(await screen.findByRole("button", { name: "人工核验拍板" }))
+
+  // claimed ≠ accepted：打开面板时默认全不勾（人工逐项核验后才算 accepted）
+  const boxes = screen
+    .getAllByRole("checkbox")
+    .filter((el) => (el as HTMLInputElement).type === "checkbox") as HTMLInputElement[]
+  expect(boxes.length).toBe(2)
+  expect(boxes.every((el) => !el.checked)).toBe(true)
+  // pass 过门要求全部接受：全不勾时拍板按钮禁用
+  expect(screen.getByRole("button", { name: /拍板（接受 0\/2）/ })).toBeDisabled()
+})

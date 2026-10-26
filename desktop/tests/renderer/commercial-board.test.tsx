@@ -116,3 +116,21 @@ it("surfaces the server rejection next to the create form", async () => {
   await screen.findByText("报价创建失败：档位参数不合法")
   expect(calls).toBe(1)
 })
+
+it("C1: invalid numeric input surfaces a visible Chinese error instead of a silent rejection", async () => {
+  const user = userEvent.setup()
+  render(<CommercialBoard projectId={PROJECT_ID} canManage />)
+
+  const base = await screen.findByPlaceholderText("合同基数金额 ¥")
+  await user.type(base, "0")
+  await user.click(screen.getByRole("button", { name: "生成收款计划" }))
+
+  // parsePositive 的抛错发生在 post() 之前——修复后由 mutate 捕获并展示
+  await screen.findByText("合同基数金额 必须是正数")
+  // 未发起任何请求
+  expect(
+    mocks.apiRequest.mock.calls.filter(
+      (call) => String(call[0]).endsWith("/payments/plan"),
+    ),
+  ).toHaveLength(0)
+})

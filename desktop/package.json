@@ -35,7 +35,7 @@
   },
   "build": {
     "appId": "org.fdeworkbench.desktop",
-    "productName": "FDE 工作台",
+    "productName": "蔡工FDE",
     "artifactName": "FDE-Workbench-${version}-${arch}.${ext}",
     "asar": true,
     "files": [

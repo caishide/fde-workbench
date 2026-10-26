@@ -10,7 +10,7 @@
     "test": "npm run test:operations && npm run test:desktop && npm run test:server",
     "test:operations": "node --test tests/operations/*.test.mjs",
     "test:desktop": "npm --workspace desktop test",
-    "test:server": "cd server && .venv/bin/python -m pytest",
+    "test:server": "node scripts/run-server-tests.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
     "typecheck": "npm --workspace desktop run typecheck",
     "package:mac": "npm --workspace desktop run package:mac",
