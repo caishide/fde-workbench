@@ -1,0 +1,4 @@
+# bash 脚本在仓库内必须保持 LF：CRLF blob 会让 Linux CI 的 bash 直接
+# 「$'\r': command not found」语法错误（check-pseudonymization.sh 踩过，
+# 本机 Git Bash 容忍、CI 必炸）。checkout 时也强制 LF，双端一致。
+*.sh text eol=lf

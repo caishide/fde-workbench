@@ -286,6 +286,8 @@ def test_system_default_resolve_labels_minimax_endpoint_as_minimax(app, db_sessi
     from fde_api.extensions import db
 
     with app.app_context():
+        # 系统默认分支要求已配置 API Key；不能依赖 runner 机器上的 .env
+        monkeypatch.setattr(app.config["SETTINGS"], "deepseek_api_key", "ci-synthetic-key")
         monkeypatch.setattr(app.config["SETTINGS"], "deepseek_base_url", "https://api.minimaxi.com/v1")
         monkeypatch.setattr(app.config["SETTINGS"], "deepseek_industry_template_model", "MiniMax-M3.1-Flash")
         with db.session() as session:
