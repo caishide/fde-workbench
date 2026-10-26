@@ -216,6 +216,10 @@ def main() -> int:
         )
         check("非法 decision 400", r.status_code == 400)
         r = client.post(
+            f"{gates_url}/G8/decision", json={"result": "conditional_pass"}, headers=admin_headers
+        )
+        check("G8 conditional_pass 400（A1 回归钉：仅 G9）", r.status_code == 400 and r.get_json()["error"]["code"] == "gate_result_not_allowed")
+        r = client.post(
             f"{gates_url}/G8/decision", json={"result": "pass", "decision": "proceed"}, headers=admin_headers
         )
         check(
