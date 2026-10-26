@@ -12,7 +12,6 @@ import os
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -24,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from fde_api.auth.decorators import require_auth
 from fde_api.control.models import ChannelBinding
 from fde_api.control.service import ControlServiceError
-from fde_api.control.weixin_models import WeixinAccount, WeixinInbox
+from fde_api.control.weixin_models import WeixinAccount
 from fde_api.errors import error_response
 from fde_api.extensions import db
 

@@ -189,7 +189,6 @@ def db_session(app) -> Session:
         SkillVersion,
         UserAIAccessGrant,
     )
-    from fde_api.guidance.models import ProjectGuidanceAnalysis, ProjectPresurveySource
     from fde_api.research.models import (
         ProjectAIOpportunityProfile,
         ProjectResearchPersonalMemo,

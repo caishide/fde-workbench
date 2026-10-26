@@ -1,4 +1,3 @@
-import pytest
 
 from fde_api.jobs.handlers import clear_handlers, register_handler
 from fde_api.jobs.models import BackgroundJob

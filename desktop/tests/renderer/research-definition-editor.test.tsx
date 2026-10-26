@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { AuthProvider } from "../../src/renderer/src/auth/AuthProvider"
 import { DangerConfirmProvider } from "../../src/renderer/src/common/DangerConfirmProvider"
 import { ResearchDefinitionEditor, chineseResearchPath } from "../../src/renderer/src/research/ResearchDefinitionEditor"
+import type { ResearchDefinitionDto } from "../../src/renderer/src/research/types"
 import { TemplateEditor } from "../../src/renderer/src/templates/TemplateEditor"
 import type { ApiResponse, BridgeResult } from "../../src/shared/contracts"
 import type { TemplateVersionDto } from "../../src/renderer/src/workbench/types"
@@ -17,7 +18,7 @@ import { adminUser, authResult, bridge, deferred, installBridge, ok } from "./te
 
 const emptyDefinition = { version: 4, forms: [] }
 
-const definitionWithTwoFields = {
+const definitionWithTwoFields: ResearchDefinitionDto = {
   version: 4,
   forms: [
     {

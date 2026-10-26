@@ -21,7 +21,6 @@ from fde_api.control.models import AutomationApproval, AutomationTask, Automatio
 from fde_api.control.knowledge import snapshot_for_run
 from fde_api.extensions import db
 from fde_api.jobs.outbox import enqueue_outbox
-from fde_api.projects.permissions import project_access
 from fde_api.projects.service import ProjectServiceError
 from fde_api.projects.task_service import batch_assign_project_tasks_in_session
 from fde_api.users.service import DISPLAY_NAME_MAX_LENGTH

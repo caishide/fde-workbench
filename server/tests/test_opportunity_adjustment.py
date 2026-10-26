@@ -39,3 +39,9 @@ def test_invalid_proposals(raw):
     with pytest.raises(AIOpportunityDiscoveryError) as error:
         normalize_proposal(raw)
     assert error.value.code == "ai_output_invalid"
+
+
+__all__ = [
+    "ai_context",
+    "make_project",
+]

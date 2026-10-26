@@ -271,7 +271,7 @@ describe("project detail workspace", () => {
   })
 
   it("treats a successful 204 mutation as an empty renderer result", async () => {
-    const snapshot = { generation: 1, userId: "admin", accessToken: "access-token" }
+    const snapshot = { generation: 1, userId: "admin", accessToken: "access-token", accessExpiresAt: "2026-09-22T10:00:00.000Z" }
     const client = createApiClient({
       request: vi.fn().mockResolvedValue(ok({ status: 204, data: null, error: null })),
     }, {

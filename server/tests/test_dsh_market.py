@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
-import requests
 from sqlalchemy import select
 
 from fde_api.control.dsh_market import sync_dsh_market, sync_dsh_market_scheduled

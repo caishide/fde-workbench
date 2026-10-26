@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 from alembic import command
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 

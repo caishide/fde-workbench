@@ -307,3 +307,10 @@ def test_draft_document_template_can_be_deactivated_but_published_cannot(
     locked = admin.client.post(f"{base}/{published['id']}/deactivate", headers=headers)
     assert locked.status_code == 409, locked.get_data(as_text=True)
     assert locked.json["error"]["code"] == "template_version_immutable"
+
+
+__all__ = [
+    "authorized_client_factory",
+    "engineer_client",
+    "leader_client",
+]

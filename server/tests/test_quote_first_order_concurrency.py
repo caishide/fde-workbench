@@ -20,8 +20,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
@@ -29,7 +28,6 @@ from fde_api.auth.passwords import hash_password
 from fde_api.projects.quote_service import QuoteServiceError, finalize_quote
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project, Quote
 
-from conftest import resolve_test_database_url
 
 LOCK_KEY = "fde_quote_first_order"
 

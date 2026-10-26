@@ -5,7 +5,7 @@ import json
 from typing import Any
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import JSON, String, Text, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, mapped_column

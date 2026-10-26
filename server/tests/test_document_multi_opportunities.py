@@ -50,3 +50,9 @@ def test_rejects_cross_project_opportunity_and_empty_selection(db_session, leade
         response = leader_client.post(f'/api/v1/projects/{project.id}/documents', json={'document_type': 'sow', 'expected_version': project.version, 'source_opportunity_ids': ids})
         assert response.status_code == 400
     assert not db_session.scalars(select(ProjectDocument).where(ProjectDocument.project_id == project.id)).all()
+
+
+__all__ = [
+    "authorized_client_factory",
+    "leader_client",
+]

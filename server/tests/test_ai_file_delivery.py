@@ -75,3 +75,10 @@ def test_binding_revocation_during_upload_prevents_send(weixin, db_session, app,
     with pytest.raises(ControlServiceError):
         send_file(**args)
     assert not any(endpoint == "sendmessage" for endpoint, _ in transport.calls)
+
+
+__all__ = [
+    "confirm",
+    "make_project",
+    "weixin",
+]

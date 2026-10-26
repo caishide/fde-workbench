@@ -384,7 +384,7 @@ def compare_runs():
         analysis_fields = ("summary", "comparability", "quality", "efficiency", "decision", "limitations", "recommendation")
         if not isinstance(payload, dict) or any(not isinstance(payload.get(k), str) for k in analysis_fields):
             raise ValueError("invalid_analysis")
-    except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as error:
+    except (requests.RequestException, ValueError, KeyError, TypeError, IndexError):
         return error_response("comparison_failed", "AI 对比分析失败；两条原始记录仍可查看，请检查默认模型后重试。", 502)
     return jsonify({"data": {"baseline": a_data, "jev": b_data, "comparable": comparable,
         "decision_phases": {"baseline": a_decisions, "jev": b_decisions},

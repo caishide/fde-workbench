@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from unittest.mock import Mock
 from uuid import uuid4
 

@@ -18,7 +18,6 @@ from zipfile import BadZipFile, ZipFile
 
 from flask import current_app
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-import openpyxl
 from openpyxl import load_workbook
 from openpyxl.utils.cell import column_index_from_string, get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException

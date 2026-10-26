@@ -1,0 +1,30 @@
+# Python 静态基线（WP06/B2）。
+#
+# 只跑「会咬人」且已清零的检查：ruff 的 F401/F841（未使用导入/局部变量），
+# 以及基于基线清单的 mypy 增量检查（存量错误记在 server/mypy-baseline.txt，
+# 新增错误一律拦截——不靠 ignore 隐藏）。
+#
+# 本地运行：pre-commit run --all-files
+# 说明：前端 typecheck（desktop/tsconfig.web.json）由 CI 步骤执行，不进 pre-commit
+#       （需要 node_modules，钩子里装依赖会拖慢每次提交）。
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-unused
+        name: ruff (F401/F841 unused imports & variables)
+        entry: server/.venv/Scripts/python.exe -m ruff check --select F401,F841 server/src server/tests
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: mypy-baseline
+        name: mypy (baseline + no new errors)
+        entry: server/.venv/Scripts/python.exe scripts/check-python-types.py
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: pytest-server
+        name: pytest (server, isolated PostgreSQL test database)
+        entry: bash -c "cd server && PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests -q"
+        language: system
+        pass_filenames: false
+        types: [python]

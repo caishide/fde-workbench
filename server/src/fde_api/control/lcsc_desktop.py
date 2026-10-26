@@ -256,7 +256,7 @@ def next_action(run_id):
         if run.status != "selected" or "other" not in config.get("fields", []) or value["sequence"] != previous + 1 or previous >= 12:
             raise ControlServiceError("run_busy", "该步骤不可执行或已达到 12 步上限。", 409)
         run.status = "thinking"
-        key, query = run.skill_key, run.query
+        key = run.skill_key
     calls, failed = [], False
     try:
         assessment, selection, facts = assess_other(user=g.current_user, variant=key, config=config, context=context, options=clean, sequence=value['sequence'], calls=calls)

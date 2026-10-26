@@ -75,7 +75,9 @@ describe("AI opportunity discovery guidance", () => {
       priority: "high", business_value_score: 5, feasibility_score: 4, data_readiness_score: 3,
       risk_level: "medium", next_action: "核验数据", research_answers: researchAnswers, evidence: [],
     }] })
-    const apiRequest = vi.fn(async (path: string, options: { method: string }) => {
+    // 组件 prop 是泛型签名（apiRequest<T>）；测试替身返回体随路径变化，
+    // 用 any 承接——生产代码的泛型约束不受影响。
+    const apiRequest = vi.fn(async (path: string, options: { method: string }): Promise<any> => {
       if (path === "/api/v1/projects/project-1" && options.method === "GET") return { version: 3 }
       if (path.endsWith("/research/subjects") && options.method === "POST") return { id: "opportunity-1", version: 1, project_version: 4 }
       if (path.endsWith("/research/forms") && options.method === "GET") return { items: [{

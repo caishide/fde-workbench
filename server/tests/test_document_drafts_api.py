@@ -14,7 +14,6 @@ from fde_api.documents.models import (
     DocumentGenerationJob,
     DocumentTemplate,
     DocumentTemplateVersion,
-    ProjectDocument,
     ProjectDocumentVersion,
 )
 from fde_api.research.models import ProjectAIOpportunityProfile, ProjectResearchSubject
