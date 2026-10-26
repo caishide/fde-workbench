@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
+from fde_api.config import Settings
 from fde_api.projects.quote_service import QuoteServiceError, finalize_quote
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project, Quote
 
@@ -113,13 +114,17 @@ def _make_quote(
     return quote
 
 
-def _finalize(url: str, project_id: str, quote_key: str, actor_id: str):
-    """在独立连接里跑一次 finalize，返回 (状态, 载荷)。"""
+def _finalize(settings: Settings, project_id: str, quote_key: str, actor_id: str):
+    """在独立连接里跑一次 finalize，返回 (状态, 载荷)。
+
+    settings 必须来自 conftest 的 test_settings fixture——那里显式补齐了
+    redis_url/jwt_secret 等必填项；此处自行 Settings(database_url=...) 会在
+    没有 .env 的干净环境（CI）上因缺必填字段直接崩掉。
+    """
     from fde_api.app import create_app
-    from fde_api.config import Settings
     from fde_api.extensions import db
 
-    app = create_app(Settings(database_url=url, env="test"))
+    app = create_app(settings)
     with app.app_context():
         session = db.session()
         try:
@@ -147,7 +152,7 @@ def test_first_order_constraint_applies_when_no_finalized_quote_exists(
     violating = _make_quote(db_session, project, leader, hours="150")
 
     status, payload = _finalize(
-        test_settings.database_url, project.id, violating.quote_key, leader.id
+        test_settings, project.id, violating.quote_key, leader.id
     )
     assert status == "error"
     assert payload == "first_order_constraint"
@@ -212,7 +217,7 @@ def test_concurrent_finalize_waits_for_first_order_lock_and_then_passes(
 
     def worker() -> None:
         outcome.append(
-            _finalize(url, project.id, violating.quote_key, leader.id)
+            _finalize(test_settings, project.id, violating.quote_key, leader.id)
         )
 
     worker_thread = threading.Thread(target=worker, daemon=True)
@@ -259,7 +264,7 @@ def test_no_deadlock_and_single_finalized_effect_under_concurrency(
     def worker(quote_key: str) -> None:
         try:
             barrier.wait(timeout=20)
-            outcome.append(_finalize(url, project.id, quote_key, leader.id))
+            outcome.append(_finalize(test_settings, project.id, quote_key, leader.id))
         except BaseException as exc:  # noqa: BLE001 - 汇总到主线程断言
             errors.append(exc)
 

@@ -39,7 +39,10 @@ describe("project library", () => {
     expect(within(list).getAllByRole("listitem")).toHaveLength(2)
     expect(within(toolbar).getByLabelText("筛选文件状态")).toHaveValue("normal")
     expect(within(list).getAllByRole("button", { name: "预览" })).toHaveLength(2)
-    expect(within(list).getByText("2026/8/28 10:30:00")).toBeVisible()
+    // 期望值与组件用同一表达式计算：fixture 时间带 +08:00 偏移，渲染结果
+    // 取决于运行机器时区（本地 UTC+8 与 CI 的 UTC 不同），硬编码必挂其一。
+    const expectedTime = new Date("2026-08-28T10:30:00+08:00").toLocaleString("zh-CN", { hour12: false })
+    expect(within(list).getByText(expectedTime)).toBeVisible()
     expect(within(toolbar).getByLabelText("筛选文件类型").closest("label")).toHaveClass("library-filter")
     expect(within(toolbar).getByLabelText("筛选业务阶段").closest("label")).toHaveClass("library-filter")
   })
