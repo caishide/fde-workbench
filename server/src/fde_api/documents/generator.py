@@ -234,8 +234,18 @@ def handle_document_generation(*, version_id: str) -> dict[str, Any]:
 
             rendered = render_docx(io.BytesIO(template_bytes), context, rich_text)
             required_sections = _required_sections(document.document_type, version.source_template_version)
+            enterprise = context.get("enterprise") if isinstance(context.get("enterprise"), dict) else {}
+            # D6 空值检测只针对声明了企业标识的模板（A2：标识即 enterprise_code），
+            # 未声明标识的模板（如内部清单）不强制，避免把无关文档一票打死。
+            required_values: tuple[tuple[str, str], ...] = ()
+            if _template_requires_enterprise_identity(template_bytes):
+                required_values = (
+                    ("enterprise_code", str(enterprise.get("enterprise_code") or "")),
+                )
             qa = inspect_generated_docx(
-                io.BytesIO(_stream_bytes(rendered)), required_sections
+                io.BytesIO(_stream_bytes(rendered)),
+                required_sections,
+                required_values=required_values,
             )
             if qa.errors:
                 message = "; ".join(f"{e.code}: {e.message}" for e in qa.errors)
@@ -385,13 +395,14 @@ def _project_plan_elements(document, section: str, context: dict[str, Any]) -> l
     guidance = context.get("guidance") if isinstance(context.get("guidance"), dict) else {}
     tasks = context.get("tasks") if isinstance(context.get("tasks"), list) else []
     if section == "enterprise":
+        # A2 代号化：「联系人/联系方式/企业地址」三行恒为空，整行删除（不是填空）；
+        # 「企业名称」栏承载 enterprise_code。
         rows = [
             ["项目名称", project.get("name", ""), "项目编号", project.get("project_code", "")],
-            ["企业名称", enterprise.get("name", ""), "行业", project.get("industry_name", "")],
-            ["联系人", enterprise.get("contact_name", ""), "联系方式", enterprise.get("contact_phone", "")],
-            ["企业地址", enterprise.get("address", ""), "项目负责人", project.get("leader_name", "")],
-            ["计划周期", _project_period(project), "当前状态", _project_status_label(project.get("status"))],
-            ["项目背景", project.get("background", ""), "备注", project.get("notes", "")],
+            ["企业名称", enterprise.get("enterprise_code", ""), "行业", project.get("industry_name", "")],
+            ["项目负责人", project.get("leader_name", ""), "计划周期", _project_period(project)],
+            ["当前状态", _project_status_label(project.get("status")), "项目背景", project.get("background", "")],
+            ["备注", project.get("notes", ""), "", ""],
         ]
         return [_new_table(document, rows, header=False, widths=[1.15, 3.35, 1.15, 4.15])._tbl]
     if section == "guidance":
@@ -563,9 +574,9 @@ _CHINESE_PLACEHOLDER = re.compile(r"【待填写：\s*([^】]+?)\s*】")
 _CHINESE_FIELD_ALIASES = {
     "项目名称": "project.name",
     "项目编号": "project.project_code",
-    "企业名称": "enterprise.name",
-    "联系人": "enterprise.contact_name",
-    "联系方式": "enterprise.contact_phone",
+    # A2 代号化：「企业名称」占位符的值只承载企业代号；联系人/联系方式
+    # 代号化下不存在，别名一并删除。
+    "企业名称": "enterprise.enterprise_code",
     "生成日期": "generated_date",
     "AI机会名称": "opportunity_name",
     "AI 机会名称": "opportunity_name",
@@ -696,10 +707,17 @@ def _placeholder_value(context: dict[str, Any], label: str, fallback: str) -> st
     if value in (None, ""):
         return fallback
     if isinstance(value, list):
-        return "、".join(str(item) for item in value)
-    if isinstance(value, dict):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)
+        text = "、".join(str(item) for item in value)
+    elif isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+    # S10 纪律：AI 生成的建议旁必须标注「AI 生成，请核实」——不标注，
+    # 客户会把 AI 输出当结论用（D3/E1）。
+    sources = context.get("field_sources")
+    if isinstance(sources, dict) and sources.get(path) == "ai":
+        text = f"{text}（AI 生成，请核实）"
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +799,19 @@ def _build_context(
     # A solution export is a faithful rendering of an explicitly saved revision,
     # never a second AI design pass. Read the immutable version, not live links.
     has_saved_solution = isinstance(content_snapshot.get("solution"), dict) or isinstance(snapshot.get("solution"), dict)
-    ai_fields = {} if has_saved_solution else generate_document_fields(session, document, requested_fields)
+    frozen_ai_fields = (
+        content_snapshot.get("ai_fields")
+        if isinstance(content_snapshot.get("ai_fields"), dict)
+        else {}
+    )
+    if has_saved_solution:
+        ai_fields = {}
+    elif frozen_ai_fields:
+        # D10 可重现：同版本再生成以首代冻结的 AI 字段为准，不实时读库——
+        # 调研答案的后续修改不得改变已冻结版本的重复生成结果。
+        ai_fields = dict(frozen_ai_fields)
+    else:
+        ai_fields = generate_document_fields(session, document, requested_fields)
     merged_fields = dict(ai_fields)
     merged_fields.update(manual_fields)
     if merged_fields.get("generated_date") in (None, "", [], {}):
@@ -800,12 +830,21 @@ def _build_context(
     if merged_fields:
         frozen_content = dict(content_snapshot)
         frozen_content["field_overrides"] = merged_fields
+        # D3/E1 来源真值：AI 字段单独冻结，重复生成既可复现也可追溯来源。
+        frozen_content["ai_fields"] = dict(ai_fields)
         if document.opportunity_scope_json and not has_saved_solution:
             frozen_content["opportunity_scope"] = document.opportunity_scope_json
         version.content_snapshot_json = frozen_content
     context["field_overrides"] = merged_fields
     for key, value in merged_fields.items():
         _set_context_default(context, key, value)
+    # D3/E1 来源标记：仍是 AI 原值（未被人工改写）的字段，渲染时标注
+    # 「AI 生成，请核实」（S10 纪律）。人工覆盖后标记即消失。
+    context["field_sources"] = {
+        key: "ai"
+        for key, value in ai_fields.items()
+        if value not in (None, "", [], {}) and merged_fields.get(key) == value
+    }
     context["document"] = {
         "business_code": document.business_code,
         "version_number": version.version_number,
@@ -873,6 +912,50 @@ def _extract_chinese_placeholder_labels(template_bytes: bytes) -> list[str]:
             for table in part.tables:
                 collect_table(table, seen)
     return labels
+
+
+def _template_requires_enterprise_identity(template_bytes: bytes) -> bool:
+    """模板是否声明了企业标识占位（A2 下标识即 enterprise_code）。
+
+    覆盖两种写法：Jinja 的 ``enterprise.*`` 引用，以及中文占位符
+    「【待填写：企业名称】」。声明了就必须成文非空（D6），否则 QA 拦截。
+    """
+    document = Document(io.BytesIO(template_bytes))
+
+    def matches(paragraphs) -> bool:
+        return any(
+            "enterprise" in paragraph.text or "企业名称" in paragraph.text
+            for paragraph in paragraphs
+        )
+
+    def scan_table(table, seen: set[object]) -> bool:
+        for row in table.rows:
+            for cell in row.cells:
+                key = cell._tc
+                if key in seen:
+                    continue
+                seen.add(key)
+                if matches(cell.paragraphs):
+                    return True
+                for nested in cell.tables:
+                    if scan_table(nested, seen):
+                        return True
+        return False
+
+    seen: set[object] = set()
+    if matches(document.paragraphs):
+        return True
+    if any(scan_table(table, seen) for table in document.tables):
+        return True
+    for section in document.sections:
+        for part in (section.header, section.footer):
+            if part is None:
+                continue
+            if matches(part.paragraphs) or any(
+                scan_table(table, set()) for table in part.tables
+            ):
+                return True
+    return False
 
 
 def _content_rich_text(version: ProjectDocumentVersion):

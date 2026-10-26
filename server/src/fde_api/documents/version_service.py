@@ -648,16 +648,41 @@ def get_document_download_url(
             raise DocumentVersionServiceError(
                 "version_not_found", "Document version was not found.", 404
             )
+        # D4 下载门禁：draft 未经确认（可能带 AI 标注或未核实内容），不得签发
+        # 对外下载 URL；确认后的 confirmed/archived 版本才可下载。
+        if version.status == "draft":
+            raise DocumentVersionServiceError(
+                "document_version_not_confirmed",
+                "草稿版本未确认，不能下载；请先完成版本确认。",
+                409,
+            )
         docx_file = _load_docx_file(session, version)
         if docx_file is None or not _is_downloadable(docx_file):
             raise DocumentVersionServiceError(
                 "file_not_available", "The document version is not available.", 409
             )
-        return object_storage.current.sign_download(
+        signed_url = object_storage.current.sign_download(
             docx_file.storage_key,
             docx_file.original_filename,
             expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
         )
+        # D5 交付审计：每次对外签发下载 URL 落一条可查询审计（操作人/时间/
+        # sha256），证明客户拿到的是哪一版。
+        with session.begin():
+            record_event(
+                session,
+                actor,
+                "document_version_delivered",
+                project,
+                {
+                    "document_id": document.id,
+                    "version_id": version.id,
+                    "version_number": version.version_number,
+                    "sha256": version.sha256 or "",
+                    "status": version.status,
+                },
+            )
+        return signed_url
     finally:
         session.close()
 

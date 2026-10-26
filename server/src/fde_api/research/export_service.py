@@ -16,6 +16,8 @@ from sqlalchemy.orm import selectinload
 from fde_api.ai.deepseek import DeepSeekClient, DeepSeekError
 from fde_api.auth.models import User
 from fde_api.config import Settings
+from fde_api.documents.catalog import load_template_manifest
+from fde_api.documents.qa import inspect_generated_docx
 from fde_api.extensions import db, object_storage
 from fde_api.documents.catalog import RESOURCE_TEMPLATES_DIR
 from fde_api.documents.models import DocumentTemplate, DocumentTemplateVersion
@@ -166,6 +168,7 @@ def export_research_result(*, actor: User, project_id: str, form_id: str) -> dic
             raise ResearchExportError("research_answers_required", "当前调研表还没有可导出的调研内容。", 400)
         summary = _ai_summary(project, subject, context)
         data = _build_docx(project, subject, context, summary, session=session)
+        _research_result_qa(data, project)
         display_name = _research_result_name(subject.name, form.name)
         existing = _find_research_result_file(session, project.id, form.id)
         with session.begin_nested():
@@ -279,7 +282,10 @@ def _build_docx(
         "建议": "\n".join(f"• {item}" for item in summary["recommendations"]),
     }
     _replace_template_values(document, values)
-    if not _insert_research_content(document, forms):
+    inserted = _insert_research_content(document, forms)
+    # 模板缺失或未携带摘要段时补齐——否则 AI 总结静默丢失，文档只剩调研记录。
+    _append_missing_summary_sections(document, values)
+    if not inserted:
         # A custom template may omit the reserved insertion marker. Preserve its
         # header/footer and append the dynamic answers rather than dropping data.
         document.add_heading("调研记录", level=2)
@@ -287,6 +293,44 @@ def _build_docx(
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
+
+
+_SUMMARY_SECTION_ORDER = ("调研摘要", "关键发现", "建议")
+
+
+def _append_missing_summary_sections(document: Document, values: dict[str, str]) -> None:
+    existing = "\n".join(p.text for p in document.paragraphs)
+    for title in _SUMMARY_SECTION_ORDER:
+        if title in existing:
+            continue
+        content = values.get(title, "")
+        if not content:
+            continue
+        document.add_heading(title, level=2)
+        for line in content.split("\n"):
+            if line.strip():
+                document.add_paragraph(line)
+
+
+def _research_result_qa(data: bytes, project: Project) -> None:
+    """D7：research_result 导出与其它文档类型一样过 inspect_generated_docx 门。
+
+    校验 manifest 声明的必备章节与企业代号（A2 标识）真实成文；
+    不通过则导出失败，不允许静默出一份缺内容/缺标识的报告。
+    """
+    manifest = load_template_manifest().get("research_result", {})
+    qa = inspect_generated_docx(
+        io.BytesIO(data),
+        manifest.get("required_sections", ()),
+        required_values=(("enterprise_code", project.enterprise_code or ""),),
+    )
+    if qa.errors:
+        detail = "; ".join(f"{error.code}: {error.message}" for error in qa.errors)
+        raise ResearchExportError(
+            "research_result_qa_failed",
+            f"调研结果文档未通过质量检查，导出已阻止。{detail}",
+            500,
+        )
 
 
 def _published_research_template(session) -> bytes | None:

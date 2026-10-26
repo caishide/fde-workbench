@@ -32,6 +32,7 @@ import json
 import shutil
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -100,7 +101,7 @@ def build_built_template(key: str, entry: dict) -> bytes:
         metadata = document.add_table(rows=2, cols=2)
         metadata.style = "Table Grid"
         metadata.cell(0, 0).text = "项目：{{ project.name }}"
-        metadata.cell(0, 1).text = "企业：{{ enterprise.name }}"
+        metadata.cell(0, 1).text = "企业：{{ enterprise.enterprise_code }}"
         metadata.cell(1, 0).text = "生成日期：【待填写：生成日期】"
         metadata.cell(1, 1).text = "文档状态：系统生成"
         for cell in metadata._cells:
@@ -121,7 +122,7 @@ def build_built_template(key: str, entry: dict) -> bytes:
     document.add_paragraph(f"这是一份【{name}】模板，占位符将在文档生成时替换。")
     document.add_heading("基本信息", level=2)
     document.add_paragraph(f"项目名称：{{{{ project.name }}}}")
-    document.add_paragraph(f"企业名称：{{{{ enterprise.name }}}}")
+    document.add_paragraph(f"企业名称：{{{{ enterprise.enterprise_code }}}}")
 
     document.add_heading("参与角色", level=2)
     table = document.add_table(rows=1, cols=2)
@@ -174,7 +175,7 @@ def build_solution_sow_template() -> bytes:
     document.add_paragraph("【待填写：方案名称】", style="Subtitle")
     document.add_paragraph("本工作说明书明确关联 AI 机会对应的交付设计、交付物、验收依据和实施条件。关联机会用于追溯业务需求，具体实施内容以本文件记载的方案及双方确认事项为准。")
     document.add_heading("项目信息", level=1)
-    document.add_paragraph("项目名称：{{ project.name }}\n企业名称：{{ enterprise.name }}\n文档编号：{{ document.business_code }}    文档版本：{{ document.version_number }}\n来源方案版本：【待填写：来源方案版本】\n生成日期：【待填写：生成日期】")
+    document.add_paragraph("项目名称：{{ project.name }}\n企业名称：{{ enterprise.enterprise_code }}\n文档编号：{{ document.business_code }}    文档版本：{{ document.version_number }}\n来源方案版本：【待填写：来源方案版本】\n生成日期：【待填写：生成日期】")
     for heading, token in (
         ("关联 AI 机会", "关联AI机会"),
         ("方案设计", "方案设计"),
@@ -262,6 +263,25 @@ def _shade_cell(cell, fill: str) -> None:
     shading.set(qn("w:fill"), fill)
 
 
+#: 固定的 zip 条目时间戳：python-docx 落盘时写入当前时间（2 秒粒度），两次构建
+#: 跨过时间边界就字节不同，--check-reproducible 随之为偶发假红；归一化后确定性成立。
+_FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+
+
+def _normalize_docx_bytes(data: bytes) -> bytes:
+    """Rewrite every zip entry timestamp to a fixed epoch, preserving content."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(
+        buffer, "w", zipfile.ZIP_DEFLATED
+    ) as dst:
+        for info in src.infolist():
+            fixed = zipfile.ZipInfo(info.filename, date_time=_FIXED_ZIP_TIME)
+            fixed.compress_type = zipfile.ZIP_DEFLATED
+            fixed.external_attr = info.external_attr
+            dst.writestr(fixed, src.read(info.filename))
+    return buffer.getvalue()
+
+
 def build_into(output_dir: Path) -> list[Path]:
     """Write ``<key>.docx`` for every catalog type and return the created paths."""
     output_dir = Path(output_dir)
@@ -271,7 +291,7 @@ def build_into(output_dir: Path) -> list[Path]:
         source = entry["source"]
         destination = output_dir / f"{key}{DOCX_EXTENSION}"
         if source == "built":
-            data = build_built_template(key, entry)
+            data = _normalize_docx_bytes(build_built_template(key, entry))
         else:
             source_path = resolve_document_source(source)
             if source_path is None or not source_path.is_file():
