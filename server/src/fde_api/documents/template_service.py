@@ -267,12 +267,23 @@ def copy_template_version(*, actor: User, template_id: str) -> dict[str, Any]:
 
 
 def deactivate_template_version(*, actor: User, version_id: str) -> dict[str, Any]:
-    """Mark a template version inactive (soft-delete)."""
+    """Mark a draft template version inactive (soft-delete).
+
+    D9 发布即锁版：已发布版本被历史文档的模板来源指针引用，停用它会让那些
+    文档失去可重现的模板来源。published/inactive 版本的停用一律拒绝并给出
+    明确冲突错误；要换模板请上传新草稿版本。
+    """
     del actor
     session = db.session()
     try:
         with session.begin():
             version = _load_version(session, version_id)
+            if version.status != "draft":
+                raise DocumentTemplateServiceError(
+                    "template_version_immutable",
+                    "This template version is locked and cannot be changed or deleted.",
+                    409,
+                )
             version.status = "inactive"
             session.flush()
             session.refresh(version)

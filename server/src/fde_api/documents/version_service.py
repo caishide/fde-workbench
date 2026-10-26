@@ -667,21 +667,22 @@ def get_document_download_url(
             expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
         )
         # D5 交付审计：每次对外签发下载 URL 落一条可查询审计（操作人/时间/
-        # sha256），证明客户拿到的是哪一版。
-        with session.begin():
-            record_event(
-                session,
-                actor,
-                "document_version_delivered",
-                project,
-                {
-                    "document_id": document.id,
-                    "version_id": version.id,
-                    "version_number": version.version_number,
-                    "sha256": version.sha256 or "",
-                    "status": version.status,
-                },
-            )
+        # sha256），证明客户拿到的是哪一版。此处 session 已有隐式事务，
+        # 直接写入并提交，不另开 begin()。
+        record_event(
+            session,
+            actor,
+            "document_version_delivered",
+            project,
+            {
+                "document_id": document.id,
+                "version_id": version.id,
+                "version_number": version.version_number,
+                "sha256": version.sha256 or "",
+                "status": version.status,
+            },
+        )
+        session.commit()
         return signed_url
     finally:
         session.close()
