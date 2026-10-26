@@ -60,7 +60,7 @@ def _context_template_bytes() -> bytes:
         doc.add_paragraph("编号：{{ document.business_code }}")
         table = doc.add_table(rows=1, cols=2)
         table.cell(0, 0).text = "企业"
-        table.cell(0, 1).text = "{{ project.enterprise_name }}"
+        table.cell(0, 1).text = "{{ project.enterprise_code }}"
 
     return _in_memory_docx(build)
 
@@ -139,7 +139,7 @@ def _seed_generation(
     project = Project(
         project_code=f"FDE-GEN-{uuid4().hex[:8]}",
         name="星河 PoV",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=industry_version,
         template_snapshot={},
@@ -335,7 +335,7 @@ def test_render_docx_builds_project_plan_sections_from_snapshot():
             "background": "提升交付效率", "notes": "每周复盘", "leader_name": "王工",
             "status": "active", "planned_start_date": "2026-08-31", "planned_end_date": "2026-09-10",
         },
-        "enterprise": {"name": "星河制造", "contact_name": "陈总", "contact_phone": "13800000000", "address": "深圳"},
+        "enterprise": {"enterprise_code": "星河制造·制造·苏州"},
         "guidance": {"customer_vision": "建设智能工厂", "current_phase_objective": "完成诊断", "priority_roles": ["计划员"]},
         "tasks": [{
             "name": "完成预调研", "module_name": "预调研", "status": "in_progress", "progress": 40,
@@ -346,7 +346,7 @@ def test_render_docx_builds_project_plan_sections_from_snapshot():
     output = render_docx(io.BytesIO(_in_memory_docx(build)), context, {})
     text = extract_docx_xml_text(output)
 
-    for expected in ("星河制造", "建设智能工厂", "完成预调研", "任务甘特图", "任务清单"):
+    for expected in ("星河制造·制造·苏州", "建设智能工厂", "完成预调研", "任务甘特图", "任务清单"):
         assert expected in text
     assert "【待插入：" not in text
 
@@ -492,3 +492,10 @@ def test_handle_document_generation_files_qa_failure_as_failed(db_session):
     # The generator must not promote or create a file version on QA failure.
     assert seeded["docx_file_version"].status == "uploading"
     assert seeded["job"].status == "failed"
+
+
+def test_zz_diag_gen_error(db_session):
+    seeded = _seed_generation(db_session, template_bytes=_context_template_bytes())
+    result = handle_document_generation(version_id=seeded["version"].id)
+    print("RESULT:", result)
+    print("GEN_ERROR:", seeded["version"].generation_error)

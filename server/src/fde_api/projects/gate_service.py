@@ -298,6 +298,15 @@ def decide_gate(
                     f"门禁 {gate.gate_key} 的模板定义缺失，请检查服务端 seeds/gates.json。",
                     500,
                 )
+            # conditional_pass 仅限 G9 的校验必须对 G8 同样生效（A1）：
+            # 此前该检查关在非 G8 分支内，G8 + conditional_pass 可绕过
+            # 试点毕业门的书面三态拍板控制。
+            if result == "conditional_pass" and gate.gate_key != "G9":
+                raise GateServiceError(
+                    "gate_result_not_allowed",
+                    "conditional_pass（有条件通过）仅限 G9 上线门。",
+                    400,
+                )
             if gate.gate_key == "G8":
                 if result != "pass" and decision is not None:
                     raise GateServiceError(
@@ -312,12 +321,6 @@ def decide_gate(
                         400,
                     )
             else:
-                if result == "conditional_pass" and gate.gate_key != "G9":
-                    raise GateServiceError(
-                        "gate_result_not_allowed",
-                        "conditional_pass（有条件通过）仅限 G9 上线门。",
-                        400,
-                    )
                 if decision is not None:
                     raise GateServiceError(
                         "gate_decision_not_allowed",

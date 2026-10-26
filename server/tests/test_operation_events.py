@@ -48,7 +48,7 @@ def _project(actor: User) -> Project:
     return Project(
         project_code="EVENT-001",
         name="事件项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         planned_start_date=date(2026, 8, 21),
         leader_user_id=actor.id,
         source_template_version=version,

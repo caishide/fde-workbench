@@ -34,7 +34,7 @@ test("defines a reproducible ARM64 DMG package contract", () => {
   assert.equal(desktopPackage.devDependencies["react-dom"], "19.2.8")
 
   assert.equal(desktopPackage.build.appId, "org.fdeworkbench.desktop")
-  assert.equal(desktopPackage.build.productName, "FDE 工作台")
+  assert.equal(desktopPackage.build.productName, "蔡工FDE")
   assert.equal(desktopPackage.build.asar, true)
   assert.equal(desktopPackage.build.directories.output, "../release")
   assert.equal(desktopPackage.build.mac.identity, "-")

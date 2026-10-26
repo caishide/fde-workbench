@@ -1,6 +1,5 @@
 import io
 import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from docx import Document
@@ -304,3 +303,11 @@ def test_legacy_custom_delivery_field_is_copied_even_without_standard_fields(db_
     assert "必须支持断网后继续处理" in solution.design_markdown
     assert "不应误归" not in solution.design_markdown
     assert solution.source_json["forms"][0]["answers"] == {"custom_delivery": "必须支持断网后继续处理"}
+
+
+__all__ = [
+    "authorized_client_factory",
+    "leader_client",
+    "outsider_client",
+    "viewer_client",
+]

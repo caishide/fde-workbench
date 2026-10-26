@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -73,7 +73,8 @@ def assert_tool_denied(response):
 
 
 def make_project(session, leader, *, member=None, name="Accessible Project"):
-    project = Project(project_code=f"AI-{uuid4().hex[:12]}", name=name, enterprise_name=name,
+    project = Project(project_code=f"AI-{uuid4().hex[:12]}", name=name,
+                      enterprise_code=f"AI·test·{uuid4().hex[:6]}",
                       planned_start_date=date(2026, 9, 1), leader_user_id=leader.id,
                       status="active", template_snapshot={})
     session.add(project)
@@ -114,7 +115,8 @@ def test_mcp_rejects_normal_login_token_and_missing_auth(ai_context, client, set
 
 def test_lcsc_skill_tool_is_visible_and_callable_from_ai_chat(ai_context, client, monkeypatch):
     users, _ = ai_context
-    token = issue_mcp_token(users["alice"], execution_id=str(uuid4()))
+    # F1 门槛：lcsc 工具仅 system_operator（admin）能力集可见
+    token = issue_mcp_token(users["admin"], execution_id=str(uuid4()))
     listed = mcp_request(client, token)
     assert any(item["name"] == "lcsc_search" for item in listed.json["result"]["tools"])
     called = Mock(return_value={"id": "run-1", "status": "succeeded", "skill_key": "lcsc-browser-jev"})
@@ -127,10 +129,10 @@ def test_lcsc_skill_tool_is_visible_and_callable_from_ai_chat(ai_context, client
 def test_lcsc_record_read_is_owner_scoped_and_omits_image_payload(ai_context, client, db_session):
     from fde_api.control.lcsc_skills import LcscSkillRun
     users, _ = ai_context
-    own=LcscSkillRun(user_id=users['alice'].id,execution_id=str(uuid4()),request_sha256='a'*64,skill_key='lcsc-browser-baseline',query='C1',started_at=datetime.now(UTC),result_json={'details':{'pins':{'count':2,'screenshot':'data:image/png;base64,LARGE'}},'evidence_pool':[{'text':'internal intermediate'}]})
+    own=LcscSkillRun(user_id=users['admin'].id,execution_id=str(uuid4()),request_sha256='a'*64,skill_key='lcsc-browser-baseline',query='C1',started_at=datetime.now(UTC),result_json={'details':{'pins':{'count':2,'screenshot':'data:image/png;base64,LARGE'}},'evidence_pool':[{'text':'internal intermediate'}]})
     foreign=LcscSkillRun(user_id=users['bob'].id,execution_id=str(uuid4()),request_sha256='b'*64,skill_key='lcsc-browser-jev',query='C2',started_at=datetime.now(UTC))
     db_session.add_all([own,foreign]);db_session.commit()
-    token=issue_mcp_token(users['alice'])
+    token=issue_mcp_token(users['admin'])
     listed=mcp_request(client,token)
     assert any(t['name']=='lcsc_runs_read' for t in listed.json['result']['tools'])
     result=tool_data(tool_request(client,token,'lcsc_runs_read',{'run_ids':[own.id]}))
@@ -410,3 +412,52 @@ def test_weixin_callback_has_durable_per_user_idempotency(ai_context, db_session
     rows = db_session.scalars(select(AIConversation)).all()
     assert len(rows) == 2 and {c.user_id for c in rows} == {users["alice"].id, users["bob"].id}
     assert all(c.source == "wechat" for c in rows)
+
+
+def test_chat_conversation_can_be_deleted_by_its_owner(ai_context, client, settings, db_session):
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("Alice 要删的对话"))
+    headers = access_headers(users["alice"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"], headers=headers)
+
+    assert response.status_code == 200
+    assert response.json["data"]["deleted"] is True
+    db_session.rollback()
+    assert db_session.get(AIConversation, turn["conversation_id"]) is None
+    assert db_session.get(AIChatTurn, turn["id"]) is None
+    listing = client.get(CHAT_PATH + "/conversations", headers=headers)
+    assert listing.json["data"]["items"] == []
+
+
+def test_chat_conversation_delete_is_scoped_to_the_owner(ai_context, client, settings, db_session):
+    """Deleting someone else's conversation must look exactly like a 404."""
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("Alice 私有"))
+    bob_headers = access_headers(users["bob"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"], headers=bob_headers)
+
+    assert response.status_code == 404
+    assert response.json["error"]["code"] == "not_found"
+    db_session.rollback()
+    # Alice's conversation survives Bob's attempt.
+    assert db_session.get(AIConversation, turn["conversation_id"]) is not None
+
+
+def test_chat_conversation_delete_requires_authentication(ai_context, client, settings):
+    users, _ = ai_context
+    turn = create_turn(user=users["alice"], payload=new_message("未授权删除"))
+
+    response = client.delete(CHAT_PATH + "/conversations/" + turn["conversation_id"])
+
+    assert response.status_code == 401
+
+
+def test_chat_conversation_delete_of_missing_id_is_not_found(ai_context, client, settings):
+    users, _ = ai_context
+    headers = access_headers(users["alice"], settings)
+
+    response = client.delete(CHAT_PATH + "/conversations/" + str(uuid4()), headers=headers)
+
+    assert response.status_code == 404

@@ -35,3 +35,9 @@ def test_invalid_references_fail_cleanly(ai_context, references):
     with pytest.raises(AIOpportunityDiscoveryError) as error:
         discover_ai_opportunities(actor=users["admin"], payload={"project_id": "p", "subject_id": "s", "references": references})
     assert error.value.status == 400
+
+
+__all__ = [
+    "ai_context",
+    "make_project",
+]

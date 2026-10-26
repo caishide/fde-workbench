@@ -1,0 +1,104 @@
+src/fde_api/ai/ai_opportunity_service.py:attr-defined: "..." has no attribute "..."
+src/fde_api/ai/ai_opportunity_service.py:index: Value of type "..." is not indexable
+src/fde_api/ai/ai_opportunity_service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/ai/deepseek.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/ai/executions.py:attr-defined: "..." has no attribute "..."
+src/fde_api/ai/industry_template_prompt.py:list-item: List item N has incompatible type "..."; expected "..."
+src/fde_api/ai/industry_template_service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/ai/industry_template_service.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/ai/project_draft.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/ai/project_draft.py:union-attr: Item "..." of "..." has no attribute "..." (not iterable)
+src/fde_api/ai/research_form_service.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/app.py:call-arg: Missing named argument "..." for "..."
+src/fde_api/auth/routes.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/bridge/sync.py:no-redef: Name "..." already defined on line N
+src/fde_api/bridge/sync.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/control/ai_server_client.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/control/automation_jobs.py:arg-type: Argument "..." to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/control/automation_jobs.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/control/builtin_skills.py:var-annotated: Need type annotation for "..."
+src/fde_api/control/chat.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/control/chat_cost.py:operator: Unsupported left operand type for + ("...")
+src/fde_api/control/clawbot_weixin.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/control/dsh_market.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/control/extensions_service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/control/lcsc_browser.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/control/lcsc_browser.py:assignment: Incompatible types in assignment (expression has type "...", target has type "...")
+src/fde_api/control/lcsc_skills.py:arg-type: Argument "..." to "..." has incompatible type "..."; expected "..."
+src/fde_api/control/lcsc_skills.py:assignment: Incompatible types in assignment (expression has type "...", variable has type "...")
+src/fde_api/control/lcsc_skills.py:attr-defined: "..." has no attribute "..."
+src/fde_api/control/lcsc_skills.py:index: Unsupported target for indexed assignment ("...")
+src/fde_api/control/lcsc_skills.py:operator: Unsupported left operand type for + ("...")
+src/fde_api/control/mcp_gateway.py:var-annotated: Need type annotation for "..." (hint: "...")
+src/fde_api/control/scheduler.py:arg-type: Argument "..." to "..." has incompatible type "..."; expected "..."
+src/fde_api/control/scheduler.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/control/service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/control/task_board.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/control/weixin_worker.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/control/weixin_worker.py:var-annotated: Need type annotation for "..." (hint: "...")
+src/fde_api/documents/draft_service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/documents/generator.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/documents/generator.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/documents/generator.py:no-redef: Name "..." already defined on line N
+src/fde_api/documents/generator.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/documents/generator.py:union-attr: Item "..." of "..." has no attribute "..." (not iterable)
+src/fde_api/documents/mapping.py:attr-defined: "..." has no attribute "..."
+src/fde_api/documents/markdown_docx.py:operator: Unsupported operand types for + ("..." and "...")
+src/fde_api/documents/markdown_docx.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/documents/template_parser.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/documents/template_parser.py:attr-defined: "..." has no attribute "..."
+src/fde_api/documents/template_parser.py:attr-defined: "..." has no attribute "..."; maybe "..." or "..."? (not iterable)
+src/fde_api/documents/template_service.py:attr-defined: "..." has no attribute "..."
+src/fde_api/documents/template_service.py:attr-defined: "..." has no attribute "..."; maybe "..." or "..."? (not iterable)
+src/fde_api/files/processors.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/guidance/service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/jobs/outbox.py:attr-defined: "..." has no attribute "..."
+src/fde_api/jobs/queue.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/jobs/queue.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/modules/routes.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/events.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/projects/events.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/projects/gantt.py:var-annotated: Need type annotation for "..."
+src/fde_api/projects/gantt.py:var-annotated: Need type annotation for "..." (hint: "...")
+src/fde_api/projects/gate_service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/payment_service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/payment_service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/projects/service.py:arg-type: Argument "..." to "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/service.py:assignment: Incompatible types in assignment (expression has type "...", variable has type "...")
+src/fde_api/projects/service.py:index: Value of type "..." is not indexable
+src/fde_api/projects/service.py:operator: Unsupported operand types for < ("..." and "...")
+src/fde_api/projects/service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/projects/service.py:var-annotated: Need type annotation for "..."
+src/fde_api/projects/task_service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/task_service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/projects/task_service.py:attr-defined: "..." has no attribute "..."
+src/fde_api/projects/task_service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/projects/task_service.py:var-annotated: Need type annotation for "..."
+src/fde_api/research/definitions.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/research/definitions.py:operator: Unsupported right operand type for in ("...")
+src/fde_api/research/export_service.py:attr-defined: Document? has no attribute "..."
+src/fde_api/research/export_service.py:valid-type: Function "..." is not valid as a type
+src/fde_api/research/form_service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/research/form_service.py:assignment: Incompatible types in assignment (expression has type "...", variable has type "...")
+src/fde_api/research/imports.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/research/imports.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/research/imports.py:misc: "..." object is not iterable
+src/fde_api/research/imports.py:str-unpack: Unpacking a string is disallowed
+src/fde_api/research/models.py:name-defined: Name "..." is not defined
+src/fde_api/research/models.py:name-defined: Name "..." is not defined; did you mean "..." or "..."?
+src/fde_api/research/project_routes.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/solutions/service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/solutions/service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/solutions/service.py:assignment: Incompatible types in assignment (expression has type "...", variable has type "...")
+src/fde_api/solutions/service.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/solutions/service.py:union-attr: Item "..." of "..." has no attribute "..."
+src/fde_api/storage/local.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/storage/local_routes.py:arg-type: Argument "..." to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/templates/service.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
+src/fde_api/users/routes.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
+src/fde_api/users/routes.py:return-value: Incompatible return value type (got "...", expected "...")
+src/fde_api/workbench/models.py:name-defined: Name "..." is not defined
+src/fde_api/workbench/seed.py:call-overload: No overload variant of "..." of "..." matches argument type "..."
+src/fde_api/workbench/seed.py:index: Invalid index type "..." for "..."; expected type "..."

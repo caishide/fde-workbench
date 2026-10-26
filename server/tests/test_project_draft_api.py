@@ -29,7 +29,7 @@ def test_presurvey_draft_uses_database_session_factory(client, db_session, setti
         messages = kwargs["build_messages"]("企业：测试企业")
         assert "pre_diagnosis（预调研）" in messages[0]["content"]
         return {
-            "project": {"name": "测试项目", "enterprise_name": "测试企业"},
+            "project": {"name": "测试项目", "enterprise_code": "测试企业·行业·城市"},
             "modules": [{"module_key": "pre_diagnosis", "name": "预调研", "tasks": []}],
         }
 

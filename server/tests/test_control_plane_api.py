@@ -79,7 +79,7 @@ def create_project_with_task(db_session, leader: User):
     project = Project(
         project_code=f"CONTROL-{uuid4().hex[:8]}",
         name="Control plane project",
-        enterprise_name="Example",
+        enterprise_code="Example·行业·城市",
         planned_start_date=date(2026, 9, 1),
         leader_user_id=leader.id,
         status="active",

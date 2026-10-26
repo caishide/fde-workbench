@@ -20,7 +20,7 @@
 
 ---
 
-FDE Workbench 覆盖项目、任务、调研、AI 机会、方案、交付文档、文件、用户、Skills、插件和模型配置。它由 Electron 桌面端与 Flask API 组成，业务数据保存在部署者自己的 MySQL、Redis 和文件存储中。
+FDE Workbench 覆盖项目、任务、调研、AI 机会、方案、交付文档、文件、用户、Skills、插件和模型配置。它由 Electron 桌面端与 Flask API 组成，业务数据保存在部署者自己的 PostgreSQL、Redis 和文件存储中。
 
 | 当前版本 | 你需要知道的事 |
 | --- | --- |
@@ -52,7 +52,7 @@ FDE Workbench 覆盖项目、任务、调研、AI 机会、方案、交付文档
 | --- | --- | --- |
 | 桌面端 | Electron、React、TypeScript、electron-vite | 通过受限 IPC 调用后端 API |
 | API | Python 3.12/3.13、Flask、SQLAlchemy、Alembic | 认证、权限和业务接口 |
-| 数据 | MySQL 8、Redis 7 | 主数据、任务队列与调度 |
+| 数据 | PostgreSQL 16、Redis 7 | 主数据、任务队列与调度 |
 | 文件 | 本地目录或兼容 Aliyun OSS 的对象存储 | 由管理员在工作台配置 |
 | 后台进程 | Flask CLI worker / scheduler | 文件处理、异步任务与自动化 |
 
@@ -60,19 +60,21 @@ FDE Workbench 覆盖项目、任务、调研、AI 机会、方案、交付文档
 
 - Node.js 22+ 与 npm 10+
 - Python 3.12 或 3.13
-- MySQL 8.0+、Redis 7+
-- Docker（可选，仅用于快速启动 MySQL/Redis）
+- PostgreSQL 16+、Redis 7+
+- Docker（可选，仅用于快速启动 PostgreSQL/Redis）
 - ClamAV、LibreOffice（可选；用于病毒扫描和文档预览/转换）
 
 ## 首次启动
 
 所有命令都在本仓库根目录执行。
 
-### 1. 启动 MySQL 和 Redis
+### 1. 启动 PostgreSQL 和 Redis
 
 ```bash
-docker compose up -d mysql redis
+docker compose up -d twenty-db redis
 ```
+
+compose 未覆盖时也可以用官方 `postgres:16` 镜像自建，并在 `server/.env` 中填写连接地址。
 
 也可以使用已有服务，并在 `server/.env` 中填写连接地址。
 
@@ -142,7 +144,7 @@ npm run dev
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `FDE_DATABASE_URL` | MySQL SQLAlchemy URL |
+| `FDE_DATABASE_URL` | PostgreSQL SQLAlchemy URL（`postgresql+psycopg://…`） |
 | `FDE_REDIS_URL` | Redis URL |
 | `FDE_JWT_SECRET` | JWT 签名及本地密钥加密根材料，至少 32 字符 |
 | `FDE_API_HOST` / `FDE_API_PORT` | API 监听地址和端口 |
@@ -161,7 +163,7 @@ cd server
 .venv/bin/alembic upgrade head
 ```
 
-升级前应同时备份 MySQL 和文件存储。迁移文件位于 `server/migrations/versions/`，不得修改已发布迁移，应新增迁移。
+升级前应同时备份 PostgreSQL 和文件存储。迁移文件位于 `server/migrations/versions/`，不得修改已发布迁移，应新增迁移。
 
 ### 健康检查
 
@@ -172,7 +174,7 @@ cd server
 
 - 使用 Gunicorn 承载 `fde_api.wsgi:app`，并独立运行 worker 与 scheduler。
 - API 仅暴露在 HTTPS 反向代理之后；不要将 Flask 开发服务器用于生产。
-- MySQL、Redis、OSS 使用独立最小权限账号；限制网络访问来源。
+- PostgreSQL、Redis、OSS 使用独立最小权限账号；限制网络访问来源。
 - 本地文件存储目录、数据库和管理员配置密文必须一起备份。
 - 桌面安装包默认连接 `http://127.0.0.1:8010`。远程部署时，在打包前设置受信任的 HTTPS API 地址并修改 `desktop/package.json` 的 `build.extraMetadata.fdeApiUrl`。
 - 开源版没有内置更新中心；版本升级由部署者通过代码发布、数据库迁移和重新打包完成。
@@ -186,11 +188,11 @@ npm run test:server
 npm run test:operations
 ```
 
-完整 `npm test` 需要 MySQL 和 Redis。端到端测试只允许使用数据库名精确为 `fde_workbench_test` 的测试库：
+完整 `npm test` 需要 PostgreSQL 和 Redis。服务端测试只允许使用数据库名以 `_test` 结尾的隔离测试库（安全断言会拒绝任何指向业务库的 URL）：
 
 ```bash
-mysql -uroot -p -e "CREATE DATABASE fde_workbench_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
-FDE_E2E_DATABASE_URL='mysql+pymysql://USER:PASSWORD@127.0.0.1:3306/fde_workbench_test' npm run test:e2e
+psql -U postgres -c "CREATE DATABASE fde_workbench_test OWNER fde"
+FDE_TEST_DATABASE_URL='postgresql+psycopg://fde:PASSWORD@127.0.0.1:15432/fde_workbench_test' npm run test:server
 ```
 
 ## 打包桌面端
@@ -207,7 +209,7 @@ Windows x64 NSIS 安装包（在 Windows 构建环境执行）：
 npm run package:win
 ```
 
-桌面安装包只包含客户端；使用前仍需按上文部署后端、MySQL 和 Redis。默认 API 地址为 `http://127.0.0.1:8010`，连接远程后端时须在打包前配置 `desktop/package.json` 中的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。
+桌面安装包只包含客户端；使用前仍需按上文部署后端、PostgreSQL 和 Redis。默认 API 地址为 `http://127.0.0.1:8010`，连接远程后端时须在打包前配置 `desktop/package.json` 中的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。
 
 `package:mac` 使用本地临时签名，**不是**已签名公证的正式 macOS 发行流程。正式外发应使用发行者自己的 Developer ID 完成签名、公证、装订及 Gatekeeper 验收。Windows 构建脚本能生成安装包，但构建或安装成功不等于发行验收；公开分发前应完成代码签名，并在真实 Windows 环境验证安装包图标、安装、启动、登录及后端连接、主要功能和卸载。**未签名安装包不能当作已验收发行版发布或宣传。**本仓库不包含签名证书、公证凭据或历史安装包。
 

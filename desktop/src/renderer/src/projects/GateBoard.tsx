@@ -253,13 +253,15 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
       (uris[item.label] ?? "").trim().length > 0 &&
       /^[0-9a-fA-F]{64}$/.test((hashes[item.label] ?? "").trim()),
   )
-  const acceptedCount = gate.checklist.filter((item) => accepted[item.label] !== false).length
+  const acceptedCount = gate.checklist.filter((item) => accepted[item.label] === true).length
 
   function openMode(next: "submit" | "decide"): void {
     setMode(next)
     setUris({})
     setHashes({})
-    setAccepted(Object.fromEntries(gate.checklist.map((item) => [item.label, true])))
+    // C2：打开核验面板默认全不勾——claimed ≠ accepted，接受是人工逐项
+    // 核验后的动作；预勾选会把「没核验」伪装成「已接受」。
+    setAccepted(Object.fromEntries(gate.checklist.map((item) => [item.label, false])))
     setResult("pass")
     setG8Decision("proceed")
     setNote("")
@@ -367,7 +369,7 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
               <label key={item.label} className="gate-form-row checkbox">
                 <input
                   type="checkbox"
-                  checked={accepted[item.label] !== false}
+                  checked={accepted[item.label] === true}
                   onChange={(event) => setAccepted((current) => ({ ...current, [item.label]: event.target.checked }))}
                 />
                 <span className="gate-check-label">{item.label}</span>
@@ -415,7 +417,7 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
                   const payload: Record<string, unknown> = {
                     result,
                     accepted_labels: gate.checklist
-                      .filter((item) => accepted[item.label] !== false)
+                      .filter((item) => accepted[item.label] === true)
                       .map((item) => item.label),
                   }
                   if (isG8 && result === "pass") payload.decision = g8Decision

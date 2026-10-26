@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -108,7 +108,7 @@ def assert_error(response, status: int, code: str) -> None:
 def project_payload(template, leader, **overrides):
     payload = {
         "name": "星河 PoV",
-        "enterprise_name": "星河制造",
+        "enterprise_code": f"星河制造·制造·{uuid4().hex[:8]}",
         "template_version_id": template.id,
         "leader_user_id": leader.id,
         "planned_start_date": "2026-08-21",
@@ -133,7 +133,7 @@ def test_manual_project_creation_does_not_create_or_require_a_template(
     db_session.commit()
     response = admin_client.post("/api/v1/projects", json={
         "name": "手动项目",
-        "enterprise_name": "无模板企业",
+        "enterprise_code": "无模板企业·行业·城市",
         "planned_start_date": "2026-09-01",
         "leader_user_id": leader_client.user.id,
         "creation_source": "manual",
@@ -259,9 +259,8 @@ def test_create_project_copies_only_selected_modules_and_schedules_tasks(
         json=project_payload(
             published_template,
             leader_client.user,
-            contact_name="林总",
-            contact_phone="13800000000",
-            address="示例地址",
+            openfde_engagement="openfde-xh",
+            fdeops_workspace="ws-xh",
             background="验证质检场景",
             notes="周五例会",
             project_code="XH-POV-001",
@@ -279,9 +278,8 @@ def test_create_project_copies_only_selected_modules_and_schedules_tasks(
         task["planned_start_date"] and task["planned_end_date"]
         for task in project["tasks"]
     )
-    assert project["contact_name"] == "林总"
-    assert project["contact_phone"] == "13800000000"
-    assert project["address"] == "示例地址"
+    assert project["openfde_engagement"] == "openfde-xh"
+    assert project["fdeops_workspace"] == "ws-xh"
     assert project["background"] == "验证质检场景"
     assert project["notes"] == "周五例会"
     assert project["project_code"] == "XH-POV-001"
@@ -519,7 +517,7 @@ def test_project_list_filters_and_orders_stably(
         published_template,
         leader_client.user,
         name="北斗诊断",
-        enterprise_name="北斗制造",
+        enterprise_code="北斗制造·制造·西安",
         project_code="P-001",
         module_keys=["pre_diagnosis"],
     )
@@ -528,7 +526,7 @@ def test_project_list_filters_and_orders_stably(
         published_template,
         other_leader.user,
         name="星河 PoV",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         project_code="P-002",
         module_keys=["pov"],
     )
@@ -627,7 +625,7 @@ def test_project_update_fields_and_state_machine_require_current_version(
         json={
             "version": project["version"],
             "status": "active",
-            "contact_name": "新联系人",
+            "fdeops_workspace": "新工作台",
             "planned_end_date": "2026-12-01",
         },
     )
@@ -641,7 +639,7 @@ def test_project_update_fields_and_state_machine_require_current_version(
     )
 
     assert activated.status_code == paused.status_code == resumed.status_code == 200
-    assert activated.json["data"]["contact_name"] == "新联系人"
+    assert activated.json["data"]["fdeops_workspace"] == "新工作台"
     assert activated.json["data"]["planned_end_date"] == "2026-12-01"
     assert resumed.json["data"]["status"] == "active"
     assert_error(
@@ -858,9 +856,8 @@ def test_project_update_can_clear_optional_enterprise_fields(
         admin_client,
         published_template,
         leader_client.user,
-        contact_name="林总",
-        contact_phone="13800000000",
-        address="示例地址",
+        openfde_engagement="openfde-xh",
+        fdeops_workspace="ws-xh",
         background="旧背景",
         notes="旧备注",
     )
@@ -869,9 +866,8 @@ def test_project_update_can_clear_optional_enterprise_fields(
         f"/api/v1/projects/{project['id']}",
         json={
             "version": project["version"],
-            "contact_name": "",
-            "contact_phone": "",
-            "address": "",
+            "openfde_engagement": "",
+            "fdeops_workspace": "",
             "background": "",
             "notes": "",
         },
@@ -880,11 +876,10 @@ def test_project_update_can_clear_optional_enterprise_fields(
     assert response.status_code == 200
     assert {
         field: response.json["data"][field]
-        for field in ("contact_name", "contact_phone", "address", "background", "notes")
+        for field in ("openfde_engagement", "fdeops_workspace", "background", "notes")
     } == {
-        "contact_name": "",
-        "contact_phone": "",
-        "address": "",
+        "openfde_engagement": "",
+        "fdeops_workspace": "",
         "background": "",
         "notes": "",
     }

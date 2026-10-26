@@ -8,6 +8,7 @@ Redis 清键后正确登录 200（证明清零路径与真实登录不受影响�
 
 from __future__ import annotations
 
+import os
 import sys
 import uuid
 
@@ -25,8 +26,14 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(("PASS " if ok else "FAIL ") + name + (f" | {detail}" if detail else ""))
 
 
-def main() -> int:
-    app = create_app()
+def main(app=None) -> int:
+    """注入 app 供 pytest 在隔离测试库上自动执行；缺省走容器环境（docker exec）。"""
+    # C11：口令一律从环境变量读，脚本内无明文（CI/本地均需先导出）。
+    password = os.environ.get("FDE_SMOKE_RATE_PASSWORD")
+    if not password:
+        print("FAIL 缺少环境变量 FDE_SMOKE_RATE_PASSWORD（冒烟口令不落脚本）")
+        return 2
+    app = app or create_app()
     app.config.update(TESTING=True)
     client = app.test_client()
 
@@ -36,7 +43,7 @@ def main() -> int:
             username=f"rate-smoke.{uuid.uuid4().hex[:8]}",
             display_name="限流冒烟",
             role="viewer",
-            password_hash=hash_password("RateSmoke!2026"),
+            password_hash=hash_password(password),
             must_change_password=False,
             is_active=True,
         )
@@ -61,7 +68,7 @@ def main() -> int:
         check("5 次错密全 401", codes == [401] * 5, str(codes))
 
         # ---- 2) 第 6 次即使密码正确也被锁（429，且不做 argon2）----
-        r = attempt("RateSmoke!2026")
+        r = attempt(password)
         body = r.get_json() or {}
         check(
             "超限后正确密码也 429 login_rate_limited",
@@ -72,7 +79,7 @@ def main() -> int:
         # ---- 3) 键清零后正确登录 200（清零路径 + 登录本身健康）----
         with app.app_context():
             app.extensions["fde_api_redis"].delete(f"auth:login_fail:{username}")
-        r = attempt("RateSmoke!2026")
+        r = attempt(password)
         check("清零后正确登录 200", r.status_code == 200, str(r.status_code))
 
         # ---- 4) 成功后计数确实清零：再错 1 次仍是 401 而非 429 ----

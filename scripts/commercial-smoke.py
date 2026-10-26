@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sys
 import uuid
 from datetime import date, timedelta
@@ -62,11 +63,17 @@ def _cleanup_users(app, *user_ids: str) -> None:
             print(f"用户清理失败：{error!r}")
 
 
-def main() -> int:
-    app = create_app()
+def main(app=None, settings=None) -> int:
+    """注入 app/settings 供 pytest 在隔离测试库上自动执行。"""
+    # C11：口令一律从环境变量读，脚本内无明文（CI/本地均需先导出）。
+    password = os.environ.get("FDE_SMOKE_COMMERCIAL_PASSWORD")
+    if not password:
+        print("FAIL 缺少环境变量 FDE_SMOKE_COMMERCIAL_PASSWORD（冒烟口令不落脚本）")
+        return 2
+    app = app or create_app()
     app.config.update(TESTING=True)
     client = app.test_client()
-    settings = Settings()
+    settings = settings or Settings()
 
     with app.app_context():
         session = db.session()
@@ -74,7 +81,7 @@ def main() -> int:
             username=f"p4-smoke-admin.{uuid.uuid4().hex[:8]}",
             display_name="P4冒烟admin",
             role="admin",
-            password_hash=hash_password("P4Smoke!2026"),
+            password_hash=hash_password(password),
             must_change_password=False,
             is_active=True,
         )
@@ -82,7 +89,7 @@ def main() -> int:
             username=f"p4-smoke.{uuid.uuid4().hex[:8]}",
             display_name="P4冒烟viewer",
             role="viewer",
-            password_hash=hash_password("P4Smoke!2026"),
+            password_hash=hash_password(password),
             must_change_password=False,
             is_active=True,
         )

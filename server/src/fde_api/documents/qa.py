@@ -76,14 +76,19 @@ def extract_docx_xml_text(stream: BinaryIO) -> str:
 
 
 def inspect_generated_docx(
-    stream: BinaryIO, required_sections: Sequence[str]
+    stream: BinaryIO,
+    required_sections: Sequence[str],
+    *,
+    required_values: Sequence[tuple[str, str]] = (),
 ) -> DocumentQaResult:
     """Validate a rendered DOCX and return a non-throwing :class:`DocumentQaResult`.
 
     A document is accepted when it is a valid OOXML archive, contains no residual
-    ``{{`` / ``{%`` placeholder tokens, and every ``required_sections`` name
-    appears in the extracted text. Faults are collected as
-    :class:`DocumentQaError` entries and never raised.
+    ``{{`` / ``{%`` placeholder tokens, every ``required_sections`` name appears
+    in the extracted text, and every ``(label, value)`` pair in
+    ``required_values`` is non-empty and appears verbatim in the text (D6: this
+    is what catches an enterprise identity that silently rendered blank).
+    Faults are collected as :class:`DocumentQaError` entries and never raised.
     """
     errors: list[DocumentQaError] = []
     data = _read_bytes(stream)
@@ -121,6 +126,22 @@ def inspect_generated_docx(
                 DocumentQaError(
                     "missing_required_section",
                     f"The required section '{section}' is missing from the document.",
+                )
+            )
+
+    for label, value in required_values:
+        if not value:
+            errors.append(
+                DocumentQaError(
+                    "required_value_empty",
+                    f"The required document value '{label}' rendered empty.",
+                )
+            )
+        elif value not in text:
+            errors.append(
+                DocumentQaError(
+                    "required_value_missing",
+                    f"The required document value '{label}' ('{value}') is absent from the document.",
                 )
             )
 

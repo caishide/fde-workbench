@@ -33,3 +33,9 @@ def test_reorder_invalid_payload(ai_context, payload):
     with pytest.raises(ResearchSubjectServiceError) as error:
         reorder_subjects(actor=ai_context[0]['admin'], project_id='none', payload=payload)
     assert error.value.status == 400
+
+
+__all__ = [
+    "ai_context",
+    "make_project",
+]

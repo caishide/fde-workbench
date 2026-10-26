@@ -26,12 +26,25 @@ class KimiFileClient:
         model: str,
         timeout_seconds: int,
         session: Any | None = None,
+        local_extract: bool = False,
+        openai_compatible: bool = False,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._session = session or requests.Session()
+        # local_extract=True：不走供应商的 /files 上传接口，改为本地解析 DOCX
+        # 取文本后再交给 chat/completions。
+        # MiniMax 官方 purpose 枚举中没有 file-extract（只有 voice_clone /
+        # prompt_audio / t2a_async_input / video_understanding /
+        # video_generation_input），所以它无法替代 Kimi 的文件解析能力，
+        # 必须走本地提取这条路。
+        self._local_extract = local_extract
+        # openai_compatible=True：按通用 OpenAI 兼容端点发请求——用 max_tokens
+        # 而非 max_completion_tokens，且不下发 reasoning_effort（那是 Kimi K3
+        # 的专有参数，MiniMax 用 thinking 开关控制推理强度）。
+        self._openai_compatible = openai_compatible
 
     def analyze_docx_json(
         self,
@@ -48,20 +61,23 @@ class KimiFileClient:
         headers = {"Authorization": f"Bearer {api_key}", "X-Request-ID": request_id}
         file_id = ""
         try:
-            upload = self._request(
-                "post",
-                f"{self._base_url}/files",
-                headers=headers,
-                files={"file": (filename, stream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-                data={"purpose": "file-extract"},
-            )
-            upload_payload = self._json(upload, "kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。")
-            file_id = upload_payload.get("id", "") if isinstance(upload_payload, dict) else ""
-            if not file_id or upload_payload.get("status") not in {None, "ready", "ok"}:
-                raise KimiError("kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。", retryable=True)
+            if self._local_extract:
+                file_content = self._extract_docx_locally(stream, filename)
+            else:
+                upload = self._request(
+                    "post",
+                    f"{self._base_url}/files",
+                    headers=headers,
+                    files={"file": (filename, stream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+                    data={"purpose": "file-extract"},
+                )
+                upload_payload = self._json(upload, "kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。")
+                file_id = upload_payload.get("id", "") if isinstance(upload_payload, dict) else ""
+                if not file_id or upload_payload.get("status") not in {None, "ready", "ok"}:
+                    raise KimiError("kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。", retryable=True)
 
-            content_response = self._request("get", f"{self._base_url}/files/{file_id}/content", headers=headers)
-            file_content = self._utf8_text(content_response)
+                content_response = self._request("get", f"{self._base_url}/files/{file_id}/content", headers=headers)
+                file_content = self._utf8_text(content_response)
             if not isinstance(file_content, str) or not file_content.strip():
                 raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=True)
 
@@ -75,21 +91,28 @@ class KimiFileClient:
                 except DSHRuntimeError as error:
                     raise KimiError(error.code, error.public_message, retryable=error.retryable) from error
 
+            completion_payload: dict[str, Any] = {
+                "model": self._model,
+                "messages": build_messages(file_content),
+                "response_format": {"type": "json_object"},
+                "stream": True,
+            }
+            if self._openai_compatible:
+                # 通用 OpenAI 兼容端点（MiniMax 等）：用 max_tokens，不发
+                # reasoning_effort（那是 Kimi K3 专有参数，MiniMax 侧不识别）。
+                completion_payload["max_tokens"] = 32768
+            else:
+                # Kimi K3 always reasons before returning the final answer. Keep
+                # extraction-oriented jobs on low effort and leave enough room
+                # for both its reasoning tokens and the structured JSON result.
+                completion_payload["reasoning_effort"] = "low"
+                completion_payload["max_completion_tokens"] = 32768
+
             completion = self._request(
                 "post",
                 f"{self._base_url}/chat/completions",
                 headers={**headers, "Content-Type": "application/json"},
-                json={
-                    "model": self._model,
-                    "messages": build_messages(file_content),
-                    "response_format": {"type": "json_object"},
-                    # Kimi K3 always reasons before returning the final answer. Keep
-                    # extraction-oriented jobs on low effort and leave enough room
-                    # for both its reasoning tokens and the structured JSON result.
-                    "reasoning_effort": "low",
-                    "max_completion_tokens": 32768,
-                    "stream": True,
-                },
+                json=completion_payload,
                 stream=True,
             )
             content = self._read_streamed_content(completion, on_event=on_event)
@@ -165,6 +188,26 @@ class KimiFileClient:
         except requests.RequestException as error:
             raise KimiError("ai_service_unavailable", "暂时无法连接 AI 服务，请稍后重试。", retryable=True) from error
         return "".join(parts)
+
+    @staticmethod
+    def _extract_docx_locally(stream: BinaryIO, filename: str) -> str:
+        """本地解析 DOCX 取全文（复用文档 QA 的提取实现，含表格/页眉页脚）。
+
+        供应商不提供 file-extract 接口时走这条路：文件不出本机，只把提取出的
+        文本交给对话模型。
+        """
+        from fde_api.documents.qa import extract_docx_xml_text
+        try:
+            content = extract_docx_xml_text(stream)
+        except Exception as error:  # noqa: BLE001 - 解析失败统一转成可重试错误
+            raise KimiError(
+                "kimi_file_extract_failed",
+                f"AI 未能解析该 DOCX 文件（{filename}），请检查文件后重试。",
+                retryable=True,
+            ) from error
+        if not isinstance(content, str) or not content.strip():
+            raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=True)
+        return content
 
     @staticmethod
     def _utf8_text(response: Any) -> str:

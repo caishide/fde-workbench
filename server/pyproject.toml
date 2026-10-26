@@ -38,6 +38,35 @@ test = [
   "pytest-cov>=6,<7",
   "freezegun>=1.5,<2"
 ]
+dev = [
+  "ruff>=0.17",
+  "mypy>=1.11",
+  "pre-commit>=3.8"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# 静态基线只锁「会咬人」的一类：未使用导入（F401）与未使用局部变量（F841）。
+# 其余规则（命名/文档字符串/复杂度）留待后续增量引入，不在本轮大范围改动代码。
+[tool.ruff.lint]
+select = ["F401", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试目录允许再导出 pytest fixture（跨文件复用 fixture 工厂）。
+"tests/*" = ["F401"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_configs = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "src"
+exclude = ["^\\.venv/", "^build/"]
+# 存量错误走基线清单（mypy-baseline.txt），禁止用 ignore 隐藏新错误：
+# 新增错误不在基线里 → mypy 失败。
+enable_error_code = ["ignore-without-code"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

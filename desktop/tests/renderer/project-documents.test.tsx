@@ -5,7 +5,7 @@ import "@testing-library/jest-dom/vitest"
 import React from "react"
 import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, type Mock, vi } from "vitest"
 
 import { AuthProvider, useAuth } from "../../src/renderer/src/auth/AuthProvider"
 import { DangerConfirmProvider } from "../../src/renderer/src/common/DangerConfirmProvider"
@@ -24,10 +24,11 @@ const project: ProjectDto = {
   id: projectId,
   project_code: "XH-001",
   name: "星河 AI 落地项目",
-  enterprise_name: "星河制造",
-  contact_name: "陈总",
-  contact_phone: "13800000000",
-  address: "深圳市",
+  enterprise_code: "星河制造·制造·苏州",
+  openfde_engagement: "openfde-xh",
+  fdeops_workspace: "ws-xh",
+  sop_phase: "S3",
+  business_line: "FDE",
   background: "设备知识库建设",
   notes: "每周演示",
   status: "active",
@@ -341,7 +342,7 @@ function baseRequest(options: {
     revise?: () => unknown
     patchDraft?: () => unknown
   }
-}): ReturnType<typeof vi.fn> {
+}): Mock<(path: string, requestOptions: { method: string; body?: unknown }) => Promise<unknown>> {
   return vi.fn((path: string, requestOptions: { method: string; body?: unknown }) => {
     if (path === projectDetailPath && requestOptions.method === "GET") {
       return Promise.resolve(apiOk(project))
@@ -372,7 +373,7 @@ function baseRequest(options: {
   })
 }
 
-function renderDocumentsTab(apiRequest: ReturnType<typeof vi.fn>, options: { role: UserDto["role"] }): void {
+function renderDocumentsTab(apiRequest: Mock<(path: string, options: { method: string; body?: unknown }) => Promise<unknown>>, options: { role: UserDto["role"] }): void {
   const currentUser: UserDto = {
     ...(options.role === "admin" ? adminUser : engineerUser),
     id: options.role === "viewer" ? "viewer-id" : options.role === "admin" ? adminUser.id : engineerUser.id,

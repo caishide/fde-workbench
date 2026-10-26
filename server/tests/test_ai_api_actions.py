@@ -111,3 +111,9 @@ def test_wechat_password_commands_never_reach_model(ai_context):
     response = weixin_message_handler(users["admin"].id, "确认操作 " + "a" * 64 + " secret-not-for-ai", "event-confirm")
     assert "过期" in response
     execute.assert_not_called()
+
+
+__all__ = [
+    "ai_context",
+    "make_project",
+]

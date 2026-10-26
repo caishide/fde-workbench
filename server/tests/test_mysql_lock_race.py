@@ -62,6 +62,13 @@ def test_remote_mysql_without_explicit_observer_is_an_explicit_pytest_skip(
     monkeypatch,
 ):
     """Falling back to local root for a remote application DB would be unsafe and mysterious."""
+    # PG-only 环境（v0.2 起）不再安装 mysql 客户端驱动；create_engine 方言导入
+    # 即需 pymysql。缺驱动时本用例无法构造引擎，按 mysql_observer marker 的
+    # 同一前置条件显式跳过（helper 第一行也会对非 mysql 方言抛 skip 前置）。
+    pytest.importorskip(
+        "pymysql",
+        reason="mysql_observer: requires the mysql+pymysql driver and a same-instance privileged MySQL observer",
+    )
     monkeypatch.delenv("FDE_TEST_OBSERVER_DATABASE_URL", raising=False)
     remote_engine = create_engine(
         "mysql+pymysql://test_user:not-logged@db.example.invalid/fde_workbench_test"

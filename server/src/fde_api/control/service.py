@@ -21,7 +21,6 @@ from fde_api.control.models import AutomationApproval, AutomationTask, Automatio
 from fde_api.control.knowledge import snapshot_for_run
 from fde_api.extensions import db
 from fde_api.jobs.outbox import enqueue_outbox
-from fde_api.projects.permissions import project_access
 from fde_api.projects.service import ProjectServiceError
 from fde_api.projects.task_service import batch_assign_project_tasks_in_session
 from fde_api.users.service import DISPLAY_NAME_MAX_LENGTH
@@ -244,7 +243,8 @@ def submit_wechat_command(*, payload: dict[str, Any]) -> dict[str, Any]:
                     ChannelBinding.status == "active",
                     ChannelBinding.commands_enabled.is_(True),
                 )
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=ChannelBinding)
             )
             if binding is None or not binding.user.is_active:
                 raise ControlServiceError("wechat_binding_not_found", "微信尚未绑定可用账户。", 403)
@@ -464,7 +464,8 @@ def request_automation_run(*, user: User, task_id: str, idempotency_key: str | N
                 select(AutomationTask)
                 .options(joinedload(AutomationTask.project))
                 .where(AutomationTask.id == task_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationTask)
             )
             if task is None:
                 raise ControlServiceError("automation_not_found", "定时任务不存在。", 404)
@@ -600,7 +601,8 @@ def create_dsh_approval_request(*, run_id: str, payload: dict[str, Any]) -> dict
                     joinedload(AutomationTaskRun.requested_by),
                 )
                 .where(AutomationTaskRun.id == run_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationTaskRun)
             )
             if run is None:
                 raise ControlServiceError("automation_run_not_found", "任务执行记录不存在。", 404)
@@ -695,7 +697,8 @@ def decide_automation_approval(
                     joinedload(AutomationApproval.run),
                 )
                 .where(AutomationApproval.id == approval_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationApproval)
             )
             if approval is None:
                 raise ControlServiceError("approval_not_found", "审批请求不存在。", 404)
@@ -759,7 +762,8 @@ def dsh_approval_status(*, approval_id: str) -> dict[str, Any]:
                 select(AutomationApproval)
                 .options(joinedload(AutomationApproval.run))
                 .where(AutomationApproval.id == approval_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationApproval)
             )
             if approval is None:
                 raise ControlServiceError("approval_not_found", "审批请求不存在。", 404)
@@ -787,7 +791,8 @@ def execute_approved_dsh_tool(*, approval_id: str) -> dict[str, Any]:
                     joinedload(AutomationApproval.requested_by),
                 )
                 .where(AutomationApproval.id == approval_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationApproval)
             )
             if approval is None:
                 raise ControlServiceError("approval_not_found", "审批请求不存在。", 404)

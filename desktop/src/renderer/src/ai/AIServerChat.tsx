@@ -7,7 +7,7 @@ import "./ai-server-chat.css"
 import { AIActionConfirmation } from "./AIActionConfirmation"
 
 type Conversation = { id: string; title: string; source: string }
-type Turn = { id: string; conversation_id: string; prompt: string; response: string; status: string; error_message: string; metrics?: {model?: {name?: string}; provider_usage?: {complete?: boolean; calls?: Array<{input_tokens: number; output_tokens: number; cache_read_tokens?: number; cache_write_tokens?: number}>}; cost?: {cny_estimate?: string | null; note?: string}} }
+type Turn = { id: string; conversation_id: string; prompt: string; response: string; status: string; error_message: string; metrics?: {model?: {name?: string}; provider_usage?: {complete?: boolean; calls?: Array<{input_tokens: number; output_tokens: number; cache_read_tokens?: number; cache_write_tokens?: number}>}; cost?: {cny_estimate?: string | null; note?: string}; degraded?: boolean; degraded_reason?: string; tools_available?: boolean; tool_trace?: Array<{tool: string; ok: boolean}>} }
 type Model = { id: string; name: string; scope: string; provider?: string }
 type Progress = {text: string; steps: string[]; phase: string}
 
@@ -25,6 +25,8 @@ export function AIServerChat({ route }: { route: AppRoute }) {
   const [progress, setProgress] = useState<Record<string, Progress>>({})
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
+  const [deleting, setDeleting] = useState("")
+  const [lcscAvailable, setLcscAvailable] = useState(false)
   const [error, setError] = useState("")
   const input = useRef<HTMLTextAreaElement>(null)
   const launcher = useRef<HTMLButtonElement>(null)
@@ -103,20 +105,32 @@ export function AIServerChat({ route }: { route: AppRoute }) {
     finally { if (generation === accountGeneration.current) { setSending(false); sendLock.current = false } }
   }
 
+  async function removeConversation(id: string, title: string) {
+    if (sending || deleting) return
+    if (!window.confirm(`确定删除对话「${title}」吗？\n\n删除后该对话的全部消息无法恢复。`)) return
+    setDeleting(id); setError("")
+    try {
+      await apiRequest(`/api/v1/ai/chat/conversations/${id}`, { method: "DELETE" })
+      setConversations((current) => current.filter((c) => c.id !== id))
+      if (conversationId === id) { setConversationId(""); setTurns([]); setProgress((current) => { const next = {...current}; delete next[id]; return next }) }
+    } catch (caught) { setError(messageOf(caught)) }
+    finally { setDeleting("") }
+  }
+
   function close() { setOpen(false); launcher.current?.focus() }
   return <>
     {open ? <AIActionConfirmation key={user?.id || "signed-out"} /> : null}
-    <button ref={launcher} className={`ai-server-launcher${open ? " is-open" : ""}`} type="button" aria-label={open ? "关闭 AI Server 对话" : "打开 AI Server 对话"} aria-expanded={open} aria-controls="ai-server-dialog" onClick={() => open ? close() : setOpen(true)}>
+    <button ref={launcher} className={`ai-server-launcher${open ? " is-open" : ""}`} type="button" aria-label={open ? "关闭 AI Server 对话" : "打开 AI Server 对话"} aria-expanded={open} aria-controls="ai-server-dialog" onClick={() => { if (open) { close(); return } setOpen(true); void apiRequest<{ tools?: Array<{ key: string }> }>("/api/v1/extensions", { method: "GET" }).then((center) => setLcscAvailable(Boolean(center.tools?.some((tool) => tool.key === "lcsc_search")))).catch(() => setLcscAvailable(false)) }}>
       <svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 1 1 18 0Z" /><path d="M7 11h.01M12 11h.01M17 11h.01" strokeWidth="3" strokeLinecap="round" /></svg>
     </button>
     {open ? <section id="ai-server-dialog" className={`ai-server-dialog${maximized ? ' is-maximized' : ''}`} role="dialog" aria-label="AI Server 对话" onKeyDown={(event) => { if (event.key === "Escape") close() }}>
       <header><div className="ai-chat-heading"><button className="ai-chat-icon-button" type="button" title={historyCollapsed?'展开历史记录':'折叠历史记录'} aria-label={historyCollapsed?'展开历史记录':'折叠历史记录'} aria-expanded={!historyCollapsed} aria-controls="ai-chat-history" onClick={()=>setHistoryCollapsed(!historyCollapsed)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path d={historyCollapsed?'m13 9 3 3-3 3':'m16 9-3 3 3 3'}/></svg></button><div><strong>AI Server</strong><small>你的工作台智能助手</small></div></div><div className="ai-chat-window-actions"><button className="ai-chat-icon-button" type="button" title={maximized?'还原对话窗口':'放大对话窗口'} aria-label={maximized?'还原对话窗口':'放大对话窗口'} aria-pressed={maximized} onClick={()=>setMaximized(!maximized)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={maximized?'M9 3v6H3m18 0h-6V3M3 15h6v6m6 0v-6h6':'M9 3H3v6m12-6h6v6M3 15v6h6m6 0h6v-6'}/></svg></button><button className="ai-chat-icon-button" type="button" aria-label="关闭对话" title="关闭对话" onClick={close}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></header>
-      <div className="ai-chat-layout"><aside id="ai-chat-history" className="ai-chat-sidebar" hidden={historyCollapsed} aria-label="我的对话"><button className="secondary-button" type="button" disabled={sending} onClick={() => { setConversationId(""); setTurns([]); setError(""); pendingId.current = null }}>＋ 新对话</button><p>仅当前账号可见</p><nav aria-label="对话列表">{conversations.map(c => <button key={c.id} title={c.title} type="button" aria-current={conversationId === c.id ? "page" : undefined} disabled={sending} onClick={() => {setConversationId(c.id);setTurns([]);setError("");pendingId.current=null}}>{c.source === "wechat" ? "微信 · " : ""}{c.title}</button>)}</nav></aside><div className="ai-chat-main">
+      <div className="ai-chat-layout"><aside id="ai-chat-history" className="ai-chat-sidebar" hidden={historyCollapsed} aria-label="我的对话"><button className="secondary-button" type="button" disabled={sending} onClick={() => { setConversationId(""); setTurns([]); setError(""); pendingId.current = null }}>＋ 新对话</button><p>仅当前账号可见</p><nav aria-label="对话列表">{conversations.map(c => <div key={c.id} className="ai-chat-history-row"><button className="ai-chat-history-item" title={c.title} type="button" aria-current={conversationId === c.id ? "page" : undefined} disabled={sending || deleting === c.id} onClick={() => {setConversationId(c.id);setTurns([]);setError("");pendingId.current=null}}>{c.source === "wechat" ? "微信 · " : ""}{c.title}</button><button className="ai-chat-history-delete" type="button" aria-label={`删除对话「${c.title}」`} title="删除这条对话" disabled={sending || deleting === c.id} onClick={() => void removeConversation(c.id, c.title)}>{deleting === c.id ? "…" : "×"}</button></div>)}</nav></aside><div className="ai-chat-main">
       <div className="ai-chat-transcript" ref={transcript} aria-live="polite" onScroll={() => {
         const element = transcript.current
         if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24
       }}>
-        {!turns.length ? <div className="ai-chat-welcome"><h3>有什么需要帮你？</h3><p>我可以查询项目资料、文件库和任务进度。查询范围与当前账号权限一致。</p>{route.kind === "project" && !conversationId ? <small>新对话将关联当前项目</small> : null}<div>{["我有哪些项目？", "帮我查找项目文件", "系统运行正常吗？", "用普通版立创 Skill 搜索 STM32F103C8T6", "用 Jev 版立创 Skill 搜索 STM32F103C8T6"].map((text) => <button type="button" key={text} onClick={() => { setDraft(text); input.current?.focus() }}>{text}</button>)}</div></div> : turns.map((turn) => <article key={turn.id} className="ai-chat-turn"><div className="ai-chat-user">{turn.prompt}</div><div className="ai-chat-answer"><small>AI Server</small>{progress[turn.id] ? <details className="ai-chat-process" open={["queued","running"].includes(turn.status)}><summary>执行过程 · {turn.status === "completed" ? "已完成" : turn.status === "failed" ? "执行失败" : progress[turn.id].phase}</summary><ol>{progress[turn.id].steps?.map((step,index) => <li key={index}>{step}</li>)}</ol><small>展示实际执行进度，不包含模型内部推理原文。</small></details> : null}{turn.response || progress[turn.id]?.text ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{a: ({href, children}) => {
+        {!turns.length ? <div className="ai-chat-welcome"><h3>有什么需要帮你？</h3><p>我可以查询项目资料、文件库和任务进度。查询范围与当前账号权限一致。</p>{route.kind === "project" && !conversationId ? <small>新对话将关联当前项目</small> : null}<div>{["我有哪些项目？", "帮我查找项目文件", "系统运行正常吗？", ...(lcscAvailable ? ["用普通版立创 Skill 搜索 STM32F103C8T6", "用 Jev 版立创 Skill 搜索 STM32F103C8T6"] : [])].map((text) => <button type="button" key={text} onClick={() => { setDraft(text); input.current?.focus() }}>{text}</button>)}</div></div> : turns.map((turn) => <article key={turn.id} className="ai-chat-turn"><div className="ai-chat-user">{turn.prompt}</div><div className="ai-chat-answer"><small>AI Server</small>{progress[turn.id] ? <details className="ai-chat-process" open={["queued","running"].includes(turn.status)}><summary>执行过程 · {turn.status === "completed" ? "已完成" : turn.status === "failed" ? "执行失败" : progress[turn.id].phase}</summary><ol>{progress[turn.id].steps?.map((step,index) => <li key={index}>{step}</li>)}</ol><small>展示实际执行进度，不包含模型内部推理原文。</small></details> : null}{turn.response || progress[turn.id]?.text ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{a: ({href, children}) => {
           if (href && /^https:\/\/(www|so|item)\.szlcsc\.com\//.test(href)) return <a href={href} onClick={(event) => { event.preventDefault(); void window.fde.app.openLcscBrowser?.(href) }}>{children}</a>
           return <a href={href} target="_blank" rel="noreferrer">{children}</a>
         }}}>{turn.response || progress[turn.id]?.text || ""}</ReactMarkdown> : turn.status === "failed" ? <p role="alert">{turn.error_message || "处理失败，请重新发送。"}</p> : <p className="ai-chat-thinking">{turn.status === "queued" ? "正在排队…" : "正在查询与思考…"}</p>}{turn.status === "completed" && turn.metrics?.model?.name ? <ChatMetrics metrics={turn.metrics} /> : null}</div></article>)}
@@ -135,6 +149,8 @@ function ChatMetrics({ metrics }: { metrics: NonNullable<Turn["metrics"]> }) {
   const input = calls.reduce((total, call) => total + call.input_tokens + (call.cache_read_tokens || 0) + (call.cache_write_tokens || 0), 0)
   const output = calls.reduce((total, call) => total + call.output_tokens, 0)
   return <details className="ai-chat-process"><summary>对话模型用量 · {metrics.model?.name}</summary>
+    {metrics.degraded ? <p role="status">{metrics.tools_available ? "本地工具模式：AI Server 运行时未部署，模型直接作答并通过服务端工具读取工作台数据。" : "降级模式：AI Server 运行时不可用，本次仅由模型直接作答，无法查询项目、文件与任务数据。"}</p> : null}
+    {metrics.tool_trace?.length ? <p>本次调用工具：{metrics.tool_trace.map((item) => `${item.tool}${item.ok ? "" : "（失败）"}`).join("、")}</p> : null}
     {metrics.provider_usage?.complete ? <p>输入 {input} Token · 输出 {output} Token · 人民币估算 {metrics.cost?.cny_estimate == null ? "不可核算" : `¥${metrics.cost.cny_estimate}`}</p> : <p>本次模型调用未返回完整 Token 统计。</p>}
     <small>{metrics.cost?.note || "费用以供应商实际账单为准。"}</small>
   </details>

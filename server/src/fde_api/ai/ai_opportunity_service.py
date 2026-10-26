@@ -107,12 +107,21 @@ def discover_ai_opportunities(*, actor: User, payload: object, on_event: Callabl
             "expand": expand,
         }
         try:
-            raw = _client().complete_json(
-                messages=build_ai_opportunity_messages(context),
-                request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
-                on_event=on_event,
-                **({"deep_thinking": False} if not expand else {}),
-            )
+            # 非展开模式显式关掉深度思考；不用 **dict 展开——mypy 无法验证
+            # 动态 kwargs 的形参类型。
+            if expand:
+                raw = _client().complete_json(
+                    messages=build_ai_opportunity_messages(context),
+                    request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
+                    on_event=on_event,
+                )
+            else:
+                raw = _client().complete_json(
+                    messages=build_ai_opportunity_messages(context),
+                    request_id=f"ai-opportunity-{uuid4()}", max_tokens=8192,
+                    on_event=on_event,
+                    deep_thinking=False,
+                )
         except DeepSeekError as error:
             status = {"ai_timeout": 504, "ai_output_invalid": 502, "ai_empty_response": 502}.get(error.code, 503)
             raise AIOpportunityDiscoveryError(error.code, error.public_message, status) from error
@@ -214,13 +223,17 @@ def _normalize_candidates(raw: dict[str, Any], forms: list[dict[str, Any]], *, f
         evidence = item.get("evidence")
         if not isinstance(evidence, list): continue
         normalized_evidence = [entry for entry in evidence if isinstance(entry, dict) and entry.get("form_id") in valid_form_ids and all(isinstance(entry.get(key), str) for key in ("form_name", "field_key", "question", "answer_excerpt", "reason"))]
+        # E3 引文可溯源：answer_excerpt 必须逐字来自被选中的原文，否则该证据
+        # 不成立。原先这条校验只在 format-only 分支内（默认 expand=True 模式
+        # 完全不校验），LLM 可以把「腾讯/华为」之类凭空内容写进证据，并一路
+        # 进入 SOW。两种模式都必须溯源。
+        source_texts = [str(answer.get("value", "")) for source in forms for answer in source.get("answers", [])]
+        def quoted(value):
+            return isinstance(value, str) and bool(value.strip()) and any(value.strip() in source for source in source_texts)
+        normalized_evidence = [entry for entry in normalized_evidence if quoted(entry["answer_excerpt"])]
         if format_only:
             # Format-only is extractive: generated claims are never silently
             # accepted as user-supplied facts. Validate against selected sources.
-            source_texts = [str(answer.get("value", "")) for source in forms for answer in source.get("answers", [])]
-            def quoted(value):
-                return isinstance(value, str) and bool(value.strip()) and any(value.strip() in source for source in source_texts)
-            normalized_evidence = [entry for entry in normalized_evidence if quoted(entry["answer_excerpt"])]
             if normalized_evidence:
                 excerpt = normalized_evidence[0]["answer_excerpt"].strip()
                 item = dict(item)
@@ -278,4 +291,5 @@ def _client() -> DeepSeekClient:
         api_key=settings.deepseek_api_key,
         model=settings.deepseek_ai_opportunity_model,
         timeout_seconds=settings.deepseek_timeout_seconds,
+        fallback_model=settings.deepseek_fallback_model,
     )

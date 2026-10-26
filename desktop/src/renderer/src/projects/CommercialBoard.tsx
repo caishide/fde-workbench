@@ -617,7 +617,7 @@ function QuoteCard({
                 className="secondary-button compact"
                 disabled={!calActual || !calReason}
                 onClick={() =>
-                  void mutate(() =>
+                  void mutate(async () =>
                     post(`/quotes/${encodeURIComponent(quote.quote_key)}/calibrate`, {
                       actual_hours: parsePositive(calActual, "实际工时"),
                       deviation_reason: calReason,
@@ -645,7 +645,7 @@ function QuoteCard({
                 className="primary-button compact"
                 disabled={!finalAmount || (ticketDeal && !ticketNote)}
                 onClick={() =>
-                  void mutate(() =>
+                  void mutate(async () =>
                     post(`/quotes/${encodeURIComponent(quote.quote_key)}/finalize`, {
                       final_amount: parsePositive(finalAmount, "成交价"),
                       ...(firstYear ? { first_year_recoverable_value: parsePositive(firstYear, "首年可回收价值") } : {}),
@@ -696,7 +696,7 @@ function PlanForm({ post, mutate }: { post: Post; mutate: Mutate }) {
         className="primary-button compact"
         disabled={!base}
         onClick={() =>
-          void mutate(() => post("/payments/plan", { sow_type: sow, base_amount: parsePositive(base, "合同基数金额"), replace }))
+          void mutate(async () => post("/payments/plan", { sow_type: sow, base_amount: parsePositive(base, "合同基数金额"), replace }))
         }
       >
         生成收款计划
@@ -778,7 +778,7 @@ function PaymentRow({
                 className="primary-button compact"
                 disabled={!received && !invoiceNo}
                 onClick={() =>
-                  void mutate(() =>
+                  void mutate(async () =>
                     post(`/payments/${encodeURIComponent(payment.milestone_key)}`, {
                       ...(received ? { received_amount: parsePositive(received, "实收金额") } : {}),
                       ...(invoiceNo ? { invoice_no: invoiceNo } : {}),
@@ -859,7 +859,7 @@ function ContractCard({
             className="secondary-button compact"
             disabled={!sourceUri}
             onClick={() =>
-              void mutate(() =>
+              void mutate(async () =>
                 post("/contracts", {
                   sow_type: contract.sow_type,
                   ...(signedAt ? { signed_at: signedAt } : {}),

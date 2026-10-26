@@ -24,10 +24,20 @@ class InvalidRoleError(ValueError):
 
 
 class UTCDateTime(TypeDecorator[datetime]):
-    """Persist UTC datetimes in MySQL while restoring timezone information on read."""
+    """Persist UTC datetimes while restoring timezone information on read.
+
+    v0.2 (PG 迁移): on PostgreSQL both UTCDateTime and UTCTimestamp render as
+    TIMESTAMP(timezone=True), matching the deployed baseline schema; the UTC
+    normalization lives in bind/result processing, not the storage type.
+    """
 
     impl = DateTime
     cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(DateTime(timezone=True))
+        return dialect.type_descriptor(DateTime())
 
     def process_bind_param(self, value: datetime | None, _: Any) -> datetime | None:
         if value is None:
@@ -43,21 +53,19 @@ class UTCDateTime(TypeDecorator[datetime]):
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
 
+    def compare_against_backend(self, dialect: Any, conn_type: Any) -> bool | None:
+        """Tell autogenerate this custom type matches the backend column type.
+
+        Without this hook `alembic check` flags every timestamp column as
+        modify_type drift (TypeDecorator vs reflected timestamptz).
+        """
+        if dialect.name == "postgresql":
+            return isinstance(conn_type, DateTime) and bool(conn_type.timezone)
+        return None
+
 
 class UTCTimestamp(UTCDateTime):
-    """Portable UTC-normalized TIMESTAMP storage.
-
-    v0.2 (PG 迁移): 原实现硬依赖 MySQL 的 TIMESTAMP(fsp=6)。改为在
-    PostgreSQL 上使用 TIMESTAMP(timezone=True)，其他方言回落原生 TIMESTAMP。
-    """
-
-    impl = DateTime
-    cache_ok = True
-
-    def load_dialect_impl(self, dialect: Any) -> Any:
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(DateTime(timezone=True))
-        return dialect.type_descriptor(DateTime())
+    """Portable UTC-normalized TIMESTAMP storage."""
 
 
 class Base(DeclarativeBase):
@@ -91,11 +99,13 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL
     )
+    # v0.2 (PG 迁移): PG 没有 ON UPDATE CURRENT_TIMESTAMP，server_onupdate 不生效；
+    # 与 workbench.TimestampMixin 同口径，改为 ORM 层 onupdate=func.now()。
     updated_at: Mapped[datetime] = mapped_column(
         UTCTimestamp(),
         nullable=False,
         server_default=CURRENT_TIMESTAMP_SQL,
-        server_onupdate=CURRENT_TIMESTAMP_SQL,
+        onupdate=func.now(),
     )
 
     refresh_sessions: Mapped[list[RefreshSession]] = relationship(

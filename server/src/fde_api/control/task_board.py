@@ -170,7 +170,8 @@ def _update_automation_status(*, user: User, task_id: str, status: str, version:
         with session.begin():
             task = session.scalar(select(AutomationTask).where(AutomationTask.id == task_id).options(
                 joinedload(AutomationTask.project).selectinload(Project.members),
-            ).with_for_update())
+            # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+            ).with_for_update(of=AutomationTask))
             if task is None or not (
                 user.role == "admin" or task.created_by_user_id == user.id
                 or task.project is not None and project_access(user, task.project).can_view

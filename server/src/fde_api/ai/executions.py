@@ -1,9 +1,14 @@
-"""Redis-backed AI executions with live, provider-supplied stream events."""
+"""Redis-backed AI executions with live, provider-supplied stream events.
+
+E8 可靠执行：执行体不再挂 daemon 线程（进程重启即丢），改为 outbox →
+BackgroundJob → worker 消费的持久化模型。执行参数（operation/actor/payload）
+随状态存 Redis，任务行只携带 execution_id；worker 重放/重复投递时按状态
+幂等跳过，不产生重复副作用。
+"""
 
 from __future__ import annotations
 
 import json
-import threading
 from datetime import UTC, datetime
 from typing import Any, Callable
 from uuid import uuid4
@@ -53,6 +58,9 @@ def start_execution(*, actor: User, operation: str, payload: object) -> dict[str
         "status": "running",
         "stage": "正在准备上下文",
         "actor_id": actor.id,
+        # E8：执行参数随状态持久化（旧线程模型靠参数传递；worker 消费时
+        # 只携带 execution_id，必须能从状态还原全部入参）。
+        "payload": payload,
         "created_at": now,
         "updated_at": now,
         "result": None,
@@ -61,14 +69,21 @@ def start_execution(*, actor: User, operation: str, payload: object) -> dict[str
     redis = current_app.extensions["fde_api_redis"]
     redis.setex(_state_key(execution_id), EXECUTION_TTL_SECONDS, json.dumps(state, ensure_ascii=False))
     _append_event(redis, execution_id, {"type": "stage_changed", "text": "正在准备上下文"})
-    app = current_app._get_current_object()
-    thread = threading.Thread(
-        target=_run,
-        args=(app, execution_id, actor.id, operation, payload),
-        name=f"ai-execution-{execution_id[:8]}",
-        daemon=True,
-    )
-    thread.start()
+    # E8：任务落库（outbox → BackgroundJob），由 worker 消费；进程重启后
+    # 任务仍在数据库里，不会像 daemon 线程一样直接丢失。
+    from fde_api.jobs.outbox import enqueue_outbox
+
+    session = db.session()
+    try:
+        with session.begin():
+            enqueue_outbox(
+                session,
+                "ai.execute",
+                execution_id,
+                {"execution_id": execution_id},
+            )
+    finally:
+        session.close()
     return _public_state(state, events=[])
 
 
@@ -82,9 +97,42 @@ def get_execution(*, actor: User, execution_id: str, after: int = 0) -> dict[str
     return _public_state(state, events=events, event_offset=max(0, after))
 
 
-def _run(app: Any, execution_id: str, actor_id: str, operation: str, payload: dict[str, Any]) -> None:
+def register_ai_execution_handler() -> None:
+    """把 AI 执行注册为可被 worker 消费的持久化任务（E8）。
+
+    jobs.handlers 延迟导入：handlers 模块底部有 ensure_default_handlers()
+    自举，模块级互相引用会形成 executions↔handlers 循环，自举时拿到的是
+    半初始化的 executions（register_ai_execution_handler 还没定义）。
+    """
+    from fde_api.jobs.handlers import register_handler
+
+    register_handler("ai.execute", execute_ai_execution_job)
+
+
+def execute_ai_execution_job(job: Any) -> None:
+    """worker 入口：按 execution_id 取状态并执行；重放/终态一律幂等跳过。"""
+    redis = current_app.extensions["fde_api_redis"]
+    execution_id = job.target_id
+    state = _load_state(redis, execution_id)
+    if state is None:
+        # 状态已过期（TTL）而任务行还在：无可执行内容，按成功收尾避免空转重试。
+        return
+    if state.get("status") != "running":
+        # 重放/重复投递：终态执行不产生重复副作用。
+        return
+    _execute_operation(redis, state)
+
+
+def _execute_operation(redis: Any, state: dict[str, Any]) -> None:
+    execution_id = state["id"]
+    actor_id = state["actor_id"]
+    operation = state["operation"]
+    payload = state.get("payload") or {}
     from fde_api.control.ai_server_client import ai_actor_id
     ai_actor_id.set(actor_id)
+    # worker 调用点已有 app 上下文；再嵌套一层保证独立成栈（后台任务与
+    # 请求上下文隔离）。
+    app = current_app._get_current_object()
     with app.app_context():
         redis = current_app.extensions["fde_api_redis"]
         session = db.session()

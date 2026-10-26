@@ -39,6 +39,7 @@ const bridge: FdeBridge = Object.freeze({
   }),
   app: Object.freeze({
     version: () => ipcRenderer.invoke(IPC_CHANNELS.appVersion),
+    setLcscEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.appSetLcscEnabled, enabled),
     openLcscBrowser: (url: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.appOpenLcscBrowser, url),
     showLcscDownload: (filename: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.appShowLcscDownload, filename),
     copyLcscRunId: (id: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.appCopyLcscRunId, id),

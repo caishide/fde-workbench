@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from fde_api.auth.models import UTCDateTime, User
-from fde_api.files.models import BUSINESS_CATEGORIES, ProjectFileVersion
+from fde_api.files.models import ProjectFileVersion
 from fde_api.workbench.models import (
     Base,
     TimestampMixin,

@@ -12,7 +12,8 @@
  * 用法：node scripts/bridge-poll.mjs [--check]
  *   常规：采集 + 推送，退出码 0/1
  *   --check：同上，但快照里有 orphan 项目指针时退出码 2（缺一指位=孤儿，§1 铁律 3）
- * 计划任务：FDE-Bridge-Poll（15 min），见 scripts/install-bridge-poll-task.ps1
+ * 计划任务：FDE-Bridge-Poll（每 4 小时，v0.3.5 用户裁决放宽；原 15 min），
+ * 见 scripts/install-bridge-poll-task.ps1
  */
 
 import { createHash } from "node:crypto";

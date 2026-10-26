@@ -88,13 +88,15 @@ def test_user_auth_version_defaults_to_one_in_model_and_database(db_session):
     assert reloaded.auth_version == 1
 
 
-def test_app_database_sessions_default_to_utc(db_session):
-    assert db_session.execute(text("SELECT @@session.time_zone")).scalar_one() == "+00:00"
+def test_app_database_timestamps_are_timezone_aware(db_session):
+    inserted_at = db_session.execute(text("SELECT now()")).scalar_one()
+
+    assert inserted_at.tzinfo is not None
 
 
-def test_mysql_server_timestamps_ignore_connection_timezone(db_session):
+def test_pg_timestamptz_columns_ignore_connection_timezone(db_session):
     user_id = str(uuid4())
-    db_session.execute(text("SET time_zone = '+08:00'"))
+    db_session.execute(text("SET TIME ZONE '+08:00'"))
     try:
         db_session.execute(
             text(
@@ -114,25 +116,27 @@ def test_mysql_server_timestamps_ignore_connection_timezone(db_session):
             },
         )
         db_session.commit()
-        db_session.execute(text("SET time_zone = '+00:00'"))
+        db_session.execute(text("SET TIME ZONE 'UTC'"))
         db_session.expire_all()
         inserted = db_session.get(User, user_id)
         assert inserted is not None
         original_updated_at = inserted.updated_at
+        assert inserted.created_at.tzinfo is not None
         assert abs((datetime.now(UTC) - inserted.created_at).total_seconds()) < 5
 
-        db_session.execute(text("SET time_zone = '+08:00'"))
-        db_session.execute(
-            text("UPDATE users SET display_name = 'Updated User' WHERE id = :id"),
-            {"id": user_id},
-        )
+        # PG 没有 ON UPDATE CURRENT_TIMESTAMP；updated_at 由 ORM onupdate=func.now()
+        # 驱动（生产代码路径），裸 SQL UPDATE 不会推进它——必须走 ORM。
+        db_session.execute(text("SET TIME ZONE '+08:00'"))
+        target = db_session.get(User, user_id)
+        assert target is not None
+        target.display_name = "Updated User"
         db_session.commit()
-        db_session.execute(text("SET time_zone = '+00:00'"))
+        db_session.execute(text("SET TIME ZONE 'UTC'"))
         db_session.expire_all()
         updated = db_session.get(User, user_id)
         assert updated is not None
         assert updated.updated_at > original_updated_at
         assert abs((datetime.now(UTC) - updated.updated_at).total_seconds()) < 5
     finally:
-        db_session.execute(text("SET time_zone = '+00:00'"))
+        db_session.execute(text("SET TIME ZONE 'UTC'"))
         db_session.commit()

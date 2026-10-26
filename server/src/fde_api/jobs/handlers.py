@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from typing import Any
+
+logger = logging.getLogger(__name__)
 
 Handler = Callable[["BackgroundJob"], None]
 
@@ -30,6 +32,7 @@ def ensure_default_handlers() -> None:
     from fde_api.files.processors import register_file_scan_handler
     from fde_api.guidance.jobs import register_presurvey_analysis_handler
     from fde_api.research.export_jobs import register_research_export_handler
+    from fde_api.ai.executions import register_ai_execution_handler
     from fde_api.control.automation_jobs import register_automation_handler
     from fde_api.control.chat import execute_chat_job
 
@@ -47,6 +50,8 @@ def ensure_default_handlers() -> None:
         register_automation_handler()
     if get_handler("ai.chat") is None:
         register_handler("ai.chat", execute_chat_job)
+    if get_handler("ai.execute") is None:
+        register_ai_execution_handler()
 
 
 from fde_api.jobs.models import BackgroundJob  # noqa: E402  (late import to avoid cycle)
@@ -54,4 +59,6 @@ from fde_api.jobs.models import BackgroundJob  # noqa: E402  (late import to avo
 try:
     ensure_default_handlers()
 except Exception:  # noqa: BLE001 - a resolution failure must not break imports
-    pass
+    # 静默吞掉会让全部 handler「消失」（任务全部 no_handler）且无人察觉——
+    # 至少把失败留在日志里。
+    logger.warning("default handler registration failed", exc_info=True)

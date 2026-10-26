@@ -7,8 +7,7 @@ from sqlalchemy import select
 
 from fde_api.auth.models import User
 from fde_api.auth.tokens import issue_access_token
-from fde_api.control.clawbot_weixin import begin_login, poll_login, seal, status, trusted_url, unbind, unseal, weixin_blueprint
-from fde_api.control.models import ChannelBinding
+from fde_api.control.clawbot_weixin import begin_login, poll_login, status, trusted_url, unbind, unseal, weixin_blueprint
 from fde_api.control.service import ControlServiceError
 from fde_api.control.weixin_models import WeixinAccount, WeixinInbox
 from fde_api.control.weixin_worker import _process_account

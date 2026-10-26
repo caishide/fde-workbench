@@ -203,10 +203,10 @@ def delete_with(authorized_client, url: str, *, version: int | None = None):
     return authorized_client.client.delete(url, **kwargs)
 
 
-def test_published_version_remains_editable(
+def test_published_version_is_locked_in_place(
     admin_client, template_v1_payload
 ):
-    """Editing a published template in place does not touch project snapshots copied at creation."""
+    """Published templates reject in-place edits (snapshot pointer semantics); edits go copy→draft→publish."""
     created = create_template(admin_client, template_v1_payload)
 
     published = publish_template(admin_client, created["version_id"])
@@ -215,25 +215,26 @@ def test_published_version_remains_editable(
     assert published.json["data"]["version_number"] == 1
     assert published.json["data"]["version"] == created["version"] + 1
 
-    # A published template is still editable; only inactive versions are locked.
-    edited = admin_client.patch(
-        f"/api/v1/industry-templates/versions/{created['version_id']}",
-        json={
-            "version": published.json["data"]["version"],
-            "description": "mutate",
-        },
+    # 发布即锁版：published 原地改必须 409（历史项目的模板快照指针语义依赖它），
+    # 改动只能 copy→draft→publish。
+    assert_error(
+        admin_client.patch(
+            f"/api/v1/industry-templates/versions/{created['version_id']}",
+            json={
+                "version": published.json["data"]["version"],
+                "description": "mutate",
+            },
+        ),
+        409,
+        "template_version_immutable",
     )
-
-    assert edited.status_code == 200
-    assert edited.json["data"]["version"] == published.json["data"]["version"] + 1
-    assert edited.json["data"]["description"] == "mutate"
 
     # Deleting a non-draft version is still rejected (kept in the audit history).
     assert_error(
         delete_with(
             admin_client,
             f"/api/v1/industry-templates/versions/{created['version_id']}",
-            version=edited.json["data"]["version"],
+            version=published.json["data"]["version"],
         ),
         409,
         "template_version_immutable",
@@ -258,11 +259,11 @@ def test_published_version_remains_editable(
                 for task_index, task in enumerate(module["tasks"])
             ],
         }
-        for index, module in enumerate(edited.json["data"]["modules"])
+        for index, module in enumerate(published.json["data"]["modules"])
     ]
     assert {
         module["id"] for module in copied.json["data"]["modules"]
-    }.isdisjoint({module["id"] for module in edited.json["data"]["modules"]})
+    }.isdisjoint({module["id"] for module in published.json["data"]["modules"]})
 
 
 def test_publish_rejects_a_stale_second_editor_and_increments_once(

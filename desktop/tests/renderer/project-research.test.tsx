@@ -13,7 +13,11 @@ import { ResearchForm, visibleResearchFieldKeys } from "../../src/renderer/src/r
 import { ResearchSubjectTree } from "../../src/renderer/src/research/ResearchSubjectTree"
 import type {
   ProjectResearchFormDto,
+  ResearchFieldOptionsDto,
+  ResearchTableColumnOptionsDto,
+  ResearchFormDto,
   ResearchAnswerValue,
+  ResearchEditableAnswerValue,
   ResearchSubjectDto,
 } from "../../src/renderer/src/research/types"
 import { parseHashRoute } from "../../src/renderer/src/routing/useHashRoute"
@@ -207,7 +211,7 @@ function opportunityFormFor(overrides: Partial<ProjectResearchFormDto> = {}): Pr
   }
 }
 
-const definition = {
+const definition: ResearchFormDto = {
   id: "form-definition-department",
   form_key: "department_basics",
   name: "部门基础调研",
@@ -343,7 +347,7 @@ function renderProjectResearch(options: RenderResearchOptions = {}) {
       const subjectId = path.split("/").at(-2)!
       const people = [
         { user_id: currentProject.leader.id, display_name: currentProject.leader.display_name },
-        ...currentProject.members.map((member) => ({ user_id: member.user_id, display_name: member.display_name })),
+        ...(currentProject.members ?? []).map((member) => ({ user_id: member.user_id, display_name: member.display_name })),
         { user_id: currentUser.id, display_name: currentUser.displayName },
       ].filter((person, index, all) => all.findIndex((candidate) => candidate.user_id === person.user_id) === index)
       return apiOk({ items: people.map((person) => {
@@ -435,17 +439,17 @@ function renderProjectResearch(options: RenderResearchOptions = {}) {
     if (path.includes("/research/subjects/") && request.method === "PATCH") {
       if (options.opportunityPatchError) return apiError(options.opportunityPatchError.code, options.opportunityPatchError.status ?? 400)
       const id = path.split("/").at(-1)
-      const body = request.body as { version: number; name?: string; description?: string; opportunity_profile?: ResearchSubjectDto["opportunity_profile"] }
+      const body = request.body as { version: number; name?: string; description?: string; opportunity_profile?: ResearchSubjectDto["opportunity_profile"] | null }
       const current = subjects.find((subject) => subject.id === id)!
-      const updated = {
+      const updated: ResearchSubjectDto = {
         ...current,
         version: current.version + 1,
         ...(body.name === undefined ? {} : { name: body.name }),
         ...(body.description === undefined ? {} : { description: body.description }),
-        ...(body.opportunity_profile === undefined ? {} : { opportunity_profile: {
+        ...(body.opportunity_profile == null ? {} : { opportunity_profile: {
           ...body.opportunity_profile,
           owner_display_name: body.opportunity_profile.owner_user_id
-            ? currentProject.members.find((member) => member.user_id === body.opportunity_profile?.owner_user_id)?.display_name ?? currentProject.leader.display_name
+            ? (currentProject.members ?? []).find((member) => member.user_id === body.opportunity_profile?.owner_user_id)?.display_name ?? currentProject.leader.display_name
             : null,
         } }),
       }
@@ -730,7 +734,7 @@ describe("project research workspace", () => {
   })
 
   it("supports tree parent navigation, collapse, expand, and first-child focus", async () => {
-    renderApp(<ResearchSubjectTree subjects={[rootSubject, departmentSubject, roleSubject]} selectedId={roleSubject.id} canFill={false} onSelect={vi.fn()} onCreate={vi.fn()} onArchive={vi.fn()} />)
+    renderApp(<ResearchSubjectTree subjects={[rootSubject, departmentSubject, roleSubject]} selectedId={roleSubject.id} canFill={false} onSelect={vi.fn()} onCreate={vi.fn()} onArchive={vi.fn()} onRename={vi.fn()} />)
     const user = userEvent.setup()
     const role = screen.getByRole("treeitem", { name: /销售专员/ })
     role.focus()
@@ -1235,7 +1239,7 @@ describe("project research workspace", () => {
     await user.click(screen.getByRole("button", { name: "查看" }))
     await user.click(screen.getByRole("button", { name: "编辑" }))
     await user.type(screen.getByLabelText("说明"), "未保存的机会说明")
-    await user.click(screen.getByRole("button", { name: "返回", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^返回$/ }))
     expect(confirm).toHaveBeenCalledWith("返回会退出 AI 机会详情，确定继续吗？")
     expect(screen.getByLabelText("说明")).toHaveValue("未保存的机会说明")
     expect(screen.getByLabelText("说明")).toHaveFocus()
@@ -1245,7 +1249,7 @@ describe("project research workspace", () => {
     expect(screen.getByLabelText("说明")).toHaveValue("未保存的机会说明")
     expect(mutationBodies(apiRequest, `/research/subjects/${opportunitySubject.id}`, "PATCH")).toHaveLength(0)
     confirm.mockReturnValue(true)
-    await user.click(screen.getByRole("button", { name: "返回", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^返回$/ }))
     expect(screen.queryByLabelText("说明")).not.toBeInTheDocument()
     confirm.mockClear()
     await user.click(screen.getByRole("treeitem", { name: /星河调研项目/ }))
@@ -1263,14 +1267,14 @@ describe("project research workspace", () => {
     await user.type(screen.getByLabelText("痛点/问题"), "尚未保存的答案")
     await user.click(screen.getByRole("button", { name: "保存机会档案" }))
     expect(await screen.findByText("机会档案已保存。")).toBeVisible()
-    await user.click(screen.getByRole("button", { name: "返回", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^返回$/ }))
     expect(confirm).toHaveBeenCalled()
     await user.click(screen.getByRole("button", { name: "编辑" }))
     expect(screen.getByLabelText("痛点/问题")).toHaveValue("尚未保存的答案")
     await user.click(screen.getByRole("button", { name: "保存调研内容" }))
     expect(await screen.findByText("调研内容已保存。")).toBeVisible()
     confirm.mockClear()
-    await user.click(screen.getByRole("button", { name: "返回", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^返回$/ }))
     expect(confirm).not.toHaveBeenCalled()
   })
 
@@ -1319,7 +1323,7 @@ describe("project research workspace", () => {
 
     await user.click(await screen.findByRole("treeitem", { name: /销售部/ }))
     expect(screen.getByRole("button", { name: "停用销售部" })).toHaveClass("danger-button")
-    expect(screen.queryByRole("button", { name: "停用", exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^停用$/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "停用销售部" }))
     const dialog = await screen.findByRole("dialog", { name: "停用调研对象" })
     await user.type(within(dialog).getByLabelText("当前账号密码"), "AdminPass!123")
@@ -1362,7 +1366,7 @@ describe("project research workspace", () => {
     await user.click(await screen.findByRole("treeitem", { name: /销售部/ }))
     await user.click(screen.getByRole("button", { name: "新增调研表" }))
     await user.type(screen.getByLabelText("调研表名称"), "保留结构")
-    await user.click(screen.getByRole("button", { name: "取消", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^取消$/ }))
     expect(confirm).toHaveBeenCalledWith("取消会放弃未保存的结构修改，确定继续吗？")
     expect(screen.getByLabelText("调研表名称")).toHaveValue("保留结构")
     expect(screen.getByLabelText("调研表名称")).toHaveFocus()
@@ -1372,7 +1376,7 @@ describe("project research workspace", () => {
     expect(location.hash).toBe(`#projects/${projectId}?tab=research`)
     expect(mutationBodies(apiRequest, "/research/forms", "POST")).toHaveLength(0)
     confirm.mockReturnValue(true)
-    await user.click(screen.getByRole("button", { name: "取消", exact: true }))
+    await user.click(screen.getByRole("button", { name: /^取消$/ }))
     expect(screen.queryByLabelText("调研表名称")).not.toBeInTheDocument()
     confirm.mockClear()
     await user.click(screen.getByRole("treeitem", { name: /星河调研项目/ }))
@@ -1608,8 +1612,8 @@ describe("typed research fields", () => {
       sections: [{
         ...definition.sections[0],
         fields: [
-          { ...definition.sections[0].fields[0], id: "due", field_key: "due", name: "日期", type: "date" as const, is_required: false, options: {} },
-          { ...definition.sections[0].fields[0], id: "priority", field_key: "priority", name: "优先级", type: "single_choice" as const, is_required: false, options: { choices: ["高", "低"] }, sort_order: 1 },
+          { ...definition.sections[0].fields[0], id: "due", field_key: "due", name: "日期", type: "date" as const, is_required: false, options: {} as ResearchFieldOptionsDto },
+          { ...definition.sections[0].fields[0], id: "priority", field_key: "priority", name: "优先级", type: "single_choice" as const, is_required: false, options: { choices: ["高", "低"] } as ResearchFieldOptionsDto, sort_order: 1 },
         ],
       }],
     }
@@ -1645,8 +1649,8 @@ describe("typed research fields", () => {
         name: "排期表",
         type: "table" as const,
         options: { columns: [
-          { key: "due", name: "日期", type: "date" as const, options: {} },
-          { key: "priority", name: "优先级", type: "single_choice" as const, options: { choices: ["高", "低"] } },
+          { key: "due", name: "日期", type: "date" as const, options: {} as ResearchTableColumnOptionsDto },
+          { key: "priority", name: "优先级", type: "single_choice" as const, options: { choices: ["高", "低"] } as ResearchTableColumnOptionsDto },
         ] },
       }] }],
     }
@@ -1945,7 +1949,7 @@ describe("typed research fields", () => {
   })
 
   it("renders all ten safe field controls and emits canonical values", async () => {
-    const changes: Record<string, ResearchAnswerValue> = {}
+    const changes: Record<string, ResearchEditableAnswerValue> = {}
     const fields = [
       { ...definition.sections[0].fields[0], id: "short", field_key: "short", name: "短文本", type: "short_text" as const },
       { ...definition.sections[0].fields[0], id: "long", field_key: "long", name: "长文本", type: "long_text" as const },
@@ -1959,7 +1963,7 @@ describe("typed research fields", () => {
       { ...definition.sections[0].fields[0], id: "files", field_key: "files", name: "文件引用", type: "file_reference" as const, options: { max_files: 2 } },
     ]
     function TypedFieldHarness() {
-      const [values, setValues] = React.useState<Record<string, ResearchAnswerValue>>({})
+      const [values, setValues] = React.useState<Record<string, ResearchEditableAnswerValue>>({})
       const request = vi.fn().mockResolvedValue({ items: [{ id: "file-123", project_id: projectId, display_name: "脱敏样本数据", category: "attachment", status: "active", current_version_id: "version-1", current_version: { id: "version-1", version_number: 1, status: "available", scan_status: "clean", original_filename: "sample.xlsx" }, created_by: null }] })
       return <div>{fields.map((field) => <ResearchField key={field.field_key} definition={field} value={values[field.field_key]} projectId={projectId} apiRequest={request} onChange={(value) => { changes[field.field_key] = value; setValues((current) => ({ ...current, [field.field_key]: value })) }} disabled={false} />)}</div>
     }

@@ -114,7 +114,7 @@ def _seed_document(
     project = Project(
         project_code=f"VER-{uuid4().hex[:8]}",
         name="版本项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=industry_version,
         template_snapshot={},
@@ -212,9 +212,9 @@ def _seed_document(
         "project": {
             "id": project.id,
             "name": project.name,
-            "enterprise_name": project.enterprise_name,
+            "enterprise_code": project.enterprise_code,
         },
-        "enterprise": {"name": project.enterprise_name},
+        "enterprise": {"enterprise_code": project.enterprise_code},
         "research": {},
         "subjects": {},
         "tasks": [],
@@ -527,13 +527,11 @@ def test_download_url_requires_available(db_session, leader_client, engineer_cli
     v1 = seeded["v1"]
     documents_base = f"/api/v1/projects/{project_id}/documents"
 
-    # v1's DOCX is a placeholder (uploading) and therefore not available.
-    unavailable = engineer_client.get(
-        f"{documents_base}/{v1.id}/download-url"
-    )
-    assert_error(unavailable, 409, "file_not_available")
+    # D4 下载门禁：draft 未经确认一律不可下载（先于文件可用性检查）。
+    draft = engineer_client.get(f"{documents_base}/{v1.id}/download-url")
+    assert_error(draft, 409, "document_version_not_confirmed")
 
-    # A manual upload promotes an available, downloadable version.
+    # A manual upload creates a draft; it must be confirmed before download.
     upload = _manual_upload(
         engineer_client,
         project_id,
@@ -543,6 +541,17 @@ def test_download_url_requires_available(db_session, leader_client, engineer_cli
     )
     assert upload.status_code == 201, upload.get_data(as_text=True)
     v2 = upload.json["data"]
+
+    still_draft = engineer_client.get(
+        f"{documents_base}/{v2['id']}/download-url"
+    )
+    assert_error(still_draft, 409, "document_version_not_confirmed")
+
+    confirm = leader_client.post(
+        f"{documents_base}/{v2['id']}/confirm",
+        json={"version": v2["document_version"]},
+    )
+    assert confirm.status_code == 200, confirm.get_data(as_text=True)
 
     available = engineer_client.get(
         f"{documents_base}/{v2['id']}/download-url"

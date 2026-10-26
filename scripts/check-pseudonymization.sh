@@ -32,9 +32,11 @@ else
   LEADS_MD="${FDE_LEADS_MD:-/d/test/FDE/leads.md}"
 fi
 
-PG_CONTAINER="qiflow-twenty-db"
-PG_USER="twenty"
-PG_DB="fde_workbench"
+# B7/B1：容器与库目标全部可用环境变量覆盖——CI 用 service 容器（容器 ID 由
+# docker ps 查出传入），本地保持默认不动开发库。
+PG_CONTAINER="${FDE_PG_CONTAINER:-qiflow-twenty-db}"
+PG_USER="${FDE_PG_USER:-twenty}"
+PG_DB="${FDE_PG_DB:-fde_workbench}"
 
 run_wsl() {
   if [ "$IN_WSL" = "1" ]; then
@@ -122,8 +124,12 @@ scan_dump() {
     done < <(grep -oE '[一-龥]{2,15}(公司|集团|厂)' "$LEADS_MD" | sort -u)
     [ "$bl_hits" = "0" ] && echo "OK   企业名黑名单（leads.md $(grep -oE '[一-龥]{2,15}(公司|集团|厂)' "$LEADS_MD" | sort -u | wc -l) 个）：无命中"
   else
-    echo "WARN leads.md 未找到（$LEADS_MD），跳过企业名黑名单"
-    warn=1
+    # B7：黑名单是代号化验收的必要项——文件缺失必须显式 FAIL，不许静默降级。
+    # CI / 新机器用 FDE_LEADS_MD 传入黑名单文件（可以是合成 fixture，每行一段
+    # 含「公司/集团/厂」结尾的中文名即可），不再依赖特定机器的文件布局。
+    echo "FAIL leads.md 未找到（$LEADS_MD）——企业名黑名单无法核对，拒绝静默跳过"
+    echo "     请设置 FDE_LEADS_MD 指向 leads 文件（CI 可传合成黑名单 fixture）后重跑"
+    fail=1
   fi
 }
 

@@ -33,6 +33,8 @@ def handle_presurvey_analysis(job) -> None:
             api_key=settings.kimi_project_presurvey_api_key,
             model=settings.kimi_project_presurvey_model,
             timeout_seconds=settings.kimi_timeout_seconds,
+            local_extract=settings.kimi_local_docx_extract,
+            openai_compatible=settings.kimi_openai_compatible,
         )
         source_ref = f"kimi-file:{analysis.source_file_version_id}"
         with object_storage.current.open_stream(version.storage_key) as stream:

@@ -1,0 +1,947 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "expand 模式下引文逐字来自原文 → 保留",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1
+      }
+    },
+    {
+      "name": "expand 模式下引文是编造的厂商名 → 证据被剔除",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "系统已由腾讯云部署",
+            "reason": "凭空"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "expand 模式下引文部分来自原文 → 保留",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程，Excel 手工维护"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "Excel 手工维护",
+            "reason": "原文片段"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1
+      }
+    },
+    {
+      "name": "引文为空串 → 剔除",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "   ",
+            "reason": "空"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "引文引用了未选中的表单（form_id 不匹配）→ 剔除",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-999",
+            "form_name": "别的表",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "越界"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "引文同时来自多条原文之一 → 保留",
+      "kind": "citation",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "a",
+              "value": "订单排程靠 Excel"
+            },
+            {
+              "field_key": "b",
+              "value": "设备台账靠纸笔"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "b",
+            "question": "现状",
+            "answer_excerpt": "设备台账靠纸笔",
+            "reason": "原文片段"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1
+      }
+    },
+    {
+      "name": "priority 非法值 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "urgent",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "risk_level 非法值 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "low-ish",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "business_value_score 越界（6）→ 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 6,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "business_value_score 非整数 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4.5,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "name 缺失 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "description 缺失 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "evidence 非列表 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": "none"
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "evidence 缺 reason 字段 → 剔除该证据 → 候选丢弃",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "多证据：一条编造一条真实 → 只留真实那条",
+      "kind": "structure",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "华为云已部署",
+            "reason": "编造"
+          },
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "真实"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "evidence_count": 1
+      }
+    },
+    {
+      "name": "企业代号进入上下文且不带明文企业名",
+      "kind": "pseudonym",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "forbid_plaintext": [
+          "星河制造",
+          "陈总",
+          "13800000000"
+        ]
+      }
+    },
+    {
+      "name": "引文里混入真实企业名 → 该引文不来自原文 → 剔除",
+      "kind": "pseudonym",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "星河制造排产依赖人工排程",
+            "reason": "带明文"
+          }
+        ]
+      },
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    },
+    {
+      "name": "备忘录上下文里的真实企业名不进入候选文本",
+      "kind": "pseudonym",
+      "forms": [
+        {
+          "form_id": "memo:subject-sales",
+          "form_name": "销售部备忘录",
+          "answers": [
+            {
+              "field_key": "memo",
+              "value": "星河制造的人工报价"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "memo:subject-sales",
+            "form_name": "销售部备忘录",
+            "field_key": "memo",
+            "question": "备忘录",
+            "answer_excerpt": "星河制造的人工报价",
+            "reason": "备忘录原文"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "forbid_plaintext": []
+      }
+    },
+    {
+      "name": "format-only：名称不可溯源 → 用引文兜底",
+      "kind": "format_only",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程系统",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "format_only": true
+      }
+    },
+    {
+      "name": "format-only：目标用户不可溯源 → 清空",
+      "kind": "format_only",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "全球CEO",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "format_only": true,
+        "expect_blank": [
+          "target_audience"
+        ]
+      }
+    },
+    {
+      "name": "format-only：评分被降为默认 3/medium",
+      "kind": "format_only",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 5,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "format_only": true,
+        "expect_defaults": {
+          "priority": "medium",
+          "business_value_score": 3
+        }
+      }
+    },
+    {
+      "name": "候选数超过上限 8 → 截断到 8",
+      "kind": "limit",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": {
+        "name": "智能排程",
+        "description": "排产依赖人工排程",
+        "target_audience": "计划员",
+        "next_action": "先做排程 PoV",
+        "priority": "high",
+        "risk_level": "medium",
+        "business_value_score": 4,
+        "feasibility_score": 3,
+        "data_readiness_score": 3,
+        "research_answers": {},
+        "evidence": [
+          {
+            "form_id": "form-1",
+            "form_name": "岗位调研",
+            "field_key": "painpoint",
+            "question": "当前痛点",
+            "answer_excerpt": "排产依赖人工排程",
+            "reason": "直接描述现状"
+          }
+        ]
+      },
+      "expect": {
+        "kept": 1,
+        "max_candidates": 8
+      }
+    },
+    {
+      "name": "candidates 不是列表 → 报错",
+      "kind": "limit",
+      "forms": [
+        {
+          "form_id": "form-1",
+          "form_name": "岗位调研",
+          "answers": [
+            {
+              "field_key": "painpoint",
+              "value": "排产依赖人工排程"
+            }
+          ]
+        }
+      ],
+      "candidate": null,
+      "expect": {
+        "error": "ai_output_invalid"
+      }
+    }
+  ]
+}

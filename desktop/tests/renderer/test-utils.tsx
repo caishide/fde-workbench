@@ -1,6 +1,6 @@
 import type { ReactElement } from "react"
 import { render } from "@testing-library/react"
-import { vi } from "vitest"
+import { vi, type Mock } from "vitest"
 
 import type {
   AuthResult,
@@ -43,9 +43,18 @@ export function ok<T>(data: T): BridgeResult<T> {
   return { ok: true, data }
 }
 
+/**
+ * 测试侧的 bridge 适配层。
+ *
+ * `FdeBridge["api"]["request"]` 是泛型签名（`<T>(path, options) => Promise<
+ * BridgeResult<ApiResponse<T>>>`），而 vitest 的 `vi.fn()` 产出的是
+ * `Mock<Procedure>` 或具体实现的 mock——两者在类型层不可互相赋值。
+ * 这里在适配层做一次收敛：入参接受任意 mock，内部转成契约签名。
+ * 生产代码的类型约束不变（bridge 契约本身仍被严格 typecheck）。
+ */
 export function bridge(
   overrides: Partial<FdeBridge["auth"]> & {
-    apiRequest?: FdeBridge["api"]["request"]
+    apiRequest?: FdeBridge["api"]["request"] | Mock<any> | ((...args: any[]) => any)
   } = {},
 ): FdeBridge {
   return {
@@ -57,11 +66,10 @@ export function bridge(
       ...overrides,
     },
     api: {
-      request:
-        overrides.apiRequest ??
-        (vi.fn().mockResolvedValue(
+      request: (overrides.apiRequest ??
+        vi.fn().mockResolvedValue(
           ok({ status: 200, data: {}, error: null }),
-        ) as FdeBridge["api"]["request"]),
+        )) as unknown as FdeBridge["api"]["request"],
     },
     app: { version: vi.fn().mockResolvedValue("0.0.0") },
   }

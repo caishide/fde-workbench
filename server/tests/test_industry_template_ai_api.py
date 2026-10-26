@@ -108,15 +108,38 @@ def test_admin_chat_execution_exposes_live_status_and_result(client, app, ai_cli
     assert started.status_code == 202
     execution_id = started.json["data"]["id"]
 
-    current = started
-    for _attempt in range(50):
-        current = client.get(
-            f"/api/v1/ai/executions/{execution_id}?after=0",
-            headers=ai_clients["admin"],
-        )
-        if current.json["data"]["status"] != "running":
-            break
-        time.sleep(0.02)
+    # E8：执行由 outbox → BackgroundJob → worker 消费（不再依赖进程内线程）。
+    # 测试在这里扮演 worker：派发 outbox 事件并消费对应任务，直至终态。
+    with app.app_context():
+        from fde_api.extensions import db as app_db
+        from fde_api.jobs.handlers import ensure_default_handlers
+        from fde_api.jobs.outbox import dispatch_pending
+        from fde_api.jobs.models import BackgroundJob
+        from fde_api.jobs.worker import run_job
+
+        ensure_default_handlers()
+        from sqlalchemy import select as _select
+
+        session = app_db.session()
+        try:
+            class _Queue:
+                def __init__(self):
+                    self.ids = []
+
+                def enqueue(self, job_id):
+                    self.ids.append(job_id)
+
+            queue = _Queue()
+            dispatch_pending(session, queue, limit=10)
+            job_id = queue.ids[0]
+        finally:
+            session.close()
+        assert run_job(job_id) == "succeeded"
+
+    current = client.get(
+        f"/api/v1/ai/executions/{execution_id}?after=0",
+        headers=ai_clients["admin"],
+    )
 
     assert current.status_code == 200
     assert current.json["data"]["status"] == "completed"

@@ -98,7 +98,7 @@ def test_project_module_is_unique_per_project(db_session):
     project = Project(
         project_code="FDE-20260821-001",
         name="星河 PoV",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=version,
         template_snapshot={"version": 1},
@@ -209,7 +209,7 @@ def test_database_rejects_invalid_project_status(db_session):
     project = Project(
         project_code="FDE-20260821-002",
         name="非法状态项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=version,
         template_snapshot={},
@@ -238,7 +238,7 @@ def test_database_rejects_invalid_project_task_default_role(db_session):
     project = Project(
         project_code="FDE-20260821-003",
         name="角色校验项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=version,
         template_snapshot={},

@@ -27,7 +27,8 @@ def execute_automation_run(job: BackgroundJob) -> None:
                     joinedload(AutomationTaskRun.task).joinedload(AutomationTask.project),
                 )
                 .where(AutomationTaskRun.id == job.target_id)
-                .with_for_update()
+                # PG 拒绝对外连接可空侧 FOR UPDATE，只锁主行。
+                .with_for_update(of=AutomationTaskRun)
             )
             if run is None:
                 raise RuntimeError("automation_run_not_found")

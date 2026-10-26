@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import requests
 
-from fde_api.control.dsh_runtime import DSHRuntimeClient, DSHRuntimeError, DSHRuntimePool
+from fde_api.control.dsh_runtime import DSHRuntimeClient, DSHRuntimeError
 
 
 class FakeResponse:
