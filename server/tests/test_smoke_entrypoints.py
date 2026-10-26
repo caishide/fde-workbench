@@ -18,6 +18,8 @@ import pytest
 
 from fde_api.app import create_app
 
+from conftest import seed_reference_data
+
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 
 _LOADED: dict[str, ModuleType] = {}
@@ -75,6 +77,8 @@ def test_gate_engine_smoke_against_isolated_test_db(
 ):
     monkeypatch.setenv("FDE_SMOKE_GATE_PASSWORD", _random_password())
     gate_smoke = _load_script("gate-engine-smoke")
+    # 先行 db_session 测试的 teardown 会清空 module_catalog；建项目校验需要它
+    seed_reference_data(settings.database_url)
     assert gate_smoke.main(app=smoke_app, settings=settings) == 0
 
 
@@ -83,6 +87,8 @@ def test_commercial_smoke_against_isolated_test_db(
 ):
     monkeypatch.setenv("FDE_SMOKE_COMMERCIAL_PASSWORD", _random_password())
     commercial_smoke = _load_script("commercial-smoke")
+    # 同 gate 冒烟：module_catalog 先行测试后已被清，先重灌（幂等）
+    seed_reference_data(settings.database_url)
     # 冒烟依赖「标准 FDE 项目」模板（P5 派生源）且 loader 需要一个 admin；
     # 隔离测试库先补齐这两样（幂等），再跑冒烟。
     from fde_api.auth.models import User

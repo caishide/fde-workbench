@@ -21,8 +21,6 @@ from fde_api.ai.memo_merge_service import merge_research_memos
 from fde_api.ai.research_form_service import generate_project_research_form, generate_research_form
 from fde_api.auth.models import User
 from fde_api.extensions import db
-from fde_api.jobs.handlers import register_handler
-from fde_api.jobs.outbox import enqueue_outbox
 
 
 EXECUTION_TTL_SECONDS = 60 * 60
@@ -73,6 +71,8 @@ def start_execution(*, actor: User, operation: str, payload: object) -> dict[str
     _append_event(redis, execution_id, {"type": "stage_changed", "text": "正在准备上下文"})
     # E8：任务落库（outbox → BackgroundJob），由 worker 消费；进程重启后
     # 任务仍在数据库里，不会像 daemon 线程一样直接丢失。
+    from fde_api.jobs.outbox import enqueue_outbox
+
     session = db.session()
     try:
         with session.begin():
@@ -98,7 +98,14 @@ def get_execution(*, actor: User, execution_id: str, after: int = 0) -> dict[str
 
 
 def register_ai_execution_handler() -> None:
-    """把 AI 执行注册为可被 worker 消费的持久化任务（E8）。"""
+    """把 AI 执行注册为可被 worker 消费的持久化任务（E8）。
+
+    jobs.handlers 延迟导入：handlers 模块底部有 ensure_default_handlers()
+    自举，模块级互相引用会形成 executions↔handlers 循环，自举时拿到的是
+    半初始化的 executions（register_ai_execution_handler 还没定义）。
+    """
+    from fde_api.jobs.handlers import register_handler
+
     register_handler("ai.execute", execute_ai_execution_job)
 
 

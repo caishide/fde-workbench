@@ -6,7 +6,8 @@ orphan 语义：
   - vanished：bridge 行的 slug 在最近一次成功采集的存活集里消失（文件已删）→ 清投影候选
   - unlinked：engagement 存活但无 workbench 项目引用 → 可立项/绑定（不是垃圾）
   - orphan_openfde / orphan_fdeops：项目指针指向不存在的 engagement/目录
-  - stale：openfde_synced_at 距今超过 STALE_AFTER_MINUTES（采集链路断连，如 WSL 停机）
+  - stale：任一轨 synced_at 距今超过 STALE_AFTER_MINUTES（采集链路断连，如 WSL 停机）；
+    openfde 与 fdeops 双轨独立判定（C9：单看 openfde 会漏报 fdeops 探针停摆）
 """
 
 from __future__ import annotations
@@ -221,6 +222,14 @@ def engagement_view() -> dict[str, Any]:
             row.openfde_synced_at is not None
             and row.slug in openfde_live
             and (now - row.openfde_synced_at).total_seconds() > STALE_AFTER_MINUTES * 60
+        ):
+            flags.append("stale")
+        # C9：fdeops 轨单独断连也要报警——双轨独立采集，只看 openfde 时
+        # fdeops 文件探针停摆（如目录移走）不会黄标，投影悄然过期。
+        if (
+            row.fdeops_synced_at is not None
+            and row.slug in fdeops_live
+            and (now - row.fdeops_synced_at).total_seconds() > STALE_AFTER_MINUTES * 60
         ):
             flags.append("stale")
         linked = openfde_links.get(row.slug, []) + [
