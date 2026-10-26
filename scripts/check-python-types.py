@@ -40,8 +40,8 @@ def run_mypy() -> tuple[int, str]:
     if not python.exists():
         python = SERVER / ".venv" / "bin" / "python"
     if not python.exists():
-        print("mypy interpreter not found; install server dev extras first", file=sys.stderr)
-        return 127, ""
+        # CI 可能直接用系统解释器装依赖（无 server/.venv），回退当前解释器
+        python = Path(sys.executable)
     result = subprocess.run(
         [str(python), "-m", "mypy", *TARGETS, "--no-error-summary", "--no-pretty"],
         cwd=SERVER,

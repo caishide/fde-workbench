@@ -32,9 +32,11 @@ else
   LEADS_MD="${FDE_LEADS_MD:-/d/test/FDE/leads.md}"
 fi
 
-PG_CONTAINER="qiflow-twenty-db"
-PG_USER="twenty"
-PG_DB="fde_workbench"
+# B7/B1：容器与库目标全部可用环境变量覆盖——CI 用 service 容器（容器 ID 由
+# docker ps 查出传入），本地保持默认不动开发库。
+PG_CONTAINER="${FDE_PG_CONTAINER:-qiflow-twenty-db}"
+PG_USER="${FDE_PG_USER:-twenty}"
+PG_DB="${FDE_PG_DB:-fde_workbench}"
 
 run_wsl() {
   if [ "$IN_WSL" = "1" ]; then
