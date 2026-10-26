@@ -37,7 +37,13 @@ from fde_api.templates.service import (
 )
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion
 
-SEED_DIR = Path(__file__).parent.parent / "seeds"
+# 容器内脚本在 /app/scripts → ../seeds = /app/seeds；仓库内从 scripts/ 出发
+# 是 <repo>/server/seeds。两处都试，取第一个存在的。
+_SEED_CANDIDATES = (
+    Path(__file__).resolve().parent.parent / "server" / "seeds",
+    Path(__file__).resolve().parent.parent / "seeds",
+)
+SEED_DIR = next((path for path in _SEED_CANDIDATES if path.is_dir()), _SEED_CANDIDATES[0])
 TEMPLATE_NAME = "标准 FDE 项目"
 
 # 三条主链衔接边（出处见模块 docstring；两端都在选中集才生效）
@@ -115,8 +121,9 @@ def _build_modules(nodes: list[dict]) -> list[dict]:
     return modules
 
 
-def main() -> int:
-    app = create_app()
+def main(app=None) -> int:
+    """注入 app 供 pytest 在隔离测试库上自动执行；缺省走容器环境。"""
+    app = app or create_app()
     with app.app_context():
         session = db.session()
         try:
