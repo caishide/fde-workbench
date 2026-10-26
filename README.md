@@ -70,13 +70,15 @@ FDE Workbench 覆盖项目、任务、调研、AI 机会、方案、交付文档
 
 ### 1. 启动 PostgreSQL 和 Redis
 
+compose 只提供 Redis，不含数据库服务（PostgreSQL 需自备）：
+
 ```bash
-docker compose up -d twenty-db redis
+# compose 的 redis 挂在 external 网络 automation_qiflow-net，全新机器先创建一次
+docker network create automation_qiflow-net 2>/dev/null || true
+docker compose up -d redis
 ```
 
-compose 未覆盖时也可以用官方 `postgres:16` 镜像自建，并在 `server/.env` 中填写连接地址。
-
-也可以使用已有服务，并在 `server/.env` 中填写连接地址。
+PostgreSQL 用官方 `postgres:16` 镜像自建，或直接使用已有实例，并把连接地址填入 `server/.env` 的 `FDE_DATABASE_URL`。
 
 ### 2. 安装依赖并创建启动配置
 
