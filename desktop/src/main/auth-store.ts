@@ -54,16 +54,25 @@ export function createAuthStore(options: CreateAuthStoreOptions): AuthStore {
     options.userDataPath,
     options.temporaryName?.() ?? "session.bin.tmp",
   )
+  // 加密文件带版本前缀；无前缀视为旧版明文（兼容升级前已登录的会话）。
+  const encryptionPrefix = Buffer.from("fde-session-enc-v1:", "utf8")
 
   async function save(refreshToken: string): Promise<void> {
     if (!refreshToken) {
       throw new SessionStoreError("Cannot store an empty session.")
     }
 
+    let payload = Buffer.from(refreshToken, "utf8")
+    if (options.safeStorage.isEncryptionAvailable()) {
+      payload = Buffer.concat([
+        encryptionPrefix,
+        options.safeStorage.encryptString(refreshToken),
+      ])
+    }
     await files.mkdir(options.userDataPath, { recursive: true, mode: 0o700 })
     await unlinkIfPresent(files, temporaryPath)
     try {
-      await files.writeFile(temporaryPath, Buffer.from(refreshToken, "utf8"), {
+      await files.writeFile(temporaryPath, payload, {
         flag: "wx",
         mode: 0o600,
       })
@@ -89,7 +98,17 @@ export function createAuthStore(options: CreateAuthStoreOptions): AuthStore {
       })
     }
 
-    const token = value.toString("utf8")
+    let token: string
+    if (value.subarray(0, encryptionPrefix.length).equals(encryptionPrefix)) {
+      if (!options.safeStorage.isEncryptionAvailable()) {
+        throw new SecureStorageUnavailableError()
+      }
+      token = options.safeStorage.decryptString(
+        value.subarray(encryptionPrefix.length),
+      )
+    } else {
+      token = value.toString("utf8")
+    }
     if (!token) {
       throw new SessionStoreError("The session was empty.")
     }

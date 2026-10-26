@@ -19,6 +19,7 @@ from fde_api.projects.service import (
     _GATE_KEY_PATTERN,
     _SOP_NODE_KEY_PATTERN,
     ProjectServiceError,
+    refresh_project_planned_end,
 )
 from fde_api.workbench.models import (
     ModuleCatalog,
@@ -587,6 +588,7 @@ def create_project_task(
                 module.planned_start_date = start
             if module.planned_end_date is None or end > module.planned_end_date:
                 module.planned_end_date = end
+            refresh_project_planned_end(session, project)
             project.version += 1
             record_event(
                 session,
@@ -1056,6 +1058,9 @@ def _reschedule_dependents(
             module.planned_end_date = max(
                 task.planned_end_date for task in module.tasks
             )
+    project = session.get(Project, project_id)
+    if project is not None:
+        refresh_project_planned_end(session, project)
     return sorted(rescheduled_ids)
 
 
@@ -1079,7 +1084,7 @@ def _serialize_tasks(
             predecessor = dependency.predecessor_task
             dependency_ids[successor_id].append(predecessor.id)
             dependency_keys[successor_id].append(predecessor.task_key)
-            if predecessor.status != "completed":
+            if predecessor.status not in ("completed", "cancelled"):
                 incomplete_ids[successor_id].append(predecessor.id)
 
     result = []

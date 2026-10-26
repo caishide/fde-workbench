@@ -41,7 +41,10 @@ def require_bridge_token(view: ViewFunction) -> ViewFunction:
         if not secret:
             return error_response("bridge_disabled", "FDE_BRIDGE_TOKEN is not configured.", 503)
         provided = request.headers.get("Authorization", "")
-        if not hmac.compare_digest(provided, f"Bearer {secret}"):
+        # 编码成 bytes 再比较：compare_digest 对含非 ASCII 的 str 直接抛 TypeError（500）
+        if not hmac.compare_digest(
+            provided.encode("utf-8", "ignore"), f"Bearer {secret}".encode("utf-8")
+        ):
             return error_response("invalid_bridge_token", "Bridge token is invalid.", 401)
         return view(*args, **kwargs)
 

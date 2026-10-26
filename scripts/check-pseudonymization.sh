@@ -53,7 +53,16 @@ TMP_DUMP="$(mktemp /tmp/fde_pseudonym.XXXXXX.sql)"
 trap 'rm -f "$TMP_DUMP"' EXIT
 
 dump_db() {
-  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER $PG_DB --data-only --inserts" 2>/dev/null | tr -d '\r' > "$TMP_DUMP"
+  # 管道退出码必须查：run_wsl（pg_dump）非零 = dump 不完整——半个 dump 扫出
+  # 「全库无明文」是合规假通过，比扫不出来更糟。
+  set -o pipefail
+  local dump_rc=0
+  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER $PG_DB --data-only --inserts" 2>/dev/null | tr -d '\r' > "$TMP_DUMP" || dump_rc=$?
+  set +o pipefail
+  if [ "$dump_rc" -ne 0 ]; then
+    echo "FAIL pg_dump 退出码 $dump_rc（dump 不完整，拒绝扫描）"
+    exit 2
+  fi
   if [ ! -s "$TMP_DUMP" ]; then
     echo "FAIL 无法导出 $PG_DB（容器活着吗？）"
     exit 2
@@ -68,8 +77,10 @@ fail=0; warn=0
 scan_dump() {
   # 手机号：1[3-9]+9 位数字；前后不许贴十六进制字符或连字符（排除 uuid 误报）
   PHONE='(?<![0-9A-Fa-f-])1[3-9][0-9]{9}(?![0-9A-Fa-f-])'
-  # 18 位身份证：17 数字 + 数字/X；前后不许贴数字或 X/x
-  IDCARD='(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])'
+  # 18 位身份证：17 数字 + 数字/X；前后不许贴数字/X/十六进制字母——
+  # 边界集不含 a-f 时，refresh_sessions 的 sha256 令牌哈希里 18 位数字段
+  # （两侧贴 hex 字母）会误报成身份证（实测踩过）。
+  IDCARD='(?<![0-9A-Fa-fXx])[0-9]{17}[0-9Xx](?![0-9A-Fa-fXx])'
   EMAIL='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 
   hits=$(grep -P -c "$PHONE" "$TMP_DUMP" 2>/dev/null || true)

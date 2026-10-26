@@ -13,7 +13,8 @@ services:
   redis:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    ports: ["30119:6379"]
+    # 不发布宿主端口：只有 api 容器经 docker 网络访问 redis（redis://redis:6379），
+    # 免密码 Redis 暴露到 0.0.0.0 等于局域网可 FLUSHALL。
     volumes: ["fde_redis:/data"]
     networks:
       - automation_qiflow-net
@@ -29,13 +30,15 @@ services:
     env_file:
       - ./server/.env
     environment:
-      # 容器内用 Docker 网络别名（stable），而非 localhost
-      FDE_DATABASE_URL: postgresql+psycopg://fde:fde_dev_password_2026@twenty-db:5432/fde_workbench
+      # 容器内用 Docker 网络别名（stable），而非 localhost；
+      # DB 口令在仓库根 .env（gitignored）的 FDE_DB_PASSWORD，不进 VCS。
+      FDE_DATABASE_URL: postgresql+psycopg://fde:${FDE_DB_PASSWORD:?FDE_DB_PASSWORD missing in .env}@twenty-db:5432/fde_workbench
       FDE_REDIS_URL: redis://redis:6379/0
       FDE_API_HOST: 0.0.0.0
       FDE_API_PORT: "8010"
     ports:
-      - "8010:8010"
+      # 只绑回环：桌面端/采集器都连 127.0.0.1，不对局域网开放（登录无限流）。
+      - "127.0.0.1:8010:8010"
     depends_on:
       redis:
         condition: service_healthy

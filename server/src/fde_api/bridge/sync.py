@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from fde_api.extensions import db
 from fde_api.workbench.models import BridgeEngagement, BridgeSyncRun, Project
@@ -82,6 +82,11 @@ def apply_snapshot(payload: dict[str, Any], trigger: str) -> dict[str, Any]:
     ③取视图算 flags 回写 summary。②③失败只缺摘要，不影响投影本身。"""
     captured = _parse_captured_at(payload)
     session = db.session()
+    # 串行化投影：gunicorn 2 workers 下 4h 采集与手动「重新投影」并发时，
+    # check-then-insert 会双双 INSERT 撞 uq_bridge_engagements_slug（500）。
+    # 事务级 advisory lock 让同 slug 集的投影完全串行，也顺带关掉
+    # 「reproject 读到旧 payload 覆盖新投影」的两段式窗口。
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtext('fde_bridge_apply'))"))
     run = BridgeSyncRun(trigger=trigger, payload=payload, started_at=_utcnow())
     session.add(run)
     try:
@@ -263,6 +268,7 @@ def engagement_view() -> dict[str, Any]:
 def delete_projection(slug: str) -> None:
     """清投影：只删 bridge 行，绝不动真相文件。文件仍存活的拒绝删（下一轮采集会复活）。"""
     session = db.session()
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtext('fde_bridge_apply'))"))
     row = session.scalar(select(BridgeEngagement).where(BridgeEngagement.slug == slug))
     if row is None:
         raise BridgeSyncError("projection not found")

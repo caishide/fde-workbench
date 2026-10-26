@@ -90,29 +90,92 @@ if [ "${1:-}" = "--verify" ]; then
     log "  WARN leads.md 缺失（2026-10-25 之前的旧备份无此项属正常）"
   fi
   echo
-  # 真恢复性验证：pg_dumpall 是全实例 dump（含 CREATE DATABASE 与 \connect），
-  # 直接灌进已建好的临时库会因为库已存在而报错。改为：
-  #   1) 灌进 postgres 库（让 dump 自带的 CREATE DATABASE 生效）
-  #   2) 再逐库查表数量
-  log "恢复性验证：pg_dumpall 灌入实例（含 CREATE DATABASE）"
-  run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
-  # 把 dump 里的库名改成探针名，避免覆盖真实库
-  sed -e 's/\\connect twenty/\\connect _restore_probe/g' \
-      -e 's/\\connect fde_workbench/\\connect _restore_probe/g' \
-      -e 's/CREATE DATABASE twenty/CREATE DATABASE _restore_probe/g' \
-      -e 's/CREATE DATABASE fde_workbench/CREATE DATABASE _restore_probe/g' \
-      "$LATEST/pg_all.sql" > "$LATEST/.pg_probe.sql"
-  if run_wsl "docker exec -i $PG_CONTAINER psql -U $PG_USER -d postgres" < "$LATEST/.pg_probe.sql" >/dev/null 2>&1; then
-    TABLES=$(run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d _restore_probe -t -c \"select count(*) from information_schema.tables where table_schema='public';\"" 2>/dev/null | tr -d '\000\r\n ')
-    log "  OK   pg_all.sql 可恢复，_restore_probe public schema 有 ${TABLES} 张表"
-    if [ "${TABLES:-0}" -lt 60 ]; then
-      log "  WARN 期望 >=60 张表（实测 66），恢复内容可能不完整"; ok=1
+  # 真恢复性验证（活体：灌进本实例的探针库再数表）。
+  # 三条口令纪律，缺一就是「假通过」：
+  #   1) psql 带 -v ON_ERROR_STOP=1——否则 dump 中段损坏 psql 照样退出 0，
+  #      老校验就是这么年复一年「通过」的；
+  #   2) 按 \connect 分段、每库灌各的探针库——fde fork 与 twenty 同源有同名表
+  #      （ai_chat_turns），合灌同一个探针库必撞 already-exists；
+  #   3) 剔除角色 DDL——CREATE ROLE 撞活实例已存在角色。代价：验证聚焦
+  #      schema+data 可恢复性，角色完整性由 dump-complete 收尾标记兜底。
+  log "恢复性验证：按库分段灌探针（ON_ERROR_STOP）"
+  if [ -s "$LATEST/pg_all.sql" ]; then
+    # dump 收尾标记：截断的 dump（磁盘满/中途中死）没有这行
+    if ! tail -c 200 "$LATEST/pg_all.sql" | grep -q "PostgreSQL database dump complete"; then
+      log "  FAIL pg_all.sql 缺少收尾标记（dump 截断？）"; ok=1
     fi
+    SPLIT="$LATEST/.pg_split"
+    rm -rf "$SPLIT"; mkdir -p "$SPLIT"
+    # 用字符串比较不用正则：\connect 的反斜杠在 Git Bash awk / gawk / busybox awk
+    # 三家的正则转义行为不一致（\\c 在 MSYS awk 会告警不匹配），substr 判前缀最稳。
+    awk -v dir="$SPLIT" '
+      {
+        if (substr($0, 1, 9) == "\\connect ") {
+          name = substr($0, 10)
+          if (name == "twenty" || name == "fde_workbench") { sec = name; next }
+          sec = ""  # template1/postgres 等中间分段（含 CREATE DATABASE 行）不采集
+          next
+        }
+        if (sec != "") print > (dir "/" sec ".sql")
+      }
+    ' "$LATEST/pg_all.sql"
+    for DBNAME in twenty fde_workbench; do
+      SEC="$SPLIT/$DBNAME.sql"
+      if [ ! -s "$SEC" ]; then
+        log "  FAIL dump 里没有 $DBNAME 分段"; ok=1; continue
+      fi
+      grep -vE '^(CREATE ROLE |ALTER ROLE |COMMENT ON ROLE |CREATE DATABASE )' "$SEC" \
+        | sed -e "s/ON DATABASE $DBNAME/ON DATABASE _restore_probe/g" \
+            -e "s/ALTER DATABASE $DBNAME/ALTER DATABASE _restore_probe/g" \
+        > "$SEC.probe"
+      run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;' -c 'CREATE DATABASE _restore_probe;'" >/dev/null 2>&1
+      if run_wsl "docker exec -i $PG_CONTAINER psql -U $PG_USER -d _restore_probe -v ON_ERROR_STOP=1" < "$SEC.probe" 2> "$SPLIT/$DBNAME.restore.err" >/dev/null; then
+        TABLES=$(run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d _restore_probe -t -A -c \"select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema');\"" 2>/dev/null | tr -d '\000\r\n ')
+        case "$DBNAME" in
+          twenty)        FLOOR=100 ;;
+          fde_workbench) FLOOR=60  ;;
+        esac
+        if [ "${TABLES:-0}" -ge "$FLOOR" ]; then
+          log "  OK   $DBNAME 分段可恢复（${TABLES} 张表）"
+        else
+          log "  WARN $DBNAME 恢复后仅 ${TABLES:-0} 张表（期望 ≥$FLOOR），内容可能不完整"; ok=1
+        fi
+      else
+        log "  FAIL $DBNAME 分段恢复失败（ON_ERROR_STOP 中止），首条错误："
+        # -a + 去 NUL：psql 报错夹着中文数据字节时 grep 会当二进制拒读
+        tr -d '\000' < "$SPLIT/$DBNAME.restore.err" | grep -a -m 3 '^ERROR' | while IFS= read -r line; do log "    $line"; done
+        ok=1
+      fi
+      rm -f "$SEC.probe" "$SPLIT/$DBNAME.restore.err"
+    done
+    rm -rf "$SPLIT"
+  elif [ -s "$LATEST/pg_fde_workbench.sql" ]; then
+    # 分库 fallback 布局：逐库验证（pg_dump 纯 schema+data，直接灌探针库）
+    for DBNAME in twenty fde_workbench; do
+      DUMP="$LATEST/pg_$DBNAME.sql"
+      [ -s "$DUMP" ] || { log "  FAIL pg_$DBNAME.sql 缺失"; ok=1; continue; }
+      run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;' -c 'CREATE DATABASE _restore_probe;'" >/dev/null 2>&1
+      if run_wsl "docker exec -i $PG_CONTAINER psql -U $PG_USER -d _restore_probe -v ON_ERROR_STOP=1" < "$DUMP" >/dev/null 2>&1; then
+        log "  OK   pg_$DBNAME.sql 可恢复"
+      else
+        log "  FAIL pg_$DBNAME.sql 恢复失败"; ok=1
+      fi
+    done
   else
-    log "  FAIL pg_all.sql 恢复失败"; ok=1
+    log "  FAIL 没有 PG dump 可验证（pg_all.sql 与分库文件都缺失）"; ok=1
   fi
   run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;'" >/dev/null 2>&1
-  rm -f "$LATEST/.pg_probe.sql"
+  # SQLite 备份件完整性：每个 ledger.db 跑 quick_check
+  if [ -d "$LATEST/openfde" ] && [ -n "$(ls -A "$LATEST/openfde" 2>/dev/null)" ]; then
+    for DB in "$LATEST"/openfde/*.db; do
+      WDB="${DB/\/d\//\/mnt\/d/}"
+      if run_wsl "python3 -c 'import sqlite3,sys; exit(0 if sqlite3.connect(sys.argv[1]).execute(\"PRAGMA quick_check\").fetchone()[0]==\"ok\" else 1)' \"$WDB\"" >/dev/null 2>&1; then
+        log "  OK   $(basename "$DB") quick_check 通过"
+      else
+        log "  FAIL $(basename "$DB") quick_check 不通过"; ok=1
+      fi
+    done
+  fi
   exit $ok
 fi
 
@@ -122,22 +185,31 @@ log "备份目标: $OUT"
 # ---- 1. PostgreSQL：Twenty 库 + fde_workbench 库（同一实例，一次 pg_dumpall 更稳）----
 log "1/5 备份 PostgreSQL（Twenty + fde_workbench）"
 run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2>/tmp/pg_dumpall.err || {
-  log "pg_dumpall 失败，改为分库 dump"
-  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql"
-  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER fde_workbench" > "$OUT/pg_fde_workbench.sql"
+  log "pg_dumpall 失败（错误在 WSL /tmp/pg_dumpall.err），改为分库 dump"
+  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql" || { log "  FAIL pg_dump twenty"; exit 2; }
+  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER fde_workbench" > "$OUT/pg_fde_workbench.sql" || { log "  FAIL pg_dump fde_workbench"; exit 2; }
 }
 [ -s "$OUT/pg_all.sql" ] && log "  pg_all.sql ($(du -h "$OUT/pg_all.sql" | cut -f1))"
 
 # ---- 2. SQLite：openfde 知识轨 ----
 log "2/5 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
+SQLITE_FAIL=0
 if [ -d "$OPENFDE_ROOT" ]; then
   mkdir -p "$OUT/openfde"
   for db in "$OPENFDE_ROOT"/*/ledger.db; do
     [ -f "$db" ] || continue
     slug="$(basename "$(dirname "$db")")"
-    cp "$db" "$OUT/openfde/$slug.db"
-    log "  $slug.db ($(du -h "$OUT/openfde/$slug.db" | cut -f1))"
+    # 不许裸 cp：采集进程正在写时 cp 会得到撕裂副本。走 SQLite 在线备份 API
+    # （python3 stdlib，WSL 无 sqlite3 CLI）。
+    WDB="${db/\/d\//\/mnt\/d/}"
+    WOUT="${OUT/\/d\//\/mnt\/d/}"
+    if run_wsl "python3 -c 'import sqlite3,sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))' \"$WDB\" \"$WOUT/openfde/$slug.db\""; then
+      log "  $slug.db ($(du -h "$OUT/openfde/$slug.db" | cut -f1))"
+    else
+      log "  FAIL $slug.db 在线备份失败"; SQLITE_FAIL=1
+    fi
   done
+  [ "$SQLITE_FAIL" = "0" ] || exit 2
 else
   log "  跳过：$OPENFDE_ROOT 未找到（openfde 真身路径可能已变）"
 fi

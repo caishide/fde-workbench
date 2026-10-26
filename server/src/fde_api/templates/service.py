@@ -306,7 +306,10 @@ def update_draft_version(
             )
             if version is None:
                 raise _not_found_error()
-            if version.status not in {"draft", "published"}:
+            # 发布即锁版：published 版本不许原地改（历史项目的快照指针语义依赖它），
+            # 改动必须走 copy→draft→publish。原先这里放行了 published，是个可被
+            # admin 打穿的锁版口子（另两处 _immutable_error 早已只放 draft）。
+            if version.status != "draft":
                 raise _immutable_error()
             if version.version != expected_version:
                 raise TemplateServiceError(

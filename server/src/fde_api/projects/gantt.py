@@ -120,7 +120,7 @@ def _dependency_metadata(
         predecessor = dependency.predecessor_task
         successor_id = dependency.successor_task_id
         dependency_ids[successor_id].append(predecessor.id)
-        if predecessor.status != "completed":
+        if predecessor.status not in ("completed", "cancelled"):
             incomplete_ids[successor_id].append(predecessor.id)
     for task_id in task_ids:
         dependency_ids[task_id].sort()

@@ -197,6 +197,8 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
         raise ProjectServiceError(
             "project_conflict", "The project could not be created due to a conflict.", 409
         ) from None
+    except (ValueError, TypeError):
+        raise _invalid_request_error() from None
     except Exception:
         raise ProjectServiceError(
             "project_creation_failed", "Unable to create the project at this time.", 503
@@ -1035,6 +1037,35 @@ def cancel_project_module(
                     .with_for_update()
                 )
             )
+            # 外部依赖守卫：其他在办模块的任务若依赖本模块任务，不许直接取消
+            # （上游范围撤销而下游保留是矛盾状态；跨模块依赖在 FDE 模板里是常态）。
+            module_task_ids = [task.id for task in tasks if task.status != "cancelled"]
+            if module_task_ids:
+                external_dependents = list(
+                    session.scalars(
+                        select(ProjectTask.task_key)
+                        .join(
+                            ProjectTaskDependency,
+                            ProjectTaskDependency.successor_task_id == ProjectTask.id,
+                        )
+                        .join(ProjectModule, ProjectModule.id == ProjectTask.project_module_id)
+                        .where(
+                            ProjectTaskDependency.predecessor_task_id.in_(module_task_ids),
+                            ProjectTask.status != "cancelled",
+                            ProjectModule.status != "cancelled",
+                            ProjectModule.id != module.id,
+                        )
+                        .limit(5)
+                    )
+                )
+                if external_dependents:
+                    raise ProjectServiceError(
+                        "project_module_has_dependents",
+                        "其他在办模块的任务依赖本模块任务："
+                        + "、".join(sorted(external_dependents))
+                        + "。先处理下游依赖再取消。",
+                        409,
+                    )
             module.status = "cancelled"
             cancelled_task_ids = []
             for task in tasks:
@@ -1042,6 +1073,7 @@ def cancel_project_module(
                     task.status = "cancelled"
                     task.version += 1
                     cancelled_task_ids.append(task.id)
+            refresh_project_planned_end(session, project)
             project.version += 1
             record_event(
                 session,
@@ -1129,7 +1161,18 @@ def _enterprise_code(value: object) -> str:
     return code
 
 
-def _normalize_project_snapshot(session: Session, value: object, creation_source: str) -> dict[str, Any]:
+def _normalize_project_snapshot(
+    session: Session, value: object, creation_source: str
+) -> dict[str, Any]:
+    try:
+        return _normalize_project_snapshot_strict(session, value, creation_source)
+    except (ValueError, TypeError):
+        raise _invalid_request_error() from None
+
+
+def _normalize_project_snapshot_strict(
+    session: Session, value: object, creation_source: str
+) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise _invalid_request_error()
     modules = value.get("modules")
@@ -1474,6 +1517,26 @@ def _annotate_sop_tasks(
     return matched
 
 
+def refresh_project_planned_end(session: Session, project: Project) -> None:
+    """项目计划完成日 = 未取消任务的最晚 planned_end_date（无任务则置空）。
+
+    手工建任务/重排/取消模块都会改变任务日期面——项目日期必须重算，
+    此前只有模板 append 延伸它，取消模块后旧日期虚高。
+    """
+    latest = session.scalar(
+        select(func.max(ProjectTask.planned_end_date)).where(
+            ProjectTask.status != "cancelled",
+            ProjectTask.project_module_id.in_(
+                select(ProjectModule.id).where(
+                    ProjectModule.project_id == project.id,
+                    ProjectModule.status != "cancelled",
+                )
+            ),
+        )
+    )
+    project.planned_end_date = latest
+
+
 def _set_module_dates(
     module_rows: Mapping[str, ProjectModule], task_rows: Mapping[str, ProjectTask]
 ) -> None:
@@ -1758,7 +1821,8 @@ def _dependency_metadata(
         metadata = result[dependency.successor_task_id]
         metadata["ids"].append(predecessor.id)
         metadata["keys"].append(predecessor.task_key)
-        if predecessor.status != "completed":
+        if predecessor.status not in ("completed", "cancelled"):
+            # 已取消前驱不构成风险（边保留可视，但不阻塞 successor）
             metadata["incomplete_ids"].append(predecessor.id)
     for metadata in result.values():
         for values in metadata.values():

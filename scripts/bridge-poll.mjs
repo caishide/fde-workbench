@@ -154,9 +154,16 @@ function captureFdeops() {
       const slug = entry.name;
       if (!SLUG_RE.test(slug)) continue;
       const boundPath = bindingBySlug.get(slug) || null;
-      const files = readdirSync(join(FDEOPS_ROOT, slug))
-        .filter((name) => !name.startsWith("."))
-        .slice(0, 50);
+      // 单个目录读取失败（Windows 上 EBUSY/EPERM 常见）不许中断整轮——
+      // 降级为空清单继续，其余 slug 照常采集推送。
+      let files = [];
+      try {
+        files = readdirSync(join(FDEOPS_ROOT, slug))
+          .filter((name) => !name.startsWith("."))
+          .slice(0, 50);
+      } catch (error) {
+        log(`  fdeops ${slug}: 目录读取失败，降级为空清单（${error?.code || error?.message}）`);
+      }
       // .fde 流程轨在绑定的工作区里（.registry: <工作区路径> <slug>）；目录本体也可能有
       const fdeInitialized =
         (boundPath && existsSync(join(boundPath, ".fde"))) ||
