@@ -38,28 +38,42 @@ PG_CONTAINER="${FDE_PG_CONTAINER:-qiflow-twenty-db}"
 PG_USER="${FDE_PG_USER:-twenty}"
 PG_DB="${FDE_PG_DB:-fde_workbench}"
 
-run_wsl() {
+run_host() {
   if [ "$IN_WSL" = "1" ]; then
     bash -lc "$1"
-  else
+  elif command -v wsl >/dev/null 2>&1; then
+    # Windows 宿主：容器在 WSL 发行版里，须经 wsl.exe 中转
     wsl -e bash -lc "$1"
+  else
+    # Linux 宿主（CI runner）：docker 原生在 PATH 上，直接执行
+    bash -c "$1"
   fi
 }
 
 # PG 里的库坑：psql 输出带 \r，统一清洗
 psql_exec() {
-  run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d $PG_DB -t -A -c \"$1\"" 2>/dev/null | tr -d '\r'
+  run_host "docker exec $PG_CONTAINER psql -U $PG_USER -d $PG_DB -t -A -c \"$1\"" 2>/dev/null | tr -d '\r'
+}
+
+extract_blacklist() {
+  # 企业名提取：GNU grep 的多字节区间 [一-龥] 不可移植——UTF-8 locale 报
+  # 「Invalid collation character」匹配 0 个（=黑名单静默失效，自测都发现
+  # 不了，哨兵手机号照样被抓）、C locale 按字节碰巧能跑、MSYS 又是另一套
+  # （实测三环境三种结果）。perl 按码位区间提取，与 locale 完全无关。
+  perl -Mutf8 -CSD -ne \
+    'while (/([\x{4E00}-\x{9FA5}]{2,15}(?:公司|集团|厂))/g) { print "$1\n" }' \
+    "$LEADS_MD" | sort -u
 }
 
 TMP_DUMP="$(mktemp /tmp/fde_pseudonym.XXXXXX.sql)"
 trap 'rm -f "$TMP_DUMP"' EXIT
 
 dump_db() {
-  # 管道退出码必须查：run_wsl（pg_dump）非零 = dump 不完整——半个 dump 扫出
+  # 管道退出码必须查：run_host（pg_dump）非零 = dump 不完整——半个 dump 扫出
   # 「全库无明文」是合规假通过，比扫不出来更糟。
   set -o pipefail
   local dump_rc=0
-  run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER $PG_DB --data-only --inserts" 2>/dev/null | tr -d '\r' > "$TMP_DUMP" || dump_rc=$?
+  run_host "docker exec $PG_CONTAINER pg_dump -U $PG_USER $PG_DB --data-only --inserts" 2>/dev/null | tr -d '\r' > "$TMP_DUMP" || dump_rc=$?
   set +o pipefail
   if [ "$dump_rc" -ne 0 ]; then
     echo "FAIL pg_dump 退出码 $dump_rc（dump 不完整，拒绝扫描）"
@@ -121,8 +135,8 @@ scan_dump() {
         echo "FAIL 企业名「${name}」出现在数据库 dump 中"
         bl_hits=1; fail=1
       fi
-    done < <(grep -oE '[一-龥]{2,15}(公司|集团|厂)' "$LEADS_MD" | sort -u)
-    [ "$bl_hits" = "0" ] && echo "OK   企业名黑名单（leads.md $(grep -oE '[一-龥]{2,15}(公司|集团|厂)' "$LEADS_MD" | sort -u | wc -l) 个）：无命中"
+    done < <(extract_blacklist)
+    [ "$bl_hits" = "0" ] && echo "OK   企业名黑名单（leads.md $(extract_blacklist | wc -l) 个）：无命中"
   else
     # B7：黑名单是代号化验收的必要项——文件缺失必须显式 FAIL，不许静默降级。
     # CI / 新机器用 FDE_LEADS_MD 传入黑名单文件（可以是合成 fixture，每行一段
