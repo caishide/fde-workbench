@@ -115,7 +115,8 @@ def test_mcp_rejects_normal_login_token_and_missing_auth(ai_context, client, set
 
 def test_lcsc_skill_tool_is_visible_and_callable_from_ai_chat(ai_context, client, monkeypatch):
     users, _ = ai_context
-    token = issue_mcp_token(users["alice"], execution_id=str(uuid4()))
+    # F1 门槛：lcsc 工具仅 system_operator（admin）能力集可见
+    token = issue_mcp_token(users["admin"], execution_id=str(uuid4()))
     listed = mcp_request(client, token)
     assert any(item["name"] == "lcsc_search" for item in listed.json["result"]["tools"])
     called = Mock(return_value={"id": "run-1", "status": "succeeded", "skill_key": "lcsc-browser-jev"})
@@ -128,10 +129,10 @@ def test_lcsc_skill_tool_is_visible_and_callable_from_ai_chat(ai_context, client
 def test_lcsc_record_read_is_owner_scoped_and_omits_image_payload(ai_context, client, db_session):
     from fde_api.control.lcsc_skills import LcscSkillRun
     users, _ = ai_context
-    own=LcscSkillRun(user_id=users['alice'].id,execution_id=str(uuid4()),request_sha256='a'*64,skill_key='lcsc-browser-baseline',query='C1',started_at=datetime.now(UTC),result_json={'details':{'pins':{'count':2,'screenshot':'data:image/png;base64,LARGE'}},'evidence_pool':[{'text':'internal intermediate'}]})
+    own=LcscSkillRun(user_id=users['admin'].id,execution_id=str(uuid4()),request_sha256='a'*64,skill_key='lcsc-browser-baseline',query='C1',started_at=datetime.now(UTC),result_json={'details':{'pins':{'count':2,'screenshot':'data:image/png;base64,LARGE'}},'evidence_pool':[{'text':'internal intermediate'}]})
     foreign=LcscSkillRun(user_id=users['bob'].id,execution_id=str(uuid4()),request_sha256='b'*64,skill_key='lcsc-browser-jev',query='C2',started_at=datetime.now(UTC))
     db_session.add_all([own,foreign]);db_session.commit()
-    token=issue_mcp_token(users['alice'])
+    token=issue_mcp_token(users['admin'])
     listed=mcp_request(client,token)
     assert any(t['name']=='lcsc_runs_read' for t in listed.json['result']['tools'])
     result=tool_data(tool_request(client,token,'lcsc_runs_read',{'run_ids':[own.id]}))

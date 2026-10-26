@@ -73,6 +73,7 @@ export interface FdeBridge {
   }
   app: {
     version(): Promise<string>
+    setLcscEnabled?(enabled: boolean): Promise<void>
     openLcscBrowser?(url: string): Promise<void>
     showLcscDownload?(filename: string): Promise<void>
     copyLcscRunId?(id: string): Promise<void>
@@ -86,6 +87,7 @@ export const IPC_CHANNELS = {
   authLogout: "fde:auth:logout",
   apiRequest: "fde:api:request",
   appVersion: "fde:app:version",
+  appSetLcscEnabled: "fde:app:set-lcsc-enabled",
   appOpenLcscBrowser: "fde:app:open-lcsc-browser",
   appShowLcscDownload: "fde:app:show-lcsc-download",
   appCopyLcscRunId: "fde:app:copy-lcsc-run-id",

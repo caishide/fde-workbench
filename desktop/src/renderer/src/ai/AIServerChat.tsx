@@ -26,6 +26,7 @@ export function AIServerChat({ route }: { route: AppRoute }) {
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
   const [deleting, setDeleting] = useState("")
+  const [lcscAvailable, setLcscAvailable] = useState(false)
   const [error, setError] = useState("")
   const input = useRef<HTMLTextAreaElement>(null)
   const launcher = useRef<HTMLButtonElement>(null)
@@ -119,7 +120,7 @@ export function AIServerChat({ route }: { route: AppRoute }) {
   function close() { setOpen(false); launcher.current?.focus() }
   return <>
     {open ? <AIActionConfirmation key={user?.id || "signed-out"} /> : null}
-    <button ref={launcher} className={`ai-server-launcher${open ? " is-open" : ""}`} type="button" aria-label={open ? "关闭 AI Server 对话" : "打开 AI Server 对话"} aria-expanded={open} aria-controls="ai-server-dialog" onClick={() => open ? close() : setOpen(true)}>
+    <button ref={launcher} className={`ai-server-launcher${open ? " is-open" : ""}`} type="button" aria-label={open ? "关闭 AI Server 对话" : "打开 AI Server 对话"} aria-expanded={open} aria-controls="ai-server-dialog" onClick={() => { if (open) { close(); return } setOpen(true); void apiRequest<{ tools?: Array<{ key: string }> }>("/api/v1/extensions", { method: "GET" }).then((center) => setLcscAvailable(Boolean(center.tools?.some((tool) => tool.key === "lcsc_search")))).catch(() => setLcscAvailable(false)) }}>
       <svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 1 1 18 0Z" /><path d="M7 11h.01M12 11h.01M17 11h.01" strokeWidth="3" strokeLinecap="round" /></svg>
     </button>
     {open ? <section id="ai-server-dialog" className={`ai-server-dialog${maximized ? ' is-maximized' : ''}`} role="dialog" aria-label="AI Server 对话" onKeyDown={(event) => { if (event.key === "Escape") close() }}>
@@ -129,7 +130,7 @@ export function AIServerChat({ route }: { route: AppRoute }) {
         const element = transcript.current
         if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24
       }}>
-        {!turns.length ? <div className="ai-chat-welcome"><h3>有什么需要帮你？</h3><p>我可以查询项目资料、文件库和任务进度。查询范围与当前账号权限一致。</p>{route.kind === "project" && !conversationId ? <small>新对话将关联当前项目</small> : null}<div>{["我有哪些项目？", "帮我查找项目文件", "系统运行正常吗？", "用普通版立创 Skill 搜索 STM32F103C8T6", "用 Jev 版立创 Skill 搜索 STM32F103C8T6"].map((text) => <button type="button" key={text} onClick={() => { setDraft(text); input.current?.focus() }}>{text}</button>)}</div></div> : turns.map((turn) => <article key={turn.id} className="ai-chat-turn"><div className="ai-chat-user">{turn.prompt}</div><div className="ai-chat-answer"><small>AI Server</small>{progress[turn.id] ? <details className="ai-chat-process" open={["queued","running"].includes(turn.status)}><summary>执行过程 · {turn.status === "completed" ? "已完成" : turn.status === "failed" ? "执行失败" : progress[turn.id].phase}</summary><ol>{progress[turn.id].steps?.map((step,index) => <li key={index}>{step}</li>)}</ol><small>展示实际执行进度，不包含模型内部推理原文。</small></details> : null}{turn.response || progress[turn.id]?.text ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{a: ({href, children}) => {
+        {!turns.length ? <div className="ai-chat-welcome"><h3>有什么需要帮你？</h3><p>我可以查询项目资料、文件库和任务进度。查询范围与当前账号权限一致。</p>{route.kind === "project" && !conversationId ? <small>新对话将关联当前项目</small> : null}<div>{["我有哪些项目？", "帮我查找项目文件", "系统运行正常吗？", ...(lcscAvailable ? ["用普通版立创 Skill 搜索 STM32F103C8T6", "用 Jev 版立创 Skill 搜索 STM32F103C8T6"] : [])].map((text) => <button type="button" key={text} onClick={() => { setDraft(text); input.current?.focus() }}>{text}</button>)}</div></div> : turns.map((turn) => <article key={turn.id} className="ai-chat-turn"><div className="ai-chat-user">{turn.prompt}</div><div className="ai-chat-answer"><small>AI Server</small>{progress[turn.id] ? <details className="ai-chat-process" open={["queued","running"].includes(turn.status)}><summary>执行过程 · {turn.status === "completed" ? "已完成" : turn.status === "failed" ? "执行失败" : progress[turn.id].phase}</summary><ol>{progress[turn.id].steps?.map((step,index) => <li key={index}>{step}</li>)}</ol><small>展示实际执行进度，不包含模型内部推理原文。</small></details> : null}{turn.response || progress[turn.id]?.text ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{a: ({href, children}) => {
           if (href && /^https:\/\/(www|so|item)\.szlcsc\.com\//.test(href)) return <a href={href} onClick={(event) => { event.preventDefault(); void window.fde.app.openLcscBrowser?.(href) }}>{children}</a>
           return <a href={href} target="_blank" rel="noreferrer">{children}</a>
         }}}>{turn.response || progress[turn.id]?.text || ""}</ReactMarkdown> : turn.status === "failed" ? <p role="alert">{turn.error_message || "处理失败，请重新发送。"}</p> : <p className="ai-chat-thinking">{turn.status === "queued" ? "正在排队…" : "正在查询与思考…"}</p>}{turn.status === "completed" && turn.metrics?.model?.name ? <ChatMetrics metrics={turn.metrics} /> : null}</div></article>)}

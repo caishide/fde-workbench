@@ -42,6 +42,9 @@ CAPABILITY_REQUIREMENTS = {
     "system.release": "system_operator",
     "system.database.migrate": "system_operator",
     "system.dsh.switch": "system_operator",
+    # F1：立创商城查询属上游 fork 既有能力，不在 FDE 客户交付线内——
+    # 收敛到系统运维员门槛，避免任何 AI 授权账号都能触发。
+    "lcsc.browse": "system_operator",
 }
 
 

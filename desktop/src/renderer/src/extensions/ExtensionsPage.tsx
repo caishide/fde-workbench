@@ -33,7 +33,12 @@ export function ExtensionsPage({ initialTab }: { initialTab?: 'tools' }) {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [busy, setBusy] = useState(false)
-  async function load(): Promise<void> { const result = await apiRequest<ExtensionCenter>("/api/v1/extensions", { method: "GET" }); setData({ ...result, plugins: result.plugins.map(displayPlugin) }) }
+  async function load(): Promise<void> {
+    const result = await apiRequest<ExtensionCenter>("/api/v1/extensions", { method: "GET" })
+    setData({ ...result, plugins: result.plugins.map(displayPlugin) })
+    // F3：服务端工具清单含 lcsc_search（账号具备 lcsc.browse）才打开桌面 LCSC IPC
+    void window.fde?.app?.setLcscEnabled?.(Boolean(result.tools?.some((tool) => tool.key === "lcsc_search")))
+  }
   useEffect(() => { void load().catch((caught) => setError(messageOf(caught))) }, [])
   useEffect(() => {
     if (!editingSkill && !pluginDetail) return

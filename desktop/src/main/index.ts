@@ -167,6 +167,19 @@ async function start(): Promise<void> {
     },
     isTrustedSender,
   })
+  // F3：LCSC 桌面 IPC 默认关闭——渲染端只有在其服务端工具清单确实包含
+  // lcsc_search（即账号具备 lcsc.browse 能力，F1 门槛）时才打开开关；
+  // 与 weixin_enabled 一致的「默认关、显式开」语义，不删功能只降暴露面。
+  let lcscIpcEnabled = false
+  ipcMain.handle(IPC_CHANNELS.appSetLcscEnabled, (event, enabled: unknown) => {
+    if (!isTrustedSender(event) || typeof enabled !== "boolean") {
+      throw new Error("Unauthorized IPC sender or payload.")
+    }
+    lcscIpcEnabled = enabled
+  })
+  function requireLcscEnabled(): void {
+    if (!lcscIpcEnabled) throw new Error("立创商城集成未启用。")
+  }
   ipcMain.handle(IPC_CHANNELS.appVersion, (event) => {
     if (!isTrustedSender(event)) {
       throw new Error("Unauthorized IPC sender.")
@@ -174,6 +187,7 @@ async function start(): Promise<void> {
     return app.getVersion()
   })
   ipcMain.handle(IPC_CHANNELS.appOpenLcscBrowser, async (event, url: unknown) => {
+    requireLcscEnabled()
     if (!isTrustedSender(event) || typeof url !== 'string' || !allowsLcscUrl(url)) {
       throw new Error('只允许打开立创商城公开页面。')
     }
@@ -190,10 +204,12 @@ async function start(): Promise<void> {
     lcscWindow.focus()
   })
   ipcMain.handle(IPC_CHANNELS.appShowLcscDownload, (event, filename: unknown) => {
+    requireLcscEnabled()
     if (!isTrustedSender(event) || typeof filename !== 'string' || !/^[\p{L}\p{N}._-]+\.pdf$/u.test(filename) || filename.includes('..') || filename.length > 120) throw new Error('文件名无效。')
     shell.showItemInFolder(join(app.getPath('downloads'), 'FDE规格书', filename))
   })
   ipcMain.handle(IPC_CHANNELS.appCopyLcscRunId, (event, id: unknown) => {
+    requireLcscEnabled()
     if (!isTrustedSender(event) || typeof id !== 'string' || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id)) throw new Error('执行记录 ID 无效。')
     clipboard.writeText(id)
   })
