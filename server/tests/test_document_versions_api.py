@@ -114,7 +114,7 @@ def _seed_document(
     project = Project(
         project_code=f"VER-{uuid4().hex[:8]}",
         name="版本项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=industry_version,
         template_snapshot={},
@@ -212,9 +212,9 @@ def _seed_document(
         "project": {
             "id": project.id,
             "name": project.name,
-            "enterprise_name": project.enterprise_name,
+            "enterprise_code": project.enterprise_code,
         },
-        "enterprise": {"name": project.enterprise_name},
+        "enterprise": {"enterprise_code": project.enterprise_code},
         "research": {},
         "subjects": {},
         "tasks": [],

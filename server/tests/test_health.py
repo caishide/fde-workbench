@@ -44,17 +44,17 @@ def test_readiness_reports_redis_degraded_without_failing(monkeypatch, client):
     response = client.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json["data"]["mysql"] == "ok"
+    assert response.json["data"]["database"] == "ok"
     assert response.json["data"]["redis"] == "degraded"
 
 
-def test_readiness_uses_service_unavailable_envelope_when_mysql_is_down(
+def test_readiness_uses_service_unavailable_envelope_when_database_is_down(
     monkeypatch, client
 ):
-    def unavailable_mysql():
+    def unavailable_database():
         raise RuntimeError("database unavailable")
 
-    monkeypatch.setattr("fde_api.health.routes.db.ping", unavailable_mysql)
+    monkeypatch.setattr("fde_api.health.routes.db.ping", unavailable_database)
 
     response = client.get("/api/v1/health/ready")
 
@@ -63,7 +63,7 @@ def test_readiness_uses_service_unavailable_envelope_when_mysql_is_down(
         "data": None,
         "error": {
             "code": "service_unavailable",
-            "message": "MySQL is unavailable.",
+            "message": "Database is unavailable.",
             "details": None,
         },
     }
@@ -78,7 +78,7 @@ def test_readiness_degrades_when_redis_connection_errors(monkeypatch, client):
     response = client.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json["data"]["mysql"] == "ok"
+    assert response.json["data"]["database"] == "ok"
     assert response.json["data"]["redis"] == "degraded"
 
 

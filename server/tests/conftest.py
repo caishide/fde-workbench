@@ -1,9 +1,13 @@
+import os
+import sys
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, delete, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from fde_api.app import create_app
@@ -13,13 +17,74 @@ from fde_api.extensions import db
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
+_ALLOWED_TEST_DATABASE_NAMES = {"fde_workbench_test"}
+_FORBIDDEN_DATABASE_NAMES = {
+    "fde_workbench",
+    "twenty",
+    "postgres",
+    "template0",
+    "template1",
+}
+
+
+def _read_local_db_password() -> str:
+    env_path = SERVER_ROOT.parent / ".env"
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "FDE_DB_PASSWORD":
+            return value.strip()
+    return ""
+
+
+def resolve_test_database_url() -> str:
+    """Resolve the dedicated PostgreSQL test database URL.
+
+    Safety contract (goal prompt §0.6): tests must never fall back to the
+    development/production FDE_DATABASE_URL, and the resolved database name
+    must be an allowed test database before any migration (downgrade) runs.
+    """
+    url = os.environ.get("FDE_TEST_DATABASE_URL", "").strip()
+    if not url:
+        password = _read_local_db_password()
+        if password:
+            url = (
+                "postgresql+psycopg://fde:"
+                + quote_plus(password)
+                + "@127.0.0.1:15432/fde_workbench_test"
+            )
+    if not url:
+        raise RuntimeError(
+            "FDE_TEST_DATABASE_URL is required: point it at a dedicated "
+            "PostgreSQL test database, e.g. "
+            "postgresql+psycopg://fde:<password>@127.0.0.1:15432/fde_workbench_test"
+        )
+    parsed = make_url(url)
+    if parsed.drivername != "postgresql+psycopg":
+        raise RuntimeError(
+            "Refusing to run tests with driver "
+            f"{parsed.drivername!r}: only postgresql+psycopg is supported"
+        )
+    database_name = parsed.database or ""
+    if (
+        database_name in _FORBIDDEN_DATABASE_NAMES
+        or database_name not in _ALLOWED_TEST_DATABASE_NAMES
+        and not database_name.endswith("_test")
+    ):
+        raise RuntimeError(
+            "Refusing to run tests against database "
+            f"{database_name!r}: a dedicated *_test database is required"
+        )
+    return url
+
 
 @pytest.fixture(scope="session")
 def test_settings(tmp_path_factory):
     return Settings(
         env="test",
-        database_url="mysql+pymysql://fde_local:change%5Fme@127.0.0.1:3306/fde_workbench_test",
-        redis_url="redis://127.0.0.1:6379/2",
+        database_url=resolve_test_database_url(),
+        redis_url=os.environ.get("FDE_TEST_REDIS_URL", "redis://127.0.0.1:16379/2"),
         jwt_secret="test-secret-with-at-least-thirty-two-characters",
         local_storage_root=tmp_path_factory.mktemp("fde-object-storage"),
     )
@@ -50,11 +115,36 @@ def engine(test_settings):
 
 @pytest.fixture(scope="session", autouse=True)
 def migrated_test_schema(test_settings):
+    assert test_settings.env == "test"
+    assert make_url(test_settings.database_url).database.endswith("_test")
     config = Config(str(SERVER_ROOT / "alembic.ini"))
     config.attributes["settings"] = test_settings
     command.downgrade(config, "base")
     command.upgrade(config, "head")
+    # 项目建行的 projects.sop_phase 外键指向 sop_nodes.node_key，生产环境由
+    # load_seeds.py 灌入 SOP 快照；测试库迁移后同样灌入，保证同一行为。
+    seed_reference_data(test_settings.database_url)
     yield
+
+
+def seed_reference_data(database_url: str) -> None:
+    """迁移到 head 后灌 sop_nodes / module_catalog 引用种子（A1：种子是投影）。
+
+    独立成函数：test_migrations 的 roundtrip 用例 downgrade→upgrade(head)
+    会把这两张表重建为空，每个 roundtrip 回到 head 后都必须重灌，否则
+    后续所有建项目的测试撞 fk_projects_sop_phase_sop_nodes。
+    """
+    if str(SERVER_ROOT) not in sys.path:
+        sys.path.insert(0, str(SERVER_ROOT))
+    from load_seeds import _upsert_module_catalog, _upsert_sop_nodes
+
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session, session.begin():
+            _upsert_sop_nodes(session)
+            _upsert_module_catalog(session)
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture

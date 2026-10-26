@@ -410,7 +410,9 @@ def decide_plugin_change(*, user: User, request_id: str, payload: dict[str, Any]
                 select(PluginChangeRequest)
                 .options(joinedload(PluginChangeRequest.plugin), joinedload(PluginChangeRequest.target_user))
                 .where(PluginChangeRequest.id == request_id)
-                .with_for_update()
+                # PG 拒绝对外连接的可空侧 FOR UPDATE；只锁主行（并发审批互斥
+                # 的本体），关联行由 ORM 正常读取。
+                .with_for_update(of=PluginChangeRequest)
             )
             if change is None:
                 raise ControlServiceError("plugin_change_not_found", "插件变更申请不存在。", 404)

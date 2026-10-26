@@ -96,7 +96,9 @@ def _persist_project(db_session, leader, *, code: str):
     project = Project(
         project_code=code,
         name="文档项目",
-        enterprise_name="星河制造",
+        # 跟随 project_code 保证唯一（uq_projects_enterprise_code），
+        # 同一测试内建多个项目不再撞唯一约束。
+        enterprise_code=f"文档企业·制造·{code}",
         leader=leader,
         source_template_version=template_version,
         template_snapshot={},

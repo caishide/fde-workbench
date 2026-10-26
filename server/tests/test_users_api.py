@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import uuid4
 from threading import Event, Thread, current_thread
 
 import pytest
@@ -129,13 +130,15 @@ def create_led_project(admin_client, db_session, *, status: str):
         "/api/v1/projects",
         json={
             "name": f"{status} project",
-            "enterprise_name": "星河制造",
+            "enterprise_code": f"星河制造·制造·{uuid4().hex[:8]}",
             "template_version_id": template.id,
             "leader_user_id": leader["id"],
             "planned_start_date": "2026-08-21",
             "module_keys": ["pre_diagnosis"],
         },
     )
+    if project_response.status_code != 201:
+        print("PROJECT 409 BODY:", project_response.get_data(as_text=True))
     assert project_response.status_code == 201
     project = project_response.json["data"]
     transitions = {

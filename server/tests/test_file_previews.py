@@ -50,7 +50,7 @@ def _seed_version(
         id=project_id,
         project_code=f"FDE-PREV-{uuid4().hex[:8]}",
         name="文件项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=template_version,
         template_snapshot={},

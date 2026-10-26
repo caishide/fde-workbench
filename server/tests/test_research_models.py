@@ -37,7 +37,7 @@ def _persisted_revision(db_session, *, status="confirmed"):
     project = Project(
         project_code="FDE-RESEARCH-001",
         name="调研项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=template_version,
         template_snapshot={},
@@ -221,7 +221,7 @@ def _second_project_form(db_session, confirmed_revision):
     project = Project(
         project_code="FDE-RESEARCH-002",
         name="第二调研项目",
-        enterprise_name="银河制造",
+        enterprise_code="银河制造·制造·南京",
         leader=confirmed_revision.form.project.leader,
         source_template_version=confirmed_revision.form.project.source_template_version,
         template_snapshot={},

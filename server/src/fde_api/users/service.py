@@ -329,10 +329,16 @@ def _confirmed_username_winner(username: str) -> bool:
 def _database_error_code(error: SQLAlchemyError) -> int | str | None:
     """跨方言取原始驱动错误码。
 
-    v0.2 (PG 迁移): 原实现只认 int（MySQL）。psycopg 的 SQLSTATE 是字符串，
-    原实现会静默丢弃 → PG 上唯一约束冲突不再被识别为「用户名重复」。
+    v0.2 (PG 迁移): 原实现只认 int（MySQL）。psycopg3 的 SQLSTATE 在
+    ``orig.sqlstate`` 属性上（args 只有消息文本，psycopg2 才放 args[0]），
+    不读属性会静默丢弃 → PG 上唯一约束冲突不再被识别为「用户名重复」。
     """
     original = getattr(error, "orig", None)
+    if original is None:
+        return None
+    sqlstate = getattr(original, "sqlstate", None)
+    if sqlstate is not None:
+        return sqlstate
     arguments = getattr(original, "args", ())
     if not arguments:
         return None

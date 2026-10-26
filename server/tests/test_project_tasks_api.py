@@ -107,7 +107,7 @@ def create_project(client, template, leader, *, code: str, module_keys=None):
         "/api/v1/projects",
         json={
             "name": "任务执行试点",
-            "enterprise_name": "星河制造",
+            "enterprise_code": f"星河制造·制造·{uuid4().hex[:8]}",
             "project_code": code,
             "template_version_id": template.id,
             "leader_user_id": leader.id,

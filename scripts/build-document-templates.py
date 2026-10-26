@@ -363,7 +363,11 @@ def _write_manifest() -> None:
         / "template_manifest.json"
     )
     manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        # Windows 文本模式默认把 \n 翻译成 \r\n，会让仓库内 LF 文件每次构建
+        # 后都表现为整文件改动；显式固定 LF。
+        newline="\n",
     )
 
 

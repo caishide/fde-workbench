@@ -1,17 +1,14 @@
 {
   "project": {
     "name": "星河 PoV",
-    "enterprise_name": "星河制造",
+    "enterprise_code": "星河制造·制造·苏州",
     "project_code": "FDE-POV-0001",
     "status": "active",
     "planned_start_date": "2026-08-22",
     "planned_end_date": "2026-09-15"
   },
   "enterprise": {
-    "name": "星河制造",
-    "contact_name": "王工",
-    "contact_phone": "13800000000",
-    "address": "上海市星河路 1 号"
+    "enterprise_code": "星河制造·制造·苏州"
   },
   "subjects": {
     "roles": [

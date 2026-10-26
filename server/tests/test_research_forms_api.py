@@ -115,7 +115,7 @@ def form_context(db_session, authorized_client_factory):
                 ]}],
         }]}
     project = Project(
-        project_code=f"FDE-FORM-{uuid4().hex[:10]}", name="Research project", enterprise_name="星河制造",
+        project_code=f"FDE-FORM-{uuid4().hex[:10]}", name="Research project", enterprise_code="星河制造·制造·苏州",
         leader=leader.user, source_template_version=version, template_snapshot={}, research_snapshot=snapshot,
         planned_start_date=date(2026, 8, 22),
     )

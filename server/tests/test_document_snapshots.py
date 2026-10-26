@@ -38,7 +38,7 @@ def _build_persisted_project(db_session, *, code: str, leader):
     project = Project(
         project_code=code,
         name="文档快照项目",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=template_version,
         template_snapshot={},
@@ -192,7 +192,8 @@ def test_snapshot_includes_tasks_members_research(db_session):
     snapshot = build_document_snapshot(db_session, project.id, mapping)
 
     assert snapshot["project"]["id"] == project.id
-    assert snapshot["enterprise"]["name"] == "星河制造"
+    # A2 代号化：快照 enterprise 段只携带 enterprise_code，无明文字段
+    assert snapshot["enterprise"]["enterprise_code"] == "星河制造·制造·苏州"
     assert isinstance(snapshot["tasks"], list)
     assert len(snapshot["tasks"]) == 1
     assert snapshot["tasks"][0]["task_key"] == "diagnose"

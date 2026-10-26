@@ -60,7 +60,7 @@ def _context_template_bytes() -> bytes:
         doc.add_paragraph("编号：{{ document.business_code }}")
         table = doc.add_table(rows=1, cols=2)
         table.cell(0, 0).text = "企业"
-        table.cell(0, 1).text = "{{ project.enterprise_name }}"
+        table.cell(0, 1).text = "{{ project.enterprise_code }}"
 
     return _in_memory_docx(build)
 
@@ -139,7 +139,7 @@ def _seed_generation(
     project = Project(
         project_code=f"FDE-GEN-{uuid4().hex[:8]}",
         name="星河 PoV",
-        enterprise_name="星河制造",
+        enterprise_code="星河制造·制造·苏州",
         leader=leader,
         source_template_version=industry_version,
         template_snapshot={},

@@ -73,7 +73,8 @@ def assert_tool_denied(response):
 
 
 def make_project(session, leader, *, member=None, name="Accessible Project"):
-    project = Project(project_code=f"AI-{uuid4().hex[:12]}", name=name, enterprise_name=name,
+    project = Project(project_code=f"AI-{uuid4().hex[:12]}", name=name,
+                      enterprise_code=f"AI·test·{uuid4().hex[:6]}",
                       planned_start_date=date(2026, 9, 1), leader_user_id=leader.id,
                       status="active", template_snapshot={})
     session.add(project)
