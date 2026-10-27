@@ -5,6 +5,7 @@ import {
   type AuthResult,
   type ApiRequestOptions,
   type ApiResponse,
+  type BridgeCaptureResult,
   type BridgeResult,
   type FdeBridge,
   type LoginInput,
@@ -36,6 +37,10 @@ const bridge: FdeBridge = Object.freeze({
       options: ApiRequestOptions,
     ): Promise<BridgeResult<ApiResponse<T>>> =>
       ipcRenderer.invoke(IPC_CHANNELS.apiRequest, { path, ...options }),
+  }),
+  bridge: Object.freeze({
+    capture: (): Promise<BridgeResult<BridgeCaptureResult>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bridgeCapture),
   }),
   app: Object.freeze({
     version: () => ipcRenderer.invoke(IPC_CHANNELS.appVersion),

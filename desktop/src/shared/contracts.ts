@@ -54,6 +54,11 @@ export type BridgeResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ApiErrorDto }
 
+export interface BridgeCaptureResult {
+  triggered: boolean
+  task: string
+}
+
 export interface FdeBridge {
   auth: {
     login(input: LoginInput): Promise<BridgeResult<AuthResult>>
@@ -71,6 +76,9 @@ export interface FdeBridge {
       options: ApiRequestOptions,
     ): Promise<BridgeResult<ApiResponse<T>>>
   }
+  bridge: {
+    capture(): Promise<BridgeResult<BridgeCaptureResult>>
+  }
   app: {
     version(): Promise<string>
     setLcscEnabled?(enabled: boolean): Promise<void>
@@ -86,6 +94,7 @@ export const IPC_CHANNELS = {
   authChangePassword: "fde:auth:change-password",
   authLogout: "fde:auth:logout",
   apiRequest: "fde:api:request",
+  bridgeCapture: "fde:bridge:capture",
   appVersion: "fde:app:version",
   appSetLcscEnabled: "fde:app:set-lcsc-enabled",
   appOpenLcscBrowser: "fde:app:open-lcsc-browser",

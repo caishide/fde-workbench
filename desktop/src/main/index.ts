@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs"
+import { execFile } from "node:child_process"
 import { join, resolve } from "node:path"
+import { promisify } from "node:util"
 import { pathToFileURL, fileURLToPath } from "node:url"
 
 import {
@@ -19,6 +21,7 @@ import { IPC_CHANNELS } from "../shared/contracts"
 import { createApiRequestHandler, registerApiIpc } from "./api-ipc"
 import { createAuthHandlers, registerAuthIpc } from "./auth-ipc"
 import { createAuthStore } from "./auth-store"
+import { createBridgeCaptureHandler, registerBridgeIpc } from "./bridge-capture"
 import { executeDesktopLcsc } from './lcsc-runner'
 import {
   DEVELOPMENT_API_URL,
@@ -165,6 +168,19 @@ async function start(): Promise<void> {
       } finally { if (mutating) activeMutations-- }
       return result
     },
+    isTrustedSender,
+  })
+  // P2 集成桥「立即采集」：采集器只能跑在 Windows 宿主（openfde CLI 是 Win 版
+  // Node 工具），桌面端不复制采集逻辑，只触发宿主计划任务，与 4 小时周期同路径。
+  const execFileUtf8 = promisify(execFile)
+  registerBridgeIpc({
+    ipcMain,
+    capture: createBridgeCaptureHandler({
+      execFile: (file, args, options) =>
+        execFileUtf8(file, args, { ...options, encoding: "utf8" }),
+      taskName: process.env.FDE_BRIDGE_TASK_NAME || "FDE-Bridge-Poll",
+      timeoutMs: 15_000,
+    }),
     isTrustedSender,
   })
   // F3：LCSC 桌面 IPC 默认关闭——渲染端只有在其服务端工具清单确实包含

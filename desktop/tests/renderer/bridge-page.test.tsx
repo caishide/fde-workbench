@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../src/renderer/src/auth/AuthProvider", () => ({ useAuth: () => mocks }))
 
 import { BridgePage } from "../../src/renderer/src/bridge/BridgePage"
+import { bridge, installBridge, ok } from "./test-utils"
 
 function bridgeView(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -49,6 +50,7 @@ beforeEach(() => {
     if (String(path) === "/api/v1/bridge/status") return { runs: [] }
     return {}
   })
+  installBridge(bridge())
 })
 
 afterEach(() => {
@@ -122,6 +124,59 @@ it("viewer neither sees reproject nor clear controls", async () => {
   await screen.findByText("demo-engagement")
   expect(screen.queryByRole("button", { name: "重新投影" })).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "清投影" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "立即采集" })).not.toBeInTheDocument()
+})
+
+it("manual capture triggers the host task and reloads once a fresh poller run lands", async () => {
+  const user = userEvent.setup()
+  const capture = vi.fn().mockResolvedValue(ok({ triggered: true, task: "FDE-Bridge-Poll" }))
+  installBridge(bridge({ capture }))
+  mocks.apiRequest.mockImplementation(async (path: string) => {
+    if (String(path) === "/api/v1/bridge/engagements") return bridgeView()
+    if (String(path) === "/api/v1/bridge/status") {
+      // 采集触发后的首次状态轮询即看到新的宿主采集运行
+      return {
+        runs: [
+          {
+            id: "run-fresh",
+            trigger: "poller",
+            ok: true,
+            started_at: new Date().toISOString(),
+            finished_at: null,
+            engagements_seen: 1,
+            error: null,
+          },
+        ],
+      }
+    }
+    return {}
+  })
+  render(<BridgePage />)
+
+  await user.click(await screen.findByRole("button", { name: "立即采集" }))
+
+  await waitFor(() => expect(capture).toHaveBeenCalledOnce())
+  await waitFor(() => expect(callCount("/api/v1/bridge/status", "GET")).toBeGreaterThanOrEqual(2))
+  await waitFor(() => expect(callCount("/api/v1/bridge/engagements", "GET")).toBeGreaterThanOrEqual(2))
+  // 到站刷新完成后按钮恢复可用
+  await waitFor(() => expect(screen.getByRole("button", { name: "立即采集" })).toBeEnabled())
+})
+
+it("surfaces capture trigger failures without reloading the projection", async () => {
+  const user = userEvent.setup()
+  const capture = vi.fn().mockResolvedValue({
+    ok: false,
+    error: { code: "task_missing", message: "未找到计划任务 FDE-Bridge-Poll，请先安装宿主采集任务。" },
+  })
+  installBridge(bridge({ capture }))
+  render(<BridgePage />)
+
+  await user.click(await screen.findByRole("button", { name: "立即采集" }))
+
+  const alert = await screen.findByRole("alert")
+  expect(alert).toHaveTextContent("未找到计划任务 FDE-Bridge-Poll")
+  await waitFor(() => expect(capture).toHaveBeenCalledOnce())
+  expect(callCount("/api/v1/bridge/engagements", "GET")).toBe(1)
 })
 
 it("clears a vanished projection via DELETE and reloads", async () => {

@@ -90,6 +90,14 @@ export function BridgePage() {
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
   const requestSequence = useRef(0)
+  const captureTimer = useRef<number | null>(null)
+
+  useEffect(
+    () => () => {
+      if (captureTimer.current !== null) window.clearInterval(captureTimer.current)
+    },
+    [],
+  )
 
   const load = useCallback(() => {
     const sequence = ++requestSequence.current
@@ -128,6 +136,56 @@ export function BridgePage() {
       .finally(() => setBusy(""))
   }
 
+  /** 手动采集：触发宿主计划任务，轮询到新 poller 快照后自动刷新本页。 */
+  function captureNow(): void {
+    setBusy("capture")
+    setError("")
+    const startedAt = Date.now() - 5_000
+    const stopPolling = (): void => {
+      if (captureTimer.current !== null) {
+        window.clearInterval(captureTimer.current)
+        captureTimer.current = null
+      }
+    }
+    void window.fde.bridge.capture().then((result) => {
+      if (!result.ok) {
+        setError(result.error?.message || "触发宿主采集失败")
+        setBusy("")
+        return
+      }
+      const deadline = Date.now() + 180_000
+      const checkForFreshRun = (): void => {
+        void apiRequest<unknown>("/api/v1/bridge/status", { method: "GET" })
+          .then((statusData) => {
+            const runs = (statusData as { runs?: unknown } | null)?.runs
+            const fresh = Array.isArray(runs)
+              ? (runs as BridgeRun[]).some(
+                  (run) =>
+                    run.trigger === "poller" &&
+                    Number.isFinite(Date.parse(run.started_at)) &&
+                    Date.parse(run.started_at) > startedAt,
+                )
+              : false
+            if (!fresh) return
+            stopPolling()
+            load()
+            setBusy("")
+          })
+          .catch(() => { /* 单次轮询失败不中断等待 */ })
+      }
+      checkForFreshRun()
+      captureTimer.current = window.setInterval(() => {
+        if (Date.now() > deadline) {
+          stopPolling()
+          setError("已触发宿主采集，但 3 分钟内未见新快照——请检查宿主 logs/bridge-poll.log 与计划任务状态。")
+          setBusy("")
+          return
+        }
+        checkForFreshRun()
+      }, 4_000)
+    })
+  }
+
   function clearProjection(slug: string): void {
     setBusy(`clear:${slug}`)
     void apiRequest<unknown>(`/api/v1/bridge/engagements/${encodeURIComponent(slug)}`, { method: "DELETE" })
@@ -147,11 +205,22 @@ export function BridgePage() {
           <h1>双轨状态</h1>
           <p className="supporting-copy">
             openfde 知识轨 + fdeops 流程轨 → 本页为只读投影；真相在文件，文件永远赢。
-            采集节奏：宿主计划任务每 4 小时（bridge-poll.mjs）。
+            采集节奏：宿主计划任务每 4 小时（bridge-poll.mjs），中途更新了真相文件可点「立即采集」。
             {view?.captured_at ? ` 最近采集：${formatTime(view.captured_at)}` : " 尚无采集记录"}
           </p>
         </div>
         <div className="page-header-actions">
+          {canManage ? (
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={loading || busy !== ""}
+              title="触发宿主计划任务 FDE-Bridge-Poll 立即采集（新快照到站后本页自动刷新）"
+              onClick={captureNow}
+            >
+              {busy === "capture" ? "采集中…" : "立即采集"}
+            </button>
+          ) : null}
           <button className="secondary-button" type="button" disabled={loading || busy !== ""} onClick={load}>刷新</button>
           {canManage ? (
             <button
