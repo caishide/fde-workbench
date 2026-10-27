@@ -37,7 +37,7 @@ from fde_api.jobs.worker import run_job
 from fde_api.workbench.models import ModuleCatalog, Project, ProjectMember, ProjectModule, ProjectTask
 
 
-PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD as PASSWORD
 
 
 @dataclass(frozen=True)

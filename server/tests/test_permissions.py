@@ -4,6 +4,7 @@ from fde_api.auth.models import InvalidRoleError, User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.permissions import role_at_least
 from fde_api.auth.tokens import issue_access_token
+from conftest import INITIAL_PASSWORD
 
 
 @pytest.mark.parametrize(
@@ -35,7 +36,7 @@ def client_factory(app, db_session, settings):
             username=f"{role}.user",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

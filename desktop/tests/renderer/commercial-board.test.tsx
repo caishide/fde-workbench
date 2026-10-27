@@ -134,3 +134,10 @@ it("C1: invalid numeric input surfaces a visible Chinese error instead of a sile
     ),
   ).toHaveLength(0)
 })
+
+// 变异测试记录（评审会 2026-10-26，M6）：把回调 `mutate(async () =>` 改成
+// `mutate(() =>` 字面存活——async 关键字不是承重墙，mutate 的 try/catch 包住
+// `await run()`，同步 thunk 抛错同样被捕获。本测试钉住的真正不变量是
+// 「校验抛错必须落进 mutate 的 catch 并展示」：若有人去掉 `await run()` 的
+// await 或把 parsePositive 挪出回调，本用例 findByText 超时变红。裁定
+// async 语义非修复本体，无需单独补钉。

@@ -9,7 +9,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,7 @@ from fde_api.auth.tokens import issue_access_token
 from fde_api.workbench.models import IndustryTemplateVersion
 from fde_api.workbench.seed import seed_workbench
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)

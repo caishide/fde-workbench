@@ -111,3 +111,23 @@ worker/scheduler **全绿可起**：import 链零报错，handler 注册表 8 �
 ## 7. 评审会遗留物说明
 
 评审窗口内工作区 `scripts/` 出现两个**未跟踪**文件：`backup-pipeline.sh`、`install-backup-pipeline-task.ps1`（内容为「AI 外贸获客系统」n8n/Mautic/openoutfind 备份，与 fde-workbench 无关）。五个评审 agent 均无此产出职责，来源存疑。已按纪律不删不提交，待人工确认归属。
+
+---
+
+## 8. 跟进清偿记录（2026-10-26 当日）
+
+§6 清单 9 项全部清偿，12 个提交：
+
+| 项 | 处置 | 提交 |
+| --- | --- | --- |
+| P1-1 僵尸 E2E | 删除 `tests/e2e/` + `run-e2e.mjs` + `test:e2e` 入口——spec 断言的是 MySQL 时代 readiness 契约（`{"mysql":"ok"}`，现契约为 `{"database":...}`）+ POSIX venv 路径，三重过时不可达；4 个 helper 脚本因有 `tests/operations` 独立单测保留 | 2f36a7a |
+| P1-2 环境样例 | `server/.env.example` `FDE_ENV=development`；根样例补 `FDE_DB_PASSWORD`（compose 三处 `:?` 插值实测缺键 rc=1 / 带键 rc=0） | e6c432b |
+| P1-3 README compose | 命令改 `docker compose up -d redis` + 幂等建 external 网络；合并重复段落 | f2df841 |
+| P2-4 CI 加固 | `-r requirements.lock` 叠加安装（`-c` 不可行：lock 含 `psycopg[binary]`，pip 拒绝带 extras 约束）；三 job 钉 `ubuntu-24.04`；service 容器加 `POSTGRES_DB` 环境指纹二次确认（`--filter name=` 因 GHA 命名无文档保证弃用，本机同镜像 Twenty 容器实测被正确拒绝） | 4c8ad17 |
+| P2-5 conftest 主机校验 | host 必须回环（127.0.0.1/localhost/::1）；新增 `test_conftest_safety.py` 把 driver/库名/主机契约钉成 9 条直接断言 | fed1a92 |
+| P2-6 哨兵表护栏 | `--self-test` 非 `fde_workbench*` 目标库块首拒绝（拒绝路径零 SQL 触达，twenty 库实测零残留） | 56ad095 |
+| P3-7 口令收敛 | 全仓 30 处字面量收敛 conftest 单点（14 模块常量 + 16 内联/别名）；附带修复 7ac6300 误入的 CRLF（eb009e1 全仓 renormalize + `* text=auto`）与 367185e 的多行 import 插入位（056408b） | 7ac6300 / 367185e / eb009e1 / 056408b |
+| P3-8 审计 + gitleaks | blob 断言扩至全部字符串列（+purpose/status）；CI 新增 secrets-scan job（gitleaks 全历史基线本机实测 46 commits 无泄漏） | 91467df |
+| P3-9 C1 裁定 + mypy | 裁定 async 关键字非修复本体（mutate 的 try/catch 包住 `await run()`，同步抛错同样被捕获；承重不变量已被 C1 用例钉住），裁定落档测试注释；mypy 基线 `--update` 收缩 104→103 | 7986588 |
+
+**验证基线（本机 2026-10-26）**：server 1194 passed / 6 skipped（1185 基线 + 9 条新契约断言）；desktop 609/609；tsc 0 error；ruff 绿；mypy baseline 103 = current 103；pseudonymization 自测 PASS；gitleaks 全历史 no leaks。

@@ -21,6 +21,7 @@ from mysql_lock_race import (
     run_mysql_lock_race,
     tracked_mysql_state,
 )
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"research.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

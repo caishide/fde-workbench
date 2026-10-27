@@ -13,7 +13,7 @@ from fde_api.documents.models import DocumentTemplate, DocumentTemplateVersion
 from fde_api.documents.template_service import seed_document_templates
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 def _build_docx_bytes(*, text: str = "{{ project.name }}") -> bytes:

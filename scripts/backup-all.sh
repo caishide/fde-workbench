@@ -44,6 +44,7 @@ PG_USER="twenty"
 OPENFDE_ROOT="$DROOT/engagements/openfde/engagements"
 FDEOPS_ROOT="$DROOT/engagements/fdeops"
 LEADS_MD="$DROOT/leads.md"
+LEADS_DIR="$DROOT/leads"
 # fde-storage 在本仓库（脚本随仓库走，按脚本位置定位，不写死绝对路径）
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FDE_STORAGE="$REPO_ROOT/server/.fde-storage"
@@ -89,6 +90,73 @@ if [ "${1:-}" = "--verify" ]; then
   else
     log "  WARN leads.md 缺失（2026-10-25 之前的旧备份无此项属正常）"
   fi
+  # leads/ 售前资料层：解包后数文件（不是"文件在就算过"）
+  if [ -s "$LATEST/leads-dir.tgz" ]; then
+    if tar -tzf "$LATEST/leads-dir.tgz" >/dev/null 2>&1; then
+      NF=$(tar -tzf "$LATEST/leads-dir.tgz" | grep -vc '/$' || true)
+      log "  OK   leads-dir.tgz 可解包（${NF:-?} 个文件）"
+    else
+      log "  FAIL leads-dir.tgz 解包失败"; ok=1
+    fi
+  else
+    log "  WARN leads-dir.tgz 缺失（2026-10-27 之前的旧备份无此项属正常）"
+  fi
+  # --- AI 获客系统三库（本卡 (b) 项：backup-all.sh 自己也要覆盖）---
+  # n8n PG 库：灌进临时库后数表 + 数执行行
+  if [ -s "$LATEST/n8n.sql" ]; then
+    if ! tail -c 300 "$LATEST/n8n.sql" | grep -qi "dump complete"; then
+      log "  FAIL n8n.sql 缺少收尾标记（dump 截断？）"; ok=1
+    fi
+    run_wsl "docker exec qiflow-n8n-db psql -U n8n -d postgres -c 'DROP DATABASE IF EXISTS _n8n_probe;' -c 'CREATE DATABASE _n8n_probe;'" >/dev/null 2>&1
+    if run_wsl "docker exec -i qiflow-n8n-db psql -U n8n -d _n8n_probe -v ON_ERROR_STOP=1" < "$LATEST/n8n.sql" >/dev/null 2>&1; then
+      T=$(run_wsl "docker exec qiflow-n8n-db psql -U n8n -d _n8n_probe -t -A -c \"select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema');\"" 2>/dev/null | tr -d '\000\r\n ')
+      E=$(run_wsl "docker exec qiflow-n8n-db psql -U n8n -d _n8n_probe -t -A -c 'select count(*) from execution_entity;'" 2>/dev/null | tr -d '\000\r\n ')
+      if [ "${T:-0}" -ge 10 ]; then
+        log "  OK   n8n 库可恢复（${T} 张表，${E:-?} 条执行记录）"
+      else
+        log "  FAIL n8n 库恢复后仅 ${T:-0} 张表（期望 ≥10）"; ok=1
+      fi
+    else
+      log "  FAIL n8n 库恢复失败"; ok=1
+    fi
+    run_wsl "docker exec qiflow-n8n-db psql -U n8n -d postgres -c 'DROP DATABASE IF EXISTS _n8n_probe;'" >/dev/null 2>&1
+  else
+    log "  FAIL n8n.sql 缺失或为空"; ok=1
+  fi
+  # Mautic MySQL 库：灌进临时库后数 leads / lead_lists_leads
+  if [ -s "$LATEST/mautic.sql" ]; then
+    # 探针库必须用 root 建（mautic 业务账号无 CREATE DATABASE 权限）
+    run_wsl "docker exec qiflow-mautic-db mysql -uroot -pc35dd8a933a1fc7b7b6a49906e68abb223456550f2843899 -e 'DROP DATABASE IF EXISTS _mautic_probe; CREATE DATABASE _mautic_probe; GRANT ALL ON _mautic_probe.* TO \"mautic\"@\"%\"; FLUSH PRIVILEGES;'" >/dev/null 2>&1
+    if run_wsl "docker exec -i qiflow-mautic-db mysql -umautic -p672a9e548886b70aa564c97756d4d72f1fdb1ff4b9fb7366 _mautic_probe" < "$LATEST/mautic.sql" >/dev/null 2>&1; then
+      L=$(run_wsl "docker exec qiflow-mautic-db mysql -umautic -p672a9e548886b70aa564c97756d4d72f1fdb1ff4b9fb7366 _mautic_probe -N -e 'SELECT COUNT(*) FROM leads;'" 2>/dev/null | tr -d '\000\r\n ')
+      S=$(run_wsl "docker exec qiflow-mautic-db mysql -umautic -p672a9e548886b70aa564c97756d4d72f1fdb1ff4b9fb7366 _mautic_probe -N -e 'SELECT COUNT(*) FROM lead_lists_leads;'" 2>/dev/null | tr -d '\000\r\n ')
+      if [ -n "$L" ]; then
+        log "  OK   Mautic 库可恢复（${L} 条 leads，${S:-?} 条段成员）"
+      else
+        log "  FAIL Mautic 恢复后数不到 leads"; ok=1
+      fi
+    else
+      log "  FAIL Mautic 库恢复失败"; ok=1
+    fi
+    run_wsl "docker exec qiflow-mautic-db mysql -uroot -pc35dd8a933a1fc7b7b6a49906e68abb223456550f2843899 -e 'DROP DATABASE IF EXISTS _mautic_probe;'" >/dev/null 2>&1
+  else
+    log "  FAIL mautic.sql 缺失或为空"; ok=1
+  fi
+  # openoutfind SQLite：quick_check
+  # ⚠️ 用 find 不用 ls：ls 多个 glob 时只要有一个无匹配就返回非零，会把整个 if 判假
+  OF_DBS="$(find "$LATEST/openoutfind" -maxdepth 1 -type f \( -name '*.sqlite3' -o -name '*.db' \) 2>/dev/null)"
+  if [ -n "$OF_DBS" ]; then
+    for DB in $OF_DBS; do
+      WDB="${DB/\/d\//\/mnt\/d/}"
+      if run_wsl "python3 -c 'import sqlite3,sys; exit(0 if sqlite3.connect(sys.argv[1]).execute(\"PRAGMA quick_check\").fetchone()[0]==\"ok\" else 1)' \"$WDB\"" >/dev/null 2>&1; then
+        log "  OK   $(basename "$DB") quick_check 通过"
+      else
+        log "  FAIL $(basename "$DB") quick_check 不通过"; ok=1
+      fi
+    done
+  else
+    log "  WARN openoutfind/ 无 db 文件（首次运行可能还没有状态库）"
+  fi
   echo
   # 真恢复性验证（活体：灌进本实例的探针库再数表）。
   # 三条口令纪律，缺一就是「假通过」：
@@ -124,8 +192,14 @@ if [ "${1:-}" = "--verify" ]; then
       if [ ! -s "$SEC" ]; then
         log "  FAIL dump 里没有 $DBNAME 分段"; ok=1; continue
       fi
+      # ⚠️ ALTER DATABASE 有坑：dump 里除了主库，还可能残留测试库语句
+      #   （实测 `ALTER DATABASE fde_workbench_test OWNER TO fde;`）
+      #   旧的 sed 前缀替换会把它改成 `ALTER DATABASE _restore_probe_test`，
+      #   而探针库里没有这个库 → ON_ERROR_STOP 直接中止，整个分段判失败。
+      # 处置：探针恢复不需要改库属主，全部剥离（角色完整性由 dump 收尾标记兜底）。
       grep -vE '^(CREATE ROLE |ALTER ROLE |COMMENT ON ROLE |CREATE DATABASE )' "$SEC" \
-        | sed -e "s/ON DATABASE $DBNAME/ON DATABASE _restore_probe/g" \
+        | sed -e 's/^ALTER DATABASE .* OWNER TO .*;$/-- ALTER DATABASE OWNER stripped (probe restore)/' \
+            -e "s/ON DATABASE $DBNAME/ON DATABASE _restore_probe/g" \
             -e "s/ALTER DATABASE $DBNAME/ALTER DATABASE _restore_probe/g" \
         > "$SEC.probe"
       run_wsl "docker exec $PG_CONTAINER psql -U $PG_USER -d postgres -c 'DROP DATABASE IF EXISTS _restore_probe;' -c 'CREATE DATABASE _restore_probe;'" >/dev/null 2>&1
@@ -183,7 +257,7 @@ mkdir -p "$OUT"
 log "备份目标: $OUT"
 
 # ---- 1. PostgreSQL：Twenty 库 + fde_workbench 库（同一实例，一次 pg_dumpall 更稳）----
-log "1/5 备份 PostgreSQL（Twenty + fde_workbench）"
+log "1/6 备份 PostgreSQL（Twenty + fde_workbench）"
 run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2>/tmp/pg_dumpall.err || {
   log "pg_dumpall 失败（错误在 WSL /tmp/pg_dumpall.err），改为分库 dump"
   run_wsl "docker exec $PG_CONTAINER pg_dump -U $PG_USER twenty" > "$OUT/pg_twenty.sql" || { log "  FAIL pg_dump twenty"; exit 2; }
@@ -192,7 +266,7 @@ run_wsl "docker exec $PG_CONTAINER pg_dumpall -U $PG_USER" > "$OUT/pg_all.sql" 2
 [ -s "$OUT/pg_all.sql" ] && log "  pg_all.sql ($(du -h "$OUT/pg_all.sql" | cut -f1))"
 
 # ---- 2. SQLite：openfde 知识轨 ----
-log "2/5 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
+log "2/6 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
 SQLITE_FAIL=0
 if [ -d "$OPENFDE_ROOT" ]; then
   mkdir -p "$OUT/openfde"
@@ -215,7 +289,7 @@ else
 fi
 
 # ---- 3. 目录：fdeops 流程轨 ----
-log "3/5 备份目录（fdeops .fde/）"
+log "3/6 备份目录（fdeops .fde/）"
 if [ -d "$FDEOPS_ROOT" ]; then
   mkdir -p "$OUT/fdeops"
   # 排除 .git（体积大且可重建），保留全部台账正文
@@ -226,14 +300,17 @@ else
 fi
 
 # ---- 4. fde-storage（上传件与生成物）----
-log "4/5 备份 fde-storage"
+log "4/6 备份 fde-storage"
 if [ -d "$FDE_STORAGE" ]; then
   (cd "$FDE_STORAGE" && tar -czf "$OUT/fde-storage.tgz" . 2>/dev/null) || log "  跳过：存储目录读取异常"
   log "  fde-storage.tgz"
 fi
 
 # ---- 5. leads.md（线索唯一真相：不入 git，丢了没处找）----
-log "5/5 备份 leads.md"
+# 2026-10-27 补：leads/ 目录（售前资料层：forms/ 结构化表单 + raw/ 企业问卷原件）
+# 也在备份范围内。leads.md 只是索引，真需求卡七项、问卷原件都在 leads/ 里，
+# 只备份 leads.md = 备份了目录没备份内容（静默丢数据）。
+log "5/6 备份 leads.md"
 if [ -f "$LEADS_MD" ]; then
   cp "$LEADS_MD" "$OUT/leads.md"
   log "  leads.md ($(du -h "$OUT/leads.md" | cut -f1))"
@@ -241,16 +318,71 @@ else
   log "  跳过：$LEADS_MD 未找到"
 fi
 
+log "5b/6 备份 leads/ 目录（售前资料层）"
+if [ -d "$LEADS_DIR" ]; then
+  (cd "$LEADS_DIR" && tar -czf "$OUT/leads-dir.tgz" . 2>/dev/null) && \
+    log "  leads-dir.tgz ($(du -h "$OUT/leads-dir.tgz" | cut -f1), $(find "$LEADS_DIR" -type f | wc -l) 个文件)" || \
+    log "  WARN leads/ 打包失败"
+else
+  log "  跳过：$LEADS_DIR 未找到（S0-S2 无售前资料时属正常）"
+fi
+
+# ---- 6. AI 获客系统三库（n8n PG / Mautic MySQL / openoutfind SQLite）----
+# 这三处是「AI 外贸获客工作台」自己的状态点，不属于 FDE 工作台，
+# 但它们是同一条业务链上的下游 —— 漏掉 = 获客系统整体回退到零。
+#   · n8n 库   → 工作流定义 + 执行收据链（execution_data）
+#   · Mautic   → 联系人 / 段成员 / 培育配置
+#   · openoutfind → 线索池 + BetterContact 余额
+# 逐项失败不阻断整体备份（备份脚本要能带伤跑完），但会写进 MANIFEST 供 --verify 查。
+log "6/6 备份 AI 获客系统三库（n8n / Mautic / openoutfind）"
+PIPELINE_FAIL=0
+N8N_DB_CONTAINER="qiflow-n8n-db"
+N8N_DB_USER="n8n"
+MAUTIC_DB_CONTAINER="qiflow-mautic-db"
+MAUTIC_DB_USER="mautic"
+MAUTIC_DB_PASS="672a9e548886b70aa564c97756d4d72f1fdb1ff4b9fb7366"
+MAUTIC_DB_NAME="mautic"
+OPENOUTFIND_CONTAINER="qiflow-openoutfind"
+
+if run_wsl "docker exec $N8N_DB_CONTAINER pg_dump -U $N8N_DB_USER -d n8n" > "$OUT/n8n.sql" 2>/dev/null && [ -s "$OUT/n8n.sql" ]; then
+  log "  n8n.sql ($(du -h "$OUT/n8n.sql" | cut -f1))"
+else
+  log "  FAIL n8n 库备份失败"; PIPELINE_FAIL=1
+fi
+
+if run_wsl "docker exec $MAUTIC_DB_CONTAINER mysqldump -u$MAUTIC_DB_USER -p$MAUTIC_DB_PASS --single-transaction $MAUTIC_DB_NAME" > "$OUT/mautic.sql" 2>/dev/null && [ -s "$OUT/mautic.sql" ]; then
+  log "  mautic.sql ($(du -h "$OUT/mautic.sql" | cut -f1))"
+else
+  log "  FAIL Mautic 库备份失败"; PIPELINE_FAIL=1
+fi
+
+mkdir -p "$OUT/openoutfind"
+OF_FOUND=0
+for db in /data/db.sqlite3 /data/*.sqlite3; do
+  # 路径是**容器内**路径，宿主侧不存在 → 存在性检查必须在容器内做
+  run_wsl "docker exec $OPENOUTFIND_CONTAINER test -f '$db'" >/dev/null 2>&1 || continue
+  base="$(basename "$db")"
+  if run_wsl "docker cp $OPENOUTFIND_CONTAINER:$db /mnt/d/test/FDE/_backup/.tmp_of_$base" >/dev/null 2>&1; then
+    mv "$DROOT/_backup/.tmp_of_$base" "$OUT/openoutfind/$base"
+    log "  openoutfind/$base ($(du -h "$OUT/openoutfind/$base" | cut -f1))"
+    OF_FOUND=1
+  fi
+done
+[ "$OF_FOUND" = "0" ] && log "  WARN openoutfind 状态库未找到（首次运行可能还没有）"
+
 # ---- 清单 ----
 cat > "$OUT/MANIFEST.txt" <<EOF
 backup_stamp: $STAMP
 created_at:   $(date -Is)
 host:         $(hostname)
 pg_container: $PG_CONTAINER
-pg_dbs:       twenty, fde_workbench
-sqlite:       openfde/engagements/*/ledger.db（每 engagement 一个）
+pg_dbs:       twenty, fde_workbench, n8n
+mysql:        mautic (AI 获客系统联系人/段成员/培育配置)
+sqlite:       openfde/engagements/*/ledger.db（每 engagement 一个）,
+              openoutfind/db.sqlite3（AI 获客线索池 + credits 余额）
 dirs:         fdeops (.fde), fde-storage
 files:        leads.md（根仓线索唯一真相，不入 git）
+pipeline_fail: $PIPELINE_FAIL（0=三库全备份成功；1=有失败项，查 --verify）
 note:         Redis 不入备份（队列是易态数据，job 真身在 PG 的 background_jobs 表）
 EOF
 

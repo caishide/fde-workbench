@@ -21,7 +21,7 @@ from fde_api.workbench.models import (
 )
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)

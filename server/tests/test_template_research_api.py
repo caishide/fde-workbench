@@ -7,6 +7,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.research.models import TemplateResearchField, TemplateResearchForm
 from fde_api.workbench.models import IndustryTemplateVersion, ModuleCatalog, OperationEvent
+from conftest import INITIAL_PASSWORD
 
 
 def valid_form_payload():
@@ -85,7 +86,7 @@ def admin_client(client, db_session, settings):
         username="admin.research",
         display_name="Admin",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )
@@ -100,7 +101,7 @@ def project_lead_client(client, db_session, settings):
         username="lead.research",
         display_name="Lead",
         role="project_lead",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

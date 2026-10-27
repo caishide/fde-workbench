@@ -4,6 +4,7 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.system_configuration import PUBLIC_FIELDS
+from conftest import INITIAL_PASSWORD
 
 
 class AuthorizedClient:
@@ -15,7 +16,7 @@ class AuthorizedClient:
 def authorized_client(client, db_session, settings):
     def build(role: str):
         user = User(username=f"{role}.settings", display_name=role, role=role,
-                    password_hash=hash_password("InitialPass!234"), must_change_password=False, is_active=True)
+                    password_hash=hash_password(INITIAL_PASSWORD), must_change_password=False, is_active=True)
         db_session.add(user); db_session.commit()
         return AuthorizedClient(client, {"Authorization": f"Bearer {issue_access_token(user, settings)}"})
     return build

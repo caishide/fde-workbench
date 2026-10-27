@@ -15,7 +15,7 @@ from fde_api.workbench.models import IndustryTemplateVersion
 from fde_api.workbench.seed import seed_workbench
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 TEMPORARY_PASSWORD = "TempPass!2345"
 RESET_PASSWORD = "ResetPass!6789"
 

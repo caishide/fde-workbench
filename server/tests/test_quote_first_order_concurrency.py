@@ -28,6 +28,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.config import Settings
 from fde_api.projects.quote_service import QuoteServiceError, finalize_quote
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project, Quote
+from conftest import INITIAL_PASSWORD
 
 
 LOCK_KEY = "fde_quote_first_order"
@@ -38,7 +39,7 @@ def _seed_project(session: Session) -> tuple[Project, User]:
         username=f"quote.lead.{uuid4().hex[:8]}",
         display_name="报价负责人",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

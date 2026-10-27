@@ -22,6 +22,7 @@ from fde_api.research.models import (
     TemplateResearchForm,
     TemplateResearchSection,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.jobs.models import OutboxEvent
 from fde_api.research.answers import validate_answer
 from fde_api.research.form_service import _visible_field_keys, initialize_subject_forms
@@ -67,7 +68,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"forms.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

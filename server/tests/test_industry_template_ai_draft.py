@@ -8,6 +8,7 @@ from fde_api.templates.service import (
     TemplateServiceError,
     create_ai_template_draft,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.workbench.models import IndustryTemplate, ModuleCatalog
 
 
@@ -76,7 +77,7 @@ def actor_and_catalog(db_session):
         username="ai.admin",
         display_name="AI Admin",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

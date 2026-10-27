@@ -8,6 +8,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.workbench.models import ModuleCatalog
 from test_industry_template_ai_draft import generated_payload
+from conftest import INITIAL_PASSWORD
 
 
 class FakeDeepSeek:
@@ -28,7 +29,7 @@ def ai_clients(client, app, db_session, settings):
             username=f"{role}.ai",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

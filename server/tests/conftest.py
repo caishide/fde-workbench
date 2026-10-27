@@ -18,6 +18,10 @@ from fde_api.extensions import db
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 _ALLOWED_TEST_DATABASE_NAMES = {"fde_workbench_test"}
+
+# 测试初始口令单点：曾散落在 14 个测试文件里重复定义同一字面量，持续制造
+# secret 扫描噪声（评审会跟进清单 P3-7）。合成值，改口令只改这里。
+INITIAL_PASSWORD = "InitialPass!234"
 _FORBIDDEN_DATABASE_NAMES = {
     "fde_workbench",
     "twenty",
@@ -75,6 +79,14 @@ def resolve_test_database_url() -> str:
         raise RuntimeError(
             "Refusing to run tests against database "
             f"{database_name!r}: a dedicated *_test database is required"
+        )
+    # 安全契约的另一半：远端机器上的 *_test 同样可能承载真实数据，而测试
+    # 会迁移/清表/降级——只允许指向本机回环地址。
+    host = (parsed.host or "").lower()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError(
+            "Refusing to run tests against host "
+            f"{host!r}: only loopback test databases are allowed"
         )
     return url
 

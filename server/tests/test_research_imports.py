@@ -36,6 +36,7 @@ from fde_api.research.imports import (
     preview_subject_import,
     store_subject_import_preview,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.research.models import ProjectResearchSubject
 from fde_api.workbench.models import IndustryTemplateVersion, OperationEvent, ProjectMember
 from fde_api.workbench.seed import seed_workbench
@@ -61,7 +62,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"research.import.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )
