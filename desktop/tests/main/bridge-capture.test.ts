@@ -26,6 +26,7 @@ describe("bridge capture handler", () => {
       execFile,
       taskName: "FDE-Bridge-Poll",
       timeoutMs: 15_000,
+      platform: "win32",
     })
 
     await expect(capture()).resolves.toEqual({ triggered: true, task: "FDE-Bridge-Poll" })
@@ -46,6 +47,7 @@ describe("bridge capture handler", () => {
       execFile,
       taskName: "FDE-Bridge-Poll",
       timeoutMs: 15_000,
+      platform: "win32",
     })
 
     await expect(capture()).rejects.toMatchObject({ code: "task_missing" })
@@ -53,22 +55,17 @@ describe("bridge capture handler", () => {
 
   it("maps other schtasks failures to capture_failed", async () => {
     const execFile = vi.fn().mockRejectedValue(Object.assign(new Error("access denied"), { stdout: "", stderr: "" }))
-    const capture = createBridgeCaptureHandler({ execFile, taskName: "T", timeoutMs: 1_000 })
+    const capture = createBridgeCaptureHandler({ execFile, taskName: "T", timeoutMs: 1_000, platform: "win32" })
 
     await expect(capture()).rejects.toMatchObject({ code: "capture_failed" })
   })
 
   it("rejects on non-Windows platforms without spawning anything", async () => {
-    const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("linux")
-    try {
-      const execFile = vi.fn()
-      const capture = createBridgeCaptureHandler({ execFile, taskName: "T", timeoutMs: 1_000 })
+    const execFile = vi.fn()
+    const capture = createBridgeCaptureHandler({ execFile, taskName: "T", timeoutMs: 1_000, platform: "linux" })
 
-      await expect(capture()).rejects.toMatchObject({ code: "bridge_platform" })
-      expect(execFile).not.toHaveBeenCalled()
-    } finally {
-      platformSpy.mockRestore()
-    }
+    await expect(capture()).rejects.toMatchObject({ code: "bridge_platform" })
+    expect(execFile).not.toHaveBeenCalled()
   })
 
   it("refuses untrusted IPC senders before touching schtasks", async () => {

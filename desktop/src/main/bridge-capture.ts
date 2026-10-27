@@ -17,6 +17,8 @@ interface BridgeCaptureOptions {
   execFile: ExecFileFn
   taskName: string
   timeoutMs: number
+  /** 测试注入用；生产默认 process.platform */
+  platform?: NodeJS.Platform
 }
 
 export type BridgeCaptureHandler = () => Promise<BridgeCaptureResult>
@@ -41,7 +43,7 @@ export function createBridgeCaptureHandler(
   options: BridgeCaptureOptions,
 ): BridgeCaptureHandler {
   return async () => {
-    if (process.platform !== "win32") {
+    if ((options.platform ?? process.platform) !== "win32") {
       throw new BridgeCaptureError(
         "bridge_platform",
         "集成桥采集器仅在 Windows 宿主上运行，当前平台无法触发。",
