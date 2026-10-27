@@ -53,6 +53,7 @@ export function AppShell({
           <NavLink route={route} target={{ kind: "bridge" }} label="集成桥" icon={<BridgeIcon />} />
           <NavLink route={route} target={{ kind: "task-center" }} label="任务中心" icon={<TaskIcon />} />
           <NavLink route={route} target={{ kind: "extensions" }} label="AI 与扩展" icon={<ExtensionIcon />} />
+          <NavLink route={route} target={{ kind: "help" }} label="使用帮助" icon={<HelpIcon />} />
           {isAdmin ? <>
             <NavLink route={route} target={{ kind: "templates" }} label="行业模板" icon={<LayersIcon />} />
             <NavLink route={route} target={{ kind: "document-templates" }} label="文档模板" icon={<DocumentIcon />} />
@@ -195,6 +196,16 @@ function PeopleIcon() {
       <path d="M2.5 20c0-3.1 3-5 6.5-5s6.5 1.9 6.5 5" />
       <circle cx="17" cy="9" r="2.75" />
       <path d="M15.25 15.4c2.9.6 5.25 2.4 5.25 4.6" />
+    </svg>
+  )
+}
+
+function HelpIcon() {
+  return (
+    <svg {...iconProps}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.7-2.5 2-2.5 3.5" />
+      <path d="M12 17h.01" />
     </svg>
   )
 }

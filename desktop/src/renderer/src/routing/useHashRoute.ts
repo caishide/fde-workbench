@@ -14,6 +14,7 @@ export type AppRoute =
   | { kind: "users" }
   | { kind: "system-configuration" }
   | { kind: "task-center" }
+  | { kind: "help" }
   | { kind: "extensions"; tool?: 'lcsc-browser-baseline' | 'lcsc-browser-jev' | 'lcsc-compare'; tab?: 'tools' }
   | { kind: "account" }
 
@@ -45,6 +46,7 @@ export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#users") return { kind: "users" }
   if (hash === "#system-configuration") return { kind: "system-configuration" }
   if (hash === "#task-center") return { kind: "task-center" }
+  if (hash === "#help") return { kind: "help" }
   if (hash === "#extensions") return { kind: "extensions" }
   if (hash === "#extensions?tab=tools") return { kind: "extensions", tab: 'tools' }
   if (hash === "#extensions/tools/lcsc-browser-baseline") return { kind: "extensions", tool: 'lcsc-browser-baseline' }
@@ -113,6 +115,7 @@ export function routeHash(route: AppRoute): string {
     case "users": return "#users"
     case "system-configuration": return "#system-configuration"
     case "task-center": return "#task-center"
+    case "help": return "#help"
     case "extensions": return route.tool ? `#extensions/tools/${route.tool}` : route.tab ? '#extensions?tab=tools' : '#extensions'
     case "account": return "#account"
   }

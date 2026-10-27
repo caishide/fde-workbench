@@ -73,6 +73,7 @@ describe("role-aware project workbench navigation", () => {
     ["#users", { kind: "users" }],
     ["#system-configuration", { kind: "system-configuration" }],
     ["#task-center", { kind: "task-center" }],
+    ["#help", { kind: "help" }],
     ["#extensions", { kind: "extensions" }],
     ["#account", { kind: "account" }],
   ])("parses the supported route %s", (hash, route) => {
@@ -115,10 +116,10 @@ describe("role-aware project workbench navigation", () => {
   })
 
   it.each([
-    ["admin", ["项目工作台", "任务中心", "行业模板", "模块管理", "用户管理", "系统配置"]],
-    ["project_lead", ["项目工作台", "任务中心"]],
-    ["fde_engineer", ["项目工作台", "任务中心"]],
-    ["viewer", ["项目工作台", "任务中心"]],
+    ["admin", ["项目工作台", "任务中心", "使用帮助", "行业模板", "模块管理", "用户管理", "系统配置"]],
+    ["project_lead", ["项目工作台", "任务中心", "使用帮助"]],
+    ["fde_engineer", ["项目工作台", "任务中心", "使用帮助"]],
+    ["viewer", ["项目工作台", "任务中心", "使用帮助"]],
   ] as const)("shows permitted navigation for %s", async (role, labels) => {
     location.hash = "#projects"
     renderAuthenticatedApp(role)
