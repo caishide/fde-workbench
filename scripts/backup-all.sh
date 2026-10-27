@@ -280,10 +280,17 @@ if [ -d "$OPENFDE_ROOT" ]; then
     if run_wsl "python3 -c 'import sqlite3,sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))' \"$WDB\" \"$WOUT/openfde/$slug.db\""; then
       log "  $slug.db ($(du -h "$OUT/openfde/$slug.db" | cut -f1))"
     else
-      log "  FAIL $slug.db 在线备份失败"; SQLITE_FAIL=1
+      # 不 exit —— 备份脚本要能带伤跑完。某个库被写锁占住时（最常见：openfde
+      # 正在跑 extract），后面还有 leads/ 目录和三库要备；直接 exit 2 会让
+      # 整次备份在中途夭折，前面几天的成果也拿不到。
+      # 失败记进 MANIFEST 的 sqlite_fail 字段，让 --verify 能查到。
+      log "  FAIL $slug.db 在线备份失败（可能被写锁占用，继续）"; SQLITE_FAIL=1
     fi
   done
-  [ "$SQLITE_FAIL" = "0" ] || exit 2
+  # 不中断：继续跑完剩下的步骤，最后统一以非零码退出（若确有失败）
+  if [ "$SQLITE_FAIL" != "0" ]; then
+    log "  WARN 有 SQLite 备份失败，MANIFEST 已记录 sqlite_fail=$SQLITE_FAIL"
+  fi
 else
   log "  跳过：$OPENFDE_ROOT 未找到（openfde 真身路径可能已变）"
 fi
@@ -383,8 +390,18 @@ sqlite:       openfde/engagements/*/ledger.db（每 engagement 一个）,
 dirs:         fdeops (.fde), fde-storage
 files:        leads.md（根仓线索唯一真相，不入 git）
 pipeline_fail: $PIPELINE_FAIL（0=三库全备份成功；1=有失败项，查 --verify）
+sqlite_fail:  $SQLITE_FAIL（0=openfde 全库备份成功；1=有失败项，多为写锁占用，重跑 backup-pipeline.sh 或等锁释放后重跑本脚本）
 note:         Redis 不入备份（队列是易态数据，job 真身在 PG 的 background_jobs 表）
 EOF
 
 log "完成: $OUT"
 log "下一步：bash scripts/backup-all.sh --verify  （验证可恢复性，别跳过）"
+
+# 全部步骤跑完后才以非零码收口：带伤跑完比中途夭折好
+FINAL_RC=0
+[ "$PIPELINE_FAIL" = "0" ] || FINAL_RC=2
+[ "$SQLITE_FAIL" = "0" ] || FINAL_RC=2
+if [ "$FINAL_RC" != "0" ]; then
+  log "存在失败项（见上），已把本次产物保留在 $OUT"
+fi
+exit $FINAL_RC
