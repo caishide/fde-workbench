@@ -42,3 +42,9 @@ server/.fde-storage/
 
 # electron-builder 下载缓存（含 150MB electron zip）
 .ebcache/
+
+# codegraph 本地代码索引（SQLite，含本地盘符路径，只留在本机）
+.codegraph/
+
+# 平行会话工作目录
+.workbuddy/
