@@ -20,7 +20,7 @@ from fde_api.research.models import ProjectAIOpportunityProfile, ProjectResearch
 from fde_api.jobs.models import OutboxEvent
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project, ProjectMember
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)

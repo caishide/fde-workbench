@@ -12,7 +12,7 @@ from fde_api.auth.models import InvalidRoleError, RefreshSession, User
 from fde_api.auth.passwords import hash_password
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 CHANGED_PASSWORD = "ChangedPass!567"
 
 

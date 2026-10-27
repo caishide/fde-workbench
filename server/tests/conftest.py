@@ -18,6 +18,10 @@ from fde_api.extensions import db
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 _ALLOWED_TEST_DATABASE_NAMES = {"fde_workbench_test"}
+
+# 测试初始口令单点：曾散落在 14 个测试文件里重复定义同一字面量，持续制造
+# secret 扫描噪声（评审会跟进清单 P3-7）。合成值，改口令只改这里。
+INITIAL_PASSWORD = "InitialPass!234"
 _FORBIDDEN_DATABASE_NAMES = {
     "fde_workbench",
     "twenty",

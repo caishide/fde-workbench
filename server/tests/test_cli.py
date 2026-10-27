@@ -6,7 +6,7 @@ from fde_api.auth.models import User
 from fde_api.documents.template_service import SYSTEM_USERNAME
 
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 
 
 def test_create_admin_reads_password_from_environment_without_printing_it(

@@ -32,7 +32,7 @@ from fde_api.workbench.models import (
     ProjectMember,
 )
 
-INITIAL_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
