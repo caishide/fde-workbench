@@ -55,6 +55,7 @@ export function ok<T>(data: T): BridgeResult<T> {
 export function bridge(
   overrides: Partial<FdeBridge["auth"]> & {
     apiRequest?: FdeBridge["api"]["request"] | Mock<any> | ((...args: any[]) => any)
+    capture?: FdeBridge["bridge"]["capture"] | Mock<any> | ((...args: any[]) => any)
   } = {},
 ): FdeBridge {
   return {
@@ -70,6 +71,10 @@ export function bridge(
         vi.fn().mockResolvedValue(
           ok({ status: 200, data: {}, error: null }),
         )) as unknown as FdeBridge["api"]["request"],
+    },
+    bridge: {
+      capture: (overrides.capture ??
+        vi.fn().mockResolvedValue(ok({ triggered: true, task: "FDE-Bridge-Poll" }))) as unknown as FdeBridge["bridge"]["capture"],
     },
     app: { version: vi.fn().mockResolvedValue("0.0.0") },
   }
