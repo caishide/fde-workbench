@@ -40,6 +40,20 @@ it("lists every workbench module, the gate flow and the failure checklist", asyn
   expect(screen.getByText(/全部显示未提交 \/ 提交后转圈又回去/)).toBeVisible()
 })
 
+it("carries the somwyn walkthrough with concrete paths and privacy rules", async () => {
+  render(<HelpPage />)
+
+  expect(
+    await screen.findByRole("heading", { name: "实操示例：证据文件怎么写（somwyn 样板）" }),
+  ).toBeVisible()
+  // 具体到这台机器的路径与工具
+  expect(screen.getByText(/somwyn 项目已建好 30 件样板/)).toBeVisible()
+  expect(screen.getByText("哈希清单.ps1")).toBeVisible()
+  expect(screen.getByText("不用新写")).toBeVisible()
+  // 隐私铁律：.fde 仓库永不加远程
+  expect(screen.getByText(/永不配置远程/)).toBeVisible()
+})
+
 it("jumps to a section from the table of contents without navigating away", async () => {
   const user = userEvent.setup()
   // jsdom 没有 scrollIntoView——补一个 spy 既防真实滚动也验证跳转；
@@ -51,10 +65,12 @@ it("jumps to a section from the table of contents without navigating away", asyn
 
   const toc = screen.getByRole("navigation", { name: "目录" })
 
-  // 第 10 个目录按钮 = 故障排查
-  const buttons = toc.querySelectorAll("button")
-  expect(buttons[9]).toHaveTextContent("故障排查（照顺序查最快）")
-  await user.click(buttons[9])
+  // 按名称选目录按钮（不锁死索引——章节增减不应改坏测试）
+  const troubleshootBtn = [...toc.querySelectorAll("button")].find(
+    (button) => button.textContent === "故障排查（照顺序查最快）",
+  )
+  expect(troubleshootBtn).toBeTruthy()
+  await user.click(troubleshootBtn!)
   expect(scrollSpy).toHaveBeenCalledTimes(1)
   expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
   // 目录按钮不碰 hash（路由解析器不受影响）
