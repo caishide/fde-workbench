@@ -29,7 +29,6 @@ src/fde_api/control/lcsc_skills.py:assignment: Incompatible types in assignment 
 src/fde_api/control/lcsc_skills.py:attr-defined: "..." has no attribute "..."
 src/fde_api/control/lcsc_skills.py:index: Unsupported target for indexed assignment ("...")
 src/fde_api/control/lcsc_skills.py:operator: Unsupported left operand type for + ("...")
-src/fde_api/control/mcp_gateway.py:var-annotated: Need type annotation for "..." (hint: "...")
 src/fde_api/control/scheduler.py:arg-type: Argument "..." to "..." has incompatible type "..."; expected "..."
 src/fde_api/control/scheduler.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/control/service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
