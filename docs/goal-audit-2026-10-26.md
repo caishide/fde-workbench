@@ -112,6 +112,8 @@ worker/scheduler **全绿可起**：import 链零报错，handler 注册表 8 �
 
 评审窗口内工作区 `scripts/` 出现两个**未跟踪**文件：`backup-pipeline.sh`、`install-backup-pipeline-task.ps1`（内容为「AI 外贸获客系统」n8n/Mautic/openoutfind 备份，与 fde-workbench 无关）。五个评审 agent 均无此产出职责，来源存疑。已按纪律不删不提交，待人工确认归属。
 
+> **归属已确认（2026-10-27，悬案关闭）**：两者即仓库主人并行会话的备份管道工作，以 2f90484 随 PR #4 入库，后续 671eba1 继续加固 backup-all.sh。评审纪律（不删不提交、待确认）按预期生效。
+
 ---
 
 ## 8. 跟进清偿记录（2026-10-26 当日）
