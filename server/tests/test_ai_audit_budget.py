@@ -98,9 +98,15 @@ def test_successful_call_writes_audit_with_metadata_not_content(db_session, app)
         assert audit.output_tokens == 50
         assert audit.duration_ms >= 0
         assert audit.actor_user_id == user.id
-        blob = f"{audit.request_id}{audit.model}{audit.error_code or ''}"
+        # 防泄漏断言覆盖全部字符串列：purpose/status 也在审计表里，实现若把
+        # 消息上下文误写进任一字段都要被抓到（评审会跟进清单 P3-8）。
+        blob = (
+            f"{audit.request_id}{audit.purpose or ''}{audit.model}"
+            f"{audit.status}{audit.error_code or ''}"
+        )
         assert "sk-secret-value" not in blob
         assert "机密上下文内容" not in blob
+        assert audit.purpose == "test"
 
 
 def test_budget_exceeded_blocks_call_without_provider_request(db_session, app, monkeypatch):

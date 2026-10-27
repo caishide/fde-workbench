@@ -136,3 +136,16 @@ jobs:
 
       - name: vitest (desktop, serial)
         run: npm --workspace desktop test
+
+  secrets-scan:
+    # P3-8：gitleaks 入 CI。push 扫全历史、PR 只扫增量提交；本仓库全历史
+    # 基线实测无泄漏（46 commits，2026-10-26）。
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
