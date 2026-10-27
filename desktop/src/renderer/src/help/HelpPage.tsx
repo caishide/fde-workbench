@@ -123,6 +123,61 @@ const SECTIONS: HelpSection[] = [
     ),
   },
   {
+    id: "gates-walkthrough",
+    title: "实操示例：证据文件怎么写（somwyn 样板）",
+    body: (
+      <>
+        <p>
+          每个项目的门禁证据都放在
+          <code>{"D:\\test\\FDE\\engagements\\fdeops\\<项目代号>\\.fde\\gates\\"}</code>
+          ——用编辑器直接写文件，工作台只交「出处指针 + sha256」。somwyn 项目已建好 30 件样板，可直接照抄结构。
+        </p>
+        <p><strong>三步流程（以 somwyn 为例）：</strong></p>
+        <ol>
+          <li>
+            <strong>写文件</strong>：进
+            <code>D:\test\FDE\engagements\fdeops\somwyn\.fde\gates\</code>，
+            按 <code>G1-评分记录.md</code>、<code>G3-诊断报告.md</code> 这类命名写真实内容；
+            签署扫描件/银行回单属"放置实际件"——把 PDF/图片放进本目录，说明页里写了核验点。
+          </li>
+          <li>
+            <strong>算哈希</strong>：在 gates 目录运行 <code>哈希清单.ps1</code>（右键"使用 PowerShell 运行"），
+            一次列出全部文件的 sha256 与建议 URI，直接复制。
+          </li>
+          <li>
+            <strong>工作台提交</strong>：门禁 → 对应 G → 提交证据 → 贴 URI + 64 位哈希 →
+            全部清单项填完 → 提交（标 claimed）→ 有权限的人「人工核验拍板」。
+          </li>
+        </ol>
+        <p><strong>门 → 文件对照（somwyn 实际 30 件）：</strong></p>
+        <table className="help-table">
+          <thead>
+            <tr><th>门</th><th>文件</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>G1 / G2</td><td>评分记录；真需求卡（leads.md 附页）</td></tr>
+            <tr><td>G3</td><td>诊断报告 + SOW-A 签署件 + A 款到账回单 + 数据授权书（后三件放实际凭证）</td></tr>
+            <tr><td>G4</td><td>SOW-B/C 草稿、结果合同页、报价单（可用工作台报价模块做底稿）、里程碑计划（可用项目计划导出）、SOW-B 签署件、B 预付 50% 回单、独立 SOW-C —— 共 7 件</td></tr>
+            <tr><td>G5</td><td><strong>不用新写</strong>——.fde 根目录的 trust-profile / success / brief 就是全套，URI 直接指过去</td></tr>
+            <tr><td>G6</td><td>问题陈述（SCQA）、基线数字、非目标清单</td></tr>
+            <tr><td>G7</td><td>options 文档、success 定稿确认、Eval 计划、B 试点章程（需客户书面确认）</td></tr>
+            <tr><td>G8</td><td>prototype-log（部署日志就是现成素材）、POC 验收表、business-case</td></tr>
+            <tr><td>G9</td><td>生产环境说明、Runbook、Go-Live 单（客户签署件）、演练记录、SOW-C 里程碑核验（40/40/20 末款绑 G9）</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>数字类内容先标 claimed</strong>：没和客户核实的数字一律标 claimed，人工核验后才算 accepted；
+          <strong>别把占位模板直接提交</strong>——那是假证据，核验这关过不去，也污染事件留痕。
+        </p>
+        <p className="help-warn">
+          <strong>隐私铁律</strong>：真实客户资料只存 fdeops/openfde 文件层（数据库里只有代号）。
+          <code>gates</code> 所在的 .fde 仓库<strong>永不配置远程</strong>（不进 GitHub，本地版本历史足够）；
+          签署扫描件/回单已被 .gitignore 排除（<code>gates/*实际件*、*.pdf/jpg/png</code>），只留文件系统。
+        </p>
+      </>
+    ),
+  },
+  {
     id: "commercial",
     title: "报价收款",
     body: (
