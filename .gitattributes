@@ -2,3 +2,7 @@
 # 「$'\r': command not found」语法错误（check-pseudonymization.sh 踩过，
 # 本机 Git Bash 容忍、CI 必炸）。checkout 时也强制 LF，双端一致。
 *.sh text eol=lf
+
+# 其余文本文件统一 LF 入库（提交时归一化，二进制文件自动豁免）。
+# 历史 write_text 事故曾把 14 个 .py 以 CRLF 入库，renormalize 修回。
+* text=auto
