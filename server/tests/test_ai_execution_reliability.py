@@ -9,12 +9,12 @@ import json
 from unittest.mock import patch
 
 from fde_api.ai.executions import (
-from conftest import INITIAL_PASSWORD
     OPERATIONS,
     execute_ai_execution_job,
     get_execution,
     start_execution,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.jobs.handlers import ensure_default_handlers

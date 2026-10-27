@@ -15,13 +15,13 @@ from fde_api.research import subject_service
 from fde_api.workbench.models import IndustryTemplateVersion, OperationEvent, ProjectMember
 from fde_api.workbench.seed import seed_workbench
 from mysql_lock_race import (
-from conftest import INITIAL_PASSWORD
     MysqlLockRaceTimeout,
     RaceDiagnostics,
     open_mysql_observer_or_skip,
     run_mysql_lock_race,
     tracked_mysql_state,
 )
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)

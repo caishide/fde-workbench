@@ -5,10 +5,10 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.research.models import TemplateResearchForm
 from fde_api.templates.service import (
-from conftest import INITIAL_PASSWORD
     TemplateServiceError,
     create_ai_template_draft,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.workbench.models import IndustryTemplate, ModuleCatalog
 
 

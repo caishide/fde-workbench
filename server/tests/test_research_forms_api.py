@@ -13,7 +13,6 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.extensions import db
 from fde_api.research.models import (
-from conftest import INITIAL_PASSWORD
     ProjectResearchAnswer,
     ProjectResearchForm,
     ProjectResearchExport,
@@ -23,6 +22,7 @@ from conftest import INITIAL_PASSWORD
     TemplateResearchForm,
     TemplateResearchSection,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.jobs.models import OutboxEvent
 from fde_api.research.answers import validate_answer
 from fde_api.research.form_service import _visible_field_keys, initialize_subject_forms

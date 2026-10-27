@@ -29,7 +29,6 @@ from fde_api.research import subject_service
 from fde_api.research import imports as imports_service
 from fde_api.research import project_routes
 from fde_api.research.imports import (
-from conftest import INITIAL_PASSWORD
     MAX_IMPORT_BYTES,
     MAX_IMPORT_ROWS,
     ImportServiceError,
@@ -37,6 +36,7 @@ from conftest import INITIAL_PASSWORD
     preview_subject_import,
     store_subject_import_preview,
 )
+from conftest import INITIAL_PASSWORD
 from fde_api.research.models import ProjectResearchSubject
 from fde_api.workbench.models import IndustryTemplateVersion, OperationEvent, ProjectMember
 from fde_api.workbench.seed import seed_workbench
