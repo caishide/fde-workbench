@@ -12,10 +12,17 @@ on:
     branches: ["**"]
   pull_request:
 
+# 同一 ref 有新 run 排队时取消未完成的旧 run：连续 push 只验证最终态。
+# 各分支/PR 的 ref 互不同组，互不误伤。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   server-tests:
     # 钉具体镜像（ubuntu-latest 会随 GitHub 静默迁移大版本，2026-10 已发生过一次）
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -48,6 +55,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          # 下载缓存按 requirements.lock 哈希键控：lock 不变即命中
+          cache: pip
+          cache-dependency-path: server/requirements.lock
 
       - name: Install server dependencies (test + dev extras)
         working-directory: server
@@ -75,6 +85,7 @@ jobs:
     # 仓库内的合成 fixture（FDE_LEADS_MD 显式传入），并先跑 --self-test
     # 证明扫描器灵敏度（没自测过的校验器等于没有校验器）。
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: server-tests
     services:
       postgres:
@@ -121,12 +132,15 @@ jobs:
 
   desktop:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          # workspaces 共享根锁，缓存按 package-lock.json 哈希键控
+          cache: npm
 
       - name: Install workspace dependencies
         run: npm ci
@@ -141,6 +155,7 @@ jobs:
     # P3-8：gitleaks 入 CI。push 扫全历史、PR 只扫增量提交；本仓库全历史
     # 基线实测无泄漏（46 commits，2026-10-26）。
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
