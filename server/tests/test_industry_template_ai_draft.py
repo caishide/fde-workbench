@@ -5,6 +5,7 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.research.models import TemplateResearchForm
 from fde_api.templates.service import (
+from conftest import INITIAL_PASSWORD
     TemplateServiceError,
     create_ai_template_draft,
 )
@@ -76,7 +77,7 @@ def actor_and_catalog(db_session):
         username="ai.admin",
         display_name="AI Admin",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

@@ -11,7 +11,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.workbench.models import OperationEvent
 
-TEMPORARY_PASSWORD = "InitialPass!234"
+from conftest import INITIAL_PASSWORD as TEMPORARY_PASSWORD
 
 
 class AuthorizedClient:

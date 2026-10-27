@@ -14,6 +14,7 @@ from fde_api.ai.deepseek import DeepSeekClient, DeepSeekError
 from fde_api.config import Settings
 from fde_api.workbench.models import AICallAudit
 from sqlalchemy import select
+from conftest import INITIAL_PASSWORD
 
 
 class _FakeResponse:
@@ -54,7 +55,7 @@ def _make_user(db_session, name="audit.user"):
         username=name,
         display_name=name,
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

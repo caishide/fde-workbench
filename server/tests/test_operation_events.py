@@ -11,6 +11,7 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project, ProjectTask
+from conftest import INITIAL_PASSWORD
 
 class AuditState(Enum):
     READY = "ready"
@@ -26,7 +27,7 @@ def _user() -> User:
         username="event.actor",
         display_name="事件操作人",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

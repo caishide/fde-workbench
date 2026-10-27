@@ -4,6 +4,7 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.workbench.models import ModuleCatalog
+from conftest import INITIAL_PASSWORD
 
 
 def test_presurvey_draft_uses_database_session_factory(client, db_session, settings, monkeypatch):
@@ -11,7 +12,7 @@ def test_presurvey_draft_uses_database_session_factory(client, db_session, setti
         username="project.draft.admin",
         display_name="Project Draft Admin",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

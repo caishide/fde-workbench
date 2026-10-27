@@ -9,6 +9,7 @@ import json
 from unittest.mock import patch
 
 from fde_api.ai.executions import (
+from conftest import INITIAL_PASSWORD
     OPERATIONS,
     execute_ai_execution_job,
     get_execution,
@@ -33,7 +34,7 @@ def _actor(db_session) -> User:
         username="ai.exec.retry",
         display_name="AI 执行",
         role="admin",
-        password_hash=hash_password("InitialPass!234"),
+        password_hash=hash_password(INITIAL_PASSWORD),
         must_change_password=False,
         is_active=True,
     )

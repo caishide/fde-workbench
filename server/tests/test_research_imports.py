@@ -29,6 +29,7 @@ from fde_api.research import subject_service
 from fde_api.research import imports as imports_service
 from fde_api.research import project_routes
 from fde_api.research.imports import (
+from conftest import INITIAL_PASSWORD
     MAX_IMPORT_BYTES,
     MAX_IMPORT_ROWS,
     ImportServiceError,
@@ -61,7 +62,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"research.import.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

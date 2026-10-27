@@ -13,6 +13,7 @@ from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.extensions import db
 from fde_api.research.models import (
+from conftest import INITIAL_PASSWORD
     ProjectResearchAnswer,
     ProjectResearchForm,
     ProjectResearchExport,
@@ -67,7 +68,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"forms.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

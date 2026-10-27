@@ -15,6 +15,7 @@ from fde_api.research import subject_service
 from fde_api.workbench.models import IndustryTemplateVersion, OperationEvent, ProjectMember
 from fde_api.workbench.seed import seed_workbench
 from mysql_lock_race import (
+from conftest import INITIAL_PASSWORD
     MysqlLockRaceTimeout,
     RaceDiagnostics,
     open_mysql_observer_or_skip,
@@ -49,7 +50,7 @@ def authorized_client_factory(client, db_session, settings):
             username=f"research.{role}.{uuid4().hex}",
             display_name=role,
             role=role,
-            password_hash=hash_password("InitialPass!234"),
+            password_hash=hash_password(INITIAL_PASSWORD),
             must_change_password=False,
             is_active=True,
         )

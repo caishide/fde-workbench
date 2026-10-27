@@ -11,6 +11,7 @@ from fde_api.control.service import ControlServiceError
 from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
+from conftest import INITIAL_PASSWORD
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,7 @@ class AuthorizedClient:
 @pytest.fixture
 def authorized_client_factory(client, db_session, settings):
     def create(role: str) -> AuthorizedClient:
-        user = User(username=f"market.{uuid4().hex}", display_name=role, role=role, password_hash=hash_password("InitialPass!234"), must_change_password=False, is_active=True)
+        user = User(username=f"market.{uuid4().hex}", display_name=role, role=role, password_hash=hash_password(INITIAL_PASSWORD), must_change_password=False, is_active=True)
         db_session.add(user)
         db_session.commit()
         return AuthorizedClient(client, user, {"Authorization": f"Bearer {issue_access_token(user, settings)}"})
