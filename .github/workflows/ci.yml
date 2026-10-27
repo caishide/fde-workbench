@@ -14,7 +14,8 @@ on:
 
 jobs:
   server-tests:
-    runs-on: ubuntu-latest
+    # 钉具体镜像（ubuntu-latest 会随 GitHub 静默迁移大版本，2026-10 已发生过一次）
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -53,7 +54,10 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e ".[test,dev]"
+          # 先装 lock 再叠 extras：extras 的传递依赖被钉进 lock 版本，上游发版
+          # 不再能零改动翻红。不能用 -c 约束——lock 含 psycopg[binary] 这类
+          # 带 extras 的条目，新版 pip 直接拒绝（Constraints cannot have extras）。
+          .venv/bin/python -m pip install -r requirements.lock -e ".[test,dev]"
 
       - name: ruff (F401/F841 unused imports & variables)
         working-directory: server
@@ -70,7 +74,7 @@ jobs:
     # B7：代号化验收。扫 CI 自己的 service 库（合成数据），黑名单来自
     # 仓库内的合成 fixture（FDE_LEADS_MD 显式传入），并先跑 --self-test
     # 证明扫描器灵敏度（没自测过的校验器等于没有校验器）。
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: server-tests
     services:
       postgres:
@@ -94,7 +98,19 @@ jobs:
       - name: Resolve service container and run the check
         run: |
           set -euo pipefail
-          container="$(docker ps --filter ancestor=postgres:16 --format '{{.ID}}' | head -1)"
+          # 双重确认是本 job 的 service 库：ancestor 只能保证镜像相同，再加
+          # POSTGRES_DB 环境指纹（service 容器唯一携带 fde_workbench_test）。
+          # 不用 --filter name=：GitHub runner 的 service 容器命名无文档保证，
+          # 钉一个没验证过的名字模式等于制造新的盲雷。
+          container="$(
+            for id in $(docker ps --filter ancestor=postgres:16 --format '{{.ID}}'); do
+              if docker inspect "$id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+                  | grep -qx 'POSTGRES_DB=fde_workbench_test'; then
+                echo "$id"
+                break
+              fi
+            done
+          )"
           [ -n "$container" ] || { echo "postgres service container not found"; exit 1; }
           export FDE_PG_CONTAINER="$container"
           export FDE_PG_USER=fde
@@ -104,7 +120,7 @@ jobs:
           bash scripts/check-pseudonymization.sh --self-test
 
   desktop:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
