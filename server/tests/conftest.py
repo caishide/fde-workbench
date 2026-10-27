@@ -76,6 +76,14 @@ def resolve_test_database_url() -> str:
             "Refusing to run tests against database "
             f"{database_name!r}: a dedicated *_test database is required"
         )
+    # 安全契约的另一半：远端机器上的 *_test 同样可能承载真实数据，而测试
+    # 会迁移/清表/降级——只允许指向本机回环地址。
+    host = (parsed.host or "").lower()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError(
+            "Refusing to run tests against host "
+            f"{host!r}: only loopback test databases are allowed"
+        )
     return url
 
 
