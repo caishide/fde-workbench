@@ -159,6 +159,17 @@ check_code_format() {
 }
 
 if [ "$SELF_TEST" = "1" ]; then
+  # 哨兵表会真实写入目标库——只允许 fde_workbench 系的库（CI 的
+  # fde_workbench_test、本机开发库都在内）。指到别的库（twenty、postgres、
+  # 同容器里别家的业务库）直接拒绝，别在别人库里留对象。
+  case "$PG_DB" in
+    fde_workbench*) ;;
+    *)
+      echo "FAIL 自测拒绝：目标库 $PG_DB 不是 fde_workbench*——哨兵表会真实写入该库"
+      echo "     请用 FDE_PG_DB 指向 fde_workbench_test 等专用库后重跑"
+      exit 2
+      ;;
+  esac
   echo "== 自测：注入哨兵（应被抓到）=="
   psql_exec "create table if not exists __pseudonym_probe(id text);" >/dev/null
   psql_exec "insert into __pseudonym_probe values ('哨兵手机号13800138000邮箱probe@example.com结束');" >/dev/null
