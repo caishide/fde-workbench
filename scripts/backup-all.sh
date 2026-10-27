@@ -270,23 +270,34 @@ log "2/6 备份 SQLite（openfde 每 engagement 一个 ledger.db）"
 SQLITE_FAIL=0
 if [ -d "$OPENFDE_ROOT" ]; then
   mkdir -p "$OUT/openfde"
-  for db in "$OPENFDE_ROOT"/*/ledger.db; do
-    [ -f "$db" ] || continue
-    slug="$(basename "$(dirname "$db")")"
-    # 不许裸 cp：采集进程正在写时 cp 会得到撕裂副本。走 SQLite 在线备份 API
-    # （python3 stdlib，WSL 无 sqlite3 CLI）。
-    WDB="${db/\/d\//\/mnt\/d/}"
-    WOUT="${OUT/\/d\//\/mnt\/d/}"
-    if run_wsl "python3 -c 'import sqlite3,sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))' \"$WDB\" \"$WOUT/openfde/$slug.db\""; then
-      log "  $slug.db ($(du -h "$OUT/openfde/$slug.db" | cut -f1))"
-    else
-      # 不 exit —— 备份脚本要能带伤跑完。某个库被写锁占住时（最常见：openfde
-      # 正在跑 extract），后面还有 leads/ 目录和三库要备；直接 exit 2 会让
-      # 整次备份在中途夭折，前面几天的成果也拿不到。
-      # 失败记进 MANIFEST 的 sqlite_fail 字段，让 --verify 能查到。
-      log "  FAIL $slug.db 在线备份失败（可能被写锁占用，继续）"; SQLITE_FAIL=1
-    fi
-  done
+  # 走 Windows-native python 做在线备份：WSL 的 DrvFS 文件系统层给不了 SQLite
+  # 在线备份所需的文件锁语义，经 WSL python 调 .backup() 会间歇性失败（即便源库
+  # quick_check 通过）。Windows-native python 直接开 NTFS 文件则稳定成功。
+  # 把 ledger.db 备份成 <engagement>.db，放在 $OUT/openfde/ 下（与原布局一致）。
+  # 路径转换交给 helper（Python）处理：WSL 可能把 D: 挂成 /mnt/d/ 或 /d/，
+  # bash sed 的 \U 对 /d/ 形态会吞掉前导斜杠，故不在 shell 层做转换。
+  if run_wsl "cmd.exe /c python3 D:/test/FDE/scripts/backup_openfde_ledger.py \"$OPENFDE_ROOT\" \"$OUT/openfde\""; then
+    log "  openfde 知识轨: $(du -sh "$OUT/openfde" | cut -f1)"
+  else
+    log "  FAIL openfde 知识轨在线备份失败（可能被写锁占用，继续）"; SQLITE_FAIL=1
+  fi
+  # 兼容：若上面的 helper 因 cmd.exe 不可用而失败，回退到 WSL python 逐库备份
+  if [ "$SQLITE_FAIL" != "0" ]; then
+    SQLITE_FAIL=0
+    for db in "$OPENFDE_ROOT"/*/ledger.db; do
+      [ -f "$db" ] || continue
+      slug="$(basename "$(dirname "$db")")"
+      WDB="${db/\/d\//\/mnt\/d/}"
+      WOUT="${OUT/\/d\//\/mnt\/d/}"
+      rm -f "$OUT/openfde/$slug.db"   # 先清掉可能残留的 0 字节文件
+      if run_wsl "python3 -c 'import sqlite3,sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))' \"$WDB\" \"$WOUT/openfde/$slug.db\"" \
+         && [ -s "$OUT/openfde/$slug.db" ]; then
+        log "  $slug.db ($(du -h "$OUT/openfde/$slug.db" | cut -f1))"
+      else
+        log "  FAIL $slug.db 在线备份失败（可能被写锁占用，继续）"; SQLITE_FAIL=1
+      fi
+    done
+  fi
   # 不中断：继续跑完剩下的步骤，最后统一以非零码退出（若确有失败）
   if [ "$SQLITE_FAIL" != "0" ]; then
     log "  WARN 有 SQLite 备份失败，MANIFEST 已记录 sqlite_fail=$SQLITE_FAIL"
