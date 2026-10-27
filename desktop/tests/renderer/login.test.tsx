@@ -73,7 +73,10 @@ describe("desktop authentication experience", () => {
     await screen.findByRole("heading", { name: "FDE 工作台" })
 
     expect(screen.getByLabelText("用户名")).toHaveValue("engineer.li")
-    expect(screen.getByLabelText("密码")).toHaveFocus()
+    // 密码框焦点由挂载后的 effect 落下：findByRole 解析到 heading 时该
+    // effect 可能尚未执行（CI 高负载下实测踩空），waitFor 包同一断言
+    // 消除时序竞态，不变量本身不变。
+    await waitFor(() => expect(screen.getByLabelText("密码")).toHaveFocus())
   })
 
   it("remembers the trimmed username only after a successful login", async () => {
