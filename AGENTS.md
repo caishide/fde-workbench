@@ -29,3 +29,4 @@ FDE（前端部署工程师）交付工作台：Flask + SQLAlchemy API（`server
 - v0.2.0：门禁 G1–G9、报价/收款/合同、集成桥（宿主 4h 采集 + 手动采集按钮）、内嵌使用帮助；本地 main == fork/main。
 - 版本号按发布列车同步 `desktop/package.json` 与 `server/pyproject.toml`，tag 打在 fork。
 - 待办台账：`docs/后续需求台账-F5与D11.md`；历史审计存档：`docs/goal-audit-2026-10-26.md`。
+- 口径数字（实测 2026-10-28，goal-r2 第二轮）：服务端 **74 张表**、迁移头 `f3c8d2b7a1e5`（8 个 revision）、服务端 pytest 1210+ 用例、桌面端 vitest 630+ 用例。本轮新增表 `document_delivery_records`（交付审计专用表，J3）。
