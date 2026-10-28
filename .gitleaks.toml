@@ -1,0 +1,23 @@
+# fde-workbench gitleaks 配置（goal-r2 WP22 / G3）
+#
+# 为什么需要本文件 —— 默认 generic-api-key 规则有两个实测盲区（2026-10-28 哨兵矩阵）：
+# ① 名字盲区：同一个 48 位随机 hex 值，`FOO_KEY=` 命中，而 `FOO_PASS=` /
+#    `FOO_DB_PASS=` / `MAUTIC_DB_PASS=` **全部漏过** —— 2f90484 入库的两条
+#    Mautic 口令恰恰都是 PASS 形态，CI 全历史扫描因此长期假绿；
+# ② 熵盲区：generic-api-key 带 ≈3.7 熵阈值，低熵 hex 字面量（如 "ab" 重复 48 位，
+#    实测熵 2.75）不命中。
+#
+# 本文件在保留全部默认规则的基础上，新增一条**无熵要求**的兜底规则：
+# 变量名含凭据关键词 + 32+ 位 hex（或 40+ 位 base64）字面量即命中。
+# 值必须**完整填满引号**（或裸值到词边界）——含 `.` 的对象存储路径
+# （storage_key="projects/.../x.exe"）无法填满引号，天然排除，避免把
+# 测试夹具的对象键误报为凭据（实测误报熵 4.27-4.35 与真实口令 4.57-4.65
+# 过近，熵下限不可靠，故不设熵值）。判定阈值只收紧、不放宽（C-7d）。
+[extend]
+useDefault = true
+
+[[rules]]
+id = "fde-credential-var-literal"
+description = "Credential-named variable assigned a long hex/base64 literal"
+regex = '''(?i)[\w.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|access[_-]?key|[_-]key)[\w.-]*["']?[ \t]*[:=][ \t]*(?:"(?:[0-9a-fA-F]{32,}|[A-Za-z0-9+/]{40,}={0,2})"|'(?:[0-9a-fA-F]{32,}|[A-Za-z0-9+/]{40,}={0,2})'|(?:[0-9a-fA-F]{32,}|[A-Za-z0-9+/]{40,}={0,2})\b)'''
+keywords = ["pass", "pwd", "secret", "token", "key"]
