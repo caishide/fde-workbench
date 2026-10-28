@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useAuth } from "../auth/AuthProvider"
+import {
+  FALLBACK_OPTIONS,
+  mergeOptions,
+  type WorkbenchOptions,
+} from "../workbench/options"
 
 // P4 报价/收款/合同（设计 §6，报价计算卡 v1.1 程序化）。
 // 报价：系数输入 → 公式价 → 锚点三分支；claims 四值 accepted 之外黄标（§5.3）；
@@ -108,12 +113,6 @@ interface CommercialBoardProps {
   canManage: boolean
 }
 
-const TIERS: Array<{ value: string; label: string }> = [
-  { value: "light", label: "轻量（25h / 现金 ¥1,500）" },
-  { value: "standard", label: "标准（50h / 现金 ¥5,000）" },
-  { value: "flagship", label: "旗舰（80h / 现金 ¥9,000）" },
-]
-
 const CLAIM_ORDER = ["estimated", "claimed", "measured", "accepted"] as const
 
 const CLAIM_LABEL: Record<string, string> = {
@@ -136,20 +135,6 @@ const CLAIM_FIELD_LABEL: Record<string, string> = {
   final_amount: "成交价",
   actual_hours: "实际工时",
 }
-
-const C_HANDLING_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "scope_cut", label: "① 缩范围" },
-  { value: "split_phases", label: "② 拆分期" },
-  { value: "external_collab", label: "③ 外部协作" },
-  { value: "ticket_deal", label: "④ 门票单（记亏损与补回路径）" },
-]
-
-const SOW_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "b", label: "B 试点（50/50）" },
-  { value: "c", label: "C 集成（40/40/20）" },
-  { value: "a", label: "A 诊断（预付）" },
-  { value: "d", label: "D 陪跑（月付预付）" },
-]
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? "—" : `¥${value.toLocaleString("zh-CN")}`
@@ -185,8 +170,24 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
   const [error, setError] = useState("")
   const [actionError, setActionError] = useState("")
   const [draftHtml, setDraftHtml] = useState<{ key: string; html: string } | null>(null)
+  const [options, setOptions] = useState<WorkbenchOptions>(FALLBACK_OPTIONS)
   const sequenceRef = useRef(0)
   const enc = encodeURIComponent(projectId)
+
+  // J1：业务枚举（价格档位 / C 分支 / SOW）由服务端下发；取不到用本地兜底。
+  useEffect(() => {
+    let cancelled = false
+    void apiRequest<unknown>("/api/v1/workbench/options", { method: "GET" })
+      .then((payload) => {
+        if (!cancelled) setOptions(mergeOptions(payload))
+      })
+      .catch(() => {
+        if (!cancelled) setOptions(FALLBACK_OPTIONS)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiRequest])
 
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++sequenceRef.current
@@ -274,7 +275,7 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 
       <section className="panel">
         <h3>报价台账（报价卡 v1.1）</h3>
-        {canManage ? <QuoteCreateForm post={post} mutate={mutate} /> : null}
+        {canManage ? <QuoteCreateForm post={post} mutate={mutate} options={options} /> : null}
         {quotes.length === 0 ? (
           <p className="supporting-copy">暂无报价。首单用「首单默认参数」一键取值（卡 §5.4）。</p>
         ) : (
@@ -297,7 +298,7 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 
       <section className="panel">
         <h3>收款看板（D+7/15/30/60 四级催款）</h3>
-        {canManage ? <PlanForm post={post} mutate={mutate} /> : null}
+        {canManage ? <PlanForm post={post} mutate={mutate} options={options} /> : null}
         {summary ? (
           <div className="payment-summary">
             <span>应收 {fmt(summary.receivable)}</span>
@@ -355,7 +356,16 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 type Post = (path: string, body: unknown) => Promise<unknown>
 type Mutate = (run: () => Promise<unknown>) => Promise<void>
 
-function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
+function QuoteCreateForm({
+  post,
+  mutate,
+  options,
+}: {
+  post: Post
+  mutate: Mutate
+  /** J1：价格档位 / C 分支选项由服务端选项表下发（含本地兜底） */
+  options: WorkbenchOptions
+}) {
   const [busy, setBusy] = useState(false)
   const [tier, setTier] = useState("light")
   const [anchorMode, setAnchorMode] = useState("cold_start")
@@ -402,7 +412,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
           <label>
             档位
             <select value={tier} onChange={(e) => setTier(e.target.value)}>
-              {TIERS.map((t) => (
+              {options.price_tiers.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
@@ -469,7 +479,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
             <label>
               C 分支处理
               <select value={cHandling} onChange={(e) => setCHandling(e.target.value)}>
-                {C_HANDLING_OPTIONS.map((o) => (
+                {options.c_handling_options.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -676,14 +686,23 @@ function QuoteCard({
   )
 }
 
-function PlanForm({ post, mutate }: { post: Post; mutate: Mutate }) {
+function PlanForm({
+  post,
+  mutate,
+  options,
+}: {
+  post: Post
+  mutate: Mutate
+  /** J1：SOW 类型选项由服务端选项表下发（含本地兜底） */
+  options: WorkbenchOptions
+}) {
   const [sow, setSow] = useState("b")
   const [base, setBase] = useState("")
   const [replace, setReplace] = useState(false)
   return (
     <div className="gate-form-row">
       <select value={sow} onChange={(e) => setSow(e.target.value)}>
-        {SOW_OPTIONS.map((o) => (
+        {options.sow_options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>

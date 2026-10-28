@@ -44,6 +44,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(templates_blueprint)
     app.register_blueprint(template_research_blueprint)
     app.register_blueprint(projects_blueprint)
+    # WP29/J1：业务枚举选项表下发（前端保留本地兜底）
+    from fde_api.workbench.routes import workbench_blueprint
+    app.register_blueprint(workbench_blueprint)
     # P2 集成桥：真相层（openfde/fdeops）→ PG 单向投影
     from fde_api.bridge import bridge_blueprint
     app.register_blueprint(bridge_blueprint)

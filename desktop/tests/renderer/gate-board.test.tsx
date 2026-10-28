@@ -183,8 +183,7 @@ it("keeps the filled evidence form and shows the error when the server rejects",
   expect(evidenceRequestBodies()).toHaveLength(1)
 })
 
-it("C2: opening the verify panel defaults every checklist item to unchecked", async () => {
-  const user = userEvent.setup()
+it("C2: opening the verify panel defaults every checklist item to unchecked", async () => {  const user = userEvent.setup()
   mocks.apiRequest.mockResolvedValue(
     gateView({
       gates: [
@@ -223,4 +222,26 @@ it("C2: opening the verify panel defaults every checklist item to unchecked", as
   expect(boxes.every((el) => !el.checked)).toBe(true)
   // pass 过门要求全部接受：全不勾时拍板按钮禁用
   expect(screen.getByRole("button", { name: /拍板（接受 0\/2）/ })).toBeDisabled()
+})
+
+it("J2: summary badges follow the actual gate statuses, including unknown ones", async () => {
+  // 旧实现把徽标状态写死成五态数组：服务端出现新状态时徽标被静默丢弃，
+  // 汇总数字与界面显示对不上（J2）。新实现按 summary 的实际 key 遍历。
+  const base = gateView().gates as Array<Record<string, unknown>>
+  mocks.apiRequest.mockResolvedValue(
+    gateView({
+      gates: [
+        { ...base[0], gate_key: "G1", status: "passed" },
+        { ...base[0], gate_key: "G2", status: "passed" },
+        { ...base[0], gate_key: "G3", status: "brand_new_state" },
+      ],
+    }),
+  )
+  render(<GateBoard projectId="gate-project" canManage />)
+
+  expect(await screen.findByRole("heading", { name: /G1 ·/ })).toBeVisible()
+  // 已过门 ×2
+  expect(screen.getByText(/已过门 2/)).toBeVisible()
+  // 未知状态照样出徽标（显示原值），不被硬编码五态吞掉
+  expect(screen.getByText(/brand_new_state 1/)).toBeVisible()
 })
