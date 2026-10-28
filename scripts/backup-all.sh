@@ -358,7 +358,6 @@ N8N_DB_CONTAINER="qiflow-n8n-db"
 N8N_DB_USER="n8n"
 MAUTIC_DB_CONTAINER="qiflow-mautic-db"
 MAUTIC_DB_USER="mautic"
-MAUTIC_DB_PASS="672a9e548886b70aa564c97756d4d72f1fdb1ff4b9fb7366"
 MAUTIC_DB_NAME="mautic"
 OPENOUTFIND_CONTAINER="qiflow-openoutfind"
 
