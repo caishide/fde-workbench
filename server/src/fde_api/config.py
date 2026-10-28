@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # P2 集成桥：宿主采集器（scripts/bridge-poll.mjs）推快照用的静态令牌；
     # 未配置时 POST /api/v1/bridge/snapshots 返回 503（桥关闭）
     bridge_token: SecretStr | None = Field(default=None, repr=False)
+    # G7 登录限流：Redis 不可用时的策略。默认 fail-open（本机回环部署，Redis 挂了
+    # 不挡业务登录，记 WARNING 可观测）；对外暴露部署设 true 切 fail-closed（一律 429）。
+    login_rate_fail_closed: bool = False
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

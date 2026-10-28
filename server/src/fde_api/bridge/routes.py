@@ -1,9 +1,11 @@
 """bridge 路由（P2）：
   POST /api/v1/bridge/snapshots      宿主采集器推快照（桥令牌，非用户 JWT）
-  POST /api/v1/bridge/reconcile      手动重投影（重放最近一次成功快照）
+  POST /api/v1/bridge/reconcile      手动重投影（重放最近一次成功快照）—— project_lead
   GET  /api/v1/bridge/engagements    双轨状态一屏看（flags: vanished/unlinked/orphan/stale）
-  DELETE /api/v1/bridge/engagements/<slug>  清投影（只删 bridge 行，不动真相文件）
-  GET  /api/v1/bridge/status         最近同步运行 + 采集新鲜度
+                                     —— project_lead（G6：视图含全部 engagement 代号与
+                                     关联项目 project_name/enterprise_code，读不得比写松）
+  DELETE /api/v1/bridge/engagements/<slug>  清投影（只删 bridge 行，不动真相文件）—— project_lead
+  GET  /api/v1/bridge/status         最近同步运行 + 采集新鲜度 —— project_lead（错误详情与 slug 集合同级敏感）
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ def reconcile():
 
 @bridge_blueprint.get("/engagements")
 @require_auth
+@require_minimum_role("project_lead")
 def list_engagements():
     return jsonify({"data": engagement_view(), "error": None})
 
@@ -72,5 +75,6 @@ def remove_projection(slug: str):
 
 @bridge_blueprint.get("/status")
 @require_auth
+@require_minimum_role("project_lead")
 def bridge_status():
     return jsonify({"data": {"runs": recent_runs()}, "error": None})

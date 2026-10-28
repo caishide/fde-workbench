@@ -26,6 +26,14 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(("PASS " if ok else "FAIL ") + name + (f" | {detail}" if detail else ""))
 
 
+def clear_rate_keys(app, username: str) -> None:
+    """按用户名前缀清掉该用户全部来源 IP 的限流键（G7 复合键 username:ip）。"""
+    redis = app.extensions["fde_api_redis"]
+    keys = list(redis.scan_iter(match=f"auth:login_fail:{username}:*"))
+    if keys:
+        redis.delete(*keys)
+
+
 def main(app=None) -> int:
     """注入 app 供 pytest 在隔离测试库上自动执行；缺省走容器环境（docker exec）。"""
     # C11：口令一律从环境变量读，脚本内无明文（CI/本地均需先导出）。
@@ -78,7 +86,7 @@ def main(app=None) -> int:
 
         # ---- 3) 键清零后正确登录 200（清零路径 + 登录本身健康）----
         with app.app_context():
-            app.extensions["fde_api_redis"].delete(f"auth:login_fail:{username}")
+            clear_rate_keys(app, username)
         r = attempt(password)
         check("清零后正确登录 200", r.status_code == 200, str(r.status_code))
 
@@ -88,14 +96,14 @@ def main(app=None) -> int:
 
         # ---- 5) admin 不受牵连（按用户名隔离）----
         with app.app_context():
-            app.extensions["fde_api_redis"].delete(f"auth:login_fail:{username}")
+            clear_rate_keys(app, username)
     finally:
         with app.app_context():
             s = db.session()
             try:
                 with s.begin():
                     s.execute(User.__table__.delete().where(User.id == user_id))
-                app.extensions["fde_api_redis"].delete(f"auth:login_fail:{username}")
+                clear_rate_keys(app, username)
             except Exception as error:  # noqa: BLE001
                 print(f"清理失败：{error!r}")
                 FAIL.append(f"清理失败 {error!r}")
