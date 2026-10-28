@@ -47,6 +47,29 @@ class AIChatTurn(Base, TimestampMixin):
 chat_blueprint = Blueprint("ai_chat", __name__, url_prefix="/api/v1/ai/chat")
 
 
+def _workbench_system_prompt() -> str:
+    """Compact grounding for the assistant: it does not see the desktop UI.
+
+    Without this the model only knows chat history and answers workflow
+    questions ("how do I submit gate evidence") from pure guesswork. The
+    instructions stay deliberately short — detailed answers come from the
+    help_fetch tool and the bundled manual, not from here.
+    """
+    from fde_api.control.help_bundle import section_titles
+    lines = [
+        "你是 FDE 工作台的内置智能助手。你运行在服务端，看不到桌面界面的画面；用户界面上的「使用帮助」页内容，"
+        "可以通过 help_fetch 工具读取（不传参数返回开头与章节目录；传章节标题关键词定位；next_offset 非空时传 offset 翻页）。",
+        "用户问「怎么用/在哪里/点了没反应/流程怎么走」时，先 help_fetch 再作答，并依据手册原文，不凭印象编造。",
+        "工作台语义：门禁 G1–G9 走「提交证据（source_uri 指针 + sha256 指纹）→ 人工核验拍板」；"
+        "claimed 是黄标、accepted 才是绿标；报价按档位/系数程序化计算，不自行报价。",
+        "查询范围与当前账号权限一致；工具报「没有权限」时如实说明，不绕路。",
+    ]
+    titles = section_titles()
+    if titles:
+        lines.append("手册章节目录：" + "；".join(titles) + "。")
+    return "\n".join(lines)
+
+
 def _authorize(user):
     if not user.is_active or effective_ai_access(user)[0] == "disabled":
         raise ControlServiceError("ai_access_denied", "管理员尚未为此账号开放 AI 权限。", 403)
@@ -138,6 +161,7 @@ def execute_chat_turn(turn_id):
     try:
         output = execute_ai_prompt(user_id=actor_id, prompt=prompt, execution_id=turn_id,
                                    project_id=project_id, preference_id=preference_id, deep_thinking=depth,
+                                   system_prompt=_workbench_system_prompt(),
                                    all_projects=True, return_metadata=True)
         answer = output["text"] if isinstance(output, dict) else output
         metrics = {"model": output.get("model", {}), "provider_usage": output.get("provider_usage", {})} if isinstance(output, dict) else {}

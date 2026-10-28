@@ -50,6 +50,7 @@ READ_ONLY_TOOLS = frozenset({
     "system_status",
     "skill_list",
     "skill_read",
+    "help_fetch",
     "lcsc_runs_read",
 })
 
