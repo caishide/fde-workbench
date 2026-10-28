@@ -106,7 +106,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve service container and run the check
+      # I5（goal-r2/WP25）：旧 job 只在空库上跑 --self-test 就收工——正式扫描
+      # 扫的是未迁移未灌数据的空库，「0 行 0 命中」是 C-8b 假绿。现在先迁移
+      # 到 head 并灌合成业务数据，扫描脚本的 check_code_format 会断言
+      # projects 行数 > 0（空库直接 FAIL），闭合「真的扫到了」的证据链。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: server/requirements.lock
+
+      - name: Install server dependencies (alembic + driver for migration/seed)
+        working-directory: server
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.lock -e .
+
+      - name: Resolve service container
         run: |
           set -euo pipefail
           # 双重确认是本 job 的 service 库：ancestor 只能保证镜像相同，再加
@@ -123,11 +140,74 @@ jobs:
             done
           )"
           [ -n "$container" ] || { echo "postgres service container not found"; exit 1; }
-          export FDE_PG_CONTAINER="$container"
-          export FDE_PG_USER=fde
-          export FDE_PG_DB=fde_workbench_test
+          echo "FDE_PG_CONTAINER=$container" >> "$GITHUB_ENV"
+
+      - name: Apply migrations and seed synthetic business data
+        working-directory: server
+        env:
+          FDE_DATABASE_URL: postgresql+psycopg://fde:ci-postgres@127.0.0.1:15432/fde_workbench_test
+          # load_seeds 导入 fde_api（复用 conftest 的引用种子灌入逻辑）
+          PYTHONPATH: src
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m alembic upgrade head
+          .venv/bin/python - <<'PY'
+          import os
+          import sys
+
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.orm import Session
+
+          sys.path.insert(0, ".")
+          from load_seeds import _upsert_module_catalog, _upsert_sop_nodes
+
+          engine = create_engine(os.environ["FDE_DATABASE_URL"])
+          with Session(engine) as session, session.begin():
+              # projects.sop_phase 外键指向 sop_nodes——迁移只建表，引用种子须同批灌入
+              _upsert_sop_nodes(session)
+              _upsert_module_catalog(session)
+              session.execute(
+                  text(
+                      "insert into users (id, username, display_name, role, password_hash,"
+                      " must_change_password, is_active)"
+                      " values ('00000000-0000-0000-0000-00000000lead', 'ci-pseudonym-seed',"
+                      " 'CI 代号化种子', 'admin', 'seed-not-a-real-hash', false, true)"
+                      " on conflict (username) do nothing"
+                  )
+              )
+              for i in range(1, 4):
+                  session.execute(
+                      text(
+                          "insert into projects (id, project_code, name, enterprise_code,"
+                          " leader_user_id, background, notes, status, business_line,"
+                          " planned_start_date, template_snapshot, research_snapshot)"
+                          " values (:id, :code, :name, :ent, :leader, '', '', 'draft', 'FDE',"
+                          " :start, '{}'::json, '{}'::json)"
+                          " on conflict (project_code) do nothing"
+                      ),
+                      {
+                          "id": f"00000000-0000-0000-0000-00000000000{i}",
+                          "code": f"CI-SEED-{i}",
+                          "name": f"代号化扫描种子项目{i}",
+                          "ent": f"种子客户{i}·制造业·苏州",
+                          "leader": "00000000-0000-0000-0000-00000000lead",
+                          "start": "2026-01-01",
+                      },
+                  )
+              count = session.execute(text("select count(*) from projects")).scalar_one()
+              assert count >= 3, f"synthetic seed failed: projects={count}"
+              print(f"seed ok: projects={count}")
+          PY
+
+      - name: Run the check (self-test, then scan migrated + seeded database)
+        env:
+          FDE_PG_USER: fde
+          FDE_PG_DB: fde_workbench_test
+        run: |
+          set -euo pipefail
           # 合成黑名单里的名字必须出现在库里才会命中——先注入哨兵行证明
-          # 扫描器抓得到（抓不到 = 扫描器坏了），再清理重扫。
+          # 扫描器抓得到（抓不到 = 扫描器坏了），再清理重扫；正式扫描跑在
+          # 已迁移已灌数据的库上，projects 行数 > 0 由脚本自身断言（I5）。
           bash scripts/check-pseudonymization.sh --self-test
 
   desktop:
