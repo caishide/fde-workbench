@@ -146,6 +146,9 @@ jobs:
         working-directory: server
         env:
           FDE_DATABASE_URL: postgresql+psycopg://fde:ci-postgres@127.0.0.1:15432/fde_workbench_test
+          # Settings() 必填项：本步骤不真用 Redis、JWT 只为通过校验，哑值即可
+          FDE_REDIS_URL: redis://localhost:6379/0
+          FDE_JWT_SECRET: ci-only-pseudonymization-job-dummy-secret-0123456789abcdef
           # load_seeds 导入 fde_api（复用 conftest 的引用种子灌入逻辑）
           PYTHONPATH: src
         run: |
