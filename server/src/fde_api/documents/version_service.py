@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from fde_api.auth.models import User
 from fde_api.documents.models import (
+    DocumentDeliveryRecord,
     DocumentGenerationJob,
     DocumentTemplateVersion,
     ProjectDocument,
@@ -631,6 +632,87 @@ def restore_document_version(
         session.close()
 
 
+def _delivery_key(version: ProjectDocumentVersion, actor: User) -> str:
+    """幂等键：版本 + 内容指纹 + 操作人（同一份文件重复签发不重复留痕）。"""
+    return f"{version.id}:{version.sha256 or ''}:{actor.id}"
+
+
+def _record_delivery(
+    session: Session,
+    actor: User,
+    project: Project,
+    document: ProjectDocument,
+    version: ProjectDocumentVersion,
+) -> DocumentDeliveryRecord | None:
+    """写一条交付审计（幂等）；已存在同键记录时直接返回既有记录。"""
+    key = _delivery_key(version, actor)
+    existing = session.scalar(
+        select(DocumentDeliveryRecord).where(
+            DocumentDeliveryRecord.delivery_key == key
+        )
+    )
+    if existing is not None:
+        return existing
+    record = DocumentDeliveryRecord(
+        delivery_key=key,
+        project_id=project.id,
+        document_id=document.id,
+        version_id=version.id,
+        version_number=version.version_number,
+        sha256=version.sha256 or "",
+        actor_user_id=actor.id,
+        actor_username=actor.username,
+    )
+    session.add(record)
+    try:
+        session.flush()
+    except IntegrityError:
+        # 并发重复签发：唯一键兜住，回读既有记录（幂等）。
+        session.rollback()
+        return session.scalar(
+            select(DocumentDeliveryRecord).where(
+                DocumentDeliveryRecord.delivery_key == key
+            )
+        )
+    return record
+
+
+def list_delivery_records(
+    *, actor: User, project_id: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    """按项目列交付审计（viewer 不可见，见路由门禁）。
+
+    只读投影：返回指针与指纹，不含客户明文。
+    """
+    session = db.session()
+    try:
+        project = _load_project_for_view(session, actor, project_id)
+        rows = session.scalars(
+            select(DocumentDeliveryRecord)
+            .where(DocumentDeliveryRecord.project_id == project.id)
+            .order_by(
+                DocumentDeliveryRecord.delivered_at.desc(),
+                DocumentDeliveryRecord.id.desc(),
+            )
+            .limit(max(1, min(int(limit), 200)))
+        ).all()
+        return [
+            {
+                "id": row.id,
+                # 版本被删后指向为空（审计保留当时快照：version_number/sha256）
+                "version_id": row.version_id,
+                "version_number": row.version_number,
+                "sha256": row.sha256,
+                "actor_user_id": row.actor_user_id,
+                "actor_username": row.actor_username,
+                "delivered_at": row.delivered_at.isoformat(),
+            }
+            for row in rows
+        ]
+    finally:
+        session.close()
+
+
 def get_document_download_url(
     *, actor: User, project_id: str, document_id: str, version_number: int
 ) -> str:
@@ -682,6 +764,9 @@ def get_document_download_url(
                 "status": version.status,
             },
         )
+        # J3：专用交付审计表——通用 operation_events 无法按「交付」维度检索。
+        # 幂等键 = version + sha256 + 操作人：同一版本同一内容重复签发不重复留痕。
+        _record_delivery(session, actor, project, document, version)
         session.commit()
         return signed_url
     finally:
