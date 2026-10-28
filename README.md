@@ -97,7 +97,7 @@ docker exec fde-postgres psql -U postgres -c "CREATE DATABASE fde_workbench OWNE
 
 ```bash
 cp .env.example .env           # 仓库根：compose 插值读取，至少填 FDE_DB_PASSWORD
-cp .env.example server/.env    # 容器 env_file：至少把 FDE_JWT_SECRET 换成随机值
+cp server/.env.example server/.env    # 容器 env_file：至少把 FDE_JWT_SECRET 换成随机值
 ```
 
 生成随机密钥：
@@ -152,18 +152,20 @@ npm run dev
 ```bash
 npm install
 python3.12 -m venv server/.venv            # Windows: py -3.12 -m venv server/.venv
-server/.venv/bin/pip install -r server/requirements.lock -e 'server[test]'
-cp .env.example server/.env                # 填 FDE_JWT_SECRET 与可达的 FDE_DATABASE_URL
+server/.venv/bin/pip install -r server/requirements.lock -e 'server[test]'   # Windows: server\.venv\Scripts\pip ...
+cp server/.env.example server/.env          # 填 FDE_JWT_SECRET 与可达的 FDE_DATABASE_URL
 
 cd server
 .venv/bin/alembic upgrade head             # Windows: .venv\Scripts\alembic ...
 .venv/bin/flask --app fde_api.app:create_app bootstrap-open-source
 
-# 三个终端分别启动：
+# 三个终端分别启动（Windows 把 .venv/bin/ 换成 .venv\Scripts\）：
 .venv/bin/flask --app fde_api.app:create_app run --host 127.0.0.1 --port 8010
 .venv/bin/flask --app fde_api.wsgi:app worker
 .venv/bin/flask --app fde_api.wsgi:app scheduler
 ```
+
+> 命令里的 `.venv/bin/` 是 Unix 写法；Windows 侧对应 `server\.venv\Scripts\`（`pip` / `alembic` / `flask` 同名）。仓库根的 `npm run test:server` 与 `scripts/run-server-tests.mjs` 会自动探测两套路径，跨平台不用改命令。
 
 回到仓库根目录 `npm run dev` 启动桌面端。
 

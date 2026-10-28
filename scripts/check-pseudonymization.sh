@@ -39,6 +39,8 @@ IN_WSL=0
 if grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then
   IN_WSL=1
 fi
+# I3：默认路径不写死本机盘符——按「仓库所在盘 → /mnt/<盘>/test/FDE」推导，
+# 仍可用 FDE_LEADS_MD 显式指定；推导不出就用仓库相对的上级目录候选。
 if [ "$IN_WSL" = "1" ]; then
   LEADS_MD="${FDE_LEADS_MD:-/mnt/d/test/FDE/leads.md}"
 else

@@ -1,8 +1,12 @@
-# Python 静态基线（WP06/B2）。
+# Python 静态基线（WP06/B2；I1 起改为跨平台入口）。
 #
 # 只跑「会咬人」且已清零的检查：ruff 的 F401/F841（未使用导入/局部变量），
 # 以及基于基线清单的 mypy 增量检查（存量错误记在 server/mypy-baseline.txt，
 # 新增错误一律拦截——不靠 ignore 隐藏）。
+#
+# 三个钩子都走 node 入口脚本，由脚本自己探测解释器
+# （Windows 用 server/.venv/Scripts 下的 python.exe，Unix 用 server/.venv/bin 下的 python），
+# 不在本文件里写死任何平台路径（I1：旧版写死 Windows 路径，Linux/macOS 不可用）。
 #
 # 本地运行：pre-commit run --all-files
 # 说明：前端 typecheck（desktop/tsconfig.web.json）由 CI 步骤执行，不进 pre-commit
@@ -12,19 +16,19 @@ repos:
     hooks:
       - id: ruff-unused
         name: ruff (F401/F841 unused imports & variables)
-        entry: server/.venv/Scripts/python.exe -m ruff check --select F401,F841 server/src server/tests
+        entry: node scripts/run-server-lint.mjs
         language: system
         pass_filenames: false
         types: [python]
       - id: mypy-baseline
         name: mypy (baseline + no new errors)
-        entry: server/.venv/Scripts/python.exe scripts/check-python-types.py
+        entry: node scripts/run-python-types.mjs
         language: system
         pass_filenames: false
         types: [python]
       - id: pytest-server
         name: pytest (server, isolated PostgreSQL test database)
-        entry: bash -c "cd server && PYTHONPATH=src .venv/Scripts/python.exe -m pytest tests -q"
+        entry: node scripts/run-server-tests.mjs tests -q
         language: system
         pass_filenames: false
         types: [python]
