@@ -137,6 +137,16 @@ describe("role-aware project workbench navigation", () => {
     expect(location.hash).toBe("#projects")
   })
 
+  it("redirects non-admin away from the extensions center (J6)", async () => {
+    // J6：扩展中心（LCSC 工具页 / 插件审批）属管理口径——此前任何已登录用户
+    // 都能打开 #extensions（执行仍被服务端拦，但属于 UI 暴露面）。
+    location.hash = "#extensions"
+    renderAuthenticatedApp("project_lead")
+
+    expect(await screen.findByRole("heading", { name: "项目工作台" })).toBeVisible()
+    expect(location.hash).toBe("#projects")
+  })
+
   it.each(["fde_engineer", "viewer"] as const)("redirects %s away from project creation", async (role) => {
     location.hash = "#projects/new"
     renderAuthenticatedApp(role)

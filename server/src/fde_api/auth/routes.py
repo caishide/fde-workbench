@@ -22,46 +22,62 @@ from fde_api.errors import error_response
 
 auth_blueprint = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
-# 登录失败限流（Redis 计数，按用户名）：连续失败 5 次锁 15 分钟，成功即清零。
-# API 已只绑回环，这层是纵深防御（防本机脚本/误配置暴破）。
+# 登录失败限流（Redis 计数，按「用户名 + 来源 IP」复合键，G7）：连续失败 5 次锁
+# 15 分钟，成功即清零。复合键保证单 IP 的连错只锁「该 IP → 该用户」对，无法再
+# 从一个 IP 定向锁死任意用户名。API 已只绑回环，这层是纵深防御。
 LOGIN_RATE_MAX_ATTEMPTS = 5
 LOGIN_RATE_WINDOW_SECONDS = 900
 
 
-def _login_fail_key(username: str) -> str:
-    return f"auth:login_fail:{username}"
+def _login_fail_key(username: str, remote_addr: str | None) -> str:
+    ip = remote_addr or "unknown"
+    return f"auth:login_fail:{username}:{ip}"
 
 
-def _login_throttle(username: str) -> int | None:
-    """记一次尝试；若已超限返回应等待秒数（未超限/Redis 不可用返回 None 放行）。
+def _login_throttle(username: str, remote_addr: str | None) -> int | None:
+    """记一次尝试；若已超限返回应等待秒数（未超限返回 None）。
 
-    在校验密码之前调用：被锁的请求不再做 argon2 计算。Redis 挂了不能挡登录
-    （认证不依赖限流器），静默放行。
+    在校验密码之前调用：被锁的请求不再做 argon2 计算。
+
+    Redis 不可用时的行为可配置（G7，不得静默）：
+      fail-open（默认，FDE_LOGIN_RATE_FAIL_CLOSED 未设）→ 记 WARNING 后放行，
+        认证不依赖限流器，本机回环部署下 Redis 挂了不挡业务登录；
+      fail-closed（FDE_LOGIN_RATE_FAIL_CLOSED=1，对外暴露部署从严）→ 记 WARNING
+        后一律按超限处理（429）。
     """
     try:
         redis = current_app.extensions["fde_api_redis"]
     except KeyError:
         return None
+    settings = current_app.config["SETTINGS"]
+    key = _login_fail_key(username, remote_addr)
     try:
-        key = _login_fail_key(username)
         attempts = redis.incr(key)
         if attempts == 1:
             redis.expire(key, LOGIN_RATE_WINDOW_SECONDS)
         if attempts > LOGIN_RATE_MAX_ATTEMPTS:
             return max(int(redis.ttl(key) or LOGIN_RATE_WINDOW_SECONDS), 1)
     except RedisError:
+        current_app.logger.warning(
+            "login rate limiter unavailable (username=%s ip=%s); failing %s",
+            username,
+            remote_addr,
+            "closed" if settings.login_rate_fail_closed else "open",
+        )
+        if settings.login_rate_fail_closed:
+            return LOGIN_RATE_WINDOW_SECONDS
         return None
     return None
 
 
-def _login_clear(username: str) -> None:
-    """登录成功清零失败计数。"""
+def _login_clear(username: str, remote_addr: str | None) -> None:
+    """登录成功清零「该用户名 + 该 IP」的失败计数。"""
     try:
         redis = current_app.extensions["fde_api_redis"]
     except KeyError:
         return
     try:
-        redis.delete(_login_fail_key(username))
+        redis.delete(_login_fail_key(username, remote_addr))
     except RedisError:
         pass
 
@@ -72,7 +88,7 @@ def login_route():
     values = _required_strings(payload, "username", "password", "device_label")
     if values is None:
         return _invalid_request()
-    retry_after = _login_throttle(values[0])
+    retry_after = _login_throttle(values[0], request.remote_addr)
     if retry_after is not None:
         return error_response(
             "login_rate_limited",
@@ -83,7 +99,7 @@ def login_route():
         user, pair = login_user(*values)
     except AuthServiceError as error:
         return _service_error(error)
-    _login_clear(values[0])
+    _login_clear(values[0], request.remote_addr)
     return jsonify(
         {
             "data": {"user": _serialize_user(user), **_serialize_token_pair(pair)},

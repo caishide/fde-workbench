@@ -18,6 +18,8 @@ services:
     volumes: ["fde_redis:/data"]
     networks:
       - automation_qiflow-net
+    # I4：四个服务统一 restart 策略（此前 api/redis 缺失，容器挂了就再也不起）。
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -50,11 +52,15 @@ services:
       # 挂载后宿主机可直接看到并纳入 git（否则生成物会随容器销毁）
       - ./server/migrations:/app/migrations
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/api/v1/health/live').read()"]
+      # I4：走 /ready（校验数据库与 Redis 就绪）而不是 /ready 之前用的 /live
+      # ——/live 只证明进程活着，DB 挂了容器照样 healthy。
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/api/v1/health/ready').read()"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+    # I4：统一 restart 策略（此前 api 无 restart，容器退出后不再起）。
+    restart: unless-stopped
 
   worker:
     # v0.3: 补齐后台任务执行器。
@@ -75,6 +81,15 @@ services:
       FDE_API_PORT: "8010"
     command: ["flask", "--app", "fde_api.wsgi:app", "worker"]
     restart: unless-stopped
+    # I4：worker 不监听端口，「进程还在」不等于「还在干活」。循环每轮写一次
+    # Redis 心跳（fde:health:worker，TTL 180s）；卡死时心跳不再刷新，
+    # healthcheck 判 unhealthy。
+    healthcheck:
+      test: ["CMD", "python", "-m", "fde_api.health.heartbeat", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       redis:
         condition: service_healthy
@@ -97,6 +112,13 @@ services:
       FDE_API_PORT: "8010"
     command: ["flask", "--app", "fde_api.wsgi:app", "scheduler"]
     restart: unless-stopped
+    # I4：同 worker——心跳键 fde:health:scheduler（TTL 900s，覆盖最大 300s 间隔）。
+    healthcheck:
+      test: ["CMD", "python", "-m", "fde_api.health.heartbeat", "scheduler"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       redis:
         condition: service_healthy

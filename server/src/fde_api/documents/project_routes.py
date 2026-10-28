@@ -14,7 +14,7 @@ from typing import Any
 
 from flask import Blueprint, g, jsonify, request
 
-from fde_api.auth.decorators import require_auth
+from fde_api.auth.decorators import require_auth, require_minimum_role
 from fde_api.documents.draft_service import (
     DocumentDraftServiceError,
     create_project_document,
@@ -31,6 +31,7 @@ from fde_api.documents.version_service import (
     confirm_document_version,
     get_document_download_url,
     get_document_preview_url,
+    list_delivery_records,
     list_document_versions,
     online_revise_document,
     resolve_document_version,
@@ -390,3 +391,22 @@ def _service_error(error: DocumentDraftServiceError):
 
 def _version_service_error(error: DocumentVersionServiceError):
     return error_response(error.code, error.message, error.status)
+
+
+@project_documents_blueprint.get("/delivery-records")
+@require_auth
+@require_minimum_role("project_lead")
+def document_delivery_records_route(project_id: str):
+    """交付审计（J3）：按项目列对外签发的文档版本记录。
+
+    门禁 project_lead：交付事实属管理口径，viewer/fde_engineer 不得枚举。
+    跨项目访问由 project_access 拒绝（403/404）。
+    """
+    limit = request.args.get("limit", type=int)
+    try:
+        records = list_delivery_records(
+            actor=g.current_user, project_id=project_id, limit=limit or 50
+        )
+        return jsonify({"data": {"items": records}, "error": None})
+    except DocumentVersionServiceError as error:
+        return _version_service_error(error)

@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
+import {
+  FALLBACK_OPTIONS,
+  gateStatusLabel,
+  gateStatusTone,
+  mergeOptions,
+  type WorkbenchOptions,
+} from "../workbench/options"
 
 // P3 门禁引擎（设计 §5）：只读投影 + 证据提交/人工核验。
 // 状态语义照搬 SOP——pending/evidence/passed/conditional_pass/failed 五态，
@@ -52,22 +59,7 @@ interface GateBoardProps {
   canManage: boolean
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "待证据",
-  evidence: "待核验",
-  passed: "已过门",
-  conditional_pass: "有条件通过",
-  failed: "未过门",
-}
-
-const STATUS_CLASS: Record<string, string> = {
-  pending: "muted",
-  evidence: "warning",
-  passed: "success",
-  conditional_pass: "warning",
-  failed: "danger",
-}
-
+// 门禁五态的标签与徽标样式由服务端选项表下发（J1），本地兜底见 workbench/options.ts。
 const DECISION_LABEL: Record<string, string> = {
   proceed: "proceed 继续",
   pivot: "pivot 转向",
@@ -102,11 +94,27 @@ function isGatesView(value: unknown): value is GatesView {
 export function GateBoard({ projectId, canManage }: GateBoardProps) {
   const { apiRequest } = useAuth()
   const [view, setView] = useState<GatesView | null>(null)
+  const [options, setOptions] = useState<WorkbenchOptions>(FALLBACK_OPTIONS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [actionError, setActionError] = useState("")
   const [busyGate, setBusyGate] = useState("")
   const sequenceRef = useRef(0)
+
+  // J1：选项表由服务端下发；取不到就用本地兜底（界面照常渲染，不阻断读路径）
+  useEffect(() => {
+    let cancelled = false
+    void apiRequest<unknown>("/api/v1/workbench/options", { method: "GET" })
+      .then((payload) => {
+        if (!cancelled) setOptions(mergeOptions(payload))
+      })
+      .catch(() => {
+        if (!cancelled) setOptions(FALLBACK_OPTIONS)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiRequest])
 
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++sequenceRef.current
@@ -196,13 +204,13 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
         </p>
         {summary ? (
           <div className="gate-summary-badges">
-            {(["passed", "conditional_pass", "evidence", "pending", "failed"] as const).map((status) =>
-              summary[status] ? (
-                <span key={status} className={`badge ${STATUS_CLASS[status]}`}>
-                  {STATUS_LABEL[status]} {summary[status]}
+            {Object.entries(summary)
+              .filter(([, count]) => count > 0)
+              .map(([status, count]) => (
+                <span key={status} className={`badge ${gateStatusTone(options, status)}`}>
+                  {gateStatusLabel(options, status)} {count}
                 </span>
-              ) : null,
-            )}
+              ))}
           </div>
         ) : null}
       </div>
@@ -214,6 +222,7 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
             gate={gate}
             canManage={canManage}
             busy={busyGate === gate.gate_key}
+            options={options}
             onSubmitEvidence={submitEvidence}
             onDecide={decide}
           />
@@ -228,6 +237,8 @@ interface GateCardProps {
   gate: GateDto
   canManage: boolean
   busy: boolean
+  /** J1：门禁状态标签/样式由服务端选项表下发（含本地兜底） */
+  options: WorkbenchOptions
   onSubmitEvidence: (
     gate: GateDto,
     items: Array<{ label: string; source_uri: string; content_hash: string }>,
@@ -235,7 +246,7 @@ interface GateCardProps {
   onDecide: (gate: GateDto, payload: Record<string, unknown>) => Promise<boolean>
 }
 
-function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCardProps) {
+function GateCard({ gate, canManage, busy, options, onSubmitEvidence, onDecide }: GateCardProps) {
   const [mode, setMode] = useState<"idle" | "submit" | "decide">("idle")
   const [uris, setUris] = useState<Record<string, string>>({})
   const [hashes, setHashes] = useState<Record<string, string>>({})
@@ -274,8 +285,8 @@ function GateCard({ gate, canManage, busy, onSubmitEvidence, onDecide }: GateCar
           <h3>{gate.gate_key} · {gate.gate_name ?? ""}</h3>
           <p className="gate-card-exit">{gate.exit_condition}</p>
         </div>
-        <span className={`badge ${STATUS_CLASS[gate.status] ?? "muted"}`}>
-          {STATUS_LABEL[gate.status] ?? gate.status}
+        <span className={`badge ${gateStatusTone(options, gate.status)}`}>
+          {gateStatusLabel(options, gate.status)}
           {gate.decision ? ` · ${gate.decision}` : ""}
         </span>
       </header>

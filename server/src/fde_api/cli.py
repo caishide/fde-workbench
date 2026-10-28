@@ -139,6 +139,7 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("worker")
     @click.option("--once", is_flag=True, help="Process a single job with a short wait.")
     def worker(once: bool) -> None:
+        from fde_api.health.heartbeat import beat
         from fde_api.jobs.handlers import ensure_default_handlers
         from fde_api.jobs.outbox import dispatch_pending
         from fde_api.jobs.queue import get_queue
@@ -150,6 +151,9 @@ def register_cli(app: Flask) -> None:
         queue = get_queue()
         click.echo("worker started")
         while True:
+            # I4：循环每轮写一次心跳（TTL 180s）。卡住时心跳停止刷新，
+            # 容器 healthcheck 判 unhealthy——「进程还在」不等于「还在干活」。
+            beat("worker")
             # Keep local/desktop deployments self-contained: the worker also
             # dispatches newly committed outbox events before waiting for work.
             dispatch_session = db.session()
@@ -170,9 +174,12 @@ def register_cli(app: Flask) -> None:
     @click.option("--interval", default=30, type=click.IntRange(5, 300), show_default=True)
     def scheduler(once: bool, interval: int) -> None:
         from fde_api.control.scheduler import dispatch_due_automations
+        from fde_api.health.heartbeat import beat
 
         click.echo("scheduler started")
         while True:
+            # I4：同 worker——每轮刷新心跳（TTL 900s，覆盖最大 300s 间隔）。
+            beat("scheduler")
             dispatched = dispatch_due_automations()
             if dispatched:
                 click.echo(f"dispatched={dispatched}")

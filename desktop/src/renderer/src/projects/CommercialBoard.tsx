@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useAuth } from "../auth/AuthProvider"
+import {
+  FALLBACK_OPTIONS,
+  mergeOptions,
+  type WorkbenchOptions,
+} from "../workbench/options"
 
 // P4 报价/收款/合同（设计 §6，报价计算卡 v1.1 程序化）。
 // 报价：系数输入 → 公式价 → 锚点三分支；claims 四值 accepted 之外黄标（§5.3）；
@@ -108,11 +113,14 @@ interface CommercialBoardProps {
   canManage: boolean
 }
 
-const TIERS: Array<{ value: string; label: string }> = [
-  { value: "light", label: "轻量（25h / 现金 ¥1,500）" },
-  { value: "standard", label: "标准（50h / 现金 ¥5,000）" },
-  { value: "flagship", label: "旗舰（80h / 现金 ¥9,000）" },
-]
+// J4：档内偏离「×1.40 档内升级」是唯一触发 C 分支的档位——收敛为单一常量，
+// 改一处漏两处会静默漏传 c_handling（服务端 400）。
+const C_BRANCH_INTEGRATION_FACTOR = 1.4
+// J5：B 层分的上下界（冷启动 ≤5，稳态 ≤10）。HTML max 拦不住键盘输入，
+// 因此输入时必须上下界都夹。
+const B_SCORE_COLD_START_MAX = 5
+const B_SCORE_STEADY_MAX = 10
+const B_SCORE_MIN = 0
 
 const CLAIM_ORDER = ["estimated", "claimed", "measured", "accepted"] as const
 
@@ -137,22 +145,16 @@ const CLAIM_FIELD_LABEL: Record<string, string> = {
   actual_hours: "实际工时",
 }
 
-const C_HANDLING_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "scope_cut", label: "① 缩范围" },
-  { value: "split_phases", label: "② 拆分期" },
-  { value: "external_collab", label: "③ 外部协作" },
-  { value: "ticket_deal", label: "④ 门票单（记亏损与补回路径）" },
-]
-
-const SOW_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "b", label: "B 试点（50/50）" },
-  { value: "c", label: "C 集成（40/40/20）" },
-  { value: "a", label: "A 诊断（预付）" },
-  { value: "d", label: "D 陪跑（月付预付）" },
-]
-
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? "—" : `¥${value.toLocaleString("zh-CN")}`
+
+/** J5：B 层分夹上下界——HTML min/max 拦不住键盘输入，负数/越界都须在提交前夹住。 */
+export function clampBScore(value: number, anchorMode: string): number {
+  if (!Number.isFinite(value)) return B_SCORE_MIN
+  const max =
+    anchorMode === "cold_start" ? B_SCORE_COLD_START_MAX : B_SCORE_STEADY_MAX
+  return Math.min(Math.max(value, B_SCORE_MIN), max)
+}
 
 // 表单数字入参统一走这里（NaN/负数/0 前端就拦，错误消息进 actionError 展示）
 function parsePositive(raw: string, label: string): number {
@@ -185,8 +187,24 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
   const [error, setError] = useState("")
   const [actionError, setActionError] = useState("")
   const [draftHtml, setDraftHtml] = useState<{ key: string; html: string } | null>(null)
+  const [options, setOptions] = useState<WorkbenchOptions>(FALLBACK_OPTIONS)
   const sequenceRef = useRef(0)
   const enc = encodeURIComponent(projectId)
+
+  // J1：业务枚举（价格档位 / C 分支 / SOW）由服务端下发；取不到用本地兜底。
+  useEffect(() => {
+    let cancelled = false
+    void apiRequest<unknown>("/api/v1/workbench/options", { method: "GET" })
+      .then((payload) => {
+        if (!cancelled) setOptions(mergeOptions(payload))
+      })
+      .catch(() => {
+        if (!cancelled) setOptions(FALLBACK_OPTIONS)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiRequest])
 
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++sequenceRef.current
@@ -274,7 +292,7 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 
       <section className="panel">
         <h3>报价台账（报价卡 v1.1）</h3>
-        {canManage ? <QuoteCreateForm post={post} mutate={mutate} /> : null}
+        {canManage ? <QuoteCreateForm post={post} mutate={mutate} options={options} /> : null}
         {quotes.length === 0 ? (
           <p className="supporting-copy">暂无报价。首单用「首单默认参数」一键取值（卡 §5.4）。</p>
         ) : (
@@ -297,7 +315,7 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 
       <section className="panel">
         <h3>收款看板（D+7/15/30/60 四级催款）</h3>
-        {canManage ? <PlanForm post={post} mutate={mutate} /> : null}
+        {canManage ? <PlanForm post={post} mutate={mutate} options={options} /> : null}
         {summary ? (
           <div className="payment-summary">
             <span>应收 {fmt(summary.receivable)}</span>
@@ -355,7 +373,16 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
 type Post = (path: string, body: unknown) => Promise<unknown>
 type Mutate = (run: () => Promise<unknown>) => Promise<void>
 
-function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
+function QuoteCreateForm({
+  post,
+  mutate,
+  options,
+}: {
+  post: Post
+  mutate: Mutate
+  /** J1：价格档位 / C 分支选项由服务端选项表下发（含本地兜底） */
+  options: WorkbenchOptions
+}) {
   const [busy, setBusy] = useState(false)
   const [tier, setTier] = useState("light")
   const [anchorMode, setAnchorMode] = useState("cold_start")
@@ -387,7 +414,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
         integration_factor: integration,
         b_layer_score: bScore,
         // 与上方渲染条件同判：任意档位出现 C 分支都必须带上四选一
-        ...(integration === 1.4 ? { c_handling: cHandling } : {}),
+        ...(integration === C_BRANCH_INTEGRATION_FACTOR ? { c_handling: cHandling } : {}),
       }),
     )
 
@@ -402,7 +429,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
           <label>
             档位
             <select value={tier} onChange={(e) => setTier(e.target.value)}>
-              {TIERS.map((t) => (
+              {options.price_tiers.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
@@ -415,7 +442,7 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
                 const mode = e.target.value
                 setAnchorMode(mode)
                 // 冷启动上限 5 分：切回冷启动时把越界的分数夹回来（HTML max 拦不住键盘输入）
-                setBScore((score) => Math.min(score, mode === "cold_start" ? 5 : 10))
+                setBScore((score) => clampBScore(score, mode))
               }}
             >
               <option value="cold_start">冷启动（前 3 单）</option>
@@ -452,24 +479,24 @@ function QuoteCreateForm({ post, mutate }: { post: Post; mutate: Mutate }) {
             <select value={integration} onChange={(e) => setIntegration(Number(e.target.value))}>
               <option value={0.75}>×0.75 档内降级</option>
               <option value={1.0}>×1.00 默认</option>
-              <option value={1.4}>×1.40 档内升级（优先改上一档）</option>
+              <option value={C_BRANCH_INTEGRATION_FACTOR}>×1.40 档内升级（优先改上一档）</option>
             </select>
           </label>
           <label>
             B 层分（冷启动 ≤5）
             <input
               type="number"
-              min={0}
-              max={anchorMode === "cold_start" ? 5 : 10}
+              min={B_SCORE_MIN}
+              max={anchorMode === "cold_start" ? B_SCORE_COLD_START_MAX : B_SCORE_STEADY_MAX}
               value={bScore}
-              onChange={(e) => setBScore(Number(e.target.value))}
+              onChange={(e) => setBScore(clampBScore(Number(e.target.value), anchorMode))}
             />
           </label>
-          {integration === 1.4 ? (
+          {integration === C_BRANCH_INTEGRATION_FACTOR ? (
             <label>
               C 分支处理
               <select value={cHandling} onChange={(e) => setCHandling(e.target.value)}>
-                {C_HANDLING_OPTIONS.map((o) => (
+                {options.c_handling_options.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -676,14 +703,23 @@ function QuoteCard({
   )
 }
 
-function PlanForm({ post, mutate }: { post: Post; mutate: Mutate }) {
+function PlanForm({
+  post,
+  mutate,
+  options,
+}: {
+  post: Post
+  mutate: Mutate
+  /** J1：SOW 类型选项由服务端选项表下发（含本地兜底） */
+  options: WorkbenchOptions
+}) {
   const [sow, setSow] = useState("b")
   const [base, setBase] = useState("")
   const [replace, setReplace] = useState(false)
   return (
     <div className="gate-form-row">
       <select value={sow} onChange={(e) => setSow(e.target.value)}>
-        {SOW_OPTIONS.map((o) => (
+        {options.sow_options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>

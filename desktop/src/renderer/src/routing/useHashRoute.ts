@@ -125,6 +125,11 @@ export function authorizedRoute(route: AppRoute, role: UserRole): AppRoute {
   if (route.kind === "templates" || route.kind === "document-templates" || route.kind === "modules" || route.kind === "users" || route.kind === "system-configuration") {
     return role === "admin" ? route : projectsRoute
   }
+  // J6：扩展中心（LCSC 工具页 / 插件审批 / 模型配置）属管理口径——非管理员
+  // 直接访问 #extensions 时不再渲染该页（服务端仍会拦，这里是减少暴露面）。
+  if (route.kind === "extensions") {
+    return role === "admin" ? route : projectsRoute
+  }
   if (route.kind === "new-project") {
     return role === "admin" || role === "project_lead" ? route : projectsRoute
   }

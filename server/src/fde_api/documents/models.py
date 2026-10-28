@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from fde_api.auth.models import UTCDateTime, User
+from fde_api.auth.models import UTCDateTime, UTC_TIMESTAMP_SQL, User
 from fde_api.files.models import ProjectFileVersion
 from fde_api.workbench.models import (
     Base,
@@ -369,3 +369,60 @@ class DocumentGenerationJob(Base, TimestampMixin, VersionedMixin):
     document_version: Mapped[ProjectDocumentVersion] = relationship(
         back_populates="generation_jobs"
     )
+
+
+class DocumentDeliveryRecord(Base, TimestampMixin):
+    """One outward delivery of a document version (WP30/J3).
+
+    D5 的交付审计此前只落通用 ``operation_events``，无法按「交付」维度检索。
+    本表是系统事实表（不是文件投影）：按 A4 不需要 source_uri/content_hash，
+    但有业务主键（version_id）与事件身份（id）。
+
+    一条 version 的多次签发记多条（每次对外签发都留痕），因此
+    「同一 version_id 重复签发 → 审计记录幂等不重复」指的是
+    ``delivery_key`` 唯一：同一 (version_id, actor, sha256) 只记一条。
+    """
+
+    __tablename__ = "document_delivery_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "delivery_key",
+            name="uq_document_delivery_records_delivery_key",
+        ),
+        Index(
+            "ix_document_delivery_records_project_delivered",
+            "project_id",
+            "delivered_at",
+        ),
+        Index("ix_document_delivery_records_version_id", "version_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    # 幂等键：version_id + sha256 + 操作人 —— 同一版本同一内容同一操作人重复
+    # 签发不重复留痕（客户实际拿到的是同一份文件）。
+    delivery_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 同上：交付是历史事实，指向一律 SET NULL（版本/文档/项目被删都不抹审计）
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_documents.id", ondelete="SET NULL")
+    )
+    # 交付是历史事实：版本被删（回滚/清理）不应抹掉审计痕迹，因此指向置空
+    # 而不是 RESTRICT 阻断删除。version_number / sha256 保留当时的快照值。
+    version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_document_versions.id", ondelete="SET NULL")
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # 操作人账号被删（人员离职清理）不应阻断删除审计：外键置空，另存
+    # actor_username 快照保留「当时是谁签发的」。
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    actor_username: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    delivered_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL
+    )
+
+    actor: Mapped[User] = relationship(foreign_keys=[actor_user_id])
