@@ -213,6 +213,17 @@ docker compose build && docker compose up -d
 - `GET /api/v1/health/live`：进程存活
 - `GET /api/v1/health/ready`：数据库、Redis 等依赖就绪状态
 
+四个 compose 服务（redis / api / worker / scheduler）统一 `restart: unless-stopped`，并各带一条 healthcheck：
+
+| 服务 | healthcheck | 含义 |
+| --- | --- | --- |
+| redis | `redis-cli ping` | Redis 存活 |
+| api | `GET /api/v1/health/ready` | 进程活着**且**数据库/Redis 就绪（DB 挂时不再报 healthy） |
+| worker | `python -m fde_api.health.heartbeat worker` | 消费循环仍在刷新心跳（`fde:health:worker`，TTL 180s） |
+| scheduler | `python -m fde_api.health.heartbeat scheduler` | 调度循环仍在刷新心跳（`fde:health:scheduler`，TTL 900s） |
+
+worker / scheduler 不监听端口，光看「容器 Up」看不出循环是否卡死——心跳键停止刷新即被判 unhealthy（任务会一直停在「正在排队」）。心跳写在 Redis，Redis 不可用时 healthcheck 直接失败（依赖断了不算健康）。
+
 ### 生产部署要点
 
 - compose 的 api 服务已用 Gunicorn（2 worker）承载并绑定 `127.0.0.1:8010`；远程访问须经 HTTPS 反向代理，不要将 Flask 开发服务器用于生产。

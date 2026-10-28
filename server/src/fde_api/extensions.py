@@ -56,6 +56,10 @@ class RedisClient:
             socket_timeout=0.5,
         )
 
+    def connection(self) -> Redis:
+        """当前 app 上下文里的 Redis 客户端。"""
+        return current_app.extensions["fde_api_redis"]
+
     def ping(self) -> bool:
         client: Redis = current_app.extensions["fde_api_redis"]
         return bool(client.ping())
