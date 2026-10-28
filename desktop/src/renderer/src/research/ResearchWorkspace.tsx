@@ -93,6 +93,51 @@ function isMemoMergeResultDto(value: unknown): value is MemoMergeResultDto {
 
 const subjectLabels = RESEARCH_SUBJECT_LABELS
 
+/**
+ * J7b：把一轮轮询结果归类（可单测的纯函数）。
+ *
+ * failed = 本轮有请求失败（网络/网关）——界面提示「正在重试」并继续下一轮；
+ * finished = 已完成（succeeded / failed）；pending = 仍在生成。
+ */
+/**
+ * J7b：轮询是否续下一轮。
+ *
+ * 规则：**永远续**——一轮失败只是网络抖动，服务端任务还在跑；停掉轮询
+ * 会让界面永久停在「生成中」（原实现是单次 setTimeout + catch{} 吞错，
+ * 一次失败就再无下一次）。只有组件卸载才停止（由 cancelled 标志控制）。
+ */
+export function shouldRescheduleExportPoll(_outcome: { failed: boolean }): boolean {
+  return true
+}
+
+export function classifyExportPollResults(
+  results: Array<unknown>,
+): {
+  failed: boolean
+  finished: Array<{ form_id: string; form_name: string; status: "succeeded" | "failed"; version_number?: number | null; failure_message?: string | null }>
+  pending: ResearchExportDto[]
+} {
+  let failed = false
+  const finished: Array<{ form_id: string; form_name: string; status: "succeeded" | "failed"; version_number?: number | null; failure_message?: string | null }> = []
+  const pending: ResearchExportDto[] = []
+  for (const value of results) {
+    if (value === null) { failed = true; continue }
+    if (!isResearchExportDto(value)) continue
+    if (value.status === "succeeded" || value.status === "failed") {
+      finished.push({
+        form_id: value.form_id,
+        form_name: value.form_name,
+        status: value.status,
+        version_number: value.version_number,
+        failure_message: value.failure_message,
+      })
+    } else {
+      pending.push(value)
+    }
+  }
+  return { failed, finished, pending }
+}
+
 export function ResearchWorkspace({ project, canFill, canManage, onDirtyChange, initialOpportunityId }: ResearchWorkspaceProps) {
   const { apiRequest } = useAuth()
   const { runAI } = useAIExecution()
@@ -105,6 +150,8 @@ export function ResearchWorkspace({ project, canFill, canManage, onDirtyChange, 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  /** J7b：生成进度轮询失败提示（可重试，不清空任务状态） */
+  const [exportPollError, setExportPollError] = useState("")
   const [createType, setCreateType] = useState<Exclude<ResearchSubjectType, "project"> | null>(null)
   const [createName, setCreateName] = useState("")
   const [createDescription, setCreateDescription] = useState("")
@@ -195,25 +242,40 @@ export function ResearchWorkspace({ project, canFill, canManage, onDirtyChange, 
     const active = Object.values(researchExports).filter((item) => item.status === "queued" || item.status === "generating")
     if (!active.length) return
     let cancelled = false
-    const timer = window.setTimeout(() => {
-      void Promise.all(active.map(async (item) => {
+    let timer = 0
+    // J7b：原来这里是**单次** setTimeout —— 一次网络失败被 catch{} 吞掉后
+    // 再无下一次轮询，界面永久停在「生成中」。改为自续期轮询：失败只提示
+    // 并继续下一轮（服务端任务不受影响），成功后自然停止（依赖数组变化）。
+    const poll = async () => {
+      if (cancelled) return
+      const results = await Promise.all(active.map(async (item) => {
         try {
-          const value = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(project.id)}/research/exports/${encodeURIComponent(item.id)}`, { method: "GET" })
-          if (!isResearchExportDto(value) || cancelled) return
-          if (value.status === "succeeded") {
-            setResearchExports((current) => withoutKey(current, value.form_id))
-            setNotice(`调研表“${value.form_name}”已生成并进入文件库${value.version_number ? `（v${value.version_number}）` : ""}。`)
-          } else if (value.status === "failed") {
-            setResearchExports((current) => withoutKey(current, value.form_id))
-            setError(value.failure_message || "调研结果生成失败，请稍后重试。")
-          } else {
-            setResearchExports((current) => ({ ...current, [value.form_id]: value }))
-          }
+          return await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(project.id)}/research/exports/${encodeURIComponent(item.id)}`, { method: "GET" })
         } catch {
-          // A temporary polling failure must not cancel the server-side task.
+          // 临时轮询失败：不取消服务端任务，但要让用户知道读不到进度
+          return null
         }
       }))
-    }, 1500)
+      if (cancelled) return
+      const outcome = classifyExportPollResults(results)
+      if (outcome.failed) setExportPollError("暂时读不到生成进度，正在重试…")
+      else setExportPollError("")
+      for (const done of outcome.finished) {
+        setResearchExports((current) => withoutKey(current, done.form_id))
+        if (done.status === "succeeded") {
+          setNotice(`调研表“${done.form_name}”已生成并进入文件库${done.version_number ? `（v${done.version_number}）` : ""}。`)
+        } else {
+          setError(done.failure_message || "调研结果生成失败，请稍后重试。")
+        }
+      }
+      for (const pending of outcome.pending) {
+        setResearchExports((current) => ({ ...current, [pending.form_id]: pending }))
+      }
+      // 关键（J7b）：无论本轮成功还是失败都续下一轮——失败只提示不终止。
+      if (!shouldRescheduleExportPoll(outcome)) return
+      timer = window.setTimeout(() => { void poll() }, 1500)
+    }
+    timer = window.setTimeout(() => { void poll() }, 1500)
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [apiRequest, project.id, researchExports])
 
@@ -864,6 +926,7 @@ export function ResearchWorkspace({ project, canFill, canManage, onDirtyChange, 
   return <div className="research-workspace">
     <div className="research-workspace-heading"><div><h2>项目调研</h2><p className="supporting-copy">按企业、部门、岗位、流程和 AI 机会维护内部调研记录。</p></div></div>
     {error ? <p className="form-error banner" role="alert">{error}</p> : null}
+    {exportPollError ? <p className="form-error banner" role="status">{exportPollError}</p> : null}
     {notice ? <p className="notice" role="status">{notice}</p> : null}
     {loading ? <p role="status">正在加载调研数据…</p> : <div className="research-workspace-grid">
       <div className="research-subject-column">

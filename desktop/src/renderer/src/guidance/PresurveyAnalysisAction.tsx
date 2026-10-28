@@ -7,12 +7,15 @@ import { isGuidanceAnalysis } from "./runtimeValidation"
 import type { GuidanceAnalysisDto } from "./types"
 
 export function PresurveyAnalysisAction({ projectId, fileVersionId, canManage, autoStart = false, onConfirmed }: { projectId: string; fileVersionId: string; canManage: boolean; autoStart?: boolean; onConfirmed?(value: GuidanceAnalysisDto): void }) {
-  const { apiRequest } = useAuth(); const [analysis, setAnalysis] = useState<GuidanceAnalysisDto | null>(null); const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const [open, setOpen] = useState(false); const [editOnOpen, setEditOnOpen] = useState(false)
+  const { apiRequest } = useAuth(); const [analysis, setAnalysis] = useState<GuidanceAnalysisDto | null>(null); const [error, setError] = useState(""); const [pollError, setPollError] = useState(""); const [busy, setBusy] = useState(false); const [open, setOpen] = useState(false); const [editOnOpen, setEditOnOpen] = useState(false)
   const { runTask } = useAIExecution()
   const started = useRef(false)
   useEffect(() => {
     if (!analysis || !["queued", "extracting", "analyzing"].includes(analysis.analysis_state)) return
-    const timer = window.setInterval(async () => { try { const next = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/guidance-analyses/${encodeURIComponent(analysis.id)}`, { method: "GET" }); if (isGuidanceAnalysis(next)) { setAnalysis(next); if (!["queued", "extracting", "analyzing"].includes(next.analysis_state)) { setEditOnOpen(next.analysis_state === "ready" && next.status === "draft"); setOpen(true) } } } catch {} }, 2000)
+    // J7：轮询失败必须让用户看见——网络持续失败时界面原本永远停在「分析中」。
+    // 这里只提示「暂时读不到进度」（任务仍在服务端跑），不清空 analysis，
+    // 下一轮轮询继续尝试。
+    const timer = window.setInterval(async () => { try { const next = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/guidance-analyses/${encodeURIComponent(analysis.id)}`, { method: "GET" }); if (isGuidanceAnalysis(next)) { setAnalysis(next); setPollError(""); if (!["queued", "extracting", "analyzing"].includes(next.analysis_state)) { setEditOnOpen(next.analysis_state === "ready" && next.status === "draft"); setOpen(true) } } } catch { setPollError("暂时读不到分析进度，正在重试…") } }, 2000)
     return () => window.clearInterval(timer)
   }, [analysis, apiRequest, projectId])
   useEffect(() => {
@@ -59,5 +62,5 @@ export function PresurveyAnalysisAction({ projectId, fileVersionId, canManage, a
   }
   useEffect(() => { if (autoStart && canManage && !started.current) { started.current = true; void start() } }, [autoStart, canManage, fileVersionId])
   if (!canManage) return null
-  return <><button className="secondary-button compact" type="button" disabled={busy} onClick={() => void view()}>{busy ? (analysis ? "加载中…" : "启动中…") : analysis ? "查看预调研分析" : "AI 分析预调研表"}</button>{error ? <span className="inline-error" title={error}>分析失败</span> : null}{analysis && open ? <GuidanceReview projectId={projectId} initial={analysis} canManage={canManage} initialEditing={editOnOpen} onClose={() => { setOpen(false); setEditOnOpen(false) }} onSaved={(value) => { setAnalysis(value); if (value.status === "confirmed") onConfirmed?.(value) }} /> : null}</>
+  return <><button className="secondary-button compact" type="button" disabled={busy} onClick={() => void view()}>{busy ? (analysis ? "加载中…" : "启动中…") : analysis ? "查看预调研分析" : "AI 分析预调研表"}</button>{error ? <span className="inline-error" title={error}>分析失败</span> : null}{pollError ? <span className="inline-error" role="status" title={pollError}>{pollError}</span> : null}{analysis && open ? <GuidanceReview projectId={projectId} initial={analysis} canManage={canManage} initialEditing={editOnOpen} onClose={() => { setOpen(false); setEditOnOpen(false) }} onSaved={(value) => { setAnalysis(value); if (value.status === "confirmed") onConfirmed?.(value) }} /> : null}</>
 }

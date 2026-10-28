@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock("../../src/renderer/src/auth/AuthProvider", () => ({ useAuth: () => mocks }))
 
-import { CommercialBoard } from "../../src/renderer/src/projects/CommercialBoard"
+import { CommercialBoard, clampBScore } from "../../src/renderer/src/projects/CommercialBoard"
 
 const PROJECT_ID = "comm-project"
 
@@ -141,3 +141,46 @@ it("C1: invalid numeric input surfaces a visible Chinese error instead of a sile
 // 「校验抛错必须落进 mutate 的 catch 并展示」：若有人去掉 `await run()` 的
 // await 或把 parsePositive 挪出回调，本用例 findByText 超时变红。裁定
 // async 语义非修复本体，无需单独补钉。
+
+it("J4: the ×1.40 integration tier sends c_handling (single constant, no silent drop)", async () => {
+  const user = userEvent.setup()
+  render(<CommercialBoard projectId={PROJECT_ID} canManage />)
+
+  // 展开「自定义系数」并选档内偏离 ×1.40（唯一触发 C 分支的档位）
+  await user.click(await screen.findByText("自定义系数"))
+  await user.selectOptions(await screen.findByLabelText("档内偏离"), "1.4")
+
+  await user.click(screen.getByRole("button", { name: "按上述系数建报价" }))
+
+  await waitFor(() => expect(quoteBodies().length).toBeGreaterThan(0))
+  const body = quoteBodies()[0] as Record<string, unknown>
+  expect(body.integration_factor).toBe(1.4)
+  // 关键：×1.40 必须带上 c_handling（漏传服务端直接 400）
+  expect(body.c_handling).toBeTruthy()
+})
+
+it("J5: B layer score is clamped on both ends", async () => {
+  const user = userEvent.setup()
+  render(<CommercialBoard projectId={PROJECT_ID} canManage />)
+
+  await user.click(await screen.findByText("自定义系数"))
+  const score = await screen.findByLabelText(/B 层分/)
+
+  // 负数：键盘输入拦不住 min，必须在提交前夹到 0
+  await user.clear(score)
+  await user.type(score, "-3")
+  await user.click(screen.getByRole("button", { name: "按上述系数建报价" }))
+
+  await waitFor(() => expect(quoteBodies().length).toBeGreaterThan(0))
+  const body = quoteBodies()[0] as Record<string, unknown>
+  expect(body.b_layer_score).toBeGreaterThanOrEqual(0)
+})
+
+it("J5b: clampBScore clamps both ends (negative and over-max)", () => {
+  // 直接验夹取函数：HTML min/max 只挡鼠标点选，键盘输入照样能填负数
+  expect(clampBScore(-3, "cold_start")).toBe(0)
+  expect(clampBScore(99, "cold_start")).toBe(5)
+  expect(clampBScore(99, "steady")).toBe(10)
+  expect(clampBScore(Number.NaN, "steady")).toBe(0)
+  expect(clampBScore(4, "cold_start")).toBe(4)
+})

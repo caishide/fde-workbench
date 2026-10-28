@@ -113,6 +113,15 @@ interface CommercialBoardProps {
   canManage: boolean
 }
 
+// J4：档内偏离「×1.40 档内升级」是唯一触发 C 分支的档位——收敛为单一常量，
+// 改一处漏两处会静默漏传 c_handling（服务端 400）。
+const C_BRANCH_INTEGRATION_FACTOR = 1.4
+// J5：B 层分的上下界（冷启动 ≤5，稳态 ≤10）。HTML max 拦不住键盘输入，
+// 因此输入时必须上下界都夹。
+const B_SCORE_COLD_START_MAX = 5
+const B_SCORE_STEADY_MAX = 10
+const B_SCORE_MIN = 0
+
 const CLAIM_ORDER = ["estimated", "claimed", "measured", "accepted"] as const
 
 const CLAIM_LABEL: Record<string, string> = {
@@ -138,6 +147,14 @@ const CLAIM_FIELD_LABEL: Record<string, string> = {
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? "—" : `¥${value.toLocaleString("zh-CN")}`
+
+/** J5：B 层分夹上下界——HTML min/max 拦不住键盘输入，负数/越界都须在提交前夹住。 */
+export function clampBScore(value: number, anchorMode: string): number {
+  if (!Number.isFinite(value)) return B_SCORE_MIN
+  const max =
+    anchorMode === "cold_start" ? B_SCORE_COLD_START_MAX : B_SCORE_STEADY_MAX
+  return Math.min(Math.max(value, B_SCORE_MIN), max)
+}
 
 // 表单数字入参统一走这里（NaN/负数/0 前端就拦，错误消息进 actionError 展示）
 function parsePositive(raw: string, label: string): number {
@@ -397,7 +414,7 @@ function QuoteCreateForm({
         integration_factor: integration,
         b_layer_score: bScore,
         // 与上方渲染条件同判：任意档位出现 C 分支都必须带上四选一
-        ...(integration === 1.4 ? { c_handling: cHandling } : {}),
+        ...(integration === C_BRANCH_INTEGRATION_FACTOR ? { c_handling: cHandling } : {}),
       }),
     )
 
@@ -425,7 +442,7 @@ function QuoteCreateForm({
                 const mode = e.target.value
                 setAnchorMode(mode)
                 // 冷启动上限 5 分：切回冷启动时把越界的分数夹回来（HTML max 拦不住键盘输入）
-                setBScore((score) => Math.min(score, mode === "cold_start" ? 5 : 10))
+                setBScore((score) => clampBScore(score, mode))
               }}
             >
               <option value="cold_start">冷启动（前 3 单）</option>
@@ -462,20 +479,20 @@ function QuoteCreateForm({
             <select value={integration} onChange={(e) => setIntegration(Number(e.target.value))}>
               <option value={0.75}>×0.75 档内降级</option>
               <option value={1.0}>×1.00 默认</option>
-              <option value={1.4}>×1.40 档内升级（优先改上一档）</option>
+              <option value={C_BRANCH_INTEGRATION_FACTOR}>×1.40 档内升级（优先改上一档）</option>
             </select>
           </label>
           <label>
             B 层分（冷启动 ≤5）
             <input
               type="number"
-              min={0}
-              max={anchorMode === "cold_start" ? 5 : 10}
+              min={B_SCORE_MIN}
+              max={anchorMode === "cold_start" ? B_SCORE_COLD_START_MAX : B_SCORE_STEADY_MAX}
               value={bScore}
-              onChange={(e) => setBScore(Number(e.target.value))}
+              onChange={(e) => setBScore(clampBScore(Number(e.target.value), anchorMode))}
             />
           </label>
-          {integration === 1.4 ? (
+          {integration === C_BRANCH_INTEGRATION_FACTOR ? (
             <label>
               C 分支处理
               <select value={cHandling} onChange={(e) => setCHandling(e.target.value)}>
