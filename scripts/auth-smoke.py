@@ -55,10 +55,20 @@ def main(app=None) -> int:
             must_change_password=False,
             is_active=True,
         )
-        s.add(user)
+        admin = User(
+            username=f"rate-smoke-admin.{uuid.uuid4().hex[:8]}",
+            display_name="限流冒烟admin",
+            role="admin",
+            password_hash=hash_password(password),
+            must_change_password=False,
+            is_active=True,
+        )
+        s.add_all([user, admin])
         s.commit()
         username = user.username
         user_id = user.id
+        admin_username = admin.username
+        admin_id = admin.id
         s.close()
 
     def attempt(password: str):
@@ -94,16 +104,26 @@ def main(app=None) -> int:
         r = attempt("wrong-again")
         check("成功登录后计数已清（单次错密仍 401）", r.status_code == 401, str(r.status_code))
 
-        # ---- 5) admin 不受牵连（按用户名隔离）----
-        with app.app_context():
-            clear_rate_keys(app, username)
+        # ---- 5) 跨用户名隔离（真实断言，H3：此前只有注释没有断言）----
+        # 冒烟用户已累计多次失败（含一次锁定），此时另一 admin 账号凭正确密码
+        # 登录必须 200 —— 限流不许跨用户名牵连（G7 复合键语义保持该隔离）。
+        r = client.post(
+            "/api/v1/auth/login",
+            json={"username": admin_username, "password": password, "device_label": "smoke"},
+        )
+        check(
+            "限流只锁目标用户名：另一 admin 正确登录仍 200",
+            r.status_code == 200,
+            str(r.status_code),
+        )
     finally:
         with app.app_context():
             s = db.session()
             try:
                 with s.begin():
-                    s.execute(User.__table__.delete().where(User.id == user_id))
+                    s.execute(User.__table__.delete().where(User.id.in_([user_id, admin_id])))
                 clear_rate_keys(app, username)
+                clear_rate_keys(app, admin_username)
             except Exception as error:  # noqa: BLE001
                 print(f"清理失败：{error!r}")
                 FAIL.append(f"清理失败 {error!r}")

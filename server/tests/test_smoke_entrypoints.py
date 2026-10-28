@@ -91,6 +91,8 @@ def test_commercial_smoke_against_isolated_test_db(
     seed_reference_data(settings.database_url)
     # 冒烟依赖「标准 FDE 项目」模板（P5 派生源）且 loader 需要一个 admin；
     # 隔离测试库先补齐这两样（幂等），再跑冒烟。
+    from sqlalchemy import func, select, text
+
     from fde_api.auth.models import User
     from fde_api.auth.passwords import hash_password
     from fde_api.extensions import db
@@ -111,5 +113,33 @@ def test_commercial_smoke_against_isolated_test_db(
             session.commit()
         finally:
             session.close()
-    _load_script("load_fde_template").main(app=smoke_app)
-    assert commercial_smoke.main(app=smoke_app, settings=settings) == 0
+    try:
+        _load_script("load_fde_template").main(app=smoke_app)
+        assert commercial_smoke.main(app=smoke_app, settings=settings) == 0
+    finally:
+        # H3：种子管理员必须清理（此前 add+commit 后无人管，后续断言依赖残留
+        # 状态）。模板链路对 users 全是 RESTRICT（created_by/published_by），
+        # 且下游引用树很深（industry_template_versions → template_modules/
+        # projects → 20+ 子表）——在隔离测试库里直接 TRUNCATE 模板子树 CASCADE，
+        # 连带清掉本链路的全部冒烟产物（sop_nodes/module_catalog 是被引用方，
+        # 不受 CASCADE 影响），再删种子账号并断言同前缀行数归零。
+        with smoke_app.app_context():
+            session = db.session()
+            try:
+                with session.begin():
+                    session.execute(
+                        text("truncate document_templates, industry_templates cascade")
+                    )
+                    session.execute(
+                        User.__table__.delete().where(
+                            User.username.like("smoke-seed-admin.%")
+                        )
+                    )
+                remaining = session.scalar(
+                    select(func.count())
+                    .select_from(User)
+                    .where(User.username.like("smoke-seed-admin.%"))
+                )
+                assert remaining == 0, f"种子管理员清理失败：残留 {remaining} 行"
+            finally:
+                session.close()
