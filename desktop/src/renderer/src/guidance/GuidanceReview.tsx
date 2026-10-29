@@ -75,7 +75,8 @@ export function GuidanceReview({ projectId, initial, canManage, initialEditing =
         <GuidanceText title="执行摘要" text={draft.executive_summary} wide />
       </div>}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {editing && canEdit ? <div className="row-actions guidance-review-actions"><button className="secondary-button" type="button" disabled={saving} onClick={cancelEditing}>取消</button><button className="secondary-button" disabled={saving} onClick={() => void save(false)}>{saving ? "保存中…" : "保存修改"}</button><button className="primary-button" disabled={saving} onClick={() => void save(true)}>确认并用于项目指引</button></div> : null}
+      {editing && canEdit ? <div className="row-actions guidance-review-actions"><button className="secondary-button" type="button" disabled={saving} onClick={cancelEditing}>取消</button><button className="secondary-button" disabled={saving} onClick={() => void save(false)}>{saving ? "保存中…" : "保存修改"}</button><button className="primary-button" disabled={saving} onClick={() => void save(true)}>确认并用于项目指引</button></div>
+        : !editing && canEdit && draft.status === "draft" ? <div className="row-actions guidance-review-actions"><button className="primary-button" disabled={saving} onClick={() => void save(true)}>{saving ? "确认中…" : "确认并用于项目指引"}</button></div> : null}
     </div>
   </section></div>
 }
