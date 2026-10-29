@@ -48,3 +48,7 @@ server/.fde-storage/
 
 # 平行会话工作目录
 .workbuddy/
+
+# 本机运行日志（桥采集等），永不入库
+logs/
+desktop/release-tmp/

@@ -39,7 +39,7 @@ export function ProjectGuidanceCard({ projectId, canManage }: { projectId: strin
     } else if (visibleCount < fitLimit) setVisibleCount(visibleCount + 1)
   }, [fitLimit, minimumCount, visibleCount])
   return <section ref={cardRef} className="panel project-guidance-card" aria-labelledby="project-guidance-title"><div className="panel-heading guidance-card-heading"><h2 id="project-guidance-title">客户目标与项目指引</h2><div className="guidance-heading-actions">{canManage ? <PresurveyUploadAction projectId={projectId} hasGuidance={Boolean(guidance)} onConfirmed={setGuidance} /> : null}{guidance ? <button className="secondary-button compact" onClick={() => setOpen(true)}>查看详情</button> : null}</div></div>
-    {!guidance ? <p className="empty-state">暂无已确认的项目指引。上传预调研 DOCX 后，系统会自动分析并生成待审核内容。</p> : <>
+    {!guidance ? <p className="empty-state">暂无已确认的项目指引。上传预调研 DOCX 后，系统会自动分析并生成待审核内容；已有待审核的分析时，点「查看预调研分析」即可审核确认。</p> : <>
       {guidance.source_is_stale ? <p className="form-error banner">当前指引基于旧版预调研表，最新启用版本尚未重新分析。</p> : null}
       <div className="guidance-compact-summary">{summaries.slice(0, Math.max(visibleCount, minimumCount)).map((summary) => <div key={summary.label}><span>{summary.label}</span>{summary.items ? <ul>{summary.items.slice(0, 3).map((item, index) => <li key={index}>{item}</li>)}</ul> : <strong>{summary.text}</strong>}</div>)}</div>
     </>}
