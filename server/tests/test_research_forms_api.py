@@ -259,7 +259,12 @@ def test_patch_rejects_an_extreme_decimal_answer_with_a_bounded_422(form_context
     )
 
     _assert_error(response, 422, "invalid_research_answer")
-    assert monotonic() - started < 0.5
+    # Guard against the extreme exponent ever entering a slow expand path (a
+    # regression lands in whole seconds). The 1.5s budget leaves headroom for
+    # shared-runner jitter: CI measured 0.52–0.60s on 2026-10-29 while the
+    # previous 0.5s constant went red three runs in a row (local pre-commit
+    # full suite stayed green throughout).
+    assert monotonic() - started < 1.5
 
 
 @pytest.mark.mysql_observer
