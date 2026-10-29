@@ -664,7 +664,9 @@ def _normalize_create_task_input(input: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(planned_start_date, str):
             raise _invalid_request_error()
         try:
-            normalize_workday(date.fromisoformat(planned_start_date))
+            # create_project_task calls normalize_workday on this value, so the
+            # normalized date object (not the raw string) must come back.
+            planned_start_date = normalize_workday(date.fromisoformat(planned_start_date))
         except ValueError:
             raise _invalid_request_error() from None
     sop_evidence = _sop_evidence_values(

@@ -1069,3 +1069,31 @@ def test_manual_task_rejects_invalid_duration_and_assignee_role(
         400,
         "invalid_task_member",
     )
+
+
+def test_manual_task_accepts_planned_start_date(
+    admin_client, leader_client, published_template, db_session
+):
+    """A created task may carry planned_start_date; the end date follows the
+    duration over working days (2026-08-24 is a Monday)."""
+    project = create_project(
+        admin_client, published_template, leader_client.user, code="TASK-ADD-DATE"
+    )
+    first_module = next(m for m in project["modules"] if m["module_key"] == "pre_diagnosis")
+
+    created = admin_client.post(
+        f"/api/v1/projects/{project['id']}/modules/{first_module['module_key']}/tasks",
+        json={"name": "带日期的里程碑", "duration_days": 3, "planned_start_date": "2026-08-24"},
+    )
+    assert created.status_code == 201, created.get_data(as_text=True)
+    data = created.json["data"]
+    assert data["planned_start_date"] == "2026-08-24"
+    assert data["planned_end_date"] == "2026-08-26"
+
+    # A weekend start normalises forward to the next working day.
+    weekend = admin_client.post(
+        f"/api/v1/projects/{project['id']}/modules/{first_module['module_key']}/tasks",
+        json={"name": "周末顺延", "duration_days": 1, "planned_start_date": "2026-08-22"},
+    )
+    assert weekend.status_code == 201, weekend.get_data(as_text=True)
+    assert weekend.json["data"]["planned_start_date"] == "2026-08-24"
