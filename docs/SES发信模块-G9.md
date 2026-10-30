@@ -106,14 +106,16 @@ SNS 推送不可能携带工作台 JWT。端点因此按 **SNS Signature v1** �
 - **bounce / complaint = 地址级死刑**：该地址进抑制名单，后续发送直接 `drop_suppressed`。
 - **delivery 不影响地址**；throttle 只记事件不抑制（调用方按可重试退避）。
 
-## 五、发送闸门顺序（`policy.decide_send`，固定顺序可复现）
+## 五、发送闸门顺序（固定顺序可复现）
 
+发信域约束在 `service.send_email` 闸门前置拦截（不在 `policy.decide_send` 内）；`policy.decide_send` 本身按固定顺序五步：
+
+0. 发信域约束 —— FROM 不在允许子域 → `drop_sender_domain_forbidden`（service 层，先于 decide_send）。
 1. `drop_disabled` —— 开关未开（配置层已拦，这里再兜一层）。
-2. 发信域约束 —— FROM 不在允许子域 → `drop_sender_domain_forbidden`。
-3. `drop_duplicate` —— 同 `idempotency_key` 已发过（重试=同键新 attempt；同键二次请求不再打 SES）。
-4. `drop_suppressed` —— 收件人有未消退的 bounce/complaint。
-5. `drop_over_quota` —— 当日已发数达到 `FDE_SES_DAILY_LIMIT`（**只数当日**，UTC 日界）。
-6. `send` —— 打 SESv2 `SendEmail`，落 `mailing_sends` 行（幂等键 + MessageId）。
+2. `drop_duplicate` —— 同 `idempotency_key` 已发过（重试=同键新 attempt；同键二次请求不再打 SES）。
+3. `drop_suppressed` —— 收件人有未消退的 bounce/complaint。
+4. `drop_over_quota` —— 当日已发数达到 `FDE_SES_DAILY_LIMIT`（**只数当日**，UTC 日界）。
+5. `send` —— 打 SESv2 `SendEmail`，落 `mailing_sends` 行（幂等键 + MessageId）。
 
 失败分类：throttle → 503（可重试，按 `policy.next_retry_delay` 退避）；拒收/其他 → 502（不可重试）。失败**不占发送台账**（台账只记 SES 已接受的发送）。
 
@@ -138,8 +140,7 @@ SNS 推送不可能携带工作台 JWT。端点因此按 **SNS Signature v1** �
 
 `server/tests/test_mailing_ses.py`：
 
-- 发送闸门 8 例（关闭/成功落账/幂等重复/抑制/超限/限额只数当日/主域拒绝/throttle 与拒收分类）；
-- `BotoSesClient` 3 例（botocore **Stubber**，参数映射与错误分类，零网络）；
-- SNS 回调 12 例（订阅确认回访、bounce/complaint/delivery、幂等重放、坏签名/非白名单证书/错主题/非法 JSON 全 403 或 400）；
-- HTTP 路由 2 例（关闭态 403；**text/plain content-type** 的 SNS 报文可解析——SNS 实际就是这么发的）；
+- 发送闸门 9 例（关闭/成功落账/幂等重复/抑制/超限/限额只数当日/主域拒绝/throttle 与拒收各一例）；
+- BotoSesClient 5 例（Stubber 3：参数映射与错误分类，零网络 + 工厂 2：关闭返 None/启用返真客户端）；
+- SNS 回调 12 例（服务层 10：订阅确认回访、bounce/complaint/delivery、幂等重放、坏签名/非白名单证书/错主题/非法 JSON；路由 2：关闭态 403、**text/plain content-type** 的 SNS 报文解析——SNS 实际就是这么发的）；
 - 配置校验器 1 例（三项必填 + 主域 FROM 拒绝）。
