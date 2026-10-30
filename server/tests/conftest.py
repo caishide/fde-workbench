@@ -202,6 +202,7 @@ def db_session(app) -> Session:
         ProjectDocumentVersion,
     )
     from fde_api.files.models import ProjectFile, ProjectFileVersion, UploadSession
+    from fde_api.guidance.models import ProjectGuidanceAnalysis, ProjectPresurveySource
     from fde_api.jobs.models import BackgroundJob, OutboxEvent
     from fde_api.control.models import (
         AIModelConfig,
@@ -283,6 +284,8 @@ def db_session(app) -> Session:
         ProjectDocument,
         DocumentTemplateVersion,
         DocumentTemplate,
+        ProjectGuidanceAnalysis,
+        ProjectPresurveySource,
         ProjectFileVersion,
         UploadSession,
         ProjectFile,
