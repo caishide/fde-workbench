@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from datetime import UTC, datetime
 
 from flask import current_app
@@ -11,13 +13,35 @@ from fde_api.guidance.ai_prompt import build_kimi_presurvey_analysis_messages
 from fde_api.guidance.ai_schema import GuidanceContractError, LIST_FIELDS, validate_guidance_output
 from fde_api.guidance.models import ProjectGuidanceAnalysis
 from fde_api.jobs.handlers import register_handler
+from fde_api.storage.base import StorageNotFoundError
+
+logger = logging.getLogger(__name__)
+
+# 同一任务内的自动重试上限（不含首次尝试）。契约失败（ai_output_invalid）是
+# MiniMax 级模型概率性不守 JSON 合同的已知现象：一次自动重试即可消化绝大多数，
+# 上限必须有测试钉住——无上限会在模型持续吐畸形输出时把 worker 拖死。
+GUIDANCE_ANALYSIS_RETRY_LIMIT = 1
+
+# 退避只对瞬时错误有意义：限流/超时/服务不可用。契约违反不在此列。
+TRANSIENT_RETRY_CODES = frozenset({"ai_rate_limited", "ai_timeout", "ai_service_unavailable", "ai_unavailable"})
+RETRY_BACKOFF_SECONDS = 1.0
+
+# 存储对象缺失（文件被外部删除）属于确定性故障：重试没有意义，但也不能
+# 混进「未预期错误」——运维需要能区分它和真 bug。
+SOURCE_OBJECT_MISSING_CODE = "source_object_missing"
+
+# 兜底分类：KimiError / GuidanceContractError 之外的未预期异常。异常路径下
+# 分析一定会落 failed（不会卡在 analyzing 让前端无限轮询）；进程被杀死
+# （OOM/部署）不在本保证内——那条路需要靠对账任务收尾，见需求台账。
+UNEXPECTED_FAILURE_CODE = "analysis_unexpected_error"
 
 
 def handle_presurvey_analysis(job) -> None:
     session = db.session()
     try:
         analysis = session.get(ProjectGuidanceAnalysis, job.target_id)
-        if analysis is None or analysis.analysis_state in {"ready", "cancelled"}:
+        # 终态直接跳过：同一目标的重复投递不得二次调用 AI 覆盖已有结论。
+        if analysis is None or analysis.analysis_state in {"ready", "cancelled", "failed"}:
             return
         analysis.analysis_state = "extracting"
         session.commit()
@@ -37,14 +61,53 @@ def handle_presurvey_analysis(job) -> None:
             openai_compatible=settings.kimi_openai_compatible,
         )
         source_ref = f"kimi-file:{analysis.source_file_version_id}"
-        with object_storage.current.open_stream(version.storage_key) as stream:
-            payload = client.analyze_docx_json(
-                stream=stream,
-                filename=analysis.source_filename,
-                request_id=job.id,
-                build_messages=lambda content: build_kimi_presurvey_analysis_messages(content, source_ref),
-            )
-        draft = validate_guidance_output(payload, source_refs={source_ref})
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                # 每次尝试重新开流：上一次尝试已消费/关闭了流。
+                with object_storage.current.open_stream(version.storage_key) as stream:
+                    payload = client.analyze_docx_json(
+                        stream=stream,
+                        filename=analysis.source_filename,
+                        # 每次尝试一个独立请求号：上游若按请求号去重，
+                        # 复用同一个 id 会让第二次拿回第一次的坏结果。
+                        request_id=f"{job.id}:{attempts}",
+                        build_messages=lambda content: build_kimi_presurvey_analysis_messages(content, source_ref),
+                    )
+                draft = validate_guidance_output(payload, source_refs={source_ref})
+                break
+            except KimiError as error:
+                # 只有可重试错误（限流/超时/偶发畸形输出）才消耗重试额度；
+                # ai_service_not_configured 这类配置问题重试也不会好。
+                if not error.retryable or attempts > GUIDANCE_ANALYSIS_RETRY_LIMIT:
+                    _safe_fail(
+                        session, job.target_id, error.code,
+                        # 只有终态错误本身可重试时，「请重新发起分析」才是对的
+                        # 建议：配置类/认证类失败重试无意义，原文照传。
+                        _exhausted_message(error.public_message, attempts, retryable=error.retryable),
+                    )
+                    return
+                _backoff_before_retry(error)
+            except StorageNotFoundError:
+                # 存储对象已被删除：确定性故障，重试无用，但必须单独分类。
+                _safe_fail(
+                    session, job.target_id, SOURCE_OBJECT_MISSING_CODE,
+                    "预调研源文件已不存在，请重新上传后再发起分析。",
+                )
+                return
+            except GuidanceContractError as error:
+                if attempts > GUIDANCE_ANALYSIS_RETRY_LIMIT:
+                    logger.warning(
+                        "guidance contract violation not recovered (%s at %s)",
+                        error.code, error.path,
+                    )
+                    _safe_fail(
+                        session, job.target_id, "ai_output_invalid",
+                        _exhausted_message("AI 返回的项目指引格式不正确。", attempts, retryable=True),
+                    )
+                    return
+                # 契约失败是概率性问题，立即重试（退避只会白白拉长等待）。
         analysis.customer_vision = draft["customer_vision"]
         analysis.current_phase_objective = draft["current_phase_objective"]
         analysis.executive_summary = draft["executive_summary"]
@@ -58,12 +121,39 @@ def handle_presurvey_analysis(job) -> None:
         analysis.failure_message = ""
         analysis.version += 1
         session.commit()
-    except KimiError as error:
-        _safe_fail(session, job.target_id, error.code, error.public_message)
-    except GuidanceContractError:
-        _safe_fail(session, job.target_id, "ai_output_invalid", "AI 返回的项目指引格式不正确，请重试。")
+    except Exception as error:  # noqa: BLE001 - 分析绝不能卡在 analyzing 态
+        # 只记录异常类型：异常串可能携带用户文档内容，不进日志。
+        logger.warning("presurvey analysis unexpected failure (%s)", type(error).__name__)
+        _safe_fail(
+            session, job.target_id, UNEXPECTED_FAILURE_CODE,
+            "分析过程出现未预期错误，请重试；若持续失败请检查文件后重新发起分析。",
+        )
     finally:
         session.close()
+
+
+def _exhausted_message(public_message: str, attempts: int, *, retryable: bool = True) -> str:
+    """重试耗尽后的用户可见文案。
+
+    retryable=False 时不加「请重新发起分析」：配置/认证类失败重试无意义，
+    让用户重新发起只会得到同一个失败。
+    """
+    retries = attempts - 1
+    if retries <= 0:
+        return public_message
+    if not retryable:
+        return f"{public_message}（已自动重试 {retries} 次仍失败）"
+    return f"{public_message}（已自动重试 {retries} 次仍失败，请重新发起分析）"
+
+
+def _backoff_before_retry(error: KimiError) -> None:
+    """限流/超时类瞬时错误重试前短暂退避。
+
+    契约违反（ai_output_invalid）不走这里——那是概率性问题，立即重试更合适。
+    """
+    if error.code not in TRANSIENT_RETRY_CODES:
+        return
+    time.sleep(RETRY_BACKOFF_SECONDS)
 
 
 def _safe_fail(session, analysis_id: str, code: str, message: str) -> None:

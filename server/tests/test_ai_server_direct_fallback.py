@@ -318,3 +318,56 @@ def test_minimax_provider_is_rejected_by_the_depth_thinking_gate(app, db_session
 
     assert caught.value.code == "thinking_unsupported"
     assert session.calls == []
+
+
+# --- structured_completion failure taxonomy -------------------------------
+#
+# structured_completion 是 DSH 路径的结构化输出入口：它的失败必须落在
+# DSHRuntimeError 分类里。裸异常逃出去时，调用方（kimi/deepseek 客户端）
+# 只转 DSHRuntimeError，其余一律当「未预期错误」——重试语义与失败分类都失效。
+
+
+def test_structured_completion_reports_non_json_as_retryable_output_invalid(app, db_session, ai_user, monkeypatch):
+    from fde_api.control.ai_server_client import structured_completion
+
+    monkeypatch.setattr(
+        "fde_api.control.ai_server_client.execute_ai_prompt",
+        lambda **_kwargs: "这不是 JSON，只是一段散文。",
+    )
+
+    with app.app_context():
+        with pytest.raises(DSHRuntimeError) as caught:
+            structured_completion(
+                messages=[{"role": "user", "content": "x"}],
+                model="MiniMax-M3.1-Flash",
+                base_url="https://api.minimaxi.com/v1",
+                api_key="test-key",
+                max_tokens=1024,
+            )
+
+    assert caught.value.code == "ai_output_invalid"
+    assert caught.value.retryable is True
+
+
+def test_structured_completion_maps_control_errors_to_non_retryable(app, db_session, ai_user, monkeypatch):
+    from fde_api.control.ai_server_client import structured_completion
+    from fde_api.control.service import ControlServiceError
+
+    def boom(**_kwargs):
+        raise ControlServiceError("model_not_configured", "请先在 AI 与扩展的模型管理中配置模型。", 409)
+
+    monkeypatch.setattr("fde_api.control.ai_server_client.execute_ai_prompt", boom)
+
+    with app.app_context():
+        with pytest.raises(DSHRuntimeError) as caught:
+            structured_completion(
+                messages=[{"role": "user", "content": "x"}],
+                model="MiniMax-M3.1-Flash",
+                base_url="https://api.minimaxi.com/v1",
+                api_key="test-key",
+                max_tokens=1024,
+            )
+
+    # 模型未配置是确定性配置问题：重试也不会好。
+    assert caught.value.code == "model_not_configured"
+    assert caught.value.retryable is False
