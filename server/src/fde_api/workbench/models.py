@@ -590,6 +590,19 @@ class Gate(Base, TimestampMixin, VersionedMixin):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     decision: Mapped[str | None] = mapped_column(String(10))
     signer_role: Mapped[str | None] = mapped_column(String(120))
+    # P0-5 门禁验收分离（派单设计 §9.4，开池四道闸之二）：执行人/拍板人分记，
+    # 「拍板人 ≠ 该门禁执行人」由 gate_service.decide_gate 代码强制不可绕过。
+    # is_delivery_party 标记证据由交付方（派单池外部 FDE，§9.3 接单后以
+    # ProjectMember(role='member') 入场）执行——此类 G8/G9 须平台侧拍板。
+    submitted_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    is_delivery_party: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     project: Mapped[Project] = relationship(back_populates="gates")
 

@@ -15,6 +15,7 @@ from fde_api.solutions import models as solution_models  # noqa: F401
 from fde_api.guidance import models as guidance_models  # noqa: F401
 from fde_api.control import models as control_models  # noqa: F401
 from fde_api.mailing import models as mailing_models  # noqa: F401
+from fde_api.dispatch import models as dispatch_models  # noqa: F401
 from fde_api.control import model_preferences, weixin_models, chat, lcsc_skills  # noqa: F401
 
 

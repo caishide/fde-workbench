@@ -79,14 +79,25 @@ def main(app=None, settings=None) -> int:
             must_change_password=False,
             is_active=True,
         )
-        session.add_all([admin, viewer])
+        # P0-5 门禁验收分离（goal-r1）：执行人（lead，提交证据）≠ 拍板人（admin）
+        lead = User(
+            username=f"gate-smoke-lead.{uuid.uuid4().hex[:8]}",
+            display_name="门禁冒烟lead",
+            role="project_lead",
+            password_hash=hash_password(password),
+            must_change_password=False,
+            is_active=True,
+        )
+        session.add_all([admin, viewer, lead])
         session.commit()
         admin_token = issue_access_token(admin, settings)
         viewer_token = issue_access_token(viewer, settings)
-        admin_id, viewer_id = admin.id, viewer.id
+        lead_token = issue_access_token(lead, settings)
+        admin_id, viewer_id, lead_id = admin.id, viewer.id, lead.id
 
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
+    lead_headers = {"Authorization": f"Bearer {lead_token}"}
     marker = uuid.uuid4().hex[:8]
 
     # ---- 建演练项目（manual，代号三段两枚·）----
@@ -96,7 +107,7 @@ def main(app=None, settings=None) -> int:
             "name": f"P3门禁冒烟{marker}",
             "enterprise_code": "客户Z·门禁演练·内部",
             "planned_start_date": date.today().isoformat(),
-            "leader_user_id": admin_id,
+            "leader_user_id": lead_id,
             "module_keys": ["sop_presale"],
             "creation_source": "manual",
             "project_snapshot": {"modules": [{"module_key": "sop_presale"}]},
@@ -106,7 +117,7 @@ def main(app=None, settings=None) -> int:
     check("建演练项目 201", created.status_code == 201, str(created.status_code))
     if created.status_code != 201:
         print(created.get_data(as_text=True)[:400])
-        _cleanup_users(app, viewer_id, admin_id)
+        _cleanup_users(app, viewer_id, admin_id, lead_id)
         return 1
     project_id = created.get_json()["data"]["id"]
     gates_url = f"/api/v1/projects/{project_id}/gates"
@@ -150,13 +161,13 @@ def main(app=None, settings=None) -> int:
         r = client.post(
             f"{gates_url}/G3/evidence",
             json={"items": [{"label": "SOW-A 签署", "source_uri": "fdeops://x", "content_hash": "zz"}]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("非法 hash 400", r.status_code == 400)
         r = client.post(
             f"{gates_url}/G3/evidence",
             json={"items": [{"label": "不存在的项", "source_uri": "fdeops://x", "content_hash": sha256("x")}]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("未知清单项 400", r.status_code == 400 and r.get_json()["error"]["code"] == "invalid_gate_evidence")
 
@@ -170,10 +181,19 @@ def main(app=None, settings=None) -> int:
                     for label in labels
                 ]
             },
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("G3 提交 200 → evidence", r.status_code == 200 and r.get_json()["data"]["status"] == "evidence")
         check("清单全 claimed", all(i["claim_status"] == "claimed" for i in r.get_json()["data"]["checklist"]))
+        # P0-5 门禁验收分离（goal-r1）：执行人（lead）拍自己的门 → 403
+        r = client.post(
+            f"{gates_url}/G3/decision", json={"result": "pass"}, headers=lead_headers
+        )
+        check(
+            "执行人拍自己的门 403（P0-5）",
+            r.status_code == 403 and r.get_json()["error"]["code"] == "gate_decider_conflict",
+            r.get_data(as_text=True),
+        )
         r = client.post(
             f"{gates_url}/G3/decision", json={"result": "pass"}, headers=admin_headers
         )
@@ -186,7 +206,7 @@ def main(app=None, settings=None) -> int:
         r = client.post(
             f"{gates_url}/G3/evidence",
             json={"items": [{"label": labels[0], "source_uri": "fdeops://again", "content_hash": sha256("again")}]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("已过门再提交 409", r.status_code == 409 and r.get_json()["error"]["code"] == "gate_already_decided")
 
@@ -196,7 +216,7 @@ def main(app=None, settings=None) -> int:
         client.post(
             f"{gates_url}/G7/evidence",
             json={"items": [{"label": l, "source_uri": f"fdeops://p3/{l}", "content_hash": sha256(l)} for l in partial]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G7/decision", json={"result": "pass"}, headers=admin_headers
@@ -212,7 +232,7 @@ def main(app=None, settings=None) -> int:
         client.post(
             f"{gates_url}/G8/evidence",
             json={"items": [{"label": i["label"], "source_uri": f"fdeops://p3/{i['label']}", "content_hash": sha256(i["label"])} for i in g8["checklist"]]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G8/decision", json={"result": "pass"}, headers=admin_headers
@@ -236,7 +256,7 @@ def main(app=None, settings=None) -> int:
         r = client.post(
             f"{gates_url}/G6/evidence",
             json={"items": [{"label": "问题陈述（SCQA）", "source_uri": "fdeops://p3/g6", "content_hash": sha256("g6")}]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G6/decision", json={"result": "pass", "decision": "stop"}, headers=admin_headers
@@ -252,7 +272,7 @@ def main(app=None, settings=None) -> int:
         client.post(
             f"{gates_url}/G9/evidence",
             json={"items": [{"label": i["label"], "source_uri": f"fdeops://p3/{i['label']}", "content_hash": sha256(i["label"])} for i in g9["checklist"]]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G6/decision", json={"result": "conditional_pass"}, headers=admin_headers
@@ -272,7 +292,7 @@ def main(app=None, settings=None) -> int:
         client.post(
             f"{gates_url}/G4/evidence",
             json={"items": [{"label": i["label"], "source_uri": f"fdeops://p3/{i['label']}", "content_hash": sha256(i["label"])} for i in g4["checklist"]]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G4/decision", json={"result": "fail", "note": "客户暂缓"}, headers=admin_headers
@@ -286,7 +306,7 @@ def main(app=None, settings=None) -> int:
         r = client.post(
             f"{gates_url}/G4/evidence",
             json={"items": [{"label": g4["checklist"][0]["label"], "source_uri": "fdeops://p3/restart", "content_hash": sha256("restart")}]},
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("failed 可重新提交 → evidence", r.status_code == 200 and r.get_json()["data"]["status"] == "evidence")
 
@@ -359,7 +379,7 @@ def main(app=None, settings=None) -> int:
                     )
                     session.execute(
                         UserModel.__table__.delete().where(
-                            UserModel.id.in_([admin_id, viewer_id])
+                            UserModel.id.in_([admin_id, viewer_id, lead_id])
                         )
                     )
                 print("清理完成")
