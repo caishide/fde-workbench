@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 
@@ -18,6 +19,11 @@ from fde_api.auth.service import (
 from fde_api.extensions import db
 from fde_api.workbench.models import ModuleCatalog
 from fde_api.workbench.seed import seed_workbench
+
+logger = logging.getLogger(__name__)
+
+# How often the worker sweeps for jobs whose owner died.
+RECONCILE_INTERVAL_SECONDS = 60
 
 
 def register_cli(app: Flask) -> None:
@@ -150,6 +156,7 @@ def register_cli(app: Flask) -> None:
 
         queue = get_queue()
         click.echo("worker started")
+        next_reconcile = time.monotonic() + RECONCILE_INTERVAL_SECONDS
         while True:
             # I4：循环每轮写一次心跳（TTL 180s）。卡住时心跳停止刷新，
             # 容器 healthcheck 判 unhealthy——「进程还在」不等于「还在干活」。
@@ -161,6 +168,11 @@ def register_cli(app: Flask) -> None:
                 dispatch_pending(dispatch_session, queue, limit=100)
             finally:
                 dispatch_session.close()
+            # 对账：worker 被杀（OOM/部署）时弹走的作业没人再投，outbox 已
+            # dispatched 也不会再发。这里按固定周期把无主的作业捞回来。
+            if time.monotonic() >= next_reconcile:
+                next_reconcile = time.monotonic() + RECONCILE_INTERVAL_SECONDS
+                _reconcile_jobs(queue)
             job_id = queue.dequeue(timeout=1 if once else 5)
             if job_id is None:
                 if once:
@@ -168,6 +180,30 @@ def register_cli(app: Flask) -> None:
                 continue
             click.echo(f"processing job {job_id}")
             run_job(job_id)
+
+    @app.cli.command("reconcile-jobs")
+    @click.option("--limit", default=100, type=int, show_default=True)
+    def reconcile_jobs_command(limit: int) -> None:
+        """Re-queue or fail background jobs whose worker died.
+
+        The worker runs this on a timer; the command is the operator's
+        escape hatch (e.g. right after a container was killed).
+        """
+        from fde_api.jobs.handlers import ensure_default_handlers
+        from fde_api.jobs.queue import get_queue
+        from fde_api.jobs.reconcile import reconcile_jobs
+
+        ensure_default_handlers()
+        session = db.session()
+        try:
+            result = reconcile_jobs(session, get_queue(), limit=limit)
+            click.echo(
+                "scanned={} requeued={} failed={}".format(
+                    result.scanned, result.requeued, result.failed
+                )
+            )
+        finally:
+            session.close()
 
     @app.cli.command("scheduler")
     @click.option("--once", is_flag=True, help="Dispatch due tasks once and exit.")
@@ -242,3 +278,18 @@ def register_cli(app: Flask) -> None:
             raise
         finally:
             session.close()
+
+
+def _reconcile_jobs(queue: object) -> None:
+    """One reconciliation sweep; never allowed to kill the worker loop."""
+    from fde_api.jobs.reconcile import reconcile_jobs
+
+    session = db.session()
+    try:
+        reconcile_jobs(session, queue)
+    except Exception:  # noqa: BLE001 - a failed sweep must not stop the worker
+        session.rollback()
+        logger.warning("job reconciliation sweep failed", exc_info=True)
+    finally:
+        session.close()
+

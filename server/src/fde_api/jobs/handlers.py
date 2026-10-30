@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 Handler = Callable[["BackgroundJob"], None]
+# Marks the business row of a job as failed when the worker holding it died.
+# The reconciler (jobs/reconcile.py) calls it so the UI stops polling a task
+# that can never finish.
+FailureHandler = Callable[["Session", "BackgroundJob"], None]
 
 _HANDLERS: dict[str, Handler] = {}
+_FAILURE_HANDLERS: dict[str, FailureHandler] = {}
 
 
 def register_handler(job_type: str, handler: Handler) -> None:
@@ -20,8 +29,17 @@ def get_handler(job_type: str) -> Handler | None:
     return _HANDLERS.get(job_type)
 
 
+def register_job_failure_handler(job_type: str, handler: FailureHandler) -> None:
+    _FAILURE_HANDLERS[job_type] = handler
+
+
+def get_job_failure_handler(job_type: str) -> FailureHandler | None:
+    return _FAILURE_HANDLERS.get(job_type)
+
+
 def clear_handlers() -> None:
     _HANDLERS.clear()
+    _FAILURE_HANDLERS.clear()
     ensure_default_handlers()
 
 
@@ -52,6 +70,21 @@ def ensure_default_handlers() -> None:
         register_handler("ai.chat", execute_chat_job)
     if get_handler("ai.execute") is None:
         register_ai_execution_handler()
+
+    # 业务行收尾钩子：worker 死亡时把业务行推到终态（否则前端永远轮询）。
+    from fde_api.control.automation_jobs import register_automation_failure_handler
+    from fde_api.control.chat import register_chat_failure_handler
+    from fde_api.guidance.jobs import register_presurvey_analysis_failure_handler
+    from fde_api.research.export_jobs import register_research_export_failure_handler
+
+    if get_job_failure_handler("project.presurvey.analyze") is None:
+        register_presurvey_analysis_failure_handler()
+    if get_job_failure_handler("ai.chat") is None:
+        register_chat_failure_handler()
+    if get_job_failure_handler("research.export") is None:
+        register_research_export_failure_handler()
+    if get_job_failure_handler("automation.execute") is None:
+        register_automation_failure_handler()
 
 
 from fde_api.jobs.models import BackgroundJob  # noqa: E402  (late import to avoid cycle)

@@ -12,7 +12,7 @@ from fde_api.files.models import ProjectFileVersion
 from fde_api.guidance.ai_prompt import build_kimi_presurvey_analysis_messages
 from fde_api.guidance.ai_schema import GuidanceContractError, LIST_FIELDS, validate_guidance_output
 from fde_api.guidance.models import ProjectGuidanceAnalysis
-from fde_api.jobs.handlers import register_handler
+from fde_api.jobs.handlers import register_handler, register_job_failure_handler
 from fde_api.storage.base import StorageNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,11 @@ SOURCE_OBJECT_MISSING_CODE = "source_object_missing"
 
 # 兜底分类：KimiError / GuidanceContractError 之外的未预期异常。异常路径下
 # 分析一定会落 failed（不会卡在 analyzing 让前端无限轮询）；进程被杀死
-# （OOM/部署）不在本保证内——那条路需要靠对账任务收尾，见需求台账。
+# （OOM/部署）不在本保证内——那条路由对账任务收尾（见 jobs/reconcile.py）。
 UNEXPECTED_FAILURE_CODE = "analysis_unexpected_error"
+
+# worker 进程死亡（OOM/部署）导致的中断：分析没跑完，也没人能再跑。
+WORKER_LOST_CODE = "analysis_worker_lost"
 
 
 def handle_presurvey_analysis(job) -> None:
@@ -173,3 +176,22 @@ def _fail(session, row: ProjectGuidanceAnalysis, code: str, message: str) -> Non
 
 def register_presurvey_analysis_handler() -> None:
     register_handler("project.presurvey.analyze", handle_presurvey_analysis)
+
+
+def fail_analysis_on_worker_loss(session, job) -> None:
+    """Close out an analysis whose worker died mid-flight.
+
+    The analysis row is what the UI polls; leaving it in ``extracting`` or
+    ``analyzing`` means an endless poll for a result nobody will produce.
+    """
+    row = session.get(ProjectGuidanceAnalysis, job.target_id)
+    if row is None or row.analysis_state in {"ready", "cancelled", "failed"}:
+        return
+    row.analysis_state = "failed"
+    row.failure_code = WORKER_LOST_CODE
+    row.failure_message = "分析进程中断（后台任务进程退出），请重新发起分析。"
+    row.version += 1
+
+
+def register_presurvey_analysis_failure_handler() -> None:
+    register_job_failure_handler("project.presurvey.analyze", fail_analysis_on_worker_loss)
