@@ -138,3 +138,26 @@ def _record_dispatch_failure(run_id: str, error: DSHRuntimeError) -> None:
 
 def register_automation_handler() -> None:
     register_handler("automation.execute", execute_automation_run)
+
+
+def fail_run_on_worker_loss(session, job) -> None:
+    """Close out an automation run whose worker died.
+
+    Automation runs are deliberately **not** re-queued after a crash — they
+    have external side effects (mail, MCP calls), so a human re-triggers
+    them. The run still has to leave the running state, or the task centre
+    shows it as running forever.
+    """
+    run = session.get(AutomationTaskRun, job.target_id)
+    if run is None or run.status in {"succeeded", "failed", "cancelled", "skipped"}:
+        return
+    run.status = "failed"
+    run.error_code = "automation_worker_lost"
+    run.error_message = "自动化执行进程中断（后台任务进程退出），请重新触发。"
+    run.finished_at = datetime.now(UTC)
+
+
+def register_automation_failure_handler() -> None:
+    from fde_api.jobs.handlers import register_job_failure_handler
+
+    register_job_failure_handler("automation.execute", fail_run_on_worker_loss)

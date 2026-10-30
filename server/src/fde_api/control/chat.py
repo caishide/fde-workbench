@@ -200,6 +200,27 @@ def execute_chat_job(job):
     execute_chat_turn(job.target_id)
 
 
+def fail_turn_on_worker_loss(session, job) -> None:
+    """Close out a chat turn whose worker died mid-flight.
+
+    A turn left in ``queued``/``running`` is worse than a failed one: the
+    conversation refuses new messages while a turn is pending
+    (``create_turn`` raises ``chat_busy``), so the whole conversation would
+    stay blocked.
+    """
+    turn = session.get(AIChatTurn, job.target_id)
+    if turn is None or turn.status in {"completed", "failed"}:
+        return
+    turn.status = "failed"
+    turn.error_message = "AI 处理进程中断（后台任务进程退出），请重试。"
+
+
+def register_chat_failure_handler() -> None:
+    from fde_api.jobs.handlers import register_job_failure_handler
+
+    register_job_failure_handler("ai.chat", fail_turn_on_worker_loss)
+
+
 def weixin_message_handler(user_id, text, event_id):
     with db.session() as session:
         user = session.get(User, user_id)
