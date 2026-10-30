@@ -36,7 +36,7 @@ from fde_api.auth.models import User
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
-from fde_api.workbench.models import Gate, OperationEvent, Project, SopNode
+from fde_api.workbench.models import Gate, OperationEvent, Project, ProjectMember, SopNode
 
 GATE_STATUSES = ("pending", "evidence", "passed", "conditional_pass", "failed")
 GATE_RESULTS = ("pass", "conditional_pass", "fail")
@@ -260,6 +260,18 @@ def submit_gate_evidence(
             gate.submitted_at = datetime.now(timezone.utc)
             gate.evidence_uri = items[0]["source_uri"]
             gate.evidence_hash = items[0]["content_hash"]
+            # P0-5 门禁验收分离（设计 §9.4）：提交人即执行人，落库供 decide_gate
+            # 校验「拍板人 ≠ 执行人」。is_delivery_party 标记证据由交付方（外部
+            # FDE，§9.3 接单后以 ProjectMember(role='member') 入场）执行；管理位
+            # （admin/项目 leader）提交视为平台侧执行——派单池上线前恒 False。
+            member = session.scalar(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.user_id == actor.id,
+                )
+            )
+            gate.is_delivery_party = member is not None and member.role == "member"
+            gate.submitted_by_user_id = actor.id
             record_event(
                 session,
                 actor,
@@ -334,6 +346,29 @@ def decide_gate(
             if gate.status != "evidence":
                 raise GateServiceError(
                     "invalid_gate_state", "该门禁尚无待核验证据，先提交证据再核验。", 409
+                )
+            # P0-5 硬闸门（设计 §9.4，§8.8 开池四道闸之二）：拍板人 ≠ 该门禁执行人，
+            # 代码强制、先于其余业务校验，不可绕过。
+            if (
+                gate.submitted_by_user_id is not None
+                and gate.submitted_by_user_id == actor.id
+            ):
+                raise GateServiceError(
+                    "gate_decider_conflict",
+                    "门禁验收分离：拍板人不能是该门禁的证据执行人。",
+                    403,
+                )
+            # 交付方执行的 G8/G9 须由平台侧（交付总监 = admin）拍板
+            # （§9.4 方案②正解 + §11.3 方案①过渡口径）。
+            if (
+                gate.is_delivery_party
+                and gate.gate_key in ("G8", "G9")
+                and actor.role != "admin"
+            ):
+                raise GateServiceError(
+                    "gate_decider_role_required",
+                    "交付方执行的 G8/G9 须由平台侧（交付总监）拍板。",
+                    403,
                 )
             templates = _template_index()
             template = templates.get(gate.gate_key)
@@ -439,6 +474,8 @@ def decide_gate(
                 gate.status = "failed"
                 changes["fail_exit"] = template.get("fail_exit") or ""
             gate.decided_at = datetime.now(timezone.utc)
+            gate.decided_by_user_id = actor.id
+            changes["decided_by_user_id"] = actor.id
             if note:
                 changes["note"] = note
             # P4 承接（设计 §6）：G8 stop 也按合同结算（SOP §S8 三态）——
@@ -574,6 +611,10 @@ def _serialize_gate(
         "decision": gate.decision,
         "submitted_at": gate.submitted_at.isoformat() if gate.submitted_at else None,
         "decided_at": gate.decided_at.isoformat() if gate.decided_at else None,
+        # P0-5 验收分离字段（设计 §9.4）：执行人/拍板人/是否交付方执行
+        "submitted_by_user_id": gate.submitted_by_user_id,
+        "decided_by_user_id": gate.decided_by_user_id,
+        "is_delivery_party": gate.is_delivery_party,
         "evidence_uri": gate.evidence_uri,
         "evidence_hash": gate.evidence_hash,
         "checklist": [

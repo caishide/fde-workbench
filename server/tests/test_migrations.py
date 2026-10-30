@@ -26,8 +26,9 @@ from conftest import SERVER_ROOT, seed_reference_data
 
 
 GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51647e6"
-# WP-E SES 预建新增 mailing_sends / mailing_events 两表（goal-r3 G9）
-HEAD_REVISION = "a9c3f1d8e2b4"
+# WP-E SES 预建新增 mailing_sends / mailing_events 两表（goal-r3 G9）；
+# goal-r1 派单引擎：gates 验收分离三列 + delivery_packages/dispatch_offers 骨架表
+HEAD_REVISION = "d2f6b4c8a1e9"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",

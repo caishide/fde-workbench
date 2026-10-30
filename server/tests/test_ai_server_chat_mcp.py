@@ -227,7 +227,7 @@ def test_gates_read_returns_ordered_read_only_summary(ai_context, client, db_ses
     data = tool_data(tool_request(client, token, "gates_read", {"project_id": project.id}))
     assert data["gates"][0]["status"] == "evidence"
     assert data["gates"][0]["checklist"][0]["claim_status"] == "claimed"
-    decide_gate(actor=users["lead"], project_id=project.id, gate_key="G1", payload={"result": "pass"})
+    decide_gate(actor=users["admin"], project_id=project.id, gate_key="G1", payload={"result": "pass"})
     data = tool_data(tool_request(client, token, "gates_read", {"project_id": project.id}))
     assert data["gates"][0]["status"] == "passed"
     assert data["gates"][0]["accepted"] == 1 and data["gates"][0]["decided_at"]

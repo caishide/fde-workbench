@@ -93,14 +93,25 @@ def main(app=None, settings=None) -> int:
             must_change_password=False,
             is_active=True,
         )
-        session.add_all([admin, viewer])
+        # P0-5 门禁验收分离（goal-r1）：执行人（lead，提交证据）≠ 拍板人（admin）
+        lead = User(
+            username=f"p4-smoke-lead.{uuid.uuid4().hex[:8]}",
+            display_name="P4冒烟lead",
+            role="project_lead",
+            password_hash=hash_password(password),
+            must_change_password=False,
+            is_active=True,
+        )
+        session.add_all([admin, viewer, lead])
         session.commit()
         admin_token = issue_access_token(admin, settings)
         viewer_token = issue_access_token(viewer, settings)
-        admin_id, viewer_id = admin.id, viewer.id
+        lead_token = issue_access_token(lead, settings)
+        admin_id, viewer_id, lead_id = admin.id, viewer.id, lead.id
 
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
+    lead_headers = {"Authorization": f"Bearer {lead_token}"}
 
     created = client.post(
         "/api/v1/projects",
@@ -108,7 +119,7 @@ def main(app=None, settings=None) -> int:
             "name": f"P4商业冒烟{uuid.uuid4().hex[:6]}",
             "enterprise_code": "客户Z·商业演练·内部",
             "planned_start_date": date.today().isoformat(),
-            "leader_user_id": admin_id,
+            "leader_user_id": lead_id,
             "module_keys": ["sop_presale"],
             "creation_source": "manual",
             "project_snapshot": {"modules": [{"module_key": "sop_presale"}]},
@@ -118,7 +129,7 @@ def main(app=None, settings=None) -> int:
     check("建演练项目 201", created.status_code == 201, str(created.status_code))
     if created.status_code != 201:
         print(created.get_data(as_text=True)[:400])
-        _cleanup_users(app, admin_id, viewer_id)
+        _cleanup_users(app, admin_id, viewer_id, lead_id)
         return 1
     project_id = created.get_json()["data"]["id"]
     p5_id: str | None = None
@@ -512,7 +523,7 @@ def main(app=None, settings=None) -> int:
                     }
                 ]
             },
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("G3 部分提交（1 项）进 evidence", r.status_code == 200, str(r.status_code))
         r = client.post(
@@ -550,7 +561,7 @@ def main(app=None, settings=None) -> int:
                     if i["label"] != first_label
                 ]
             },
-            headers=admin_headers,
+            headers=lead_headers,
         )
         check("G3 补齐其余证据", r.status_code == 200, str(r.status_code))
         r = client.post(
@@ -573,7 +584,7 @@ def main(app=None, settings=None) -> int:
                     for i in g8gate["checklist"]
                 ]
             },
-            headers=admin_headers,
+            headers=lead_headers,
         )
         r = client.post(
             f"{gates_url}/G8/decision",
@@ -810,7 +821,7 @@ def main(app=None, settings=None) -> int:
                         session.execute(
                             Project.__table__.delete().where(Project.id == pid)
                         )
-                    for uid in (admin_id, viewer_id):
+                    for uid in (admin_id, viewer_id, lead_id):
                         session.execute(
                             UserModel.__table__.delete().where(UserModel.id == uid)
                         )

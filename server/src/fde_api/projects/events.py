@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
+from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.research.models import ProjectResearchForm, ProjectResearchSubject
 from fde_api.workbench.models import (
@@ -48,6 +49,10 @@ EventTarget: TypeAlias = (
     | ProjectResearchSubject
     | ProjectFile
     | ProjectFileVersion
+    # 派单两类目标（设计 §2.5/§8.3 P0-6：交付包状态迁移与 offer 留痕都写
+    # OperationEvent；不注册则 record_event 直接 TypeError）
+    | DeliveryPackage
+    | DispatchOffer
 )
 
 _TARGET_TYPES = {
@@ -66,6 +71,8 @@ _TARGET_TYPES = {
     ProjectResearchSubject: "project_research_subject",
     ProjectFile: "project_file",
     ProjectFileVersion: "project_file_version",
+    DeliveryPackage: "delivery_package",
+    DispatchOffer: "dispatch_offer",
 }
 _SENSITIVE_KEY = re.compile(
     r"password|passwd|pwd|token|secret|credential|privatekey|apikey|"
@@ -112,6 +119,15 @@ def _project_id_for_target(session: Session, target: EventTarget) -> str | None:
         return target.project_id
     if isinstance(target, (ProjectFile, ProjectFileVersion)):
         return target.project_id
+    if isinstance(target, DeliveryPackage):
+        return target.project_id
+    if isinstance(target, DispatchOffer):
+        # offer 只挂 package_id；project_id 经交付包反查（一次主键点查）
+        return session.scalar(
+            select(DeliveryPackage.project_id).where(
+                DeliveryPackage.id == target.package_id
+            )
+        )
     return session.scalar(
         select(ProjectModule.project_id).where(ProjectModule.id == target.project_module_id)
     )
