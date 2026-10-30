@@ -117,6 +117,13 @@ def _run_tools(*, user: User, claims: dict[str, Any], allowed: list[str],
             content = json.dumps({"error": error.code, "message": error.message}, ensure_ascii=False)
         except Exception as error:  # noqa: BLE001 - a tool failure must not kill the turn
             logger.warning("Direct tool call failed tool=%s error_type=%s", name, type(error).__name__)
+            # A crashed tool may leave this shared session holding an aborted
+            # transaction with open row locks (e.g. a FOR UPDATE that died on
+            # a dropped DB connection). Roll back so the locks release
+            # immediately and the next provider round starts clean — idling
+            # the session in that state blocks every other caller wanting
+            # the same rows.
+            session.rollback()
             content = json.dumps({"error": "tool_failed", "message": "工具执行失败。"}, ensure_ascii=False)
         results.append({"role": "tool", "tool_call_id": call.get("id", ""), "name": name, "content": content})
     return results
@@ -279,6 +286,12 @@ def direct_tool_completion(
                              "tool_calls": tool_calls})
             results = _run_tools(user=user, claims=claims, allowed=allowed,
                                   tool_calls=tool_calls, session=db_session)
+            # Close the transaction this tool round may have opened: the next
+            # provider call (up to `timeout_seconds`, zero DB traffic) must not
+            # overlap a connection that sits idle-in-transaction while still
+            # holding the tool round's row locks. Direct-loop tools are
+            # read-only, so rolling back loses nothing.
+            db_session.rollback()
             for call, result in zip(tool_calls, results):
                 trace.append({
                     "tool": result.get("name"),
