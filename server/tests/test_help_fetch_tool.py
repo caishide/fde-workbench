@@ -49,6 +49,17 @@ def test_help_fetch_is_offered_to_every_ai_level():
     assert "help_fetch" in names
 
 
+def test_gates_read_is_registered_capability_gated_and_read_only():
+    description, capability, properties = TOOLS["gates_read"]
+    assert capability == "project.read"
+    assert set(properties) == {"project_id"}
+    assert "gates_read" in READ_ONLY_TOOLS
+    with_capability = {item["function"]["name"] for item in tool_definitions(["project.read"])}
+    assert "gates_read" in with_capability
+    without_capability = {item["function"]["name"] for item in tool_definitions([])}
+    assert "gates_read" not in without_capability
+
+
 def test_help_fetch_lists_sections_on_head_request(app, db_session, ai_user):
     """no heading → manual head with the section index attached."""
     rows = help_bundle.section_index()

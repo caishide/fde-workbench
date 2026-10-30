@@ -204,6 +204,54 @@ def test_mcp_membership_removal_takes_effect_for_existing_token(ai_context, clie
     assert_tool_denied(tool_request(client, token, "project_read", {"project_id": project.id}))
 
 
+def test_gates_read_returns_ordered_read_only_summary(ai_context, client, db_session):
+    from fde_api.projects.gate_service import decide_gate, submit_gate_evidence
+    users, _ = ai_context
+    project = make_project(db_session, users["lead"])
+    token = issue_mcp_token(users["lead"])
+    data = tool_data(tool_request(client, token, "gates_read", {"project_id": project.id}))
+    assert data["project_id"] == project.id
+    assert [gate["gate_key"] for gate in data["gates"]] == [f"G{i}" for i in range(1, 10)]
+    assert all(gate["status"] == "pending" for gate in data["gates"])
+    g1 = data["gates"][0]
+    assert g1["gate_name"] == "线索资格门" and g1["node_key"] == "S1"
+    assert set(g1["checklist"][0]) == {"label", "claim_status"}
+    assert (g1["accepted"], g1["total"]) == (0, 1)
+    assert data["note"]  # 只读边界提示必须随摘要返回
+    submit_gate_evidence(
+        actor=users["lead"], project_id=project.id, gate_key="G1",
+        payload={"items": [{"label": g1["checklist"][0]["label"],
+                            "source_uri": "fdeops://engagements/x/.fde/gates/G1-评分记录.md",
+                            "content_hash": "a" * 64}]},
+    )
+    data = tool_data(tool_request(client, token, "gates_read", {"project_id": project.id}))
+    assert data["gates"][0]["status"] == "evidence"
+    assert data["gates"][0]["checklist"][0]["claim_status"] == "claimed"
+    decide_gate(actor=users["lead"], project_id=project.id, gate_key="G1", payload={"result": "pass"})
+    data = tool_data(tool_request(client, token, "gates_read", {"project_id": project.id}))
+    assert data["gates"][0]["status"] == "passed"
+    assert data["gates"][0]["accepted"] == 1 and data["gates"][0]["decided_at"]
+    assert any(event["event_type"] == "gate_decided" for event in data["recent_events"])
+    # 瘦身契约：摘要不携带哈希与出处指针（那是 UI 全量视图的事）
+    payload_text = json.dumps(data, ensure_ascii=False)
+    assert "content_hash" not in payload_text and "source_uri" not in payload_text
+
+
+def test_gates_read_enforces_scope_capability_and_membership(ai_context, client, db_session):
+    users, _ = ai_context
+    project = make_project(db_session, users["lead"])
+    hidden = make_project(db_session, users["lead"], name="Gated Away")
+    # 无成员身份：能力在、项目看不见 → 拒绝
+    assert_tool_denied(tool_request(client, issue_mcp_token(users["bob"]), "gates_read", {"project_id": project.id}))
+    # 能力不在：项目成员也拿不到摘要
+    assert_tool_denied(tool_request(client, issue_mcp_token(users["lead"], capabilities=["system.health"]),
+                                    "gates_read", {"project_id": project.id}))
+    # 令牌项目域收敛：scoped 令牌只能读授权的那个项目
+    scoped = issue_mcp_token(users["admin"], project_id=project.id)
+    assert_tool_denied(tool_request(client, scoped, "gates_read", {"project_id": hidden.id}))
+    assert tool_data(tool_request(client, scoped, "gates_read", {"project_id": project.id}))["project_id"] == project.id
+
+
 def test_mcp_only_lists_own_and_public_skills_allowed_by_capability(ai_context, client, db_session):
     users, _ = ai_context
     own = make_skill(db_session, users["alice"], name="Alice only")

@@ -45,6 +45,7 @@ READ_ONLY_TOOLS = frozenset({
     "project_list",
     "project_read",
     "quote_list",
+    "gates_read",
     "file_search",
     "file_read",
     "system_status",

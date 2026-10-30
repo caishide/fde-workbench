@@ -174,6 +174,51 @@ def list_project_gates(*, actor: User, project_id: str) -> dict[str, Any]:
         session.close()
 
 
+def summarize_project_gates(*, actor: User, project_id: str) -> dict[str, Any]:
+    """AI 只读门禁摘要（gates_read 工具消费）：状态/拍板/清单 claim 进度 + 最近事件。
+
+    刻意瘦身：不带模板长文、source_uri/content_hash——摘要只回答「到哪一步、
+    还缺什么」；写路径（提交证据/人工拍板）刻意不对 AI 开放。
+    """
+    payload = list_project_gates(actor=actor, project_id=project_id)
+    gates = []
+    for gate in payload["gates"]:
+        checklist = gate["checklist"]
+        gates.append(
+            {
+                "gate_key": gate["gate_key"],
+                "gate_name": gate["gate_name"],
+                "node_key": gate["node_key"],
+                "status": gate["status"],
+                "decision": gate["decision"],
+                "signer_role": gate["signer_role"],
+                "submitted_at": gate["submitted_at"],
+                "decided_at": gate["decided_at"],
+                "checklist": [
+                    {"label": item["label"], "claim_status": item["claim_status"]}
+                    for item in checklist
+                ],
+                "accepted": sum(
+                    1 for item in checklist if item["claim_status"] == "accepted"
+                ),
+                "total": len(checklist),
+            }
+        )
+    return {
+        "project_id": payload["project_id"],
+        "sop_phase": payload["sop_phase"],
+        "gates": gates,
+        "recent_events": [
+            {
+                key: event[key]
+                for key in ("event_type", "occurred_at", "actor_display_name")
+            }
+            for event in payload["events"][:5]
+        ],
+        "note": "门禁只读视图：提交证据与人工核验拍板需在桌面端项目详情页由人执行，AI 不代执行。",
+    }
+
+
 def submit_gate_evidence(
     *,
     actor: User,
