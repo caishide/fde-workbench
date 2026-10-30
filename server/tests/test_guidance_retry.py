@@ -33,6 +33,8 @@ from fde_api.guidance.jobs import (
 )
 from fde_api.guidance.models import ProjectGuidanceAnalysis
 from fde_api.jobs.models import BackgroundJob
+from fde_api.jobs.worker import run_job
+from fde_api.storage.base import StorageNotFoundError
 from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Project
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures" / "presurvey"
@@ -132,9 +134,21 @@ def _seed_analysis(db_session, *, data: bytes, version_id: str | None = None):
     return analysis, job, version
 
 
+class _CallLog(list):
+    """记录每次尝试的流内容与请求号（列表语义保持 len()/索引断言不变）。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.request_ids: list[str] = []
+
+
 def _install_fake_kimi(monkeypatch, steps):
-    """按 steps 顺序驱动假客户端；记录每次调用的流内容以钉住「每次尝试重新开流」。"""
-    calls: list[bytes] = []
+    """按 steps 顺序驱动假客户端；记录每次调用的流内容与请求号。
+
+    钉住两件事：每次尝试重新开流（上次尝试已消费），以及每次尝试用独立请求号
+    （上游若按请求号去重，复用同一个 id 会让重试拿回第一次的坏结果）。
+    """
+    calls = _CallLog()
 
     class _FakeKimiClient:
         def __init__(self, **_kwargs):
@@ -144,6 +158,7 @@ def _install_fake_kimi(monkeypatch, steps):
             index = min(len(calls), len(steps) - 1)
             content = stream.read()
             calls.append(content)
+            calls.request_ids.append(request_id)
             return steps[index](content, filename)
 
     monkeypatch.setattr(guidance_jobs, "KimiFileClient", _FakeKimiClient)
@@ -240,7 +255,8 @@ def test_non_retryable_kimi_error_fails_without_retry(app, db_session, monkeypat
 
 def test_adversarial_fixture_fails_classified_through_real_extraction(app, db_session, monkeypatch):
     generator = _load_generator()
-    # 空表格样本：真实本地提取路径抛 kimi_file_extract_failed，经重试后落 failed。
+    # 空表格样本：真实本地提取路径抛 kimi_file_extract_failed。本地解析是字节的
+    # 纯函数——同一份文件重试也解析不出内容，故该失败不可重试，一次即落 failed。
     analysis, job, _version = _seed_analysis(db_session, data=generator._build_empty_table())  # noqa: SLF001
     steps = [
         _real_extract_then(_valid_payload("unused")),
@@ -254,8 +270,9 @@ def test_adversarial_fixture_fails_classified_through_real_extraction(app, db_se
     db_session.refresh(analysis)
     assert analysis.analysis_state == "failed"
     assert analysis.failure_code == "kimi_file_extract_failed"
-    assert "已自动重试" in analysis.failure_message
-    assert len(calls) == GUIDANCE_ANALYSIS_RETRY_LIMIT + 1
+    # 确定性故障不消耗重试额度：只调用一次，消息不带「已自动重试」。
+    assert "已自动重试" not in analysis.failure_message
+    assert len(calls) == 1
 
 
 def test_source_missing_fails_before_any_ai_call(app, db_session, monkeypatch):
@@ -314,3 +331,151 @@ def test_success_path_sets_ready_in_one_call(app, db_session, monkeypatch):
 def test_retry_limit_is_one_and_pinned():
     # 语义上限的独立钉子：改上限必须有意识地改这里（连同上面的调用次数断言）。
     assert GUIDANCE_ANALYSIS_RETRY_LIMIT == 1
+
+
+def test_each_attempt_uses_a_distinct_request_id(app, db_session, monkeypatch):
+    """每次尝试用独立请求号：上游按 id 去重会让重试拿回第一次的坏结果。"""
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, version = _seed_analysis(db_session, data=docx_bytes)
+    source_ref = f"kimi-file:{version.id}"
+    steps = [
+        lambda content, filename: _contract_violating_payload(source_ref),
+        lambda content, filename: _valid_payload(source_ref),
+    ]
+    calls = _install_fake_kimi(monkeypatch, steps)
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "ready"
+    assert len(calls.request_ids) == 2
+    assert len(set(calls.request_ids)) == 2
+    assert all(request_id.startswith(job.id) for request_id in calls.request_ids)
+
+
+def test_transient_failure_backs_off_before_retry(app, db_session, monkeypatch):
+    """限流/超时类瞬时错误重试前要退避；契约违反不退避（概率问题立即重试）。"""
+    slept: list[float] = []
+    monkeypatch.setattr(guidance_jobs.time, "sleep", lambda seconds: slept.append(seconds))
+
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, _version = _seed_analysis(db_session, data=docx_bytes)
+    error = KimiError("ai_rate_limited", "AI 请求过于频繁，请稍后重试。", retryable=True)
+    steps = [lambda content, filename: (_ for _ in ()).throw(error)]
+    _install_fake_kimi(monkeypatch, steps)
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "failed"
+    assert analysis.failure_code == "ai_rate_limited"
+    assert slept == [guidance_jobs.RETRY_BACKOFF_SECONDS]
+
+
+def test_contract_failure_does_not_back_off(app, db_session, monkeypatch):
+    """契约违反是概率性问题：立即重试，不加退避（退避只会白白拉长等待）。"""
+    slept: list[float] = []
+    monkeypatch.setattr(guidance_jobs.time, "sleep", lambda seconds: slept.append(seconds))
+
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, version = _seed_analysis(db_session, data=docx_bytes)
+    source_ref = f"kimi-file:{version.id}"
+    steps = [
+        lambda content, filename: _contract_violating_payload(source_ref),
+        lambda content, filename: _valid_payload(source_ref),
+    ]
+    _install_fake_kimi(monkeypatch, steps)
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "ready"
+    assert slept == []
+
+
+def test_non_retryable_terminal_error_does_not_advise_reinitiation(app, db_session, monkeypatch):
+    """终态错误不可重试时，消息不许劝用户「重新发起分析」（重试无意义）。"""
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, _version = _seed_analysis(db_session, data=docx_bytes)
+    # 第一次可重试、第二次不可重试：终态是配置类失败。
+    first = KimiError("ai_rate_limited", "AI 请求过于频繁，请稍后重试。", retryable=True)
+    second = KimiError("ai_authentication_failed", "AI 服务认证失败，请检查服务端配置。", retryable=False)
+    steps = [
+        lambda content, filename: (_ for _ in ()).throw(first),
+        lambda content, filename: (_ for _ in ()).throw(second),
+    ]
+    _install_fake_kimi(monkeypatch, steps)
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "failed"
+    assert analysis.failure_code == "ai_authentication_failed"
+    assert "已自动重试 1 次" in analysis.failure_message
+    assert "请重新发起分析" not in analysis.failure_message
+
+
+def test_missing_storage_object_is_classified_not_unexpected(app, db_session, monkeypatch):
+    """存储对象被删是确定性故障：单独分类，不混进「未预期错误」。"""
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, _version = _seed_analysis(db_session, data=docx_bytes)
+
+    def explode(content, filename):
+        raise StorageNotFoundError("object_not_found")
+
+    calls = _install_fake_kimi(monkeypatch, [explode])
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "failed"
+    assert analysis.failure_code == guidance_jobs.SOURCE_OBJECT_MISSING_CODE
+    assert "重新上传" in analysis.failure_message
+    assert len(calls) == 1
+
+
+def test_unexpected_failure_keeps_the_background_job_green(app, db_session, monkeypatch):
+    """未预期异常被 handler 吞掉：任务本身必须成功（worker 按 handler 返回决定终态）。"""
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, _version = _seed_analysis(db_session, data=docx_bytes)
+
+    def explode(content, filename):
+        raise RuntimeError("object storage exploded with user data")
+
+    _install_fake_kimi(monkeypatch, [explode])
+
+    with app.app_context():
+        assert run_job(job.id) == "succeeded"
+
+    db_session.refresh(job)
+    db_session.refresh(analysis)
+    assert job.status == "succeeded"
+    assert analysis.analysis_state == "failed"
+    assert analysis.failure_code == guidance_jobs.UNEXPECTED_FAILURE_CODE
+
+
+def test_duplicate_delivery_of_a_failed_analysis_does_not_rerun_ai(app, db_session, monkeypatch):
+    """重复投递到已终态（failed）的分析不得二次调用 AI 覆盖结论。"""
+    docx_bytes = _load_generator()._build_missing_sections()  # noqa: SLF001
+    analysis, job, version = _seed_analysis(db_session, data=docx_bytes)
+    source_ref = f"kimi-file:{version.id}"
+    calls = _install_fake_kimi(monkeypatch, [lambda content, filename: _valid_payload(source_ref)])
+
+    # 先把分析置为 failed（模拟上一次执行已终态）
+    analysis.analysis_state = "failed"
+    analysis.failure_code = "ai_output_invalid"
+    analysis.failure_message = "上一次执行失败。"
+    db_session.commit()
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "failed"
+    assert analysis.failure_code == "ai_output_invalid"
+    assert calls == []

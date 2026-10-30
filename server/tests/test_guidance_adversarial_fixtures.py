@@ -6,7 +6,7 @@
 #   - extract_docx（guidance 链）→ PresurveyParseError 或正常块；
 #   - extract_docx_xml_text（本地全文）→ 文本或原始异常（分类由 Kimi 层负责）；
 #   - KimiFileClient._extract_docx_locally（local_extract 路径）→ KimiError，
-#     携带 kimi_file_extract_failed 且 retryable=True。
+#     携带 kimi_file_extract_failed，且本地解析失败不可重试（确定性故障）。
 import importlib.util
 import io
 from pathlib import Path
@@ -61,7 +61,8 @@ def test_empty_content_fails_as_unanalyzable_in_all_layers(adversarial, name):
     with pytest.raises(KimiError) as kimi:
         KimiFileClient._extract_docx_locally(io.BytesIO(data), name)
     assert kimi.value.code == "kimi_file_extract_failed"
-    assert kimi.value.retryable is True
+    # 本地解析是字节的纯函数：同一份文件重试也解析不出东西——不可重试。
+    assert kimi.value.retryable is False
 
 
 def test_corrupt_zip_is_classified_not_crashing(adversarial):
@@ -74,7 +75,7 @@ def test_corrupt_zip_is_classified_not_crashing(adversarial):
     with pytest.raises(KimiError) as kimi:
         KimiFileClient._extract_docx_locally(io.BytesIO(data), "corrupt-zip.docx")
     assert kimi.value.code == "kimi_file_extract_failed"
-    assert kimi.value.retryable is True
+    assert kimi.value.retryable is False
 
 
 def test_merged_cells_dedupe_in_full_text_and_stable_refs_in_blocks(adversarial):

@@ -270,12 +270,26 @@ def structured_completion(*, messages, model: str, base_url: str, api_key, max_t
     with db.session() as session:
         has_default = session.scalar(select(ModelPreference.id).where(ModelPreference.is_default.is_(True),
             or_(ModelPreference.owner_user_id == actor, ModelPreference.scope == "public")).limit(1)) is not None
-    value = execute_ai_prompt(user_id=actor, prompt=json.dumps(messages, ensure_ascii=False), use_tools=False,
-        system_prompt="按提供的messages逐条理解角色和要求。只输出一个合法JSON对象，不要Markdown代码块，不调用工具。",
-        max_tokens=max_tokens, deep_thinking=deep_thinking, model_override=None if has_default else {"model": model, "base_url": base_url, "api_key": key,
-                                            "provider": "deepseek" if "deepseek.com" in base_url else "openai-compatible"})
+    # DSH 路径的失败必须落在同一个错误分类里：调用方（kimi/deepseek 客户端）
+    # 只把 DSHRuntimeError 转成自己的异常类型，其余异常会逃出去被上层当成
+    # 未预期错误——重试语义与失败分类都会失效。
+    from fde_api.control.service import ControlServiceError
+    try:
+        value = execute_ai_prompt(user_id=actor, prompt=json.dumps(messages, ensure_ascii=False), use_tools=False,
+            system_prompt="按提供的messages逐条理解角色和要求。只输出一个合法JSON对象，不要Markdown代码块，不调用工具。",
+            max_tokens=max_tokens, deep_thinking=deep_thinking, model_override=None if has_default else {"model": model, "base_url": base_url, "api_key": key,
+                                                "provider": "deepseek" if "deepseek.com" in base_url else "openai-compatible"})
+    except ControlServiceError as error:
+        # 模型未配置/密钥不可用/无权限等确定性配置问题：重试也不会好。
+        raise DSHRuntimeError(error.code, error.message, retryable=False) from error
     from fde_api.ai.deepseek import _parse_json_object
-    parsed = _parse_json_object(value)
+    try:
+        parsed = _parse_json_object(value)
+    except (json.JSONDecodeError, ValueError) as error:
+        # 模型没按 JSON 合同输出（概率性现象）：可重试，且必须带
+        # ai_output_invalid 这个分类——否则上层看不到可重试信号。
+        logger.warning("AI Server returned non-JSON structured output")
+        raise DSHRuntimeError("ai_output_invalid", "AI Server 返回格式不正确。", retryable=True) from error
     if not isinstance(parsed, dict):
         raise DSHRuntimeError("ai_output_invalid", "AI Server 返回格式不正确。", retryable=True)
     if on_event:

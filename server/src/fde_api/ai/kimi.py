@@ -195,18 +195,29 @@ class KimiFileClient:
 
         供应商不提供 file-extract 接口时走这条路：文件不出本机，只把提取出的
         文本交给对话模型。
+
+        本地解析是字节的纯函数：同一份文件每次都得到同样的结果，所以解析
+        失败（文件损坏/无有效文字）不可重试——重试只是把同一个错误再算一遍。
+        供应商侧的提取失败是另一回事（见 analyze_docx_json），那是瞬时故障。
+        存储读取本身出错（OSError）仍然是瞬时的，保持可重试。
         """
         from fde_api.documents.qa import extract_docx_xml_text
         try:
             content = extract_docx_xml_text(stream)
-        except Exception as error:  # noqa: BLE001 - 解析失败统一转成可重试错误
+        except OSError as error:  # 存储读取抖动：瞬时故障，可重试
+            raise KimiError(
+                "kimi_file_extract_failed",
+                f"AI 未能读取该 DOCX 文件（{filename}），请稍后重试。",
+                retryable=True,
+            ) from error
+        except Exception as error:  # noqa: BLE001 - 解析失败是确定性故障，不可重试
             raise KimiError(
                 "kimi_file_extract_failed",
                 f"AI 未能解析该 DOCX 文件（{filename}），请检查文件后重试。",
-                retryable=True,
+                retryable=False,
             ) from error
         if not isinstance(content, str) or not content.strip():
-            raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=True)
+            raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=False)
         return content
 
     @staticmethod

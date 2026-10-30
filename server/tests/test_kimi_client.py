@@ -190,7 +190,11 @@ def test_openai_compatible_payload_uses_max_tokens_and_no_reasoning_effort():
 
 
 def test_local_extract_reports_unparsable_docx():
-    """DOCX 解析失败要给可重试的中文错误，不能抛裸异常。"""
+    """DOCX 解析失败要给中文错误，不能抛裸异常。
+
+    可重试性按失败性质区分：本地解析是字节的纯函数，同一份坏文件每次都
+    解析失败——重试无意义，故不可重试（评审 G5-① F3 的结论）。
+    """
     session = FakeSession()
     with pytest.raises(KimiError) as caught:
         make_openai_compatible_client(session).analyze_docx_json(
@@ -198,5 +202,5 @@ def test_local_extract_reports_unparsable_docx():
             build_messages=lambda content: [{"role": "user", "content": content}],
         )
     assert caught.value.code == "kimi_file_extract_failed"
-    assert caught.value.retryable is True
+    assert caught.value.retryable is False
     assert not any(call[1].endswith("/chat/completions") for call in session.calls)

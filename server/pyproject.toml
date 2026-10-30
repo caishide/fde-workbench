@@ -25,7 +25,7 @@ dependencies = [
   "argon2-cffi>=23.1,<24",
   "pydantic-settings>=2.7,<3",
   "oss2==2.19.1",
-  "python-docx>=1.1,<2",
+  "python-docx>=1.2,<2",
   "docxtpl>=0.18,<1",
   "bleach>=6,<7",
   "markdown-it-py==3.0.0",
