@@ -204,6 +204,7 @@ def db_session(app) -> Session:
     from fde_api.files.models import ProjectFile, ProjectFileVersion, UploadSession
     from fde_api.guidance.models import ProjectGuidanceAnalysis, ProjectPresurveySource
     from fde_api.jobs.models import BackgroundJob, OutboxEvent
+    from fde_api.mailing.models import MailingEvent, MailingSend
     from fde_api.control.models import (
         AIModelConfig,
         AIProviderConfig,
@@ -291,6 +292,8 @@ def db_session(app) -> Session:
         ProjectFile,
         OutboxEvent,
         BackgroundJob,
+        MailingSend,
+        MailingEvent,
         ProjectResearchAnswer,
         ProjectResearchImportBatch,
         ProjectResearchFormRevision,

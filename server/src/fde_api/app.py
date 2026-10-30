@@ -14,6 +14,7 @@ from fde_api.extensions import db, object_storage, redis_client
 from fde_api.files.routes import files_blueprint
 from fde_api.health import health_blueprint
 from fde_api.guidance.routes import guidance_blueprint
+from fde_api.mailing.routes import mailing_blueprint
 from fde_api.modules import modules_blueprint
 from fde_api.projects import projects_blueprint
 from fde_api.storage.local_routes import local_storage_blueprint
@@ -57,6 +58,8 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(project_documents_blueprint)
     app.register_blueprint(solutions_blueprint)
     app.register_blueprint(guidance_blueprint)
+    # WP-E SES：SNS 退信/投诉回调端点（默认随模块关闭，端点校验失败一律 403）
+    app.register_blueprint(mailing_blueprint)
     app.register_blueprint(control_blueprint)
     from fde_api.control.task_board import task_board_blueprint
     from fde_api.control.extension_management_routes import management_blueprint
