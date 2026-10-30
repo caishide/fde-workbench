@@ -18,6 +18,7 @@ from pathlib import Path
 
 
 _BUNDLED = Path(__file__).resolve().parents[1] / "src" / "fde_api" / "control" / "bundled" / "help_manual.md"
+_HELP_PAGE = Path(__file__).resolve().parents[2] / "desktop" / "src" / "renderer" / "src" / "help" / "HelpPage.tsx"
 pytestmark = pytest.mark.skipif(not _BUNDLED.exists(), reason="bundled help manual not shipped with this checkout")
 
 
@@ -100,7 +101,40 @@ def test_unmatched_heading_falls_back_to_manual_head(app, db_session, ai_user):
 
 def test_section_index_reports_every_manual_section(app):
     titles = [entry["title"] for entry in help_bundle.section_index()]
-    # The bundled manual's fixed table of contents (14 numbered sections).
-    assert len(titles) >= 14
+    # The bundled manual's fixed table of contents (14 numbered sections + 1
+    # unnumbered somwyn walkthrough between §4 and §5).
+    assert len(titles) >= 15
     assert any("门禁" in t for t in titles)
     assert any("报价收款" in t or "标签页" in t for t in titles)
+
+
+def test_bundled_manual_and_ui_help_page_stay_in_sync():
+    """UI 使用帮助的每个主题都必须能在服务端内置手册里检索到。
+
+    2026-10「实操示例：证据文件怎么写（somwyn 样板）」只写在 HelpPage、内置手册漏收，
+    help_fetch 对该话题零命中。此后任一侧新增章节必须同步另一侧，否则本测试拦截。
+    """
+    if not _HELP_PAGE.exists():
+        pytest.skip("desktop help page not present in this checkout")
+    page_text = _HELP_PAGE.read_text("utf-8")
+    manual_text = _BUNDLED.read_text("utf-8")
+    topics = [
+        "开始前", "角色与权限", "项目工作台", "门禁", "实操示例", "somwyn",
+        "哈希清单", "隐私铁律", "报价收款", "集成桥", "任务中心",
+        "AI Server 对话", "管理页", "故障排查", "已知功能缺口", "发布与升级",
+    ]
+    for topic in topics:
+        assert topic in page_text, f"UI 使用帮助缺少主题：{topic}"
+        assert topic in manual_text, f"内置手册缺少主题（help_fetch 将检索不到）：{topic}"
+
+
+def test_manual_gate_sop_mapping_matches_seeds():
+    """手册里的 G↔S 对应必须与 seeds/gates.json 的 node_key 一致。"""
+    gates = json.loads(
+        (Path(__file__).resolve().parents[1] / "seeds" / "gates.json").read_text("utf-8")
+    )["gates"]
+    manual_text = _BUNDLED.read_text("utf-8")
+    assert gates
+    for gate in gates:
+        pair = f"{gate['gate_key']}↔{gate['node_key']}"
+        assert pair in manual_text, f"内置手册缺少门禁↔SOP 阶段对应：{pair}"
