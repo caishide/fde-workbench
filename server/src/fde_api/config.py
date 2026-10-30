@@ -71,6 +71,18 @@ class Settings(BaseSettings):
     # G7 登录限流：Redis 不可用时的策略。默认 fail-open（本机回环部署，Redis 挂了
     # 不挡业务登录，记 WARNING 可观测）；对外暴露部署设 true 切 fail-closed（一律 429）。
     login_rate_fail_closed: bool = False
+    # WP-E SES 发信（goal-r3 G9 预建）：默认整体关闭、零行为影响；SES 生产批复
+    # 下来只需改配置启用。发信域约束按项目口径：主域（somwyn.com）不发信，
+    # 只允许配置的子域（如 mail.somwyn.com）。DKIM/SPF 的 DNS 记录不写死在代码，
+    # 见 docs/系统意图-自动化面.md SES 节。
+    ses_enabled: bool = False
+    ses_region: str = "us-east-1"
+    ses_send_subdomain: str = ""
+    ses_from_address: str = ""
+    ses_reply_to_address: str = ""
+    ses_topic_arn: str = ""
+    ses_daily_limit: int = Field(default=10, ge=1)
+    ses_configuration_set: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",
@@ -120,4 +132,20 @@ class Settings(BaseSettings):
     def validate_clawbot_configuration(self) -> "Settings":
         if self.clawbot_enabled and self.clawbot_gateway_token is None:
             raise ValueError("missing_clawbot_gateway_token")
+        return self
+
+    @model_validator(mode="after")
+    def validate_ses_configuration(self) -> "Settings":
+        if not self.ses_enabled:
+            return self
+        if not self.ses_send_subdomain.strip() or not self.ses_from_address.strip():
+            raise ValueError("missing_ses_sender_configuration")
+        if not self.ses_topic_arn.strip():
+            raise ValueError("missing_ses_topic_arn")
+        # 发信域约束在启动时就校验：FROM 地址必须落在允许子域内（主域不发信）。
+        domain = self.ses_from_address.rsplit("@", 1)[-1]
+        from fde_api.mailing.policy import is_allowed_sender_domain
+
+        if not is_allowed_sender_domain(domain, self.ses_send_subdomain):
+            raise ValueError("ses_sender_domain_forbidden")
         return self
