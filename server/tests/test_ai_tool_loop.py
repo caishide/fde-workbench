@@ -238,6 +238,61 @@ def test_tool_loop_survives_a_crashing_tool(app, db_session, ai_user, monkeypatc
     assert trace == [{"tool": "project_list", "ok": False}]
 
 
+def test_crashing_tool_rolls_back_the_shared_db_session(app, db_session, ai_user, monkeypatch):
+    """A tool that dies on a broken DB connection must not leave the loop's
+    session idle-in-transaction: that state held row locks (observed 2026-10-30
+    as a 13-minute users-table lock that queued every login behind it) until
+    the pool eventually cycled the connection. The loop must roll back the
+    session right away so the next provider round starts clean.
+    """
+    from fde_api.control import ai_tool_loop
+    from sqlalchemy.exc import OperationalError
+
+    def db_error_call_tool(session, *, user, claims, allowed, name, arguments):
+        raise OperationalError("SELECT 1", {}, Exception("server closed the connection unexpectedly"))
+
+    monkeypatch.setattr(ai_tool_loop, "call_tool", db_error_call_tool)
+
+    rollbacks: list[bool] = []
+
+    class RecordingSession:
+        """Stands in for `db.session()`: it is the object handed to _run_tools
+        and records every rollback() plus whether it happened while the session
+        was still open (the production guarantee — the lock-releasing rollback
+        must fire inside the `with`, not on the exit path)."""
+
+        def __enter__(self):
+            self.open = True
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.open = False
+            return False
+
+        def rollback(self):
+            rollbacks.append(self.open)
+
+    monkeypatch.setattr(ai_tool_loop, "db",
+                       type("SpyDB", (), {"session": staticmethod(lambda: RecordingSession())}))
+    provider = FakeSession([tool_call_response("file_read", {"project_id": "p1", "file_id": "f1"}),
+                           final_response("工具暂时不可用。")])
+
+    text, usage, trace = direct_tool_completion(
+        model=provider_model(), prompt="读文件", user=ai_user, project_id=None,
+        execution_id="exec-1", session=provider)
+
+    # Two rollbacks, both while the session is still open: one from the crash
+    # handler inside _run_tools, one from the main loop's per-round cleanup
+    # that closes the transaction before the next (possibly minutes-long)
+    # provider call — a successful tool round must not idle-in-transaction
+    # either.
+    assert rollbacks == [True, True]
+    assert trace == [{"tool": "file_read", "ok": False}]
+    tool_message = [m for m in provider.calls[1][1]["json"]["messages"] if m.get("role") == "tool"][0]
+    assert "工具执行失败" in tool_message["content"]
+    assert text == "工具暂时不可用。"
+
+
 def test_tool_loop_stops_after_max_rounds(app, db_session, ai_user, monkeypatch):
     """A model that keeps calling tools must not loop forever."""
     from fde_api.control import ai_tool_loop
