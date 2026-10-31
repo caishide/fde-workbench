@@ -258,6 +258,14 @@ def publish_package(
     if previous_status != "draft":
         package.dispatch_round += 1
         package.package_code = _generate_package_code(session, project, package.dispatch_round)
+        # §4.7 扩圈序列 25→50→100→0（0=全城哨兵）：每轮重派降一档
+        radius_sequence = (25, 50, 100, 0)
+        current = (
+            radius_sequence.index(package.redispatch_radius_km)
+            if package.redispatch_radius_km in radius_sequence
+            else 0
+        )
+        package.redispatch_radius_km = radius_sequence[min(current + 1, len(radius_sequence) - 1)]
 
     published_at = datetime.now(timezone.utc)
     package.published_at = published_at

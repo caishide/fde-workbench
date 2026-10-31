@@ -125,6 +125,36 @@ def _capacity_cap(profile: FdeProfile) -> int:
     return profile.monthly_capacity_hours // max(profile.avg_delivery_hours or 0, 1)
 
 
+def _completed_count(session: Session, user_id: str) -> int:
+    """已完成接单数（§6.5 新人保护期判定：前 N 单只推同城）。"""
+    from fde_api.dispatch.models import DeliveryPackage
+
+    return session.scalar(
+        select(func.count())
+        .select_from(DeliveryPackage)
+        .where(
+            DeliveryPackage.seat_delivery == user_id,
+            DeliveryPackage.dispatch_status == "accepted",
+        )
+    ) or 0
+
+
+def _declined_earlier_rounds(
+    session: Session, package: DeliveryPackage
+) -> set[str]:
+    """规则表 B1：同一拒单者在同包**更早轮次**拒过 → 本轮不再主动推送
+    （防骚扰；不限制接单机会——本人仍可经 claim 主动抢，负面清单 #6 的
+    「可抢」与 B1 的「不推」并存）。"""
+    rows = session.execute(
+        select(DispatchOffer.candidate_user_id, DispatchOffer.dispatch_round).where(
+            DispatchOffer.package_id == package.id,
+            DispatchOffer.dispatch_round < package.dispatch_round,
+            DispatchOffer.status == "declined",
+        )
+    ).all()
+    return {row[0] for row in rows}
+
+
 def _stage_a(
     session: Session, package: DeliveryPackage, quote: Quote | None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -149,6 +179,7 @@ def _stage_a(
     )
     passed: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    b1_excluded = _declined_earlier_rounds(session, package)
     profiles = session.scalars(
         select(FdeProfile).where(FdeProfile.status == "active", FdeProfile.is_active.is_(True))
     ).all()
@@ -167,15 +198,32 @@ def _stage_a(
         a4 = in_hand < cap
         tier = scoring.geo_tier(profile.home_city, client_city, city_index)
         a5 = (not package.onsite_required) or tier <= allowed_tier
+        # §6.5 新人保护期（C10）：前 N 单（DISPATCH_CONSTANTS）只推同城——
+        # 新人候选强制的不是门槛淘汰而是「同城化围栏收紧」（超时不惩罚、
+        # 不写响应率档案；推送范围按新人口径收紧）。
+        is_newcomer = _completed_count(session, profile.user_id) < int(
+            DISPATCH_CONSTANTS["newcomer_protection_orders"]
+        )
+        if is_newcomer and tier > 0:
+            a5 = False
+        # 规则表 B1：更早轮次拒过的人本轮不主动推（仍可主动抢）
+        b1 = profile.user_id not in b1_excluded
         detail = {
             "A1": {"level": level, "required": package.required_level, "ok": a1},
             "A2": {"required_modules": sorted(required_keys), "ok": a2},
             "A3": {"industry": package.required_industry, "ok": a3},
             "A4": {"in_hand": in_hand, "cap": cap, "ok": a4},
-            "A5": {"home_city": profile.home_city, "tier": tier, "allowed": allowed_tier, "ok": a5},
+            "A5": {
+                "home_city": profile.home_city,
+                "tier": tier,
+                "allowed": allowed_tier,
+                "newcomer_city_only": is_newcomer,
+                "ok": a5,
+            },
+            "B1": {"declined_earlier": not b1, "ok": b1},
         }
         entry = {"profile": profile, "tier": tier, "client_city": client_city, "gates": detail}
-        (passed if (a1 and a2 and a3 and a4 and a5) else rejected).append(entry)
+        (passed if (a1 and a2 and a3 and a4 and a5 and b1) else rejected).append(entry)
     return passed, rejected
 
 
