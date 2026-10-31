@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r5 派单引擎轮（2026-10-31）
+
+### 派单引擎 P1-2 撮合核心（对照派单设计文档 v1.0 §4/§5 + 规则表 A-6，零迁移）
+
+- **撮合核心**（§4.1–§4.8）：`dispatch/matching.py` + `dispatch/scoring.py`——Stage A 五资格门（等级/模块/行业/负载自动算上限/到场围栏）硬过滤出局不降权；场景裁决三选一：到场型字典序 (geo_tier, -level, -industry, -sla)、远程型加权（权重取 active 规则版本快照，无版本 → 422 `rule_version_required`=§11.1 降级态人工排序）、到场无候选场景 C 不自动派（事件留痕含淘汰明细）；§4.5 `required_level` 由 Quote 系数推导落库 + 发布前人工覆盖必填 reason 留痕；§4.7 扩圈链 geo_tier（同城/同省/邻接都市圈/全国，全国仅旗舰档）；§4.8 Top3 + `match_breakdown` 释明契约（stage_a 五门明细/stage_b/rank/explanation，对被派方展示）。
+- **负面清单 A-6 七条逐条反例**（§8.8 开池四道闸之闸③全绿）：软画像零字段 schema 断言 / 排序签名无历史参数+同分不同历史同分 / 全包无轨迹语义静态检查 / 到场型字典序（同城弱者胜同省强者）+ 加权地理仅三档 / settlements 零工时扣减静态检查 / 被拒者下一轮仍可入选 / 全包零货运语义。
+- **P1-4 options 枚举**：席位分配 / 场景类型 / 匹配模式 / 拒单原因四组随 /workbench/options 下发。
+- 路由 +2（POST packages/{id}/match、packages/{id}/required-level），ENTRIES +2。
+- 测试：`server/tests/test_dispatch_p1_r5.py` 12 例；全量 CI 门禁出具；桌面零改动。
+- 口径（goal-r5 实测）：83 表、12 revision（零迁移）、路由 226（+2）、ENTRIES 66（+2）。轮次报告 `docs/goal-r5-派单引擎.md`；台账第十七节。
+
 ## [未发布] — goal-r4 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P1 首批（对照派单设计文档 v1.0 §8.4：P1-1/P1-3/P1-5，零迁移）
