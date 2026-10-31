@@ -16,7 +16,16 @@ export type AppRoute =
   | { kind: "task-center" }
   | {
       kind: "dispatch"
-      tab?: "pool" | "mine" | "settlements" | "profiles" | "rules" | "console"
+      tab?:
+        | "pool"
+        | "mine"
+        | "settlements"
+        | "profiles"
+        | "rules"
+        | "console"
+        | "disputes"
+        | "sim"
+        | "gates"
     }
   | { kind: "help" }
   | { kind: "extensions"; tool?: 'lcsc-browser-baseline' | 'lcsc-browser-jev' | 'lcsc-compare'; tab?: 'tools' }
@@ -57,6 +66,9 @@ export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#dispatch/profiles") return { kind: "dispatch", tab: "profiles" }
   if (hash === "#dispatch/rules") return { kind: "dispatch", tab: "rules" }
   if (hash === "#dispatch/console") return { kind: "dispatch", tab: "console" }
+  if (hash === "#dispatch/disputes") return { kind: "dispatch", tab: "disputes" }
+  if (hash === "#dispatch/sim") return { kind: "dispatch", tab: "sim" }
+  if (hash === "#dispatch/gates") return { kind: "dispatch", tab: "gates" }
   if (hash === "#help") return { kind: "help" }
   if (hash === "#extensions") return { kind: "extensions" }
   if (hash === "#extensions?tab=tools") return { kind: "extensions", tab: 'tools' }
