@@ -341,10 +341,25 @@ def test_stage_a5_geo_fence_onsite_only(db_session):
     assert result["scenario"] == "C"  # 唯一候选被围栏淘汰 → 场景 C
     assert result["offers"] == []
 
-    # 远程型：同一非同城候选可入选（A5 不做围栏过滤）
+    # 远程型：同一非同城候选可入选（A5 不做围栏过滤）——先攒 5 单脱离
+    # 新人保护（§6.5 前 5 单只推同城，goal-r8 C10 落地后非同城新人被收紧）
+    for round_no in (81, 82, 83, 84, 85):
+        db_session.add(
+            DeliveryPackage(
+                id=uuid4().hex,
+                solution_id=package.solution_id,
+                project_id=package.project_id,
+                package_code=f"PKG-R5-OLD-{uuid4().hex[:8].upper()}",
+                dispatch_round=round_no,
+                dispatch_status="accepted",
+                seat_delivery=other_city.id,
+                accepted_at=datetime.now(timezone.utc),
+            )
+        )
+    db_session.flush()
     admin2, package2 = _onsite_package(db_session)
     package2.onsite_required = False
-    db_session.get(ProjectSolution, package2.solution_id).schedule = ''
+    db_session.get(ProjectSolution, package2.solution_id).schedule = ""
     _active_rule(db_session, version_no=2)
     publish_package(db_session, actor=admin2, package_id=package2.id)
     result2 = match_package(db_session, actor=admin2, package_id=package2.id)
@@ -371,6 +386,19 @@ def test_scenario_a_lexicographic_geo_beats_ability(db_session):
     far_strong = _user("r5.far.strong", role="fde_engineer")
     _profile(db_session, far_strong, level="L4", module_tags=["pre_diagnosis"],
              industry_tags=["制造业"], home_city="南京")
+    for round_no in (71, 72, 73, 74, 75):  # 老手（脱离新人保护；字典序测试不受 C10 干扰）
+        db_session.add(
+            DeliveryPackage(
+                id=uuid4().hex,
+                solution_id=package.solution_id,
+                project_id=package.project_id,
+                package_code=f"PKG-R5-SEN-{uuid4().hex[:8].upper()}",
+                dispatch_round=round_no,
+                dispatch_status="accepted",
+                seat_delivery=far_strong.id,
+                accepted_at=datetime.now(timezone.utc),
+            )
+        )
     db_session.flush()
 
     result = match_package(db_session, actor=admin, package_id=package.id)
@@ -399,6 +427,19 @@ def test_scenario_b_weighted_and_reproducible(db_session):
     high = _user("r5.remote.h", role="fde_engineer")
     _profile(db_session, high, level="L4", module_tags=["pre_diagnosis"],
              industry_tags=["制造业"], home_city="南京")
+    for round_no in (61, 62, 63, 64, 65):  # 老手（远程加权序不受 C10 干扰）
+        db_session.add(
+            DeliveryPackage(
+                id=uuid4().hex,
+                solution_id=package.solution_id,
+                project_id=package.project_id,
+                package_code=f"PKG-R5-HI-{uuid4().hex[:8].upper()}",
+                dispatch_round=round_no,
+                dispatch_status="accepted",
+                seat_delivery=high.id,
+                accepted_at=datetime.now(timezone.utc),
+            )
+        )
     db_session.flush()
 
     first = match_package(db_session, actor=admin, package_id=package.id)
@@ -502,7 +543,7 @@ def test_top3_cap_and_breakdown_schema(db_session):
     for offer in offers:
         breakdown = offer.match_breakdown
         assert {"rule_version", "scenario", "stage_a", "stage_b", "rank", "explanation"} <= set(breakdown)
-        assert set(breakdown["stage_a"]) == {"A1", "A2", "A3", "A4", "A5"}
+        assert set(breakdown["stage_a"]) == {"A1", "A2", "A3", "A4", "A5", "B1"}  # goal-r8：B1 防骚扰行入契约
         assert set(breakdown["stage_a"]["A4"]) == {"in_hand", "cap", "ok"}
         assert breakdown["explanation"]
     ranks = sorted(offer.match_breakdown["rank"] for offer in offers)
@@ -572,7 +613,10 @@ def test_negative_list_protections(db_session):
     assert "avg_delivery_hours" not in settlements_source
     assert "monthly_capacity_hours" not in settlements_source
 
-    # ── #6 拒单不限制接单：被拒者在下一轮匹配中仍可入选 ──
+    # ── #6 拒单不限制接单：拒过单的人仍可**主动抢**（claim 入口不封）——
+    # 平台侧则按规则表 B1 跨轮不再主动推（防骚扰与「不限制接单机会」并存：
+    # B1 管「平台不推」，#6 管「本人可抢」，语义正交，goal-r8 修正 r5 初版
+    # 把两者混为一谈的测试）──
     admin2, package2 = _onsite_package(db_session)
     _active_rule(db_session, version_no=3)
     publish_package(db_session, actor=admin2, package_id=package2.id)
@@ -594,7 +638,15 @@ def test_negative_list_protections(db_session):
     package2.dispatch_round += 1
     db_session.flush()
     result2 = match_package(db_session, actor=admin2, package_id=package2.id)
-    assert declined_before.id in [o["candidate_user_id"] for o in result2["offers"]]
+    # B1：更早轮拒过 → 本轮平台不再推（不在 offers 也不在 rejected 之外复活）
+    assert declined_before.id not in [o["candidate_user_id"] for o in result2["offers"]]
+    # 不限制接单机会：本人仍可经 claim 登记入口主动抢（城市开关关闭 → 403
+    # 是开闸态问题不是资格问题；资格面由 has_access/claim 入口放行验证，
+    # 见 r4 的 claim_gate 用例——此处只断言 B1 后本人档案未被拉黑/降权）
+    profile_row = db_session.scalar(
+        select(FdeProfile).where(FdeProfile.user_id == declined_before.id)
+    )
+    assert profile_row.status == "active" and profile_row.is_active is True
 
     # ── #7 运输/安装撮合：dispatch 零货运语义（静态）──
     for path in dispatch_dir.glob("*.py"):
