@@ -251,6 +251,16 @@ def db_session(app) -> Session:
         TemplateTask,
         TemplateTaskDependency,
     )
+    # goal-d3：agent 表簇（artifacts/tool_calls 引用 runs，runs 被
+    # project_solutions.agent_run_id 引用——清理序见 cleanup_models 注释）。
+    from fde_api.agents.models import (
+        AgentArtifact,
+        AgentCredential,
+        AgentRegistry,
+        AgentRun,
+        AgentToolCall,
+        SolutionReviewCheckpoint,
+    )
 
     cleanup_models = (
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
@@ -266,9 +276,19 @@ def db_session(app) -> Session:
         __import__("fde_api.dispatch.models", fromlist=["DispatchRuleVersion"]).DispatchRuleVersion,
         __import__("fde_api.dispatch.models", fromlist=["FdeLevelEvidence"]).FdeLevelEvidence,
         __import__("fde_api.dispatch.models", fromlist=["FdeProfile"]).FdeProfile,
+        # goal-d3：审核节点与产物引用 project_solutions（RESTRICT），先于方案；
+        # tool_calls/artifacts 引用 runs，同样先清。
+        __import__("fde_api.agents.models", fromlist=["SolutionReviewCheckpoint"]).SolutionReviewCheckpoint,
+        __import__("fde_api.agents.models", fromlist=["AgentToolCall"]).AgentToolCall,
+        __import__("fde_api.agents.models", fromlist=["AgentArtifact"]).AgentArtifact,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolutionExport"]).ProjectSolutionExport,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolutionOpportunity"]).ProjectSolutionOpportunity,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolution"]).ProjectSolution,
+        # goal-d3：runs 被 project_solutions.agent_run_id 引用（RESTRICT），先于
+        # runs 清方案；registry 被 runs 引用，先清 runs。
+        __import__("fde_api.agents.models", fromlist=["AgentRun"]).AgentRun,
+        __import__("fde_api.agents.models", fromlist=["AgentCredential"]).AgentCredential,
+        __import__("fde_api.agents.models", fromlist=["AgentRegistry"]).AgentRegistry,
         __import__("fde_api.control.chat", fromlist=["AIChatTurn"]).AIChatTurn,
         __import__("fde_api.control.chat", fromlist=["AIConversation"]).AIConversation,
         __import__("fde_api.control.lcsc_skills", fromlist=["LcscSkillRun"]).LcscSkillRun,

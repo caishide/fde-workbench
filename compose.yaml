@@ -127,6 +127,27 @@ services:
     volumes:
       - fde_storage:/app/.fde-storage
 
+  sandbox-runner:
+    # goal-d3（技术实施方案 §4 / 决议 D4）：agent 执行沙箱基座。
+    # 技术文档原文照落：privileged=false、默认断网（network_mode: none）、
+    # 一次性 tmpfs workspace；per-run 容器由服务端 agents/sandbox.py 经
+    # docker CLI 按独立容器拉起（--name agent-run-{run_id}），本服务承载
+    # 镜像构建与运行时基线。
+    # profiles=["sandbox"]：默认 `docker compose up -d` 不启动它（试点 gate
+    # d6 才随开关启用），需要时 `docker compose --profile sandbox up -d`。
+    build: ./docker/sandbox
+    image: fde-sandbox-runner:latest
+    profiles:
+      - sandbox
+    privileged: false
+    network_mode: none
+    tmpfs:
+      - /workspace:size=512m
+    # 断网空闲基座：常驻无意义，随 profile 显式启停；默认命令仅保活，
+    # 便于 --profile sandbox up 后 inspect 验证基线配置。
+    command: ["sleep", "infinity"]
+    restart: "no"
+
 networks:
   automation_qiflow-net:
     external: true

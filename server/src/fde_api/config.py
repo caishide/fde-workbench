@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     ses_topic_arn: str = ""
     ses_daily_limit: int = Field(default=10, ge=1)
     ses_configuration_set: str = ""
+    # goal-d3 沙箱基座（技术实施方案 §4 / 决议 D4）：默认参数面向 docker CLI
+    # 可注入后端；镜像与容器名口径见 agents/sandbox.py。断网/资源上限/
+    # 一次性 workspace 是基线事实，不随配置开放（egress allowlist 归 d4）。
+    sandbox_docker_bin: str = "docker"
+    sandbox_image: str = "fde-sandbox-runner:latest"
+    sandbox_memory: str = "512m"
+    sandbox_cpus: str = "1.0"
+    sandbox_pids_limit: int = Field(default=128, ge=1)
+    sandbox_tmpfs_size: str = "512m"
+    sandbox_timeout_seconds: int = Field(default=300, ge=5, le=3600)
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

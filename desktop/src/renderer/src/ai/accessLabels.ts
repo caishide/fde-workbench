@@ -24,4 +24,9 @@ export const aiCapabilityLabels: Record<string, string> = {
   "system.release": "管理系统发布",
   "system.database.migrate": "管理数据库迁移",
   "system.dsh.switch": "管理 AI Server 服务",
+  // goal-d3（S1 agent 四能力；授权档位为上限，每次 run 实时重判）
+  "agent.plan.generate": "发起 AI 计划生成",
+  "agent.code.write": "授权 AI 编写部署代码",
+  "agent.meeting.convene": "发起 AI 评审会",
+  "agent.system.tool": "管理智能体系统工具",
 }
