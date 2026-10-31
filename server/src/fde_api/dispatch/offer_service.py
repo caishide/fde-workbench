@@ -39,7 +39,7 @@ from fde_api.workbench.models import Project
 DECLINE_REASONS = ("档期冲突", "能力不匹配", "距离", "其他")
 
 
-def _offer_deadline(offer: DispatchOffer, package: DeliveryPackage) -> datetime | None:
+def offer_deadline(offer: DispatchOffer, package: DeliveryPackage) -> datetime | None:
     """§6.2：claim=15 分钟确认窗；assign=包响应窗（默认 24h）。"""
     if offer.offered_at is None:
         return None
@@ -229,7 +229,7 @@ def accept_offer(
         raise DispatchServiceError(
             "invalid_offer_state", f"offer 状态 {offer.status} 不能接单。", 409
         )
-    deadline = _offer_deadline(offer, package)
+    deadline = offer_deadline(offer, package)
     now = datetime.now(timezone.utc)
     if deadline is not None and now > deadline:
         raise DispatchServiceError(
@@ -397,7 +397,7 @@ def expire_stale_offers(session: Session, *, now: datetime | None = None) -> int
         if package is None:
             continue
         touched_packages[offer.package_id] = package
-        deadline = _offer_deadline(offer, package)
+        deadline = offer_deadline(offer, package)
         if deadline is None or now <= deadline:
             continue
         respond(offer, now)

@@ -142,14 +142,18 @@ def serialize_package_whitelist(
     solution: ProjectSolution,
     project: Project,
 ) -> dict[str, Any]:
-    """§9.2 字段白名单 12 项 + 交付方席位金额（显示义务）。
+    """§9.2 字段白名单 12 项 + 交付方席位金额（显示义务）+ 资源 id（支撑列）。
 
     显式 schema 直出：新增 ORM 字段**不会**自动进响应（纪律②）。
     客户标识只有代号（client_code=enterprise_code）与城市段（client_city=
     代号第三段），客户真名永不出现（红线）。金额字段只允许 delivery_seat_amount。
+    id 是资源标识非内容字段（B1 接单工作台：授权方对包行动——抢单/接包——
+    必须持有目标 id；不含任何业务内容，不扩白名单语义）。
     """
     segments = (project.enterprise_code or "").split("·")
     return {
+        # ---- 资源标识（非内容字段；授权方行动所需） ----
+        "id": package.id,
         # ---- 12 项白名单 ----
         "package_code": package.package_code,
         "scope_summary": solution.name,

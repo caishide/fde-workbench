@@ -1529,3 +1529,9 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .load-bar { font-variant-numeric: tabular-nums; }
 .load-bar.load-full { color: #b91c1c; font-weight: 700; }
 .dispatch-constants { background: var(--surface-alt, #f6f7f9); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; font-size: 12px; }
+/* B1 接单工作台（我的接单 / 我的结算 / 抢单操作） */
+.dispatch-profile-card { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.dispatch-offer-summary { cursor: default; }
+.dispatch-offer-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.dispatch-decline-row { display: inline-flex; gap: 8px; align-items: center; }
+.dispatch-breakdown { background: var(--surface-alt, #f6f7f9); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; font-size: 12px; }

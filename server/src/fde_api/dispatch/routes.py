@@ -284,6 +284,193 @@ def decline_offer_route(offer_id: str):
         session.close()
 
 
+@blueprint.get("/offers/mine")
+@require_auth
+def list_my_offers_route():
+    """我的 offer 收件箱（接单工作台，B1）。
+
+    只含 candidate_user_id=当前用户的行（§6.3 全量留痕语义：offered 之外的
+    已决历史一并可见，前端据此展示收件箱+历史）；deadline=§6.2 窗口现算
+    （claim 15 分钟确认窗 / assign 包响应窗）；match_breakdown 是 §4.8
+    对被派方本人的释明数据，只回本人。包侧走同一白名单 payload（§9.2）。
+    """
+    from fde_api.dispatch.models import DispatchOffer
+    from fde_api.dispatch.offer_service import offer_deadline
+
+    session = db.session()
+    try:
+        rows = session.execute(
+            select(DispatchOffer, DeliveryPackage)
+            .join(DeliveryPackage, DeliveryPackage.id == DispatchOffer.package_id)
+            .where(DispatchOffer.candidate_user_id == g.current_user.id)
+            .order_by(
+                DispatchOffer.offered_at.desc().nullslast(),
+                DispatchOffer.created_at.desc(),
+            )
+        ).all()
+        data = []
+        for offer, package in rows:
+            mode = (offer.match_breakdown or {}).get("mode") or package.dispatch_mode
+            deadline = offer_deadline(offer, package)
+            data.append(
+                {
+                    "offer_id": offer.id,
+                    "status": offer.status,
+                    "version": offer.version,
+                    "dispatch_round": offer.dispatch_round,
+                    "mode": mode,
+                    "offered_at": offer.offered_at.isoformat()
+                    if offer.offered_at
+                    else None,
+                    "responded_at": offer.responded_at.isoformat()
+                    if offer.responded_at
+                    else None,
+                    "deadline": deadline.isoformat() if deadline else None,
+                    "match_breakdown": offer.match_breakdown,
+                    "package": _whitelist_payload(session, package),
+                }
+            )
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()
+
+
+@blueprint.get("/settlements/mine")
+@require_auth
+def list_my_settlements_route():
+    """我的席位结算（§7.2，接单工作台，B1）。
+
+    隔离纪律：只回当前用户占据席位的行，且只回**自己席位**的角色与金额——
+    其他席位的存在与金额不出现（§9.5 同源；工程师只看自己的分成）。
+    withholding_tax 原样透出、不算净额（预扣口径=B-③ 待法务确认，不发明）。
+    """
+    from fde_api.dispatch.models import DeliverySettlement
+
+    me = g.current_user.id
+    session = db.session()
+    try:
+        rows = session.execute(
+            select(DeliverySettlement, DeliveryPackage.package_code)
+            .join(
+                DeliveryPackage,
+                DeliveryPackage.id == DeliverySettlement.package_id,
+            )
+            .where(
+                (DeliverySettlement.seat_platform_user_id == me)
+                | (DeliverySettlement.seat_region_agent_user_id == me)
+                | (DeliverySettlement.seat_city_partner_user_id == me)
+                | (DeliverySettlement.seat_delivery_user_id == me)
+            )
+            .order_by(DeliverySettlement.created_at.desc())
+        ).all()
+        data = []
+        for settlement, package_code in rows:
+            my_roles: list[str] = []
+            my_amount = 0.0
+            for role, seat_user, amount in (
+                (
+                    "platform",
+                    settlement.seat_platform_user_id,
+                    settlement.platform_amount,
+                ),
+                (
+                    "region",
+                    settlement.seat_region_agent_user_id,
+                    settlement.region_amount,
+                ),
+                (
+                    "city",
+                    settlement.seat_city_partner_user_id,
+                    settlement.city_amount,
+                ),
+                (
+                    "delivery",
+                    settlement.seat_delivery_user_id,
+                    settlement.delivery_amount,
+                ),
+            ):
+                if seat_user == me:
+                    my_roles.append(role)
+                    my_amount += float(amount)
+            data.append(
+                {
+                    "settlement_id": settlement.id,
+                    "package_code": package_code,
+                    "settlement_key": settlement.settlement_key,
+                    "status": settlement.status,
+                    "base_amount": float(settlement.base_amount),
+                    "my_roles": my_roles,
+                    "my_amount": round(my_amount, 2),
+                    "withholding_tax": float(settlement.withholding_tax),
+                    "acceptance_passed_at": settlement.acceptance_passed_at.isoformat()
+                    if settlement.acceptance_passed_at
+                    else None,
+                    "paid_at": settlement.paid_at.isoformat()
+                    if settlement.paid_at
+                    else None,
+                }
+            )
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()
+
+
+@blueprint.get("/profiles/me")
+@require_auth
+def read_my_profile_route():
+    """我的能力档案自助视图（§3 供给池；接单工作台，B1）。
+
+    平台侧 list_profiles 是档案互见的管理视角（403 防「他人在途计数」
+    泄露）；本人看自己档案零泄露，产能上限口径与其一致（§6.5）。
+    """
+    from fde_api.dispatch.models import DispatchOffer, FdeProfile
+    from sqlalchemy import func
+
+    session = db.session()
+    try:
+        profile = session.scalar(
+            select(FdeProfile).where(FdeProfile.user_id == g.current_user.id)
+        )
+        if profile is None:
+            return error_response(
+                "profile_not_found", "尚无能力档案（由平台创建/晋级流程建立）。", 404
+            )
+        in_hand = (
+            session.execute(
+                select(func.count(DispatchOffer.id))
+                .where(DispatchOffer.candidate_user_id == g.current_user.id)
+                .where(DispatchOffer.status.in_(("offered", "accepted")))
+            ).scalar_one()
+        )
+        cap = (
+            (profile.monthly_capacity_hours or 0)
+            // max(profile.avg_delivery_hours or 0, 1)
+            if profile.monthly_capacity_hours
+            else 0
+        )
+        data = {
+            "level": profile.level,
+            "status": profile.status,
+            "scores": {
+                "biz_cognition": profile.biz_cognition_score,
+                "scenario_eng": profile.scenario_eng_score,
+                "ai_tech": profile.ai_tech_score,
+                "delivery_assure": profile.delivery_assure_score,
+            },
+            "industry_tags": profile.industry_tags or [],
+            "module_tags": profile.module_tags or [],
+            "home_city": profile.home_city,
+            "geo_fence_km": profile.geo_fence_km,
+            "monthly_capacity_hours": profile.monthly_capacity_hours,
+            "avg_delivery_hours": profile.avg_delivery_hours,
+            "in_hand": in_hand,
+            "capacity_cap": cap,
+        }
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()
+
+
 @blueprint.post("/packages/<package_id>/claim")
 @require_auth
 def claim_package_route(package_id: str):
