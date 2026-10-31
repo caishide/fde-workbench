@@ -256,6 +256,8 @@ def db_session(app) -> Session:
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
         # 派单簇（goal-r2 起）：结算/offer 先于包（FK RESTRICT），包先于
         # project_solutions/projects/quotes；证据链与档案先于 users。
+        # goal-r3：package_access 先于包（FK RESTRICT）。
+        __import__("fde_api.dispatch.models", fromlist=["PackageAccess"]).PackageAccess,
         __import__("fde_api.dispatch.models", fromlist=["DeliverySettlement"]).DeliverySettlement,
         __import__("fde_api.dispatch.models", fromlist=["DispatchOffer"]).DispatchOffer,
         __import__("fde_api.dispatch.models", fromlist=["DeliveryPackage"]).DeliveryPackage,

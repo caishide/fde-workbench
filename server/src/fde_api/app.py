@@ -8,6 +8,7 @@ from fde_api.control import control_blueprint
 from fde_api.control.dsh_runtime import dsh_runtime
 from fde_api.documents.template_routes import document_templates_blueprint
 from fde_api.documents.project_routes import project_documents_blueprint
+from fde_api.dispatch.routes import blueprint as dispatch_blueprint
 from fde_api.solutions.routes import solutions_blueprint
 from fde_api.errors import register_error_handlers
 from fde_api.extensions import db, object_storage, redis_client
@@ -57,6 +58,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(document_templates_blueprint)
     app.register_blueprint(project_documents_blueprint)
     app.register_blueprint(solutions_blueprint)
+    app.register_blueprint(dispatch_blueprint)
     app.register_blueprint(guidance_blueprint)
     # WP-E SES：SNS 退信/投诉回调端点（默认随模块关闭，端点校验失败一律 403）
     app.register_blueprint(mailing_blueprint)

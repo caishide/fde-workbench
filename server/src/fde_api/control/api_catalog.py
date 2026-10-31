@@ -66,6 +66,13 @@ ENTRIES = [
     ("skills.personal_save", "POST", E + "/skills/personal", "维护个人技能", "key,name,description,instructions,manifest,required_capabilities"),
     ("skills.public_save", "POST", E + "/skills/public", "管理员维护公共技能", "key,name,description,instructions,manifest,required_capabilities"),
     ("plugins.search", "GET", E + "/marketplace/search", "搜索插件；query 参数以 API 为准", ""),
+    # 派单引擎（goal-r3 P0-1/P0-2）：交付包读走 package_access 第三语义白名单
+    ("dispatch.packages_list", "GET", "/api/v1/dispatch/packages", "查询自己被授权的交付包（跨主体只读白名单，不含报价明细）", ""),
+    ("dispatch.packages_read", "GET", "/api/v1/dispatch/packages/{package_id}", "读取交付包白名单字段（12 项 + 交付方席位金额）", ""),
+    ("dispatch.packages_create", "POST", "/api/v1/dispatch/packages", "从方案+报价建交付包 draft（平台侧）", "solution_id,quote_id；可选 dispatch_mode=assign/claim,onsite_visits"),
+    ("dispatch.packages_publish", "POST", "/api/v1/dispatch/packages/{package_id}/publish", "发布交付包：冻结快照哈希并对候选授只读（平台侧）", "可选 candidate_user_ids"),
+    ("dispatch.packages_withdraw", "POST", "/api/v1/dispatch/packages/{package_id}/withdraw", "撤回交付包（无进行中 offer 才允许；平台侧）", ""),
+    ("dispatch.packages_accept", "POST", "/api/v1/dispatch/packages/{package_id}/accept", "接单并交接项目成员身份（§9.3）", "delivery_user_id"),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,

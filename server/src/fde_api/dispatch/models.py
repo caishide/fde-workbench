@@ -114,6 +114,9 @@ class DeliveryPackage(Base, TimestampMixin):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     onsite_visits: Mapped[int | None] = mapped_column(Integer)
+    # §9.2 显示义务：交付方席位 40% 对应金额——发布时按当时报价快照物化冻结
+    # （交付包 API 禁 join quotes，§9.2 纪律①，金额只能来自本列；goal-r3 留注⑥）
+    delivery_seat_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     published_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
@@ -179,6 +182,41 @@ class DispatchOffer(Base, TimestampMixin, VersionedMixin):
     # §6.2：评估窗/响应窗起算时刻（服务逻辑 P1-1 落位）
     offered_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     responded_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class PackageAccess(Base, TimestampMixin):
+    """跨主体只读授权——「第三语义」（§9.1/§9.2，P0-2）。
+
+    独立于 project_access（项目内协作）与 admin（平台全局）：只有被授权的
+    交付方才能看到对应交付包。不复用 Project.members（语义不同，§1.2 边界二）。
+    可撤销（revoked_at）；接单后按 §9.3 升级为正式项目成员（member）。
+    """
+
+    __tablename__ = "package_access"
+    __table_args__ = (
+        UniqueConstraint(
+            "package_id", "user_id", "role", name="uq_package_access_package_user_role"
+        ),
+        CheckConstraint(
+            "role IN ('lead', 'seller', 'delivery', 'audit')",
+            name="ck_package_access_role",
+        ),
+        Index("ix_package_access_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    package_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_packages.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    granted_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
 
 class FdeProfile(Base, TimestampMixin):
