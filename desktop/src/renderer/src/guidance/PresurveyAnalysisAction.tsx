@@ -49,7 +49,13 @@ export function PresurveyAnalysisAction({ projectId, fileVersionId, canManage, a
         return current
       } })
       setAnalysis(next); setEditOnOpen(next.status === "draft" && next.analysis_state === "ready"); setOpen(true)
-    } catch (caught) { setError(caught instanceof ApiClientError ? caught.message : "无法开始 AI 分析，请稍后重试。") } finally { setBusy(false) }
+    } catch (caught) {
+      // 台账五.2（goal-d2 S0-3）：任务内 poll 到 failed 抛的正是 failure_message
+      // （runTask 原样 rethrow），不能再吞成通用文案；「invalid guidance」是
+      // 内部哨兵，仍然回落通用提示。
+      const message = caught instanceof Error ? caught.message : ""
+      setError(message && message !== "invalid guidance" ? message : "无法开始 AI 分析，请稍后重试。")
+    } finally { setBusy(false) }
   }
   async function view() {
     if (!analysis) return start()

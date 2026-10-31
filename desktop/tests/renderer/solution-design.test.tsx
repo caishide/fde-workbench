@@ -428,3 +428,31 @@ it('ignores older requests when quickly navigating between standalone details', 
   await act(async () => { resolveOld(solution()); await oldRequest })
   expect(screen.queryByRole('region', { name: '查看方案：工程资料智能助手' })).not.toBeInTheDocument()
 })
+
+it('generates a solution skeleton from confirmed guidance and surfaces server 409 guidance requirement', async () => {
+  const user = userEvent.setup()
+  const skeleton = solution({ id: 'skeleton-1', name: '零售连锁方案骨架', version: 1 })
+  let skeletonAllowed = false
+  mocks.apiRequest.mockImplementation(async (path: string, options: { method: string; body?: Record<string, unknown> }) => {
+    if (path.endsWith('/research/subjects')) return { items: subjects }
+    if (path.endsWith('/solutions') && options.method === 'GET') return { items: records }
+    if (path.endsWith('/solutions/skeleton') && options.method === 'POST') {
+      if (!skeletonAllowed) throw new ApiClientError({ code: 'solution_skeleton_guidance_required', message: '请先在预调研中完成项目指引确认，再生成方案骨架。' })
+      records = [skeleton]
+      return skeleton
+    }
+    if (path.endsWith('/documents')) return { items: [] }
+    throw new Error(`Unexpected request: ${options.method} ${path}`)
+  })
+  const view = render(<SolutionDesign projectId="p" canManage />)
+
+  const button = await screen.findByRole('button', { name: '按预调研生成骨架' })
+  await user.click(button)
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('请先在预调研中完成项目指引确认'))
+
+  skeletonAllowed = true
+  await user.click(button)
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已按预调研指引生成方案骨架'))
+  await waitFor(() => expect(screen.getByTitle('零售连锁方案骨架')).toBeInTheDocument())
+  expect(view).toBeDefined()
+})

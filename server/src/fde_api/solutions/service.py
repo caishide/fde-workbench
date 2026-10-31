@@ -4,11 +4,11 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, NoReturn
 from uuid import uuid4
 
 from flask import current_app
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from fde_api.auth.models import User
@@ -20,17 +20,27 @@ from fde_api.documents.models import DocumentGenerationJob, ProjectDocument, Pro
 from fde_api.documents.snapshots import build_document_snapshot, DocumentSnapshotError
 from fde_api.extensions import db
 from fde_api.files.models import BUSINESS_CATEGORIES
+from fde_api.guidance.models import PresurveyIntake, ProjectGuidanceAnalysis
 from fde_api.jobs.outbox import enqueue_outbox
 from fde_api.projects.events import record_event
 from fde_api.research.models import ProjectResearchForm, ProjectResearchFormRevision, ProjectResearchSubject
 from fde_api.solutions.models import ProjectSolution, ProjectSolutionExport, ProjectSolutionOpportunity
+from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, Quote, TemplateModule
 
 SolutionServiceError = documents.DocumentDraftServiceError
 TEXT_FIELDS = ("name", "design_markdown", "deliverables", "acceptance_criteria", "data_systems", "schedule", "risks_dependencies")
 EDIT_FIELDS = {*TEXT_FIELDS, "opportunity_ids", "business_category"}
+# goal-d2 S0-4 健康分 v0：六段覆盖（除 name 外的全部 SOW 骨架字段，40 分）+
+# 引用完整性（关联机会 15 + 已确认项目指引 15）+ 报价合法（finalized 30 / draft 15）。
+HEALTH_COVERAGE_FIELDS = (
+    ("design_markdown", "方案设计"), ("deliverables", "交付物"),
+    ("acceptance_criteria", "验收标准"), ("data_systems", "所需数据/系统"),
+    ("schedule", "计划排期"), ("risks_dependencies", "风险与依赖"),
+)
+SKELETON_OPTIONAL_FIELDS = {"name", "opportunity_ids", "business_category"}
 
 
-def _error(code: str, message: str, status: int = 400):
+def _error(code: str, message: str, status: int = 400) -> NoReturn:
     raise SolutionServiceError(code, message, status)
 
 
@@ -447,3 +457,209 @@ def _retry_failed_export(session: Session, export: ProjectSolutionExport):
         version.generation_error = ""
         session.add(DocumentGenerationJob(document_version_id=version.id, status="queued"))
         enqueue_outbox(session, "document.generate", version.id, {"version_id": version.id, "document_id": export.document_id})
+
+
+# ---------------------------------------------------------------------------
+# goal-d2 S0-4：模板式方案骨架 + 健康度评分 v0
+# ---------------------------------------------------------------------------
+
+_SKELETON_ITEM_LIMIT = 30
+_SKELETON_LINE_LIMIT = 200
+
+
+def create_solution_skeleton(*, actor: User, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """按已确认项目指引 + 行业模板生成方案骨架草稿并保存（PRD F2 / 技术文档 S0-4）。
+
+    责任主体永远是人：本函数只做已确认指引条目的结构化搬运（generated_by=human
+    的 v0 语义，d3 落 generated_by 列），AI 不参与内容生成；产物为草稿，人工修订
+    后才能导出 SOW。溯源写入 source_json.kind="skeleton"。
+    """
+    if not isinstance(payload, dict) or set(payload) - SKELETON_OPTIONAL_FIELDS:
+        _error("invalid_request", "骨架请求仅接受 name/opportunity_ids/business_category 可选字段。")
+    name = payload.get("name")
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 160):
+        _error("invalid_request", "name 必须为 1–160 字文本。")
+    category = payload.get("business_category")
+    if category is not None and category not in BUSINESS_CATEGORIES:
+        _error("invalid_request", "业务阶段无效。")
+    ids = payload.get("opportunity_ids")
+    if ids is not None and (
+        not isinstance(ids, list) or not 1 <= len(ids) <= 100
+        or any(not isinstance(key, str) or not key or len(key) > 36 for key in ids)
+        or len(set(ids)) != len(ids)
+    ):
+        _error("invalid_opportunities", "关联机会必须为项目内机会 id 列表且不重复（最多 100 个）。")
+    with db.session() as session, session.begin():
+        project = documents._load_project_for_update(session, project_id)
+        documents._require_project_manager(actor, project)
+        analysis = session.scalar(select(ProjectGuidanceAnalysis).where(
+            ProjectGuidanceAnalysis.project_id == project.id,
+            ProjectGuidanceAnalysis.status == "confirmed",
+        ).order_by(ProjectGuidanceAnalysis.version_number.desc()).limit(1))
+        if analysis is None:
+            _error("solution_skeleton_guidance_required", "请先在预调研中完成项目指引确认，再生成方案骨架。", 409)
+        intake = session.get(PresurveyIntake, project.id)
+        industry = (intake.industry if intake else "").strip()
+        template_version = _match_industry_template_version(session, industry)
+        template_modules: list[TemplateModule] = []
+        if template_version is not None:
+            template_modules = list(session.scalars(select(TemplateModule).where(
+                TemplateModule.template_version_id == template_version.id).order_by(TemplateModule.sort_order)).all())
+        values = _skeleton_text_fields(analysis, industry=industry, template_modules=template_modules, name=name)
+        opportunities = _selected_opportunities(session, project.id, ids) if ids else []
+        solution = ProjectSolution(
+            project_id=project.id, owner_user_id=actor.id, business_category=category,
+            source_json={
+                "kind": "skeleton",
+                "guidance_analysis_id": analysis.id,
+                "guidance_version_number": analysis.version_number,
+                "industry": industry,
+                "industry_template_version_id": template_version.id if template_version is not None else None,
+            },
+            **values,
+        )
+        _set_opportunities(solution, opportunities)
+        session.add(solution)
+        session.flush()
+        project.version += 1
+        record_event(session, actor, "project_solution_created", project, {
+            "solution_id": solution.id, "opportunity_ids": [item.id for item in opportunities], "source": "skeleton",
+        })
+        return serialize_solution(solution)
+
+
+def _match_industry_template_version(session: Session, industry: str) -> IndustryTemplateVersion | None:
+    """按录入卡行业名精确匹配（casefold）最新已发布行业模板版本；匹配不到返回 None。"""
+    key = (industry or "").strip().casefold()
+    if not key:
+        return None
+    return session.scalar(select(IndustryTemplateVersion).join(
+        IndustryTemplate, IndustryTemplate.id == IndustryTemplateVersion.template_id,
+    ).where(
+        IndustryTemplate.status == "active",
+        IndustryTemplateVersion.status == "published",
+        func.lower(IndustryTemplateVersion.industry_name) == key,
+    ).order_by(IndustryTemplateVersion.version_number.desc()).limit(1))
+
+
+def _skeleton_line(item: dict[str, Any], *, annotate: bool) -> str | None:
+    text = str(item.get("text", "")).strip()[:_SKELETON_LINE_LIMIT]
+    if not text:
+        return None
+    if not annotate:
+        return f"- {text}"
+    tags = []
+    if item.get("severity"):
+        tags.append(str(item["severity"]))
+    if item.get("module"):
+        tags.append(str(item["module"]))
+    return f"- {'/'.join(tags)}｜{text}" if tags else f"- {text}"
+
+
+def _skeleton_lines(items: Any, *, annotate: bool = False, prefix: str | None = None) -> list[str]:
+    if not isinstance(items, list):
+        return [f"- {prefix}（待补）"] if prefix else []
+    lines = [line for item in items[:_SKELETON_ITEM_LIMIT] if isinstance(item, dict) and (line := _skeleton_line(item, annotate=annotate))]
+    if not lines and prefix:
+        lines = [f"- {prefix}（待补）"]
+    return lines
+
+
+def _skeleton_text_fields(
+    analysis: ProjectGuidanceAnalysis, *, industry: str,
+    template_modules: list[TemplateModule], name: str | None,
+) -> dict[str, str]:
+    """把已确认指引条目搬运为六段骨架文本；每段保留「待补」标记，人工修订后才可导出。"""
+    module_names = [module.name for module in template_modules] or sorted({
+        str(item.get("module")).strip() for item in (analysis.key_business_problems_json or [])
+        if isinstance(item, dict) and str(item.get("module", "")).strip()
+    })
+    title = name or f"{industry or '交付'}方案骨架"
+    design = [
+        f"# {title}（预调研骨架草稿，需人工修订）",
+        "",
+        "## 客户愿景与阶段目标",
+        analysis.customer_vision.strip() or "（待补：客户长期愿景）",
+        f"当前阶段目标：{analysis.current_phase_objective.strip() or '（待补）'}",
+        "",
+        "## 关键业务问题",
+        *_skeleton_lines(analysis.key_business_problems_json, annotate=True, prefix="暂无已确认问题条目"),
+        "",
+        "## 方案设想（待人工修订）",
+    ]
+    design += [f"- {module_name}：待补解决思路与预期收益" for module_name in module_names] \
+        if module_names else ["- 待补：按模块概述解决思路"]
+    design += ["## 实施路径（待人工修订）"]
+    design += [f"- {module_name}：待补阶段与里程碑" for module_name in module_names] \
+        if module_names else ["- 待补：对齐 SOP 阶段与门禁计划"]
+    deliverables = _skeleton_lines([{"text": f"{module_name}：待补交付物清单"} for module_name in module_names]) or ["- 待补：核心交付物清单"]
+    acceptance = [
+        f"{line}（验收口径待补）" if line.startswith("- ") and "待补）" not in line else line
+        for line in _skeleton_lines(analysis.success_criteria_json, prefix="验收标准")
+    ]
+    data_systems = _skeleton_lines(analysis.systems_and_deployment_constraints_json, prefix="系统与部署约束")
+    schedule = [f"- {module_name}：待补排期" for module_name in module_names] or ["- 待补：阶段与里程碑"]
+
+    def labeled(items: Any, label: str) -> list[str]:
+        # 三类来源合并进同一段，必须带前缀否则无法区分假设/排除/待确认。
+        return [f"- {label}：{line[2:]}" for line in _skeleton_lines(items)]
+
+    risks = labeled(analysis.assumptions_json, "假设") \
+        + labeled(analysis.out_of_scope_json, "本阶段不包含") \
+        + labeled(analysis.open_questions_json, "待确认问题")
+    if not risks:
+        risks = ["- 待补：风险与依赖"]
+    return {
+        "name": title.strip()[:160],
+        "design_markdown": "\n".join(design)[:40000],
+        "deliverables": "\n".join(deliverables)[:16000],
+        "acceptance_criteria": "\n".join(acceptance)[:16000],
+        "data_systems": "\n".join(data_systems)[:16000],
+        "schedule": "\n".join(schedule)[:16000],
+        "risks_dependencies": "\n".join(risks)[:16000],
+    }
+
+
+def solution_health(*, actor: User, project_id: str, solution_id: str) -> dict[str, Any]:
+    """方案健康度评分 v0（PRD F2 规则校验）：模板覆盖率 + 引用完整性 + 报价合法。"""
+    with db.session() as session:
+        documents._load_project_for_view(session, actor, project_id)
+        solution = _load(session, project_id, solution_id)
+        missing = [label for key, label in HEALTH_COVERAGE_FIELDS if not getattr(solution, key).strip()]
+        coverage_total = len(HEALTH_COVERAGE_FIELDS) * 10
+        coverage_score = coverage_total - len(missing) * 10
+        issues: list[str] = [f"「{label}」尚未填写。" for label in missing]
+        reference_score = 0
+        if solution.opportunities:
+            reference_score += 15
+        else:
+            issues.append("尚未关联任何 AI 机会。")
+        guidance_confirmed = session.scalar(select(ProjectGuidanceAnalysis.id).where(
+            ProjectGuidanceAnalysis.project_id == project_id,
+            ProjectGuidanceAnalysis.status == "confirmed",
+        ).limit(1))
+        if guidance_confirmed:
+            reference_score += 15
+        else:
+            issues.append("项目尚无已确认的预调研指引。")
+        quote_statuses = session.scalars(select(Quote.status).where(Quote.project_id == project_id)).all()
+        if "finalized" in quote_statuses:
+            quote_score, quote_state = 30, "finalized"
+        elif quote_statuses:
+            quote_score, quote_state = 15, "draft"
+            issues.append("报价尚为草稿，定稿后计入满分。")
+        else:
+            quote_score, quote_state = 0, "missing"
+            issues.append("尚未创建报价。")
+        return {
+            "solution_id": solution.id,
+            "version": solution.version,
+            "score": coverage_score + reference_score + quote_score,
+            "max_score": coverage_total + 30 + 30,
+            "breakdown": {
+                "template_coverage": {"score": coverage_score, "max": coverage_total, "missing": missing},
+                "reference_integrity": {"score": reference_score, "max": 30},
+                "quote_validity": {"score": quote_score, "max": 30, "state": quote_state},
+            },
+            "issues": issues,
+        }

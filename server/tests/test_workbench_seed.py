@@ -12,6 +12,7 @@ from fde_api.workbench.models import (
 )
 from fde_api.workbench.seed import (
     BASE_MODULES,
+    GENERIC_TEMPLATE_KEY,
     GENERIC_TEMPLATE_NAME,
     WorkbenchSeedError,
     seed_workbench,
@@ -61,24 +62,44 @@ def test_seed_workbench_creates_exact_published_generic_template_once(db_session
     db_session.expire_all()
 
     templates = db_session.scalars(select(IndustryTemplate)).all()
-    versions = db_session.scalars(select(IndustryTemplateVersion)).all()
+    # goal-d2 S0-6：行业种子并入 seed_workbench 后，全库模板 = 通用 1 + 行业 3。
+    assert len(templates) == 4
+    generic = db_session.scalar(
+        select(IndustryTemplate).where(IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY)
+    )
+    assert generic is not None
+    versions = db_session.scalars(
+        select(IndustryTemplateVersion).where(
+            IndustryTemplateVersion.template_id == generic.id
+        )
+    ).all()
+    generic_version = versions[0]
     modules = db_session.scalars(
-        select(TemplateModule).order_by(TemplateModule.sort_order)
+        select(TemplateModule)
+        .where(TemplateModule.template_version_id == generic_version.id)
+        .order_by(TemplateModule.sort_order)
     ).all()
     tasks = db_session.scalars(
         select(TemplateTask)
         .join(TemplateModule)
+        .where(TemplateModule.template_version_id == generic_version.id)
         .order_by(TemplateModule.sort_order, TemplateTask.sort_order)
     ).all()
-    dependencies = db_session.scalars(select(TemplateTaskDependency)).all()
+    dependencies = (
+        db_session.scalars(
+            select(TemplateTaskDependency)
+            .join(TemplateTask, TemplateTask.id == TemplateTaskDependency.successor_task_id)
+            .join(TemplateModule)
+            .where(TemplateModule.template_version_id == generic_version.id)
+        ).all()
+    )
 
-    assert len(templates) == 1
-    assert templates[0].name == "通用企业 AI 落地模板"
-    assert templates[0].industry_name == "通用"
-    assert templates[0].status == "active"
-    assert templates[0].latest_published_version_number == 1
+    assert generic.name == "通用企业 AI 落地模板"
+    assert generic.industry_name == "通用"
+    assert generic.status == "active"
+    assert generic.latest_published_version_number == 1
     assert len(versions) == 1
-    assert versions[0].template_id == templates[0].id
+    assert versions[0].template_id == generic.id
     assert versions[0].version_number == 1
     assert versions[0].status == "published"
     assert versions[0].published_at is not None
@@ -216,10 +237,20 @@ def test_seed_rejects_a_cross_module_duplicate_task_key(db_session):
     """A dict must not hide the 22nd task when its key duplicates another module."""
     seed_workbench(db_session)
     db_session.commit()
+    # goal-d2：行业种子并入后 module_key 不再唯一（4 模板 × 同五键），
+    # 取模块必须钉到通用模板版本，否则重复任务可能落进行业模板、
+    # 通用模板 drift 校验不触发（CI 干净库上必现，本地行序侥幸掩盖）。
     deployment_module = db_session.scalar(
         select(TemplateModule)
         .join(ModuleCatalog)
-        .where(ModuleCatalog.module_key == "production_deployment")
+        .where(
+            ModuleCatalog.module_key == "production_deployment",
+            TemplateModule.template_version_id
+            == select(IndustryTemplateVersion.id)
+            .join(IndustryTemplate)
+            .where(IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY)
+            .scalar_subquery(),
+        )
     )
     db_session.add(
         TemplateTask(
@@ -243,8 +274,14 @@ def test_seed_rejects_matching_root_and_version_description_drift(db_session):
     """Comparing root to version alone would accept coordinated metadata drift."""
     seed_workbench(db_session)
     db_session.commit()
-    template = db_session.scalars(select(IndustryTemplate)).one()
-    version = db_session.scalars(select(IndustryTemplateVersion)).one()
+    template = db_session.scalars(
+        select(IndustryTemplate).where(IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY)
+    ).one()
+    version = db_session.scalars(
+        select(IndustryTemplateVersion).where(
+            IndustryTemplateVersion.template_id == template.id
+        )
+    ).one()
     template.description = "same drift"
     version.description = "same drift"
     db_session.commit()

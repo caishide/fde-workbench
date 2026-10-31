@@ -41,6 +41,20 @@ def organize_solution(project_id):
     return _data(service.organize_solution(actor=g.current_user, project_id=project_id, payload=_payload()))
 
 
+@solutions_blueprint.post("/skeleton")
+@require_auth
+def create_solution_skeleton(project_id):
+    """按已确认项目指引生成方案骨架草稿（S0-4；draft，人工修订后才可导出 SOW）。"""
+    return _data(service.create_solution_skeleton(actor=g.current_user, project_id=project_id, payload=_payload())), 201
+
+
+@solutions_blueprint.get("/<solution_id>/health")
+@require_auth
+def solution_health(project_id, solution_id):
+    """方案健康度评分 v0：模板覆盖率/引用完整性/报价合法（S0-4）。"""
+    return _data(service.solution_health(actor=g.current_user, project_id=project_id, solution_id=solution_id))
+
+
 @solutions_blueprint.get("/<solution_id>")
 @require_auth
 def get_solution(project_id, solution_id):
