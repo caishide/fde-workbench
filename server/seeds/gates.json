@@ -19,7 +19,8 @@
       "S9 并入 G8 前执行，不建 Gate 记录；S13 为 value+receipts 闸门，非 G 编号门禁",
       "SopNode 不存 T 代号（SOP 横切线 T1–T4 与设计文档开工触发 T1–T3 同码不同义，刻意排除）",
       "segment 为抽取器按 v0.3.2 规则归类（售前/交付/交付后/横切），P1 建模时可复核",
-      "gates.json 是门禁定义模板（含证据清单），Gate 表按 project 实例化时引用"
+      "gates.json 是门禁定义模板（含证据清单），Gate 表按 project 实例化时引用",
+      "goal-r3 P1-5：gates 增 applicable_industries（null=全行业通用；行业专属门禁随行业模板库 A7 扩展时填充）"
     ],
     "warnings": []
   },
@@ -42,7 +43,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "归档养鱼池，不免费初诊",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L11",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G2",
@@ -62,7 +64,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "回养鱼池（记录回访触发条件）",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L12",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G3",
@@ -85,7 +88,8 @@
       "pass_status_raw": "过/不过（无条件通过）",
       "fail_exit": "缺任一件不启动；\"免费出方案\"拒绝",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L13",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G4",
@@ -111,7 +115,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "诊断结论存档为客户资产，可随时重启",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L14",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G5",
@@ -131,7 +136,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "绑定错客户→停，FDEOPS_ENGAGEMENT 显式纠正，不许反复 --init",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L15",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G6",
@@ -153,7 +159,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "基线测不到先补测量；不认可回 S2 口径重判",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L16",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G7",
@@ -176,7 +183,8 @@
       "pass_status_raw": "过/不过",
       "fail_exit": "\"先做出来再看标准\"拒绝；回 S6 重定义",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L17",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G8",
@@ -199,7 +207,8 @@
       "pass_status_raw": "proceed/pivot/stop 三态",
       "fail_exit": "证据不足→延长时间盒（书面）或 stop；不允许无限\"再跑跑看\"",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L19",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     },
     {
       "gate_key": "G9",
@@ -223,7 +232,8 @@
       "pass_status_raw": "过/有条件通过",
       "fail_exit": "回滚上一段位；连续两段不达标→高管对话",
       "source_uri": "deliverables/fde-sop-v1.1/门禁与阶段唯一映射表-v1.3.md#L21",
-      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4"
+      "source_sha256": "99c2d2b6862b637944a039c36c665e808aac3cc276cea55ea80b1adac8a8e4b4",
+      "applicable_industries": null
     }
   ]
 }

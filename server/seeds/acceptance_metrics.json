@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "generated_at": "2026-10-31T00:00:00+00:00",
+    "generator": "goal-r4 P1-5（BP §11 闸门指标投影；设计文档未给 schema——goal-r4 留注⑨：字段集为工程侧最小决定，收口报告列待签字）",
+    "sources": {
+      "bp": {
+        "path": "蔡工FDE工作台_商业计划书_v3.0_投资人版.md",
+        "section": "§11 路线图与闸门（P0 覆盖率 / P3 一次通过率 / P4 工时与毛利）"
+      },
+      "design": {
+        "path": "蔡工FDE工作台_派单撮合引擎产品与技术设计_v1.0.md",
+        "section": "§8.8 验收基线（开池四道闸）"
+      }
+    },
+    "conventions": [
+      "指标定义只放目标值与统计口径说明，度量实现随各闸门轮次落位",
+      "阈值是「闸门判定输入」，不是运行时可调参数——不进 system_configuration（P0-7 只读纪律同源）"
+    ],
+    "warnings": []
+  },
+  "metrics": [
+    {"key": "business_module_test_coverage", "target": 0.60, "comparator": ">=", "gate": "P0", "unit": "ratio", "scope": "商业模块关键路径（BP §11 P0 闸门 / §8.8 闸④）"},
+    {"key": "g9_first_pass_rate", "target": 0.70, "comparator": ">=", "gate": "P3", "unit": "ratio", "scope": "生态交付 G9 一次通过率，首批 10 单（BP §11 P3 闸门；H2）"},
+    {"key": "platform_hours_ratio", "target": 0.25, "comparator": "<=", "gate": "P4", "unit": "ratio", "scope": "平台方工时占比（BP §11 P4 闸门；H3）"},
+    {"key": "gross_margin", "target": 0.70, "comparator": ">=", "gate": "P4", "unit": "ratio", "scope": "毛利率（BP §11 P4 闸门；H3）"},
+    {"key": "settlement_cycle_days", "target": 15, "comparator": "<=", "gate": "P4", "unit": "days", "scope": "结算支付周期目标 T+15（设计 §7.5；红线 ≤1 个月）"},
+    {"key": "daily_decline_quota_floor", "target": 4, "comparator": ">=", "gate": "P1", "unit": "count", "scope": "每日无条件拒单/转单次数下限，不得因拒单限制接单机会（§6.7 / 负面清单 A-6 #6）"}
+  ]
+}

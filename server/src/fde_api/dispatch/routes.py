@@ -19,6 +19,12 @@ from fde_api.dispatch.access import (
 )
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import DeliveryPackage
+from fde_api.dispatch.offer_service import (
+    accept_offer_and_handover,
+    claim_package,
+    create_assign_offers,
+    decline_offer,
+)
 from fde_api.dispatch.packages import (
     accept_package,
     create_package,
@@ -188,3 +194,111 @@ def accept_package_route(package_id: str):
     except DispatchServiceError as error:
         return _dispatch_error(error)
     return jsonify({"data": result, "error": None})
+
+
+@blueprint.post("/packages/<package_id>/offers")
+@require_auth
+def create_offers_route(package_id: str):
+    payload = _json_body() or {}
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可指派。", 403)
+    candidates_raw = payload.get("candidate_user_ids") or []
+    if not isinstance(candidates_raw, list) or not candidates_raw or not all(
+        isinstance(item, str) for item in candidates_raw
+    ):
+        return error_response(
+            "invalid_request", "candidate_user_ids 必须是非空字符串数组。", 400
+        )
+    session = db.session()
+    try:
+        with session.begin():
+            offers = create_assign_offers(
+                session,
+                actor=g.current_user,
+                package_id=package_id,
+                candidate_user_ids=tuple(candidates_raw),
+            )
+            data = [
+                {
+                    "offer_id": offer.id,
+                    "candidate_user_id": offer.candidate_user_id,
+                    "dispatch_round": offer.dispatch_round,
+                    "status": offer.status,
+                    "version": offer.version,
+                }
+                for offer in offers
+            ]
+        return jsonify({"data": data, "error": None}), 201
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/offers/<offer_id>/accept")
+@require_auth
+def accept_offer_route(offer_id: str):
+    payload = _json_body() or {}
+    expected_version = payload.get("version")
+    if type(expected_version) is not int:
+        return error_response("invalid_request", "version（乐观锁）必填。", 400)
+    try:
+        result = accept_offer_and_handover(
+            actor=g.current_user, offer_id=offer_id, expected_version=expected_version
+        )
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    return jsonify({"data": result, "error": None})
+
+
+@blueprint.post("/offers/<offer_id>/decline")
+@require_auth
+def decline_offer_route(offer_id: str):
+    payload = _json_body() or {}
+    expected_version = payload.get("version")
+    if type(expected_version) is not int:
+        return error_response("invalid_request", "version（乐观锁）必填。", 400)
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        return error_response("invalid_request", "reason 必须是字符串。", 400)
+    session = db.session()
+    try:
+        with session.begin():
+            offer = decline_offer(
+                session,
+                actor=g.current_user,
+                offer_id=offer_id,
+                expected_version=expected_version,
+                reason=reason,
+            )
+            data = {
+                "offer_id": offer.id,
+                "status": offer.status,
+                "version": offer.version,
+            }
+        return jsonify({"data": data, "error": None})
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/packages/<package_id>/claim")
+@require_auth
+def claim_package_route(package_id: str):
+    session = db.session()
+    try:
+        with session.begin():
+            offer = claim_package(session, actor=g.current_user, package_id=package_id)
+            data = {
+                "offer_id": offer.id,
+                "candidate_user_id": offer.candidate_user_id,
+                "dispatch_round": offer.dispatch_round,
+                "status": offer.status,
+                "version": offer.version,
+            }
+        return jsonify({"data": data, "error": None}), 201
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
