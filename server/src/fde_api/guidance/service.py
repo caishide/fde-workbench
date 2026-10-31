@@ -11,10 +11,16 @@ from fde_api.auth.models import User
 from fde_api.extensions import db
 from fde_api.files.models import ProjectFileVersion
 from fde_api.guidance.ai_schema import LIST_FIELDS
-from fde_api.guidance.models import ProjectGuidanceAnalysis, ProjectPresurveySource
+from fde_api.guidance.models import (
+    INTERVIEW_MODES,
+    PresurveyIntake,
+    ProjectGuidanceAnalysis,
+    ProjectPresurveySource,
+)
 from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
-from fde_api.workbench.models import Project
+from fde_api.workbench.models import Gate, Project
 
 
 class GuidanceServiceError(Exception):
@@ -28,6 +34,7 @@ def set_presurvey_source(*, actor: User, project_id: str, file_version_id: str) 
     try:
         with session.begin():
             project = _project(session, actor, project_id, manage=True)
+            _require_s3_gate(session, project.id)
             version = session.scalar(select(ProjectFileVersion).options(selectinload(ProjectFileVersion.project_file)).where(ProjectFileVersion.id == file_version_id))
             _valid_source(version, project.id)
             source = session.get(ProjectPresurveySource, project.id)
@@ -49,6 +56,7 @@ def create_analysis(*, actor: User, project_id: str, source_file_version_id: str
     try:
         with session.begin():
             project = _project(session, actor, project_id, manage=True)
+            _require_s3_gate(session, project.id)
             source = session.get(ProjectPresurveySource, project.id)
             version_id = source_file_version_id or (source.current_file_version_id if source else None)
             if not version_id:
@@ -244,6 +252,106 @@ def serialize_analysis(row: ProjectGuidanceAnalysis, source: ProjectPresurveySou
 
 def _source_dict(source: ProjectPresurveySource) -> dict[str, Any]:
     return {"project_id": source.project_id, "project_file_id": source.project_file_id, "current_file_version_id": source.current_file_version_id, "version": source.version}
+
+
+def get_presurvey_intake(*, actor: User, project_id: str) -> dict[str, Any]:
+    session = db.session()
+    try:
+        _project(session, actor, project_id)
+        return _intake_dict(session.get(PresurveyIntake, project_id))
+    finally:
+        session.close()
+
+
+def save_presurvey_intake(*, actor: User, project_id: str, changes: Mapping[str, Any]) -> dict[str, Any]:
+    session = db.session()
+    try:
+        with session.begin():
+            project = _project(session, actor, project_id, manage=True)
+            fields = _validated_intake_fields(changes)
+            row = session.get(PresurveyIntake, project.id)
+            if row is None:
+                row = PresurveyIntake(project_id=project.id, updated_by_user_id=actor.id, **fields)
+                session.add(row)
+            else:
+                for key, value in fields.items():
+                    setattr(row, key, value)
+                row.updated_by_user_id = actor.id
+            session.flush()
+            record_event(session, actor, "presurvey_intake_saved", project, {"fields": sorted(fields)})
+            return _intake_dict(row)
+    finally:
+        session.close()
+
+
+def _require_s3_gate(session, project_id: str) -> None:
+    """G3 诊断开工门前置闸（PRD F1 / 决议 D16）：DOCX 分析链路仅限 S3 之后。
+
+    G3 的证据清单即 SOW-A 签署 + A 款预付到账 + 数据授权书四项勾选
+    （seeds/gates.json，SOP 原文），status=passed 表示三件套已人工核验；
+    G3 的 decision 语义只有 pass/fail，无 conditional_pass。轻量录入卡
+    （presurvey_intakes）不受此闸——S1–S2 即可填（PRD D16）。
+    """
+    gate = session.scalar(select(Gate).where(Gate.project_id == project_id, Gate.gate_key == "G3"))
+    if gate is None or gate.status != "passed":
+        raise GuidanceServiceError(
+            "presurvey_s3_gate_open",
+            "需先通过 G3 诊断开工门（SOW-A 签署、A 款到账、数据授权书四项勾选），才能上传预调研文件或发起 AI 分析。",
+            409,
+        )
+
+
+_INTAKE_TEXT_LIMITS: dict[str, int] = {
+    "industry": 80, "scale": 80, "region": 80,
+    "customer_vision": 2000, "phase_objective": 2000, "notes": 2000,
+}
+
+
+def _validated_intake_fields(changes: Mapping[str, Any]) -> dict[str, Any]:
+    text_limits = _INTAKE_TEXT_LIMITS
+    allowed = set(text_limits) | {"interview_mode", "interviewee_roles"}
+    unknown = set(changes) - allowed
+    if unknown:
+        raise GuidanceServiceError("unknown_field", f"不支持的录入卡字段：{sorted(unknown)}。", 400)
+    fields: dict[str, Any] = {}
+    for name, limit in text_limits.items():
+        if name not in changes:
+            continue
+        value = changes[name]
+        if not isinstance(value, str) or len(value.strip()) > limit:
+            raise GuidanceServiceError("invalid_request", f"{name} 必须是不超过 {limit} 字的文本。", 400)
+        fields[name] = value.strip()
+    if "interview_mode" in changes:
+        mode = changes["interview_mode"]
+        if mode not in INTERVIEW_MODES:
+            raise GuidanceServiceError("invalid_request", "interview_mode 仅支持 onsite/remote/hybrid。", 400)
+        fields["interview_mode"] = mode
+    if "interviewee_roles" in changes:
+        roles = changes["interviewee_roles"]
+        if not isinstance(roles, list) or len(roles) > 20 or any(
+            not isinstance(role, str) or not role.strip() or len(role.strip()) > 80 for role in roles
+        ):
+            raise GuidanceServiceError("invalid_request", "interviewee_roles 必须是不超过 20 条、每条 80 字以内的文本数组。", 400)
+        fields["interviewee_roles"] = [role.strip() for role in roles]
+    if not fields:
+        raise GuidanceServiceError("invalid_request", "没有可保存的录入卡字段。", 400)
+    return fields
+
+
+def _intake_dict(row: PresurveyIntake | None) -> dict[str, Any]:
+    if row is None:
+        return {
+            "industry": "", "scale": "", "region": "", "interview_mode": "onsite",
+            "interviewee_roles": [], "customer_vision": "", "phase_objective": "", "notes": "",
+            "updated_by_user_id": None, "updated_at": None,
+        }
+    return {
+        "industry": row.industry, "scale": row.scale, "region": row.region,
+        "interview_mode": row.interview_mode, "interviewee_roles": row.interviewee_roles,
+        "customer_vision": row.customer_vision, "phase_objective": row.phase_objective,
+        "notes": row.notes, "updated_by_user_id": row.updated_by_user_id,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
 def _project(session, actor: User, project_id: str, *, manage: bool = False) -> Project:
