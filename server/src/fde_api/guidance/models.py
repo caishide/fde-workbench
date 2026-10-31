@@ -14,6 +14,43 @@ GUIDANCE_STATUSES = ("draft", "confirmed", "superseded")
 GUIDANCE_ANALYSIS_STATES = (
     "queued", "extracting", "analyzing", "ready", "failed", "cancelled"
 )
+# 售前轻量录入卡的访谈方式（PRD F1 / 决议 D16）。
+INTERVIEW_MODES = ("onsite", "remote", "hybrid")
+
+
+class PresurveyIntake(Base, TimestampMixin):
+    """售前轻量录入卡（PRD F1 / 决议 D16）。
+
+    S1–S2 阶段即可填写：只收无敏感结构化字段（行业/规模/地域/访谈方式/
+    对象角色/诉求一句话/阶段目标/备注），数据口径等价 SOP leads.md 九字段，
+    不触碰「S0–S2 售前资料禁入库」红线。DOCX 上传与 AI 分析链路仍被
+    G3 前置闸拦在 S3 之后（service 层强制，见 _require_s3_gate）。
+    """
+
+    __tablename__ = "presurvey_intakes"
+    __table_args__ = (
+        CheckConstraint(
+            "interview_mode IN ('onsite', 'remote', 'hybrid')",
+            name="ck_presurvey_intakes_interview_mode",
+        ),
+    )
+
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), primary_key=True
+    )
+    industry: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    scale: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    region: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    interview_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="onsite"
+    )
+    interviewee_roles: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    customer_vision: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    phase_objective: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
 
 
 class ProjectPresurveySource(Base, TimestampMixin, VersionedMixin):

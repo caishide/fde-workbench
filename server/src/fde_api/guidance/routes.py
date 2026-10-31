@@ -6,7 +6,8 @@ from fde_api.auth.decorators import require_auth
 from fde_api.errors import error_response
 from fde_api.guidance.service import (
     GuidanceServiceError, confirm_analysis, create_analysis, create_manual_revision, current_guidance,
-    get_analysis, list_analyses, set_presurvey_source, update_analysis,
+    get_analysis, get_presurvey_intake, list_analyses, save_presurvey_intake, set_presurvey_source,
+    update_analysis,
 )
 
 guidance_blueprint = Blueprint("guidance", __name__, url_prefix="/api/v1/projects/<project_id>")
@@ -71,6 +72,22 @@ def confirm_route(project_id: str, analysis_id: str):
     payload = request.get_json(silent=True) or {}
     if type(payload.get("version")) is not int: return error_response("invalid_request", "缺少有效版本号。", 400)
     try: return _ok(confirm_analysis(actor=g.current_user, project_id=project_id, analysis_id=analysis_id, expected_version=payload["version"]))
+    except GuidanceServiceError as error: return _error(error)
+
+
+@guidance_blueprint.get("/presurvey-intake")
+@require_auth
+def intake_get_route(project_id: str):
+    try: return _ok(get_presurvey_intake(actor=g.current_user, project_id=project_id))
+    except GuidanceServiceError as error: return _error(error)
+
+
+@guidance_blueprint.put("/presurvey-intake")
+@require_auth
+def intake_put_route(project_id: str):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict): return error_response("invalid_request", "请求体必须是对象。", 400)
+    try: return _ok(save_presurvey_intake(actor=g.current_user, project_id=project_id, changes=payload))
     except GuidanceServiceError as error: return _error(error)
 
 

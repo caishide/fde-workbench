@@ -34,7 +34,7 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # goal-r2 派单引擎：fde_profiles / fde_level_evidence / dispatch_rule_versions /
 # delivery_settlements 四表 + payments.acceptance_passed_at（P0-3/4/8）
 # goal-r3 派单引擎：package_access 表 + delivery_packages.delivery_seat_amount（P0-1/2）
-HEAD_REVISION = "f4b8c2d6e3a1"
+HEAD_REVISION = "a7f3c1e9d5b2"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",

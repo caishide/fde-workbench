@@ -202,7 +202,7 @@ def db_session(app) -> Session:
         ProjectDocumentVersion,
     )
     from fde_api.files.models import ProjectFile, ProjectFileVersion, UploadSession
-    from fde_api.guidance.models import ProjectGuidanceAnalysis, ProjectPresurveySource
+    from fde_api.guidance.models import PresurveyIntake, ProjectGuidanceAnalysis, ProjectPresurveySource
     from fde_api.jobs.models import BackgroundJob, OutboxEvent
     from fde_api.mailing.models import MailingEvent, MailingSend
     from fde_api.control.models import (
@@ -297,6 +297,8 @@ def db_session(app) -> Session:
         DocumentTemplate,
         ProjectGuidanceAnalysis,
         ProjectPresurveySource,
+        # goal-d1：录入卡引用 projects/users（RESTRICT），先于两表清理。
+        PresurveyIntake,
         ProjectFileVersion,
         UploadSession,
         ProjectFile,

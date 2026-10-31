@@ -1,5 +1,10 @@
 export type GuidanceClassification = "customer_stated" | "ai_synthesized" | "ai_inferred" | "open_question" | "human_added"
-export interface GuidanceItemDto { text: string; classification: GuidanceClassification; source_refs: string[]; confirmed: boolean }
+export type GuidanceSeverity = "high" | "medium" | "low"
+// goal-d1 S0-2：key_business_problems 条目可附可签约优先级与交付模块映射（服务端契约可选键）。
+export interface GuidanceItemDto {
+  text: string; classification: GuidanceClassification; source_refs: string[]; confirmed: boolean
+  severity?: GuidanceSeverity; module?: string
+}
 export interface GuidanceAnalysisDto {
   id: string; project_id: string; version_number: number; source_file_id: string; source_file_version_id: string
   source_filename: string; status: "draft" | "confirmed" | "superseded"

@@ -56,7 +56,9 @@ export function GuidanceReview({ projectId, initial, canManage, initialEditing =
   }
   function changeItems(key: keyof GuidanceAnalysisDto, text: string) {
     const previous = draft[key] as GuidanceItemDto[]
-    const next = text.split("\n").map((value) => value.trim()).filter(Boolean).map((value, index) => ({ text: value, classification: previous[index]?.classification ?? "human_added" as const, source_refs: previous[index]?.source_refs ?? [], confirmed: previous[index]?.confirmed ?? true }))
+    // goal-d1：重建条目时透传 severity/module（key_business_problems 增强键），
+    // 人工编辑不得静默丢掉 AI 标注的可签约优先级与模块映射。
+    const next = text.split("\n").map((value) => value.trim()).filter(Boolean).map((value, index) => ({ text: value, classification: previous[index]?.classification ?? "human_added" as const, source_refs: previous[index]?.source_refs ?? [], confirmed: previous[index]?.confirmed ?? true, severity: previous[index]?.severity, module: previous[index]?.module }))
     setDraft({ ...draft, [key]: next })
   }
   function cancelEditing() { setDraft(baseline); setError(""); setEditing(false) }
