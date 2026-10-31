@@ -73,6 +73,10 @@ ENTRIES = [
     ("dispatch.packages_publish", "POST", "/api/v1/dispatch/packages/{package_id}/publish", "发布交付包：冻结快照哈希并对候选授只读（平台侧）", "可选 candidate_user_ids"),
     ("dispatch.packages_withdraw", "POST", "/api/v1/dispatch/packages/{package_id}/withdraw", "撤回交付包（无进行中 offer 才允许；平台侧）", ""),
     ("dispatch.packages_accept", "POST", "/api/v1/dispatch/packages/{package_id}/accept", "接单并交接项目成员身份（§9.3）", "delivery_user_id"),
+    ("dispatch.offers_create", "POST", "/api/v1/dispatch/packages/{package_id}/offers", "对候选发指派 offer（平台侧；包 published→offered）", "candidate_user_ids"),
+    ("dispatch.offers_accept", "POST", "/api/v1/dispatch/offers/{offer_id}/accept", "接单/中签确认（乐观锁 version；§9.3 交接随行）", "version"),
+    ("dispatch.offers_decline", "POST", "/api/v1/dispatch/offers/{offer_id}/decline", "拒单（§6.7 拒单权；原因枚举选填、只进留痕）", "version；可选 reason=档期冲突/能力不匹配/距离/其他"),
+    ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,

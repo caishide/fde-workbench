@@ -25,6 +25,9 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from conftest import SERVER_ROOT, seed_reference_data
 
 
+# f7a2c9e4b1d3 迁移时刻的 gates.json 文件哈希（历史回填值，冻结不随种子演进
+# 漂移——迁移文件内同值常量是它的唯一权威；gate 行实例化时的实时哈希由
+# gate_service._gates_file_hash() 现算，审计语义=「该行从哪版模板实例化」）。
 GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51647e6"
 # WP-E SES 预建新增 mailing_sends / mailing_events 两表（goal-r3 G9）；
 # goal-r1 派单引擎：gates 验收分离三列 + delivery_packages/dispatch_offers 骨架表

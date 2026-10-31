@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "generated_at": "2026-10-31T00:00:00+00:00",
+    "generator": "goal-r4 P1-5（派单设计 §12 建议名单）",
+    "sources": {
+      "design": {
+        "path": "蔡工FDE工作台_派单撮合引擎产品与技术设计_v1.0.md",
+        "section": "§12 首批城市白名单（6 城，建议名单待拍板——附录 B-④）"
+      }
+    },
+    "conventions": [
+      "白名单只管需求侧开城，不管供给侧注册（供给池全国开放，§12 导语）",
+      "claim_enabled 由 §6.4 开闸三条件驱动，种子默认 false（§11.1 备案未完成=claim 关闭的降级态）",
+      "subsidy_scheme 选填（P2-6 扩字段），metro_group 为都市圈归属（扩圈链 geo_tier 依据，§4.7）"
+    ],
+    "warnings": ["终版名单待拍板（附录 B-④）；本表为设计建议，入选理由均可追溯"]
+  },
+  "cities": [
+    {"city": "苏州", "province": "江苏", "metro_group": "苏锡常都市圈", "city_tier": "T1", "claim_enabled": false, "subsidy_scheme": null},
+    {"city": "无锡", "province": "江苏", "metro_group": "苏锡常都市圈", "city_tier": "T1", "claim_enabled": false, "subsidy_scheme": null},
+    {"city": "常州", "province": "江苏", "metro_group": "苏锡常都市圈", "city_tier": "T2", "claim_enabled": false, "subsidy_scheme": null},
+    {"city": "南京", "province": "江苏", "metro_group": "南京都市圈", "city_tier": "T1", "claim_enabled": false, "subsidy_scheme": null},
+    {"city": "南通", "province": "江苏", "metro_group": "上海大都市圈", "city_tier": "T2", "claim_enabled": false, "subsidy_scheme": null},
+    {"city": "宁波", "province": "浙江", "metro_group": "宁波都市圈", "city_tier": "T1", "claim_enabled": false, "subsidy_scheme": null}
+  ]
+}

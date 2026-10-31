@@ -354,6 +354,47 @@ def transition_package(
     return package
 
 
+def handover_accepted_member(
+    project_id: str, delivery_user_id: str
+) -> dict[str, Any]:
+    """§9.3 鉴权交接（主事务提交后调用）：以项目管理位（leader）为 actor 复用
+    add_project_member——接单人本人在交接前无 can_manage（留注⑧），stale_version
+    重读一次重试，重复成员幂等。offer_service（P1-1）接单共用本函数。"""
+    from fde_api.projects.service import (
+        ProjectServiceError,
+        add_project_member,
+        get_project,
+    )
+
+    with db.session() as lookup:
+        project_row = lookup.get(Project, project_id)
+        leader_id = project_row.leader_user_id if project_row else None
+    if leader_id is None:
+        return {"added": False}
+    with db.session() as session:
+        leader = session.get(User, leader_id)
+    if leader is None:
+        return {"added": False}
+
+    for attempt in range(2):
+        project = get_project(actor=leader, project_id=project_id)
+        try:
+            add_project_member(
+                actor=leader,
+                project_id=project_id,
+                expected_version=project["version"],
+                user_id=delivery_user_id,
+                role="member",
+            )
+            return {"added": True}
+        except ProjectServiceError as error:
+            if error.code == "duplicate_project_member":
+                return {"added": False, "duplicate": True}
+            if error.code != "stale_version" or attempt == 1:
+                raise
+    return {"added": False}
+
+
 def accept_package(
     *,
     actor: User,
@@ -361,8 +402,7 @@ def accept_package(
     delivery_user_id: str,
 ) -> dict[str, Any]:
     """接单 = accept 迁移 + §9.3 鉴权交接（复用 add_project_member，零新增
-    项目内鉴权路径）。交接在主事务提交后执行（该服务自管事务与乐观锁版本），
-    stale_version 重读一次重试。"""
+    项目内鉴权路径）。交接在主事务提交后执行（该服务自管事务与乐观锁版本）。"""
     session = db.session()
     try:
         with session.begin():
@@ -373,47 +413,16 @@ def accept_package(
                 action="accept",
                 seat_delivery_user_id=delivery_user_id,
             )
-            # §9.3 交接执行人 = 项目管理位（leader）——接单人本人在交接前无
-            # can_manage，不能作为 add_project_member 的 actor。
-            project_row = session.get(Project, package.project_id)
-            leader_id = project_row.leader_user_id if project_row else None
-
-        from fde_api.projects.service import (
-            ProjectServiceError,
-            add_project_member,
-            get_project,
+            payload = {
+                "package_id": package.id,
+                "dispatch_status": package.dispatch_status,
+                "dispatch_round": package.dispatch_round,
+                "snapshot_hash": package.snapshot_hash,
+                "accepted_user_id": package.accepted_user_id,
+            }
+        payload["handover"] = handover_accepted_member(
+            package.project_id, delivery_user_id
         )
-
-        handover: dict[str, Any] = {"added": False}
-        if leader_id is not None:
-            with db.session() as lookup:
-                leader = lookup.get(User, leader_id)
-            if leader is not None:
-                for attempt in range(2):
-                    project = get_project(actor=leader, project_id=package.project_id)
-                    try:
-                        add_project_member(
-                            actor=leader,
-                            project_id=package.project_id,
-                            expected_version=project["version"],
-                            user_id=delivery_user_id,
-                            role="member",
-                        )
-                        handover = {"added": True}
-                        break
-                    except ProjectServiceError as error:
-                        if error.code == "duplicate_project_member":
-                            handover = {"added": False, "duplicate": True}
-                            break
-                        if error.code != "stale_version" or attempt == 1:
-                            raise
-        return {
-            "package_id": package.id,
-            "dispatch_status": package.dispatch_status,
-            "dispatch_round": package.dispatch_round,
-            "snapshot_hash": package.snapshot_hash,
-            "accepted_user_id": package.accepted_user_id,
-            "handover": handover,
-        }
+        return payload
     finally:
         session.close()
