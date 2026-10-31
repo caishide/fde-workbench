@@ -237,10 +237,20 @@ def test_seed_rejects_a_cross_module_duplicate_task_key(db_session):
     """A dict must not hide the 22nd task when its key duplicates another module."""
     seed_workbench(db_session)
     db_session.commit()
+    # goal-d2：行业种子并入后 module_key 不再唯一（4 模板 × 同五键），
+    # 取模块必须钉到通用模板版本，否则重复任务可能落进行业模板、
+    # 通用模板 drift 校验不触发（CI 干净库上必现，本地行序侥幸掩盖）。
     deployment_module = db_session.scalar(
         select(TemplateModule)
         .join(ModuleCatalog)
-        .where(ModuleCatalog.module_key == "production_deployment")
+        .where(
+            ModuleCatalog.module_key == "production_deployment",
+            TemplateModule.template_version_id
+            == select(IndustryTemplateVersion.id)
+            .join(IndustryTemplate)
+            .where(IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY)
+            .scalar_subquery(),
+        )
     )
     db_session.add(
         TemplateTask(
