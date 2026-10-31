@@ -85,7 +85,8 @@ class Settings(BaseSettings):
     ses_configuration_set: str = ""
     # goal-d3 沙箱基座（技术实施方案 §4 / 决议 D4）：默认参数面向 docker CLI
     # 可注入后端；镜像与容器名口径见 agents/sandbox.py。断网/资源上限/
-    # 一次性 workspace 是基线事实，不随配置开放（egress allowlist 归 d4）。
+    # 一次性 workspace 是基线事实，不随配置开放（egress allowlist 已随 d4
+    # 落地，白名单本身仍需显式配置）。
     sandbox_docker_bin: str = "docker"
     sandbox_image: str = "fde-sandbox-runner:latest"
     sandbox_memory: str = "512m"
@@ -93,6 +94,20 @@ class Settings(BaseSettings):
     sandbox_pids_limit: int = Field(default=128, ge=1)
     sandbox_tmpfs_size: str = "512m"
     sandbox_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+    # goal-d4 run 生命周期（技术实施方案 §5/§8）：FDE_AGENT_* 配置族。
+    agent_monthly_budget: int = Field(default=0, ge=0)  # 平台月度预算（0=不限额，沿 E7 心智）
+    # 单 run 超时毫秒（D6 默认 300000；agent_registry.max_duration_ms 优先）
+    agent_max_duration_ms: int = Field(default=300000, ge=1000)
+    # 重试指数退避基长（秒）：第 n 次重试需等待 base*2^(n-1)；0 = 测试口径
+    agent_retry_backoff_base_seconds: int = Field(default=30, ge=0)
+    # egress allowlist：逗号分隔 IPv4 CIDR；空 = allowlist 档不可用（deny 基线不变）
+    agent_allowed_egress: str = ""
+    # 上下文脱敏禁区词（逗号分隔，真实客户名等）：命中即拒绝发起 run（fail-closed）
+    agent_forbidden_terms: str = ""
+    # run workspace 根目录（相对路径相对服务端工作目录）
+    agent_workspace_root: str = "agent-workspaces"
+    # 沙箱内 agent CLI 命令（zcode 适配器 spawn 段）
+    agent_cli_command: str = "zcode"
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

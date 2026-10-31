@@ -60,6 +60,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(solutions_blueprint)
     app.register_blueprint(dispatch_blueprint)
     app.register_blueprint(guidance_blueprint)
+    # S1 编程工作台（goal-d4）：agent 注册表 + run 生命周期（适配器/溯源/成本）
+    from fde_api.agents.routes import agents_blueprint
+    app.register_blueprint(agents_blueprint)
     # WP-E SES：SNS 退信/投诉回调端点（默认随模块关闭，端点校验失败一律 403）
     app.register_blueprint(mailing_blueprint)
     app.register_blueprint(control_blueprint)

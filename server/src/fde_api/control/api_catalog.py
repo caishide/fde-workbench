@@ -9,6 +9,7 @@ D = P + "/documents"
 F = P + "/files"
 E = "/api/v1/extensions"
 S = P + "/solutions"
+A = "/api/v1/agents"
 
 # ID, method, path, semantic description, body field hints.
 ENTRIES = [
@@ -92,6 +93,12 @@ ENTRIES = [
     ("dispatch.disputes_resolve", "POST", "/api/v1/dispatch/disputes/{dispute_id}/resolve", "人工裁决（结论必填；处罚类动作 100% 人工；可选 close=true 直关；平台侧）", "resolution；可选 close"),
     ("dispatch.simulator_replay", "POST", "/api/v1/dispatch/simulator/replay", "历史包回放打分（当前池×当前规则版本再撮合画像；只读；全链路仿真留 CLI 沙箱库；平台侧）", ""),
     ("dispatch.claim_gates_list", "GET", "/api/v1/dispatch/claim-gates", "城市开闸看板（§6.4 三条件+种子开关逐城可解释明细；只读不翻转开关；平台侧）", ""),
+    # 编程工作台（goal-d4）：agents 只读四条；发起 run/接管/重试属人工授权
+    # 写路径，继续不收（沿门禁三路由先例）
+    ("agents.list", "GET", "/api/v1/agents", "读取智能体注册表与可用状态（含不可用原因：disabled/adapter_missing/credential_missing）", ""),
+    ("agents.run_get", "GET", A + "/runs/{run_id}", "查询 agent run 溯源（状态/成本/降级链/产物 sha256 指纹）", ""),
+    ("agents.tool_calls", "GET", A + "/runs/{run_id}/tool-calls", "查询 run 工具调用留痕（denied 明细可过滤）", "decision=allowed|denied 可选"),
+    ("agents.cost", "GET", A + "/cost", "查询 agent 成本明细与月度汇总（project 需 project_id；seat/platform 仅系统运维员）", "scope=project|seat|platform，scope=project 时必带 project_id"),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,
