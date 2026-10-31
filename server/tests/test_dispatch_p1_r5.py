@@ -102,7 +102,9 @@ def _active_rule(db_session, **overrides) -> DispatchRuleVersion:
     return row
 
 
-def _onsite_package(db_session, *, required_level: str = "L1", round_no: int = 1) -> DeliveryPackage:
+def _onsite_package(
+    db_session, *, required_level: str = "L1", round_no: int = 1
+) -> tuple[User, DeliveryPackage]:
     """到场型 draft 包（制造行业 + pre_diagnosis 模块键经 catalog 归一）。"""
     from fde_api.solutions.models import ProjectSolution
     from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, ModuleCatalog
@@ -407,7 +409,13 @@ def test_scenario_b_weighted_and_reproducible(db_session):
     )
     assert "weighted_score" in winner.match_breakdown["stage_b"]
 
-    # 权重改版（等级 10 / 地理 40）→ 排序翻转（权重来自快照不硬编码）
+    # 权重改版（等级 10 / 地理 40）→ 排序翻转（权重来自快照不硬编码）。
+    # 首轮候选档案退出供给池（suspended），避免其混入第二轮 Top3 的同分 tie。
+    for profile in db_session.scalars(
+        select(FdeProfile).where(FdeProfile.user_id.in_([low.id, high.id]))
+    ).all():
+        profile.status = "suspended"
+        profile.is_active = False
     rule.status = "retired"
     db_session.add(
         DispatchRuleVersion(
