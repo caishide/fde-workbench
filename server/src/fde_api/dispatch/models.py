@@ -1,18 +1,21 @@
-"""dispatch 模型：交付包派单态 + 派单 offer 留痕（设计 §2/§4/§6/§8.2）。
+"""dispatch 模型：交付包派单态 + 派单 offer 留痕 + 供给池档案 + 规则版本 + 结算
+（设计 §2/§3/§6/§7/§8.2）。
 
-goal-r1（P0-6）只落 §8.2 DDL 级约束与 OperationEvent 目标注册；
-发布/快照冻结（§2.3）、匹配算法（§4）、offer 服务（§6）随 P0-1/P1-1/P1-2
-后续轮次进同一包（§8.6），不在本文件预埋半成品逻辑。
+goal-r1（P0-6）落 delivery_packages / dispatch_offers 骨架；goal-r2（P0-3/P0-4/
+P0-8）补 fde_profiles / fde_level_evidence / dispatch_rule_versions /
+delivery_settlements。发布/快照冻结（§2.3）、匹配算法（§4）、offer 服务（§6）
+随 P0-1/P1-1/P1-2 后续轮次进同一包（§8.6），不在本文件预埋半成品逻辑。
 
-字段来源：设计 §2.2 映射表「新增」行 + §8.2 约束清单 + §9.2 字段白名单引用。
-席位口径：本表四席位是执行席位 seat_lead/delivery/consult/qa（§2.4「包 × 角色」
-的合同事实），与 delivery_settlements 的商务四席位 platform/region/city/delivery
-（§7.2）不同名不同义，落库不得混用。
+字段来源：设计 §2.2 映射表「新增」行 + §3.2 档案表 + §7.2 结算表 + §8.2 约束清单。
+席位口径：delivery_packages 四席位是执行席位 seat_lead/delivery/consult/qa
+（§2.4「包 × 角色」的合同事实），与 delivery_settlements 的商务四席位
+platform/region/city/delivery（§7.2）不同名不同义，落库不得混用。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -22,6 +25,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     String,
     UniqueConstraint,
     text,
@@ -175,3 +179,215 @@ class DispatchOffer(Base, TimestampMixin, VersionedMixin):
     # §6.2：评估窗/响应窗起算时刻（服务逻辑 P1-1 落位）
     offered_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     responded_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class FdeProfile(Base, TimestampMixin):
+    """供给池能力档案（§3.2：等级是标量，四大子能力域是四个独立评分轴）。
+
+    一人一档案（PK=user_id）。等级核验走 fde_level_evidence 证据链（§3.3），
+    四域分数只用于等级晋级的评定维度，不进 Stage B 排序（§3.2 合规理由）。
+    """
+
+    __tablename__ = "fde_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "level IS NULL OR level IN ('L1', 'L2', 'L3', 'L4')",
+            name="ck_fde_profiles_level",
+        ),
+        CheckConstraint(
+            "biz_cognition_score BETWEEN 0 AND 5",
+            name="ck_fde_profiles_biz_cognition",
+        ),
+        CheckConstraint(
+            "scenario_eng_score BETWEEN 0 AND 5", name="ck_fde_profiles_scenario_eng"
+        ),
+        CheckConstraint("ai_tech_score BETWEEN 0 AND 5", name="ck_fde_profiles_ai_tech"),
+        CheckConstraint(
+            "delivery_assure_score BETWEEN 0 AND 5",
+            name="ck_fde_profiles_delivery_assure",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'active', 'suspended')",
+            name="ck_fde_profiles_status",
+        ),
+    )
+
+    # 一人一档案（§8.2：PK user_id）
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # NULL = 未定级（注册 pending 期）；核验后按 §3.3 证据链定级
+    level: Mapped[str | None] = mapped_column(String(4))
+    level_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 当前等级所依据的证据记录（§3.2）
+    level_evidence_id: Mapped[str | None] = mapped_column(
+        ForeignKey("fde_level_evidence.id", ondelete="SET NULL")
+    )
+    # 四大子能力域（§3.2：等级 = 四域「短板决定」映射，不做加权平均）
+    biz_cognition_score: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    scenario_eng_score: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    ai_tech_score: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    delivery_assure_score: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # 标签全部申报制（§5.2：非平台推断）；取值域 = IndustryTemplate.industry_name /
+    # ModuleCatalog.module_key
+    industry_tags: Mapped[list[Any] | None] = mapped_column(JSON)
+    module_tags: Mapped[list[Any] | None] = mapped_column(JSON)
+    service_cities: Mapped[list[Any] | None] = mapped_column(JSON)
+    home_city: Mapped[str | None] = mapped_column(String(32))
+    # 围栏是「加权」不是「门槛」（§3.5：不排除围栏外候选）
+    geo_fence_km: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=25, server_default=text("25")
+    )
+    # 同时接单上限 = floor(monthly_capacity_hours ÷ max(avg_delivery_hours, 1))
+    # 自动计算，不允许手工设置（§4.2 A4 / BP 规则五）
+    monthly_capacity_hours: Mapped[int | None] = mapped_column(Integer)
+    avg_delivery_hours: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # 供给池生命周期（§3.5）：pending（注册不占名额）→ active（参与匹配）→ suspended
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+
+
+class FdeLevelEvidence(Base, TimestampMixin):
+    """等级判定证据链（§3.3：等级不是自评，是基于已交付事实的核验）。
+
+    每条 = 一次晋级的客观依据快照 + 核验人。依据单据只存 source_uri 指针 +
+    sha256 指纹（红线：不存本体）。带教记录 = verified_by_user_id（§6.5）。
+    """
+
+    __tablename__ = "fde_level_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "from_level IS NULL OR from_level IN ('L1', 'L2', 'L3', 'L4')",
+            name="ck_fde_level_evidence_from",
+        ),
+        CheckConstraint(
+            "to_level IN ('L1', 'L2', 'L3', 'L4')",
+            name="ck_fde_level_evidence_to",
+        ),
+        Index("ix_fde_level_evidence_verified_by", "verified_by_user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    from_level: Mapped[str | None] = mapped_column(String(4))
+    to_level: Mapped[str] = mapped_column(String(4), nullable=False)
+    # 核验人（L1 平台运营 / L2 双签 / L3 双人 / L4 admin+技术合伙人——§3.3 表）
+    verified_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    verified_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    # 核验时刻的客观计数快照（§3.3 判定数据来源：gates/quotes/settlements 查询结果）
+    evidence_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # 依据单据指针 + sha256（红线：不存本体）
+    source_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class DispatchRuleVersion(Base, TimestampMixin):
+    """权重与规则版本快照（§4.3/§6.2/规则表 B9）。
+
+    权重唯一来源是版本表——Stage B 权重、等级映射分、席位份额全部进
+    rule_snapshot JSON，不硬编码；改规则 = 新版本 + 公示（§6.2：重大调整
+    提前 ≥30 天），旧 offer 的 match_breakdown.rule_version 永指当时版本。
+    """
+
+    __tablename__ = "dispatch_rule_versions"
+    __table_args__ = (
+        UniqueConstraint("version_no", name="uq_dispatch_rule_versions_version_no"),
+        CheckConstraint("version_no >= 1", name="ck_dispatch_rule_versions_no"),
+        CheckConstraint(
+            "status IN ('draft', 'published', 'active', 'retired')",
+            name="ck_dispatch_rule_versions_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="draft", server_default="draft"
+    )
+    # 快照内容：stage_b_weights / level_score_map / seat_shares /
+    # cold_start_overrides / top_n / tie_break 规则引用（§4.3/§6.2）
+    rule_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 生效日 ≥ 公示日 + 30 天（§6.2 重大调整公示；服务层发布/生效校验强制）
+    effective_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    published_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class DeliverySettlement(Base, TimestampMixin):
+    """席位级结算（§7.2：平台↔FDE 分账，与 Payment 客户↔平台收款绝不合并）。
+
+    商务四席位 platform/region/city/delivery——与 delivery_packages 的执行
+    四席位（lead/delivery/consult/qa）不同名不同义（§2.4 理由三）。
+    状态机：draft → accrued → payable → paid，任一方争议 → disputed（§6.6）。
+    """
+
+    __tablename__ = "delivery_settlements"
+    __table_args__ = (
+        UniqueConstraint(
+            "package_id", "settlement_key", name="uq_delivery_settlements_package_key"
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'accrued', 'payable', 'paid', 'disputed')",
+            name="ck_delivery_settlements_status",
+        ),
+        Index("ix_delivery_settlements_delivery_user", "seat_delivery_user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    package_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_packages.id", ondelete="RESTRICT"), nullable=False
+    )
+    # 结算引用当时快照（§2.3 规则 2：争议仲裁看到的是「当时那一版」）
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    # 对齐 Payment.milestone_key 溯源（G3/G4/G8/SOW-C M1/M2/M3/D）
+    settlement_key: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 计提基数 = 该里程碑实收金额（§7.3：基数=实收回款，不从分成池二次扣工时）
+    base_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # 商务四席位（挂包不挂项目；金额份额 % 存 dispatch_rule_versions 快照）
+    seat_platform_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    seat_region_agent_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    seat_city_partner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    seat_delivery_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    platform_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    region_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    city_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    delivery_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # 当期累计预扣税额（§7.4 累计预扣法）
+    withholding_tax: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default=text("0")
+    )
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="draft", server_default="draft"
+    )
+    # 冗余自 Payment.acceptance_passed_at（P0-4 新增列），accrued 起算时刻
+    acceptance_passed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 打款凭证指针（红线：不存本体）
+    paid_proof_source_uri: Mapped[str | None] = mapped_column(String(500))
+    paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

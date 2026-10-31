@@ -254,6 +254,14 @@ def db_session(app) -> Session:
 
     cleanup_models = (
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
+        # 派单簇（goal-r2 起）：结算/offer 先于包（FK RESTRICT），包先于
+        # project_solutions/projects/quotes；证据链与档案先于 users。
+        __import__("fde_api.dispatch.models", fromlist=["DeliverySettlement"]).DeliverySettlement,
+        __import__("fde_api.dispatch.models", fromlist=["DispatchOffer"]).DispatchOffer,
+        __import__("fde_api.dispatch.models", fromlist=["DeliveryPackage"]).DeliveryPackage,
+        __import__("fde_api.dispatch.models", fromlist=["DispatchRuleVersion"]).DispatchRuleVersion,
+        __import__("fde_api.dispatch.models", fromlist=["FdeLevelEvidence"]).FdeLevelEvidence,
+        __import__("fde_api.dispatch.models", fromlist=["FdeProfile"]).FdeProfile,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolutionExport"]).ProjectSolutionExport,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolutionOpportunity"]).ProjectSolutionOpportunity,
         __import__("fde_api.solutions.models", fromlist=["ProjectSolution"]).ProjectSolution,

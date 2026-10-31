@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -28,7 +28,7 @@ from fde_api.auth.models import User
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
-from fde_api.workbench.models import OperationEvent, Payment, Project
+from fde_api.workbench.models import Gate, OperationEvent, Payment, Project
 
 _SEEDS_DIR = Path(__file__).resolve().parents[3] / "seeds"
 
@@ -254,6 +254,7 @@ def update_payment(
                     raise PaymentServiceError("invalid_request", "invoice_no 必须是非空字符串。", 400)
                 row.invoice_no = invoice_no.strip() if isinstance(invoice_no, str) else None
                 changes["invoice_no"] = row.invoice_no
+            received_touched = False
             if "received_amount" in payload or "received_at" in payload:
                 amount = payload.get("received_amount")
                 if amount is not None:
@@ -271,9 +272,29 @@ def update_payment(
                     row.received_at = _parse_date(received_at, "received_at")
                     row.received_amount = row.amount
                     changes["received_at"] = row.received_at.isoformat()
+                received_touched = True
             if not changes:
                 raise PaymentServiceError("invalid_request", "没有可更新的字段。", 400)
             session.flush()
+            if received_touched:
+                # P0-4（派单设计 §7.2/§7.3）：实收回填联动结算草稿——基数=实收。
+                # 无交付包的项目纯 no-op（存量 A 组路径零感知，催款逻辑不动）。
+                from fde_api.dispatch.settlements import record_receipt_settlements
+
+                record_receipt_settlements(
+                    session, actor=actor, project=project, payment=row
+                )
+                # 补口：G8 已过门但尾款晚到——收款时补打验收时刻并推进计提
+                # （mark_acceptance_passed 幂等：只动 acceptance 仍为空的实收行）。
+                g8_passed = session.scalar(
+                    select(Gate.id).where(
+                        Gate.project_id == project.id,
+                        Gate.gate_key == "G8",
+                        Gate.status == "passed",
+                    )
+                )
+                if g8_passed is not None:
+                    mark_acceptance_passed(session, actor, project.id)
             record_event(
                 session,
                 actor,
@@ -284,6 +305,43 @@ def update_payment(
             return _serialize_payment(row, today=None)
     finally:
         session.close()
+
+
+def mark_acceptance_passed(session: Session, actor: User, project_id: str) -> dict[str, Any]:
+    """G8 过门联动（gate_service decide 事务内调用，P0-4）：验收通过时刻打标。
+
+    只处理已实收行（received_at 非空）：acceptance_passed_at 是
+    delivery_settlements 从 draft → accrued 的起算条件之一（实收 + 验收），
+    打标后顺手推进该项目已满足双条件的结算计提。无包项目零感知。
+    """
+    project = session.get(Project, project_id)
+    if project is None:
+        # 调用方（gate/收款钩子）都在项目事务内，防御分支只为类型收窄
+        return {"payments_marked": 0, "settlements_accrued": 0}
+    rows = session.scalars(
+        select(Payment)
+        .where(
+            Payment.project_id == project_id,
+            Payment.received_at.is_not(None),
+            Payment.acceptance_passed_at.is_(None),
+        )
+        .with_for_update()
+    ).all()
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.acceptance_passed_at = now
+    from fde_api.dispatch.settlements import accrue_settlements_for_project
+
+    accrued = accrue_settlements_for_project(session, actor=actor, project_id=project_id)
+    if rows or accrued:
+        record_event(
+            session,
+            actor,
+            "payment_acceptance_marked",
+            project,
+            {"payments_marked": len(rows), "settlements_accrued": accrued},
+        )
+    return {"payments_marked": len(rows), "settlements_accrued": accrued}
 
 
 def flag_g8_stop_settlement(session: Session, actor: User, project_id: str) -> dict[str, Any]:
@@ -303,13 +361,16 @@ def flag_g8_stop_settlement(session: Session, actor: User, project_id: str) -> d
         if not row.note.endswith("G8 stop：按合同结算尾款"):
             row.note = (row.note + "；G8 stop：按合同结算尾款").lstrip("；")
         flagged = True
-    record_event(
-        session,
-        actor,
-        "payment_settlement_flagged",
-        row if row is not None else session.get(Project, project_id),
-        {"milestone_key": "G8", "flagged": flagged, "reason": "g8_stop"},
-    )
+    # 事件目标优先收款行；无行时挂项目（都在则非空——调用方来自项目事务）。
+    event_target = row if row is not None else session.get(Project, project_id)
+    if event_target is not None:
+        record_event(
+            session,
+            actor,
+            "payment_settlement_flagged",
+            event_target,
+            {"milestone_key": "G8", "flagged": flagged, "reason": "g8_stop"},
+        )
     return {"flagged": flagged, "milestone_key": "G8"}
 
 
