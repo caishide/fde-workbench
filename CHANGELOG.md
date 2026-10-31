@@ -2,6 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r10 派单引擎轮（2026-10-31）
+
+### C7 混合模式自动转换 job（零迁移）
+
+- **混合模式落地**（派单设计 §6.1「先 assign 指派，响应窗内无人接 → 转 claim」）：`dispatch/maintenance.py` 新增 `convert_stale_assign_to_claim` 挂 `run_maintenance` 节拍——assign 死亡（expired/rejected）包 × 城市 claim 开闸（§6.4）→ mode 翻转 + 按 §2.3 重发（round+1 新码新哈希 + §4.7 扩圈推进）+ `dispatch_c7_converted` 事件留痕；幂等（翻转后不再命中）；单包 SAVEPOINT 隔离不炸整批；城市未开闸安全空转（§11 降级态，人工重派路径不变）；零新增时间常数（24h 判死由上游 expire 按 §6.2 执行）。
+- 测试：`test_dispatch_p2_r10_c7.py` 8 例（含转换后 claim_package 实抢闭环、幂等、降级空转、单包故障隔离、§6.4 拒单率条件真实生效验证）；r1–r9 回归全绿。口径：85 业务表 / 15 rev / head `c5d7e9f1a3b7`（零迁移）/ 路由 228 / ENTRIES 68 / 服务端 **1456 通过** / 桌面 660。轮次报告 `docs/goal-r10-派单引擎.md`；台账第二十二节。
+
 ## [未发布] — goal-r9 派单引擎轮（2026-10-31）
 
 ### P2-4 私单封堵 + 撮合仿真器（零迁移）
