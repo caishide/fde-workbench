@@ -392,6 +392,9 @@ def create_quote(*, actor: User, project_id: str, payload: Mapping[str, Any]) ->
                 quote_low=quote_low,
                 quote_high=quote_high,
                 c_handling=c_handling,
+                # P1-6（派单设计 §8.4）：报价归属人=创建者（派单语境交付方侧
+                # 归属过滤维度；平台侧台账报价可后续置空）
+                owner_user_id=actor.id,
                 # 卡 §九：回校前所有取值都是初始假设 → 全 estimated
                 field_claims={field: "estimated" for field in CLAIMABLE_FIELDS},
             )

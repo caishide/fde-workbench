@@ -70,6 +70,10 @@ def ensure_default_handlers() -> None:
         register_handler("ai.chat", execute_chat_job)
     if get_handler("ai.execute") is None:
         register_ai_execution_handler()
+    if get_handler("dispatch.maintenance") is None:
+        from fde_api.dispatch.maintenance import register_dispatch_maintenance_handler
+
+        register_dispatch_maintenance_handler()
 
     # 业务行收尾钩子：worker 死亡时把业务行推到终态（否则前端永远轮询）。
     from fde_api.control.automation_jobs import register_automation_failure_handler

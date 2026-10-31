@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r6 派单引擎轮（2026-10-31）
+
+### 派单引擎 P1 收官——§8.4 七项全过 + §8.1 八表齐（迁移 `b2c4d6e8f1a3`）
+
+- **P1-6 报价归属**：`quotes.owner_user_id`（nullable FK users SET NULL + 索引；存量不回填=平台侧台账报价语义），创建即落 owner，归属过滤用例。
+- **P1-7 留存策略**：`dispatch/maintenance.py` 留存扫描（撮合流水/评分 3 年、涉税 10 年——**报告只读不删档**，删除须人工合规审批，留注⑰）+ 维护作业 `dispatch.maintenance`（24h 节流）挂 `cli.scheduler` 主循环经 outbox 投递、handler 注册沿 research.export 模式；超时释放（r4 的 expire_stale_offers）一并挂入。
+- **disputes 表**（§8.1 第 8 张，§6.6/§7.5）：L0 机器对账（逐包逐键比对结算应计 vs Payment 实收，差异>±¥1 自动草稿、幂等）+ L1 人工打开（48h 人工答复 SLA 字段、¥50,000 上限 422 走 L2）+ 人工裁决（**处罚类动作 100% 人工**，resolution 只能由平台侧写入）+ L0 对账单/依据只存 source_uri 指针 + snapshot_hash 锚定当时版本。
+- 测试：`server/tests/test_dispatch_p1_r6.py` 8 例；r1–r5 全量回归 87 例全绿；ruff/mypy 无新错。
+- 口径（goal-r6 实测）：86 表、迁移头 `b2c4d6e8f1a3`（14 revision）、路由 226、ENTRIES 66。轮次报告 `docs/goal-r6-派单引擎.md`；台账第十八节。
+
 ## [未发布] — goal-r5 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P1-2 撮合核心（对照派单设计文档 v1.0 §4/§5 + 规则表 A-6，零迁移）
