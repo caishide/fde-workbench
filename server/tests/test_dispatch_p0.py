@@ -30,7 +30,7 @@ from fde_api.workbench.models import (
     OperationEvent,
     Project,
 )
-from fde_api.workbench.seed import seed_workbench
+from fde_api.workbench.seed import GENERIC_TEMPLATE_KEY, seed_workbench
 
 from conftest import INITIAL_PASSWORD
 
@@ -189,8 +189,11 @@ def separation_context(client, db_session, settings):
     seed_workbench(db_session)
     db_session.commit()
     template = db_session.scalar(
-        select(IndustryTemplateVersion).where(
-            IndustryTemplateVersion.status == "published"
+        select(IndustryTemplateVersion)
+        .join(IndustryTemplate)
+        .where(
+            IndustryTemplateVersion.status == "published",
+            IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY,
         )
     )
     admin = _user("sep.admin", role="admin")

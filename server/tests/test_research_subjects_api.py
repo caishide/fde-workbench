@@ -12,8 +12,8 @@ from fde_api.auth.tokens import issue_access_token
 from fde_api.extensions import db
 from fde_api.research.models import ProjectResearchSubject
 from fde_api.research import subject_service
-from fde_api.workbench.models import IndustryTemplateVersion, OperationEvent, ProjectMember
-from fde_api.workbench.seed import seed_workbench
+from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, OperationEvent, ProjectMember
+from fde_api.workbench.seed import GENERIC_TEMPLATE_KEY, seed_workbench
 from mysql_lock_race import (
     MysqlLockRaceTimeout,
     RaceDiagnostics,
@@ -85,8 +85,11 @@ def published_template(db_session):
     seed_workbench(db_session)
     db_session.commit()
     return db_session.scalar(
-        select(IndustryTemplateVersion).where(
-            IndustryTemplateVersion.status == "published"
+        select(IndustryTemplateVersion)
+        .join(IndustryTemplate)
+        .where(
+            IndustryTemplateVersion.status == "published",
+            IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY,
         )
     )
 

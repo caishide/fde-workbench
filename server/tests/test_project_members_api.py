@@ -10,13 +10,14 @@ from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
 from fde_api.workbench.models import (
+    IndustryTemplate,
     IndustryTemplateVersion,
     OperationEvent,
     ProjectMember,
     ProjectTask,
     TemplateTask,
 )
-from fde_api.workbench.seed import seed_workbench
+from fde_api.workbench.seed import GENERIC_TEMPLATE_KEY, seed_workbench
 
 
 from conftest import INITIAL_PASSWORD
@@ -78,8 +79,11 @@ def published_template(db_session):
     seed_workbench(db_session)
     db_session.commit()
     return db_session.scalar(
-        select(IndustryTemplateVersion).where(
-            IndustryTemplateVersion.status == "published"
+        select(IndustryTemplateVersion)
+        .join(IndustryTemplate)
+        .where(
+            IndustryTemplateVersion.status == "published",
+            IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY,
         )
     )
 

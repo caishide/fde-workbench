@@ -140,9 +140,59 @@ def record_contract(
                 row,
                 {"sow_type": sow_type, **changes},
             )
+            # goal-d2 S0-5：SOW 串联审计——首次建档时若该项目存在「来自方案导出
+            # 且已 confirm」的 SOW 文档版本，追加联动事件，打通
+            # 方案 → ProjectSolutionExport → 文档拍板 → 合同登记 的归因链
+            # （P0 指标③「SOW 一次拍板通过率」的落点之一）。
+            if created:
+                link = _confirmed_sow_export_link(session, project.id)
+                if link is not None:
+                    record_event(
+                        session,
+                        actor,
+                        "sow_contract_linked",
+                        row,
+                        {"sow_type": sow_type, **link},
+                    )
             return _serialize_contract(row)
     finally:
         session.close()
+
+
+def _confirmed_sow_export_link(session: Any, project_id: str) -> dict[str, Any] | None:
+    """最近一个已 confirm 且来自方案导出的 SOW 文档版本（无则 None）。
+
+    延迟导入 solutions 模型：projects 是底层模块，模块级引入会与
+    solutions → documents → projects 的引用方向成环。
+    """
+    from fde_api.documents.models import ProjectDocument, ProjectDocumentVersion
+    from fde_api.solutions.models import ProjectSolutionExport
+
+    row = session.execute(
+        select(
+            ProjectSolutionExport.solution_id,
+            ProjectSolutionExport.solution_version,
+            ProjectSolutionExport.document_id,
+            ProjectSolutionExport.document_version_id,
+        )
+        .join(ProjectDocument, ProjectDocument.id == ProjectSolutionExport.document_id)
+        .join(ProjectDocumentVersion, ProjectDocumentVersion.id == ProjectSolutionExport.document_version_id)
+        .where(
+            ProjectDocument.project_id == project_id,
+            ProjectDocument.document_type == "sow",
+            ProjectDocumentVersion.status == "confirmed",
+        )
+        .order_by(ProjectDocumentVersion.created_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    return {
+        "solution_id": row.solution_id,
+        "solution_version": row.solution_version,
+        "document_id": row.document_id,
+        "document_version_id": row.document_version_id,
+    }
 
 
 def _serialize_contract(row: Contract) -> dict[str, Any]:

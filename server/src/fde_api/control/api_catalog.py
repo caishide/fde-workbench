@@ -51,6 +51,8 @@ ENTRIES = [
     ("solutions.create", "POST", S, "保存关联多个机会的交付方案，不直接生成文件", "name,opportunity_ids,design_markdown；可选 deliverables,acceptance_criteria,data_systems,schedule,risks_dependencies,business_category"),
     ("solutions.update", "PATCH", S + "/{solution_id}", "编辑方案，不改动已有 SOW 文件", "version；可选 name,opportunity_ids,design_markdown,deliverables,acceptance_criteria,data_systems,schedule,risks_dependencies,business_category"),
     ("solutions.organize", "POST", S + "/ai-organize", "按所选机会与参考内容返回方案建议，不保存方案", "opportunity_ids,reference；可选方案字段。返回 fields，审阅后才能调用保存"),
+    ("solutions.skeleton", "POST", S + "/skeleton", "按已确认项目指引与行业模板生成方案骨架草稿并保存（AI 不参与内容生成，人工修订后才能导出 SOW）", "可选 name,opportunity_ids,business_category"),
+    ("solutions.health", "GET", S + "/{solution_id}/health", "读取方案健康度评分（模板覆盖率/引用完整性/报价合法）", ""),
     ("solutions.export_sow", "POST", S + "/{solution_id}/export-sow", "将已保存方案版本导出 SOW，内容保持原样，不重新 AI 推演", "version；返回文档及异步生成引用，完成后在文件库查看"),
     ("solutions.archive", "POST", S + "/{solution_id}/archive", "弃用方案，需当前账号密码二次确认；保留已有文件", "version；密码由专用确认通道输入，禁止传给模型"),
     ("documents.create", "POST", D, "创建其他业务文档身份，不等于生成文件；新 SOW 使用 solutions.export_sow", "document_type,expected_version；可选 template_version_id,business_category。历史 source_opportunity_ids/generation_scope 与 source_opportunity_id 接口仅兼容旧流程。项目计划类型为 project_plan_progress"),

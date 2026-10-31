@@ -81,6 +81,19 @@ function SolutionList({ projectId, canManage }: { projectId: string; canManage: 
   function openSolution(solution: SolutionDto, edit: boolean) {
     window.location.hash = solutionHref(projectId, solution.id, edit ? 'edit' : undefined, hashOpportunity())
   }
+  async function createSkeleton() {
+    const request = sequence.current
+    setBusy('skeleton'); setError(''); setNotice('')
+    try {
+      // goal-d2 S0-4：按已确认项目指引生成方案骨架草稿（服务端组装，AI 不参与）。
+      const created = await apiRequest<SolutionDto>(`/api/v1/projects/${encodeURIComponent(projectId)}/solutions/skeleton`, { method: 'POST', body: {} })
+      if (request !== sequence.current) return
+      if (!isSolution(created)) throw new Error('invalid solution')
+      setNotice(`已按预调研指引生成方案骨架「${created.name}」，请在详情中修订后导出 SOW。`)
+      await load()
+    } catch (caught) { if (request === sequence.current) setError(solutionError(caught)) }
+    finally { if (request === sequence.current) setBusy(null) }
+  }
   async function exportSow(solution: SolutionDto) {
     const request = sequence.current
     setBusy(solution.id); setError(''); setNotice('')
@@ -98,7 +111,7 @@ function SolutionList({ projectId, canManage }: { projectId: string; canManage: 
       <div className="panel-heading"><h2 id="solution-design-title">方案设计</h2><span>{visible.length} 个</span></div>
       <p className="supporting-copy">围绕关联的 AI 机会设计交付方案，保存后导出 SOW。机会用于识别需求，方案负责设计交付。</p>
       <div className="project-list-toolbar document-toolbar solution-toolbar" role="toolbar" aria-label="方案工具栏">
-        {canManage ? <button type="button" className="primary-button" disabled={loading || Boolean(busy)} onClick={() => { window.location.hash = solutionHref(projectId, 'new', undefined, hashOpportunity()) }}>新建方案</button> : null}
+        {canManage ? <><button type="button" className="primary-button" disabled={loading || Boolean(busy)} onClick={() => { window.location.hash = solutionHref(projectId, 'new', undefined, hashOpportunity()) }}>新建方案</button><button type="button" className="secondary-button" disabled={loading || Boolean(busy)} onClick={() => void createSkeleton()}>{busy === 'skeleton' ? '生成骨架中…' : '按预调研生成骨架'}</button></> : null}
         <OpportunityFilter value={opportunity} options={filterOptions} onChange={setOpportunity} />
         <label className="field business-category-filter"><span>业务阶段</span><select aria-label="筛选业务阶段" value={category} onChange={event => setCategory(event.target.value)}><option value="">全部</option><option value={BUSINESS_CATEGORY_UNCATEGORIZED_LABEL}>未分类</option>{BUSINESS_CATEGORIES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
         <label className="field business-category-filter delivery-status-filter"><span>状态</span><select aria-label="筛选方案状态" value={status} onChange={event => setStatus(event.target.value)}><option value="all">全部</option><option value="normal">正常</option><option value="archived">弃用</option></select></label>

@@ -182,7 +182,7 @@ def confirm_analysis(*, actor: User, project_id: str, analysis_id: str, expected
     session = db.session()
     try:
         with session.begin():
-            _project(session, actor, project_id, manage=True)
+            project = _project(session, actor, project_id, manage=True)
             row = session.get(ProjectGuidanceAnalysis, analysis_id, with_for_update=True)
             if row is None or row.project_id != project_id:
                 raise GuidanceServiceError("guidance_not_found", "项目指引版本不存在。", 404)
@@ -216,6 +216,12 @@ def confirm_analysis(*, actor: User, project_id: str, analysis_id: str, expected
                     old_version.deprecated_by_user_id = actor.id
                     old_version.deprecated_at = datetime.now(UTC)
                     old_version.deprecation_reason = "预调研表新版本已确认"
+            # goal-d2 P0 指标①埋点：售前「独立完成录入+确认」的确认侧事件
+            # （录入侧为 presurvey_intake_saved）。纯增量审计，不影响返回值。
+            record_event(session, actor, "guidance_analysis_confirmed", project, {
+                "analysis_id": row.id, "version_number": row.version_number,
+                "source_file_version_id": row.source_file_version_id,
+            })
             session.flush()
             return serialize_analysis(row, source)
     finally:

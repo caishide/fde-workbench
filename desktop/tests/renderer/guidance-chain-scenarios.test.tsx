@@ -144,20 +144,20 @@ it("场景 1.3/C：start() 轮询到 failed 时以 inline 提示暴露失败原�
   )
   fireEvent.click(screen.getByRole("button", { name: "AI 分析预调研表" }))
 
-  // start() 的 catch 对非 ApiClientError 显示通用文案（failure_message 明细
-  // 由场景 B 的面板 role=alert 承担）——此处钉住「失败必须用户可见」这一底线
-  const inline = await screen.findByTitle("无法开始 AI 分析，请稍后重试。", {}, { timeout: 6000 })
+  // goal-d2 S0-3（台账五.2 修复）：start() 的 catch 现在优先透传 failure_message
+  // 明细；失败仍必须用户可见，且不打开审核面板。
+  const inline = await screen.findByTitle("模型服务认证失败", {}, { timeout: 6000 })
   expect(inline).toHaveTextContent("分析失败")
   expect(created).toBe(true)
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 })
 
 it.each([
-  ["cancelled", "终态：当前实现仍显示进行中占位（已记台账）"],
+  ["cancelled", "终态：显示「分析已取消」（台账五.1 已修复）"],
   ["queued", "排队中显示进行中占位"],
   ["extracting", "抽取中显示进行中占位"],
 ])(
-  "场景 1.4/D：%s 状态显示进行中占位（role=status）而非表单/确认按钮（%s）",
+  "场景 1.4/D：%s 状态显示终态文案或进行中占位，而非表单/确认按钮（%s）",
   (state: string, _note: string) => {
     render(
       <GuidanceReview
@@ -170,7 +170,8 @@ it.each([
     )
 
     const status = screen.getByRole("status")
-    expect(status).toHaveTextContent("预调研分析正在后台继续")
+    if (state === "cancelled") expect(status).toHaveTextContent("分析已取消")
+    else expect(status).toHaveTextContent("预调研分析正在后台继续")
     expect(screen.queryByRole("button", { name: "确认并用于项目指引" })).not.toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   },

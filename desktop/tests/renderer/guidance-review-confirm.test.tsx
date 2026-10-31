@@ -128,3 +128,60 @@ it("编辑模式仍保留取消/保存修改/确认三个按钮", () => {
   expect(screen.getByRole("button", { name: "保存修改" })).toBeInTheDocument()
   expect(screen.getByRole("button", { name: "确认并用于项目指引" })).toBeInTheDocument()
 })
+
+it("cancelled 终态显示「分析已取消」，不再伪装后台继续（台账五.1）", () => {
+  render(
+    <GuidanceReview
+      projectId="project-1"
+      initial={analysisFixture({ analysis_state: "cancelled" }) as never}
+      canManage
+      onClose={() => {}}
+      onSaved={() => {}}
+    />,
+  )
+
+  expect(screen.getByText("分析已取消")).toBeInTheDocument()
+  expect(screen.queryByText("预调研分析正在后台继续")).not.toBeInTheDocument()
+})
+
+it("PATCH 成功后 confirm 失败：本地版本立即推进，重试不再携带陈旧 version（台账七.1）", async () => {
+  const patched = analysisFixture({ version: 3 })
+  const repatched = analysisFixture({ version: 4 })
+  const confirmed = analysisFixture({ version: 5, status: "confirmed" })
+  let callCount = 0
+  mocks.apiRequest.mockImplementation(async (_path: string, options?: { method?: string }) => {
+    const method = options?.method ?? "GET"
+    if (method === "PATCH") return callCount++ === 0 ? patched : repatched
+    if (method === "POST") throw new Error("网络中断")
+    return patched
+  })
+
+  render(
+    <GuidanceReview
+      projectId="project-1"
+      initial={analysisFixture() as never}
+      canManage
+      onClose={() => {}}
+      onSaved={() => {}}
+    />,
+  )
+
+  fireEvent.click(await screen.findByRole("button", { name: "确认并用于项目指引" }))
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("项目指引保存失败"))
+  // 第一次 PATCH（version 2）已成功，本地基线必须已是 v3——重试不得再发 v2。
+  fireEvent.click(screen.getByRole("button", { name: "确认并用于项目指引" }))
+  await waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledTimes(4))
+  const retryPatchBody = mocks.apiRequest.mock.calls[2][1].body as { version: number }
+  expect(retryPatchBody.version).toBe(3)
+  const retryConfirmBody = mocks.apiRequest.mock.calls[3][1].body as { version: number }
+  expect(retryConfirmBody.version).toBe(4)
+  // 第三轮：confirm 成功收口。
+  mocks.apiRequest.mockImplementation(async (_path: string, options?: { method?: string }) => {
+    const method = options?.method ?? "GET"
+    if (method === "PATCH") return analysisFixture({ version: 5 })
+    if (method === "POST") return confirmed
+    return analysisFixture({ version: 5 })
+  })
+  fireEvent.click(screen.getByRole("button", { name: "确认并用于项目指引" }))
+  await waitFor(() => expect(mocks.apiRequest.mock.calls.length).toBeGreaterThanOrEqual(6))
+})

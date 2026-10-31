@@ -16,3 +16,28 @@ export interface GuidanceAnalysisDto {
   assumptions: GuidanceItemDto[]; open_questions: GuidanceItemDto[]; next_actions: GuidanceItemDto[]
   failure_code: string; failure_message: string; source_is_stale: boolean; version: number
 }
+// goal-d2：售前轻量录入卡（S0-1 API 的桌面入口；S1–S2 阶段即可填写，无门禁要求）。
+export type InterviewMode = "onsite" | "remote" | "hybrid"
+export const INTERVIEW_MODES: InterviewMode[] = ["onsite", "remote", "hybrid"]
+export const INTERVIEW_MODE_LABELS: Record<InterviewMode, string> = {
+  onsite: "现场访谈", remote: "远程访谈", hybrid: "混合",
+}
+export interface PresurveyIntakeDto {
+  project_id: string
+  industry: string; scale: string; region: string
+  interview_mode: InterviewMode
+  interviewee_roles: string[]
+  customer_vision: string; phase_objective: string; notes: string
+  updated_at?: string | null
+}
+export function emptyIntake(projectId: string): PresurveyIntakeDto {
+  return { project_id: projectId, industry: "", scale: "", region: "", interview_mode: "onsite", interviewee_roles: [], customer_vision: "", phase_objective: "", notes: "" }
+}
+export function isPresurveyIntake(value: unknown): value is PresurveyIntakeDto {
+  if (!value || typeof value !== "object") return false
+  const item = value as Record<string, unknown>
+  return typeof item.project_id === "string"
+    && ["industry", "scale", "region", "customer_vision", "phase_objective", "notes"].every((key) => typeof item[key] === "string")
+    && typeof item.interview_mode === "string" && INTERVIEW_MODES.includes(item.interview_mode as InterviewMode)
+    && Array.isArray(item.interviewee_roles) && item.interviewee_roles.every((role) => typeof role === "string")
+}

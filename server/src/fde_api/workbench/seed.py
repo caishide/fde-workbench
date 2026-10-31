@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from fde_api.research.models import TemplateResearchField, TemplateResearchForm, TemplateResearchSection
 from fde_api.workbench.models import (
     IndustryTemplate,
     IndustryTemplateVersion,
@@ -15,7 +17,7 @@ from fde_api.workbench.models import (
 )
 
 
-BASE_MODULES = (
+BASE_MODULES: tuple[dict[str, Any], ...] = (
     {
         "key": "pre_diagnosis",
         "name": "预调研",
@@ -300,6 +302,229 @@ def seed_workbench(session: Session) -> None:
             for predecessor_key, successor_key in dependency_edges
         ]
     )
+
+    # goal-d2 S0-6：首批行业模板种子（3 行业 × published v1 × 项目级调研表）。
+    seed_industry_templates(session)
+
+
+# ---------------------------------------------------------------------------
+# goal-d2 S0-6：首批行业模板种子
+#
+# 与 GENERIC_TEMPLATE_* 同一幂等纪律：template_key 稳定、published v1、
+# 已存在只校验不覆盖（人工在模板管理里的修订不回退）。每行业附一张项目级
+# 预调研补录表（TemplateResearchForm），作为售前轻量录入卡之外的行业化调研。
+# 字段仅用 short_text/long_text（options 留空），不触碰 research/definitions
+# 的选择/表格校验面。
+# ---------------------------------------------------------------------------
+
+INDUSTRY_TEMPLATE_SEEDS: tuple[dict[str, Any], ...] = (
+    {
+        "template_key": "industry_seed_retail_chain",
+        "name": "零售连锁 AI 落地模板",
+        "industry_name": "零售连锁",
+        "description": "面向连锁零售的门店运营、会员与商品数据场景，覆盖预调研到培训移交的骨架模板。",
+        "form": {
+            "form_key": "retail_chain_presurvey",
+            "name": "零售连锁预调研补录表",
+            "description": "门店规模、在用系统与重点场景的预调研补录。",
+            "subject_type": "project",
+            "module_key": "pre_diagnosis",
+            "sections": (
+                {
+                    "section_key": "store_operations",
+                    "name": "门店与运营现状",
+                    "fields": (
+                        {"field_key": "store_footprint", "name": "门店数量与分布", "field_type": "short_text", "help_text": "如：直营 30 家 + 加盟 120 家，覆盖华东"},
+                        {"field_key": "existing_systems", "name": "在用 POS/ERP/会员系统", "field_type": "long_text", "help_text": "系统名称、版本与部署方式"},
+                        {"field_key": "key_scenarios", "name": "重点业务场景", "field_type": "long_text", "help_text": "如：门店巡检、智能补货、会员营销"},
+                    ),
+                },
+                {
+                    "section_key": "data_readiness",
+                    "name": "数据与授权现状",
+                    "fields": (
+                        {"field_key": "data_scale", "name": "数据规模与更新频率", "field_type": "short_text", "help_text": ""},
+                        {"field_key": "integration_constraints", "name": "对接限制与授权边界", "field_type": "long_text", "help_text": ""},
+                        {"field_key": "phase_expectation", "name": "本阶段成功预期", "field_type": "long_text", "help_text": ""},
+                    ),
+                },
+            ),
+        },
+    },
+    {
+        "template_key": "industry_seed_catering_chain",
+        "name": "餐饮连锁 AI 落地模板",
+        "industry_name": "餐饮连锁",
+        "description": "面向连锁餐饮的门店运营、供应链与食安场景，覆盖预调研到培训移交的骨架模板。",
+        "form": {
+            "form_key": "catering_chain_presurvey",
+            "name": "餐饮连锁预调研补录表",
+            "description": "门店与供应链现状、在用系统及重点场景的预调研补录。",
+            "subject_type": "project",
+            "module_key": "pre_diagnosis",
+            "sections": (
+                {
+                    "section_key": "store_supply",
+                    "name": "门店与供应链现状",
+                    "fields": (
+                        {"field_key": "store_footprint", "name": "门店数量与业态", "field_type": "short_text", "help_text": "如：直营 12 家 + 联营 40 家"},
+                        {"field_key": "supply_systems", "name": "供应链/收银/库存系统", "field_type": "long_text", "help_text": ""},
+                        {"field_key": "key_scenarios", "name": "重点业务场景", "field_type": "long_text", "help_text": "如：订货预测、食安巡检、排班"},
+                    ),
+                },
+                {
+                    "section_key": "data_readiness",
+                    "name": "数据与授权现状",
+                    "fields": (
+                        {"field_key": "data_scale", "name": "数据规模与更新频率", "field_type": "short_text", "help_text": ""},
+                        {"field_key": "integration_constraints", "name": "对接限制与授权边界", "field_type": "long_text", "help_text": ""},
+                        {"field_key": "phase_expectation", "name": "本阶段成功预期", "field_type": "long_text", "help_text": ""},
+                    ),
+                },
+            ),
+        },
+    },
+    {
+        "template_key": "industry_seed_manufacturing",
+        "name": "制造业 AI 落地模板",
+        "industry_name": "制造业",
+        "description": "面向制造企业的生产、设备与质检场景，覆盖预调研到培训移交的骨架模板。",
+        "form": {
+            "form_key": "manufacturing_presurvey",
+            "name": "制造业预调研补录表",
+            "description": "产线与设备现状、在用系统及重点场景的预调研补录。",
+            "subject_type": "project",
+            "module_key": "pre_diagnosis",
+            "sections": (
+                {
+                    "section_key": "production_site",
+                    "name": "产线与设备现状",
+                    "fields": (
+                        {"field_key": "production_lines", "name": "产线数量与自动化程度", "field_type": "short_text", "help_text": ""},
+                        {"field_key": "existing_systems", "name": "在用 MES/ERP/设备管理系统", "field_type": "long_text", "help_text": ""},
+                        {"field_key": "key_scenarios", "name": "重点业务场景", "field_type": "long_text", "help_text": "如：质检缺陷分析、设备点检、能耗优化"},
+                    ),
+                },
+                {
+                    "section_key": "data_readiness",
+                    "name": "数据与授权现状",
+                    "fields": (
+                        {"field_key": "data_scale", "name": "数据规模与采集方式", "field_type": "short_text", "help_text": ""},
+                        {"field_key": "integration_constraints", "name": "对接限制与授权边界", "field_type": "long_text", "help_text": ""},
+                        {"field_key": "phase_expectation", "name": "本阶段成功预期", "field_type": "long_text", "help_text": ""},
+                    ),
+                },
+            ),
+        },
+    },
+)
+
+
+def seed_industry_templates(session: Session) -> None:
+    """首批行业模板种子：published v1 + BASE 五模块 + 项目级预调研补录表。
+
+    幂等（与通用模板同一纪律）：template_key 稳定；已存在只校验 v1 已发布与
+    调研表键集，不覆盖人工在模板管理里做的修改；缺调研表才补种。
+    """
+    for seed in INDUSTRY_TEMPLATE_SEEDS:
+        template = session.scalar(
+            select(IndustryTemplate).where(IndustryTemplate.template_key == seed["template_key"])
+        )
+        version: IndustryTemplateVersion | None
+        if template is None:
+            template = IndustryTemplate(
+                template_key=seed["template_key"],
+                name=seed["name"],
+                industry_name=seed["industry_name"],
+                description=seed["description"],
+                status="active",
+                latest_published_version_number=1,
+            )
+            version = IndustryTemplateVersion(
+                template=template,
+                name=seed["name"],
+                industry_name=seed["industry_name"],
+                description=seed["description"],
+                version_number=1,
+                status="published",
+                published_at=datetime.now(UTC),
+            )
+            session.add(version)
+            session.flush()
+            for module in BASE_MODULES:
+                catalog = session.scalar(
+                    select(ModuleCatalog).where(ModuleCatalog.module_key == module["key"])
+                )
+                if catalog is None:
+                    raise WorkbenchSeedError(
+                        f"industry template seed: module catalog missing {module['key']}"
+                    )
+                session.add(
+                    TemplateModule(
+                        template_version_id=version.id,
+                        module_catalog_id=catalog.id,
+                        name=module["name"],
+                        description=module["description"],
+                        sort_order=module["sort_order"],
+                    )
+                )
+            session.flush()
+        else:
+            version = session.scalar(
+                select(IndustryTemplateVersion).where(
+                    IndustryTemplateVersion.template_id == template.id,
+                    IndustryTemplateVersion.version_number == 1,
+                )
+            )
+        if version is None or version.status != "published":
+            raise WorkbenchSeedError(f"industry template seed drift: {seed['template_key']}")
+        form_definition = seed["form"]
+        form = session.scalar(
+            select(TemplateResearchForm).where(
+                TemplateResearchForm.template_version_id == version.id,
+                TemplateResearchForm.form_key == form_definition["form_key"],
+            )
+        )
+        if form is None:
+            _insert_industry_seed_form(session, version, form_definition)
+
+
+def _insert_industry_seed_form(
+    session: Session, version: IndustryTemplateVersion, definition: dict
+) -> None:
+    form = TemplateResearchForm(
+        template_version_id=version.id,
+        form_key=definition["form_key"],
+        name=definition["name"],
+        description=definition["description"],
+        subject_type=definition["subject_type"],
+        module_key=definition.get("module_key"),
+        sort_order=definition.get("sort_order", 0),
+    )
+    session.add(form)
+    session.flush()
+    for section_order, section in enumerate(definition["sections"], start=10):
+        section_row = TemplateResearchSection(
+            form_id=form.id,
+            section_key=section["section_key"],
+            name=section["name"],
+            description=section.get("description", ""),
+            sort_order=section_order,
+        )
+        session.add(section_row)
+        session.flush()
+        for field_order, field in enumerate(section["fields"], start=10):
+            session.add(
+                TemplateResearchField(
+                    section_id=section_row.id,
+                    field_key=field["field_key"],
+                    name=field["name"],
+                    help_text=field.get("help_text", ""),
+                    field_type=field.get("field_type", "short_text"),
+                    is_required=bool(field.get("is_required", False)),
+                    options_json=field.get("options", {}),
+                )
+            )
 
 
 _DIAGNOSTIC_RENAMES = (

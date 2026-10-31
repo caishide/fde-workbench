@@ -32,11 +32,17 @@ export function GuidanceReview({ projectId, initial, canManage, initialEditing =
     try {
       let next = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/guidance-analyses/${encodeURIComponent(draft.id)}`, { method: "PATCH", body: { version: draft.version, customer_vision: draft.customer_vision, current_phase_objective: draft.current_phase_objective, executive_summary: draft.executive_summary, ...payload } })
       if (!isGuidanceAnalysis(next)) throw new Error("invalid guidance")
+      // 台账七.1（goal-d2 S0-3）：PATCH 成功即推进本地版本基线——否则 confirm
+      // 网络失败后本地 version 停在旧值，重试 PATCH 携带陈旧 version 必被
+      // 乐观锁拦成 409，用户只能关面板重开。父组件 initial 引用稳定至
+      // onSaved，这里提前推进不会触发回置。
+      setDraft(next); setBaseline(next)
       if (confirm) {
         next = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/guidance-analyses/${encodeURIComponent(next.id)}/confirm`, { method: "POST", body: { version: next.version } })
         if (!isGuidanceAnalysis(next)) throw new Error("invalid guidance")
+        setDraft(next); setBaseline(next)
       }
-      setDraft(next); setBaseline(next); published.current = next; onSaved(next)
+      published.current = next; onSaved(next)
       if (confirm) onClose()
       else setEditing(false)
     } catch (caught) {
@@ -65,7 +71,7 @@ export function GuidanceReview({ projectId, initial, canManage, initialEditing =
   return <div className="dialog-backdrop"><section className="dialog guidance-review-dialog" role="dialog" aria-modal="true" aria-label="审核客户目标与项目指引">
     <div className="dialog-heading"><div><h3>客户目标与项目指引 · v{draft.version_number}</h3><p className="field-hint">来源：{draft.source_filename}</p></div><div className="row-actions">{canEdit ? <button className="secondary-button compact" type="button" disabled={saving} onClick={() => editing ? cancelEditing() : void beginEditing()}>{saving && !editing ? "创建修订中…" : editing ? "取消编辑" : "编辑"}</button> : null}<button className="secondary-button compact" type="button" onClick={onClose}>关闭</button></div></div>
     <div className="guidance-review-body">
-      {draft.analysis_state !== "ready" ? draft.analysis_state === "failed" ? <p className="form-error" role="alert">{draft.failure_message}</p> : <div className="guidance-analysis-progress" role="status"><strong>预调研分析正在后台继续</strong><p>可以先关闭本页处理其他工作；进入分析时会显示 AI 执行中心，完成后这里会自动更新为审核内容。</p></div> : editing ? <div className="guidance-form">
+      {draft.analysis_state !== "ready" ? draft.analysis_state === "failed" ? <p className="form-error" role="alert">{draft.failure_message}</p> : draft.analysis_state === "cancelled" ? <div className="guidance-analysis-progress" role="status"><strong>分析已取消</strong><p>本次预调研分析已取消，不会继续执行；可重新发起 AI 分析或上传新版预调研表。</p></div> : <div className="guidance-analysis-progress" role="status"><strong>预调研分析正在后台继续</strong><p>可以先关闭本页处理其他工作；进入分析时会显示 AI 执行中心，完成后这里会自动更新为审核内容。</p></div> : editing ? <div className="guidance-form">
         <label className="field"><span>客户长期愿景</span><textarea rows={3} value={draft.customer_vision} onChange={(event) => setDraft({ ...draft, customer_vision: event.target.value })} /></label>
         <label className="field"><span>当前阶段目标</span><textarea rows={3} value={draft.current_phase_objective} onChange={(event) => setDraft({ ...draft, current_phase_objective: event.target.value })} /></label>
         {sections.map(([key, label]) => <label className="field" key={key}><span>{label}</span><textarea rows={4} value={(draft[key] as GuidanceItemDto[]).map((item) => item.text).join("\n")} onChange={(event) => changeItems(key, event.target.value)} /></label>)}
