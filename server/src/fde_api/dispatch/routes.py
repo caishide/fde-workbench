@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
@@ -17,6 +19,7 @@ from fde_api.dispatch.access import (
     require_package_access,
     serialize_package_whitelist,
 )
+from fde_api.dispatch.disputes import open_dispute, resolve_dispute
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import DeliveryPackage
 from fde_api.dispatch.offer_service import (
@@ -704,3 +707,199 @@ def list_rules_route():
                 "error": None,
             }
         )
+
+
+@blueprint.get("/disputes")
+@require_auth
+def list_disputes_route():
+    """争议单列表（B3 运维页簇；平台侧——§6.6 处罚类动作 100% 人工的前置视图）。
+
+    L0 草稿由 T+30 对账自动产（L0 禁人工打开）；L1/L2 人工打开、人工裁决。
+    l0_report_source_uri 是指针红线字段：只透出指针本身，永不内联对账单本体。
+    """
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可查看争议单。", 403)
+    from fde_api.dispatch.models import Dispute
+    from fde_api.workbench.models import User as UserModel
+
+    session = db.session()
+    try:
+        rows = session.execute(
+            select(Dispute, DeliveryPackage.package_code)
+            .join(DeliveryPackage, DeliveryPackage.id == Dispute.package_id)
+            .order_by(Dispute.created_at.desc())
+        ).all()
+        user_ids = {
+            dispute.opened_by_user_id for dispute, _ in rows
+        } | {dispute.handled_by_user_id for dispute, _ in rows}
+        user_ids.discard(None)
+        names = (
+            dict(
+                session.execute(
+                    select(UserModel.id, UserModel.display_name).where(
+                        UserModel.id.in_(user_ids)
+                    )
+                ).all()
+            )
+            if user_ids
+            else {}
+        )
+        data = [
+            {
+                "dispute_id": dispute.id,
+                "package_id": dispute.package_id,
+                "package_code": package_code,
+                "settlement_key": dispute.settlement_key,
+                "layer": dispute.layer,
+                "status": dispute.status,
+                "amount": float(dispute.amount) if dispute.amount is not None else None,
+                "reason": dispute.reason,
+                "resolution": dispute.resolution,
+                "l0_report_source_uri": dispute.l0_report_source_uri,
+                "snapshot_hash": dispute.snapshot_hash,
+                "opened_by": names.get(dispute.opened_by_user_id),
+                "handled_by": names.get(dispute.handled_by_user_id),
+                "resolved_at": dispute.resolved_at.isoformat()
+                if dispute.resolved_at
+                else None,
+                "created_at": dispute.created_at.isoformat()
+                if dispute.created_at
+                else None,
+            }
+            for dispute, package_code in rows
+        ]
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()
+
+
+@blueprint.post("/disputes")
+@require_auth
+def open_dispute_route():
+    """人工打开争议（L1 平台运营 / L2 双人复核入口；L0 只由对账自动产）。"""
+    payload = _json_body() or {}
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可打开争议。", 403)
+    package_id = payload.get("package_id")
+    layer, reason = payload.get("layer"), payload.get("reason")
+    if not isinstance(package_id, str) or not package_id:
+        return error_response("invalid_request", "package_id 必填。", 400)
+    if not isinstance(layer, str) or not isinstance(reason, str) or not reason.strip():
+        return error_response("invalid_request", "layer 与非空 reason 必填。", 400)
+    amount_raw = payload.get("amount")
+    amount = None
+    if amount_raw is not None:
+        try:
+            amount = Decimal(str(amount_raw))
+        except Exception:
+            return error_response("invalid_request", "amount 必须是数字。", 400)
+    settlement_key = payload.get("settlement_key")
+    source_uri = payload.get("l0_report_source_uri")
+    if settlement_key is not None and not isinstance(settlement_key, str):
+        return error_response("invalid_request", "settlement_key 必须是字符串。", 400)
+    if source_uri is not None and not isinstance(source_uri, str):
+        return error_response("invalid_request", "l0_report_source_uri 必须是字符串。", 400)
+    session = db.session()
+    try:
+        with session.begin():
+            dispute = open_dispute(
+                session,
+                actor=g.current_user,
+                package_id=package_id,
+                layer=layer,
+                reason=reason,
+                settlement_key=settlement_key,
+                amount=amount,
+                l0_report_source_uri=source_uri,
+            )
+            data = {
+                "dispute_id": dispute.id,
+                "package_id": dispute.package_id,
+                "layer": dispute.layer,
+                "status": dispute.status,
+                "snapshot_hash": dispute.snapshot_hash,
+            }
+        return jsonify({"data": data, "error": None}), 201
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/disputes/<dispute_id>/resolve")
+@require_auth
+def resolve_dispute_route(dispute_id: str):
+    """人工裁决（§6.6：结论必填；close=true 直接关闭，否则转 resolved 待复核收口）。"""
+    payload = _json_body() or {}
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "裁决是人工动作，仅平台侧可执行。", 403)
+    resolution = payload.get("resolution")
+    close = payload.get("close", False)
+    if not isinstance(resolution, str) or not resolution.strip():
+        return error_response("invalid_request", "裁决结论必填。", 400)
+    if type(close) is not bool:
+        return error_response("invalid_request", "close 必须是布尔值。", 400)
+    session = db.session()
+    try:
+        with session.begin():
+            dispute = resolve_dispute(
+                session,
+                actor=g.current_user,
+                dispute_id=dispute_id,
+                resolution=resolution,
+                close=close,
+            )
+            data = {
+                "dispute_id": dispute.id,
+                "status": dispute.status,
+                "resolution": dispute.resolution,
+            }
+        return jsonify({"data": data, "error": None})
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/simulator/replay")
+@require_auth
+def simulator_replay_route():
+    """历史包回放打分（B5 仿真对比入口；平台侧；只读）。
+
+    只暴露 replay_scoring（当前池 × 当前规则版本的再撮合画像）。全链路
+    种子化仿真留在 CLI（simulator.py 自建引擎连沙箱库，库名须 _sim/_test
+    结尾）——绝不可经 HTTP 触发写库，口径=仿真不作为真实成绩。
+    """
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可执行回放。", 403)
+    from fde_api.dispatch.simulator import replay_scoring
+
+    session = db.session()
+    try:
+        return jsonify({"data": replay_scoring(session), "error": None})
+    finally:
+        session.close()
+
+
+@blueprint.get("/claim-gates")
+@require_auth
+def list_claim_gates_route():
+    """城市开闸看板（B6 运维页簇；平台侧；只读）。
+
+    §6.4 三条件 + 种子开关逐城评估（claim_gate_status 输出可解释明细）。
+    种子开关在 seeds/dispatch_cities.json（文件权威）——本路由只读展示，
+    改开关走代码流程，不提供 HTTP 翻转。
+    """
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可查看开闸看板。", 403)
+    from fde_api.dispatch.cities import claim_gate_status, load_dispatch_cities
+
+    session = db.session()
+    try:
+        data = [
+            claim_gate_status(session, str(row["city"]))
+            for row in load_dispatch_cities()
+        ]
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()

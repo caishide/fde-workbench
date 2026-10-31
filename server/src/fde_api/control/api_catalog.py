@@ -87,6 +87,11 @@ ENTRIES = [
     ("dispatch.profiles_list", "GET", "/api/v1/dispatch/profiles", "供给池能力档案与产能看板（含在途/上限；平台侧）", ""),
     ("dispatch.profiles_me", "GET", "/api/v1/dispatch/profiles/me", "我的能力档案与产能（自助只读；无档案 404）", ""),
     ("dispatch.rules_list", "GET", "/api/v1/dispatch/rules", "规则版本快照与只读常数（P2-1 权重配置页；平台侧）", ""),
+    ("dispatch.disputes_list", "GET", "/api/v1/dispatch/disputes", "争议单列表（L0–L3 全量；L0 对账单只透出 source_uri 指针；平台侧）", ""),
+    ("dispatch.disputes_open", "POST", "/api/v1/dispatch/disputes", "人工打开争议（仅 L1/L2——L0 由对账自动产；L1 金额 ≤¥50,000 超限 422；平台侧）", "package_id,layer,reason；可选 amount,settlement_key,l0_report_source_uri"),
+    ("dispatch.disputes_resolve", "POST", "/api/v1/dispatch/disputes/{dispute_id}/resolve", "人工裁决（结论必填；处罚类动作 100% 人工；可选 close=true 直关；平台侧）", "resolution；可选 close"),
+    ("dispatch.simulator_replay", "POST", "/api/v1/dispatch/simulator/replay", "历史包回放打分（当前池×当前规则版本再撮合画像；只读；全链路仿真留 CLI 沙箱库；平台侧）", ""),
+    ("dispatch.claim_gates_list", "GET", "/api/v1/dispatch/claim-gates", "城市开闸看板（§6.4 三条件+种子开关逐城可解释明细；只读不翻转开关；平台侧）", ""),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,

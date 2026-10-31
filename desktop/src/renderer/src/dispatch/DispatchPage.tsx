@@ -1,17 +1,22 @@
 import { CapabilityProfilesPage } from "./CapabilityProfilesPage"
+import { ClaimGatesPage } from "./ClaimGatesPage"
 import { ConsolePage } from "./ConsolePage"
+import { DisputesPage } from "./DisputesPage"
 import { DispatchPoolPage } from "./DispatchPoolPage"
 import { MyOffersPage } from "./MyOffersPage"
 import { MySettlementsPage } from "./MySettlementsPage"
 import { RuleVersionsPage } from "./RuleVersionsPage"
+import { SimulatorPage } from "./SimulatorPage"
 import { useAuth } from "../auth/AuthProvider"
 
-/** P2-1 派单页簇容器 + B1 接单工作台 + B2 调度台：六个子页 tab（派单池 /
- *  我的接单 / 我的结算 / 能力档案与产能 / 权重与规则版本 / 调度台）。
- *  tab 状态由 hash 路由承载（#dispatch[/(pool|mine|settlements|profiles|rules|console)]）。
- *  「我的接单/我的结算」是交付工程师视角（授权可见 + offer 流，§9.2/§6.3）；
- *  派单池/档案/规则沿用平台侧只读视图；「调度台」仅平台侧角色可见
- *  （admin/project_lead，B2 操作面——动作权限在服务端复核）。 */
+/** P2-1 派单页簇容器 + B1 接单工作台 + B2 调度台 + B3/B5/B6 运维页簇：
+ *  九个子页 tab（派单池 / 我的接单 / 我的结算 / 能力档案与产能 / 权重与
+ *  规则版本 / 调度台 / 争议处理 / 仿真对比 / 开闸运维）。
+ *  tab 状态由 hash 路由承载（#dispatch[/(pool|mine|settlements|profiles|
+ *  rules|console|disputes|sim|gates)]）。「我的接单/我的结算」是交付工程师
+ *  视角（授权可见 + offer 流，§9.2/§6.3）；派单池/档案/规则沿用平台侧只读
+ *  视图；「调度台/争议处理/仿真对比/开闸运维」仅平台侧角色可见
+ *  （admin/project_lead——动作权限在服务端复核）。 */
 
 export type DispatchTab =
   | "pool"
@@ -20,6 +25,9 @@ export type DispatchTab =
   | "profiles"
   | "rules"
   | "console"
+  | "disputes"
+  | "sim"
+  | "gates"
 
 const TABS: { key: DispatchTab; label: string; platformOnly?: boolean }[] = [
   { key: "pool", label: "派单池" },
@@ -28,6 +36,9 @@ const TABS: { key: DispatchTab; label: string; platformOnly?: boolean }[] = [
   { key: "profiles", label: "能力档案与产能" },
   { key: "rules", label: "权重与规则版本" },
   { key: "console", label: "调度台", platformOnly: true },
+  { key: "disputes", label: "争议处理", platformOnly: true },
+  { key: "sim", label: "仿真对比", platformOnly: true },
+  { key: "gates", label: "开闸运维", platformOnly: true },
 ]
 
 export function DispatchPage({
@@ -65,6 +76,27 @@ export function DispatchPage({
           <ConsolePage />
         ) : (
           <p className="muted">调度台仅对平台侧角色（admin/project_lead）开放。</p>
+        )
+      ) : null}
+      {tab === "disputes" ? (
+        isPlatform ? (
+          <DisputesPage />
+        ) : (
+          <p className="muted">争议处理仅对平台侧角色（admin/project_lead）开放。</p>
+        )
+      ) : null}
+      {tab === "sim" ? (
+        isPlatform ? (
+          <SimulatorPage />
+        ) : (
+          <p className="muted">仿真对比仅对平台侧角色（admin/project_lead）开放。</p>
+        )
+      ) : null}
+      {tab === "gates" ? (
+        isPlatform ? (
+          <ClaimGatesPage />
+        ) : (
+          <p className="muted">开闸运维仅对平台侧角色（admin/project_lead）开放。</p>
         )
       ) : null}
     </div>
