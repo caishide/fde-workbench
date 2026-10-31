@@ -140,6 +140,7 @@ def _onsite_package(
         project_code=f"R5-{uuid4().hex[:6].upper()}",
         name="r5 撮合项目",
         enterprise_code="r5 企业·制造·苏州",
+        business_line="FDE_DISPATCH",  # P2-4 H3：交付包只建在派单线项目
         planned_start_date=datetime(2026, 10, 31).date(),
         leader_user_id=admin.id,
         source_template_version=version,

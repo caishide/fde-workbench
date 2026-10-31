@@ -102,6 +102,7 @@ def _context(db_session, *, schedule: str = "远程交付", final_amount: str = 
         project_code=f"R3-{uuid4().hex[:6].upper()}",
         name="r3 派单项目",
         enterprise_code=f"r3 企业·制造·{uuid4().hex[:4]}",
+        business_line="FDE_DISPATCH",  # P2-4 H3：交付包只建在派单线项目
         planned_start_date=date(2026, 10, 31),
         planned_end_date=date(2026, 12, 31),
         leader_user_id=admin.id,

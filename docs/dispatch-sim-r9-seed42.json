@@ -1,0 +1,663 @@
+{
+  "mode": "simulation",
+  "meta": {
+    "scenarios": 24,
+    "seed": 42,
+    "discipline": "口径=simulation（假设表×真实引擎的合成结果，非真实业务数据）；随机性=random.Random(seed) 单流，同 seed 可复现；撮合/席位/时间常数走真实引擎与规则版本。",
+    "bp_gates": {
+      "H2_g9_first_pass_target": "≥ 0.70（BP §11 P3 生态起步）",
+      "H3_platform_hours_target": "≤ 0.25（BP §11 P4 规模化）",
+      "H3_gross_margin_target": "≥ 0.70（BP §11 P4 规模化）"
+    }
+  },
+  "assumptions": {
+    "accept_probability_by_rank": {
+      "1": 0.8,
+      "2": 0.65,
+      "3": 0.55
+    },
+    "decline_probability_by_rank": {
+      "1": 0.1,
+      "2": 0.15,
+      "3": 0.2
+    },
+    "g9_first_pass_by_level_delta": {
+      "0": 0.72,
+      "1": 0.84,
+      "2": 0.91,
+      "3": 0.95
+    },
+    "g9_rework_pass_probability": 0.9,
+    "platform_hours_auto_min": 6.0,
+    "platform_hours_auto_max": 10.0,
+    "scenario_c_platform_hours_multiplier": 3.0,
+    "delivery_hours_jitter": 0.15,
+    "platform_hourly_cost": 150,
+    "max_rounds": 3
+  },
+  "funnel": {
+    "demands": 24,
+    "engine_accepted": 23,
+    "scenario_c_manual": 0,
+    "unfilled": 1,
+    "delivered": 23,
+    "avg_rounds_accepted": 1.09
+  },
+  "h2": {
+    "g9_first_pass_rate": 0.9565,
+    "random_assignment_baseline": 0.9183,
+    "first_pass_count": 22,
+    "delivered_count": 23,
+    "gate_pass": true
+  },
+  "h3": {
+    "platform_hours_share": 0.0716,
+    "gross_margin": 0.9717,
+    "platform_hours_total": 192.1,
+    "total_hours_total": 2684.4,
+    "platform_income_total": 1019000.0,
+    "platform_cost_total": 28815.0,
+    "gate_pass": true
+  },
+  "scenarios": [
+    {
+      "code": "SIM-0001",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L4",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.0,
+      "delivery_hours": 85.9,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1200.0
+    },
+    {
+      "code": "SIM-0002",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 7.7,
+      "delivery_hours": 170.4,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1155.0
+    },
+    {
+      "code": "SIM-0003",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.2,
+      "delivery_hours": 65.6,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 1380.0
+    },
+    {
+      "code": "SIM-0004",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.1,
+      "delivery_hours": 93.3,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1365.0
+    },
+    {
+      "code": "SIM-0005",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L4",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.4,
+      "delivery_hours": 140.6,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1260.0
+    },
+    {
+      "code": "SIM-0006",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.7,
+      "delivery_hours": 59.3,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 1455.0
+    },
+    {
+      "code": "SIM-0007",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L4",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.4,
+      "delivery_hours": 109.9,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1410.0
+    },
+    {
+      "code": "SIM-0008",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.1,
+      "delivery_hours": 139.3,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1365.0
+    },
+    {
+      "code": "SIM-0009",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 2,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 6.7,
+      "delivery_hours": 59.2,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 1005.0
+    },
+    {
+      "code": "SIM-0010",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.6,
+      "delivery_hours": 93.0,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1290.0
+    },
+    {
+      "code": "SIM-0011",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L4",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 7.8,
+      "delivery_hours": 161.6,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1170.0
+    },
+    {
+      "code": "SIM-0012",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L1",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.4,
+      "delivery_hours": 61.0,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 1410.0
+    },
+    {
+      "code": "SIM-0013",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 7.6,
+      "delivery_hours": 109.7,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1140.0
+    },
+    {
+      "code": "SIM-0014",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L1",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": false,
+      "delivered": true,
+      "platform_hours": 8.6,
+      "delivery_hours": 213.3,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1290.0
+    },
+    {
+      "code": "SIM-0015",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.0,
+      "delivery_hours": 53.6,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 1350.0
+    },
+    {
+      "code": "SIM-0016",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 7.6,
+      "delivery_hours": 102.5,
+      "amount": 100000,
+      "platform_income": 40000.0,
+      "platform_cost": 1140.0
+    },
+    {
+      "code": "SIM-0017",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 2,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.4,
+      "delivery_hours": 159.7,
+      "amount": 180000,
+      "platform_income": 72000.0,
+      "platform_cost": 1410.0
+    },
+    {
+      "code": "SIM-0018",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 6.3,
+      "delivery_hours": 65.3,
+      "amount": 60000,
+      "platform_income": 24000.0,
+      "platform_cost": 945.0
+    },
+    {
+      "code": "SIM-0019",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.2,
+      "delivery_hours": 99.0,
+      "amount": 100000,
+      "platform_income": 35000.0,
+      "platform_cost": 1230.0
+    },
+    {
+      "code": "SIM-0020",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L1",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.1,
+      "delivery_hours": 170.6,
+      "amount": 180000,
+      "platform_income": 63000.0,
+      "platform_cost": 1215.0
+    },
+    {
+      "code": "SIM-0021",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L2",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 6.6,
+      "delivery_hours": 57.1,
+      "amount": 60000,
+      "platform_income": 21000.0,
+      "platform_cost": 990.0
+    },
+    {
+      "code": "SIM-0022",
+      "tier": "standard",
+      "required_level": null,
+      "accepted_level": null,
+      "rounds": 2,
+      "outcome": "unfilled",
+      "g9_first_pass": false,
+      "delivered": false,
+      "platform_hours": 0.0,
+      "delivery_hours": 0.0,
+      "amount": 0,
+      "platform_income": 0.0,
+      "platform_cost": 0.0
+    },
+    {
+      "code": "SIM-0023",
+      "tier": "flagship",
+      "required_level": null,
+      "accepted_level": "L3",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 8.5,
+      "delivery_hours": 160.4,
+      "amount": 180000,
+      "platform_income": 63000.0,
+      "platform_cost": 1275.0
+    },
+    {
+      "code": "SIM-0024",
+      "tier": "light",
+      "required_level": null,
+      "accepted_level": "L1",
+      "rounds": 1,
+      "outcome": "accepted",
+      "g9_first_pass": true,
+      "delivered": true,
+      "platform_hours": 9.1,
+      "delivery_hours": 62.0,
+      "amount": 60000,
+      "platform_income": 21000.0,
+      "platform_cost": 1365.0
+    }
+  ],
+  "replay": {
+    "mode": "replay",
+    "rule_version": 1,
+    "packages": [
+      {
+        "package_code": "PKG-619176-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-027824-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-471029-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-732052-01",
+        "round": 1,
+        "scenario": "B",
+        "stage_a_pass": true,
+        "candidates": 1,
+        "rejected": 11,
+        "top": [
+          {
+            "level": "L3",
+            "weighted": 82
+          }
+        ]
+      },
+      {
+        "package_code": "PKG-107175-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-846335-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-082627-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-605397-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-083667-02",
+        "round": 2,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-372528-01",
+        "round": 1,
+        "scenario": "B",
+        "stage_a_pass": true,
+        "candidates": 1,
+        "rejected": 11,
+        "top": [
+          {
+            "level": "L3",
+            "weighted": 82
+          }
+        ]
+      },
+      {
+        "package_code": "PKG-638720-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-283060-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-813694-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-069403-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-414850-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-565158-01",
+        "round": 1,
+        "scenario": "B",
+        "stage_a_pass": true,
+        "candidates": 1,
+        "rejected": 11,
+        "top": [
+          {
+            "level": "L3",
+            "weighted": 82
+          }
+        ]
+      },
+      {
+        "package_code": "PKG-229974-02",
+        "round": 2,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-160265-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-400156-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-988210-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-279786-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-524902-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      },
+      {
+        "package_code": "PKG-882554-01",
+        "round": 1,
+        "scenario": "C",
+        "stage_a_pass": false,
+        "candidates": 0,
+        "rejected": 12,
+        "top": []
+      }
+    ],
+    "summary": {
+      "replayed": 23,
+      "scenario_counts": {
+        "A": 0,
+        "B": 3,
+        "C": 20
+      },
+      "stage_a_pass_rate": 0.1304,
+      "avg_candidates_when_passable": 1.0,
+      "avg_top1_weighted_remote": 82.0
+    }
+  }
+}

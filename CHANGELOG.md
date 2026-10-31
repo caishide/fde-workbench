@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r9 派单引擎轮（2026-10-31）
+
+### P2-4 私单封堵 + 撮合仿真器（零迁移）
+
+- **P2-4 私下接单封堵**（派单设计 §8.5）：新增 `dispatch/channel_guard.py` 三服务层钩子——H1 立项入口（`business_line` 随立项显式声明，派单线仅平台侧可立、专属 403 码）、H2 池内企业直签封堵（企业进过派单池后直签立项/报价 → 422 `private_deal_blocked`，复购走派单线放行）、H3 渠道正交（交付包只建在派单线项目上 → 422 `dispatch_line_required`）；封堵留痕走独立事务（主事务回滚后仍存活）。
+- **撮合仿真器**（留注⑳）：新增 `dispatch/simulator.py`——历史包只读回放打分（P2-1 仿真对比数据源）+ 种子化全链路仿真（撮合/席位/时间常数走真实引擎，人工环节显式假设表采样）+ CLI `python -m fde_api.dispatch.simulator`（非沙箱库拒绝执行）。报告工件 `docs/dispatch-sim-r9-seed42.json`（H2/H3 内测/仿真口径，假设全量回显）。
+- 测试：`test_dispatch_p2_r9_p24.py` 10 例 + `test_dispatch_p1_r9_sim.py` 4 例；r1–r8 回归全绿。口径：**85 业务表**（口径修订：不含 alembic_version）/ 15 rev / head `c5d7e9f1a3b7`（零迁移）/ 路由 228 / ENTRIES 68 / 服务端 1448 通过 / 桌面 660。轮次报告 `docs/goal-r9-派单引擎.md`；台账第二十一节。
+
 ## [未发布] — goal-r8 派单收口轮（2026-10-31）
 
 ### 派单引擎收口——开池四道闸全绿 + §八终止判定对照（零迁移）

@@ -69,6 +69,8 @@ CREATE_FIELDS = frozenset(
         "fdeops_workspace",
         "background",
         "notes",
+        # P2-4（派单设计 §8.5）：成交渠道随立项入口显式声明
+        "business_line",
         "project_code",
         "planned_start_date",
         "planned_end_date",
