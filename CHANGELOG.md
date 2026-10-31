@@ -11,7 +11,7 @@
 - **P1-4 options 枚举**：席位分配 / 场景类型 / 匹配模式 / 拒单原因四组随 /workbench/options 下发。
 - 路由 +2（POST packages/{id}/match、packages/{id}/required-level），ENTRIES +2。
 - 测试：`server/tests/test_dispatch_p1_r5.py` 12 例；全量 CI 门禁出具；桌面零改动。
-- 口径（goal-r5 实测）：83 表、12 revision（零迁移）、路由 226（+2）、ENTRIES 66（+2）。轮次报告 `docs/goal-r5-派单引擎.md`；台账第十七节。
+- 口径（goal-r5 实测，rebase 到 goal-d1 合并态后）：84 表、13 revision / head `a7f3c1e9d5b2`（本轮零迁移）、路由 226（+2）、ENTRIES 66（+2）。轮次报告 `docs/goal-r5-派单引擎.md`；台账第十七节。
 
 ## [未发布] — goal-r4 派单引擎轮（2026-10-31）
 

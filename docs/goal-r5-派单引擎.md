@@ -55,11 +55,13 @@
 
 | 口径 | 附录 A 快照 | 本轮实测 | 判定 |
 |---|---|---|---|
-| `__tablename__` | 76 | **83**（零新表） | §8.1 进度维持 7/8（余 disputes） |
-| 迁移 revision | 9 | **12**（零新迁移） | 不变 |
-| 蓝图路由 | 212 | **226**（+2） | 正向漂移 |
+| `__tablename__` | 76 | **84**（rebase 后含 goal-d1 presurvey_intakes；派单口径 83，§8.1 进度 7/8 余 disputes） | 漂移含并行轮 |
+| 迁移 revision | 9 | **13** / head `a7f3c1e9d5b2`（goal-d1；派单零新迁移） | 接链正确 |
+| 蓝图路由 | 212 | **226**（rebase 后含 goal-d1 两路由；本分支净 +2） | 正向漂移 |
 | api_catalog ENTRIES | 54 | **66**（+2） | 一致性测试（r4）双向钉死 |
 | 服务端 pytest | — | **CI 出具（1398+，含 +12 r5 用例）** | — |
+
+**撞车与 rebase（如实）**：goal-d1（PR #37，presurvey_intake + G3 前置闸）在本轮 CI 期间合并——rebase 到 `a7f3c1e9d5b2`，AGENTS.md 口径行冲突按联合口径手并；rebase 后回归集 74 例全绿（含 d1 的迁移链）。
 
 **失败与未完成项（如实）**：r5 用例首轮 8 失败，逐一定位：① `_onsite_package` 未给项目挂 ProjectModule → required_modules 恒空使 A2 反例空转（补真实模块行 + ModuleCatalog 缺种自建）；② publish 重推导 onsite 使 remote 场景被翻回到场（测试侧清 schedule）；③ 多处测试构造撞「同包同轮同候选」唯一约束与「本轮已有 offer」守卫（改远端轮次/round+1）；④ `_profile` 漏 add user（幂等补 add）；⑤ 负面清单 #2 断言走错场景（远程路径才有 weighted_score）。全部为测试构造问题，撮合代码本体无返工。
 
