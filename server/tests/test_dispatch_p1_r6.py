@@ -356,9 +356,13 @@ def test_maintenance_handler_runs_end_to_end(db_session):
 
 
 def test_head_revision_pinned():
+    """HEAD 常量与迁移文件互证（通用断言——head 随轮次前进，不做硬编码）。"""
+    import re
+
     source = (SERVER_ROOT / "tests" / "test_migrations.py").read_text(encoding="utf-8")
-    assert 'HEAD_REVISION = "b2c4d6e8f1a3"' in source
+    match = re.search(r'HEAD_REVISION = "([0-9a-f]{12})"', source)
+    assert match, "HEAD_REVISION 常量缺失"
+    head = match.group(1)
     assert any(
-        "b2c4d6e8f1a3" in p.name
-        for p in (SERVER_ROOT / "migrations" / "versions").iterdir()
-    )
+        head in p.name for p in (SERVER_ROOT / "migrations" / "versions").iterdir()
+    ), f"head {head} 无对应迁移文件"

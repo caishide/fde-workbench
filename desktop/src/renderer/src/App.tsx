@@ -2,6 +2,7 @@ import { useEffect } from "react"
 
 import { AuthProvider, useAuth } from "./auth/AuthProvider"
 import { BridgePage } from "./bridge/BridgePage"
+import { DispatchPage } from "./dispatch/DispatchPage"
 import { ChangePasswordPage } from "./auth/ChangePasswordPage"
 import { LoginPage } from "./auth/LoginPage"
 import { DangerConfirmProvider } from "./common/DangerConfirmProvider"
@@ -64,6 +65,15 @@ function AuthenticatedApp() {
 function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "account") return <AccountPage />
   if (route.kind === "task-center") return <TaskCenterPage />
+  if (route.kind === "dispatch")
+    return (
+      <DispatchPage
+        tab={route.tab ?? "pool"}
+        onTabChange={(next) => {
+          window.location.hash = next === "pool" ? "#dispatch" : `#dispatch/${next}`
+        }}
+      />
+    )
   if (route.kind === "help") return <HelpPage />
   if (route.kind === "extensions") return route.tool === 'lcsc-compare' ? <LcscComparePage /> : route.tool ? <LcscToolPage key={route.tool} variant={route.tool} /> : <ExtensionsPage initialTab={route.tab} />
   if (route.kind === "users") return <UsersPage />

@@ -352,3 +352,106 @@ def override_required_level_route(package_id: str):
         return _dispatch_error(error)
     finally:
         session.close()
+
+
+@blueprint.get("/profiles")
+@require_auth
+def list_profiles_route():
+    """能力档案 + 产能看板数据（P2-1/§3.2/§6.5；平台侧——档案含他人在途计数）。"""
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可查看供给池档案。", 403)
+    from fde_api.dispatch.models import DispatchOffer, FdeProfile
+    from fde_api.workbench.models import User as UserModel
+    from sqlalchemy import func
+
+    with db.session() as session:
+        in_hand = dict(
+            session.execute(
+                select(
+                    DispatchOffer.candidate_user_id,
+                    func.count(DispatchOffer.id),
+                )
+                .where(
+                    DispatchOffer.status.in_(("offered", "accepted")),
+                )
+                .group_by(DispatchOffer.candidate_user_id)
+            ).all()
+        )
+        rows = session.execute(
+            select(FdeProfile, UserModel.username, UserModel.display_name)
+            .join(UserModel, UserModel.id == FdeProfile.user_id)
+            .order_by(FdeProfile.user_id)
+        ).all()
+        data = []
+        for profile, username, display_name in rows:
+            cap = (
+                (profile.monthly_capacity_hours or 0)
+                // max(profile.avg_delivery_hours or 0, 1)
+                if profile.monthly_capacity_hours
+                else 0
+            )
+            data.append(
+                {
+                    "user_id": profile.user_id,
+                    "username": username,
+                    "display_name": display_name,
+                    "level": profile.level,
+                    "status": profile.status,
+                    "scores": {
+                        "biz_cognition": profile.biz_cognition_score,
+                        "scenario_eng": profile.scenario_eng_score,
+                        "ai_tech": profile.ai_tech_score,
+                        "delivery_assure": profile.delivery_assure_score,
+                    },
+                    "industry_tags": profile.industry_tags or [],
+                    "module_tags": profile.module_tags or [],
+                    "home_city": profile.home_city,
+                    "geo_fence_km": profile.geo_fence_km,
+                    "monthly_capacity_hours": profile.monthly_capacity_hours,
+                    "avg_delivery_hours": profile.avg_delivery_hours,
+                    "in_hand": in_hand.get(profile.user_id, 0),
+                    "capacity_cap": cap,
+                }
+            )
+        return jsonify({"data": data, "error": None})
+
+
+@blueprint.get("/rules")
+@require_auth
+def list_rules_route():
+    """规则版本与只读常数（P2-1 权重配置页；平台侧）。"""
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可查看规则版本。", 403)
+    from fde_api.dispatch.models import DispatchRuleVersion
+    from fde_api.system_configuration import DISPATCH_CONSTANTS
+
+    with db.session() as session:
+        versions = session.scalars(
+            select(DispatchRuleVersion).order_by(DispatchRuleVersion.version_no)
+        ).all()
+        return jsonify(
+            {
+                "data": {
+                    "versions": [
+                        {
+                            "id": row.id,
+                            "version_no": row.version_no,
+                            "status": row.status,
+                            "rule_snapshot": row.rule_snapshot,
+                            "published_at": row.published_at.isoformat()
+                            if row.published_at
+                            else None,
+                            "effective_at": row.effective_at.isoformat()
+                            if row.effective_at
+                            else None,
+                            "retired_at": row.retired_at.isoformat()
+                            if row.retired_at
+                            else None,
+                        }
+                        for row in versions
+                    ],
+                    "constants": dict(DISPATCH_CONSTANTS),
+                },
+                "error": None,
+            }
+        )

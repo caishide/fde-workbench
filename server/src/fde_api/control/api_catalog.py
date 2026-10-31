@@ -79,6 +79,8 @@ ENTRIES = [
     ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
     ("dispatch.packages_match", "POST", "/api/v1/dispatch/packages/{package_id}/match", "两段式撮合 Top3（Stage A 资格门 + 场景裁决 + Stage B；§4）", ""),
     ("dispatch.packages_level_override", "POST", "/api/v1/dispatch/packages/{package_id}/required-level", "发布前人工覆盖等级门槛（必填 reason 留痕；§4.5）", "level,reason"),
+    ("dispatch.profiles_list", "GET", "/api/v1/dispatch/profiles", "供给池能力档案与产能看板（含在途/上限；平台侧）", ""),
+    ("dispatch.rules_list", "GET", "/api/v1/dispatch/rules", "规则版本快照与只读常数（P2-1 权重配置页；平台侧）", ""),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,
