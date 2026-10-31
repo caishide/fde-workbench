@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r2 派单引擎轮（2026-10-31）
+
+### 派单引擎 P0 簇②表建设（对照派单设计文档 v1.0 §8.3：P0-3/P0-4/P0-7/P0-8）
+
+- **P0-3 供给池档案**（§3.2/§3.3）：`fde_profiles`（一人一档：level 标量 L1–L4 + 四大子能力域独立评分轴 + 申报制标签 + 城市围栏 + 产能双列）+ `fde_level_evidence`（等级判定证据链：核验人/时刻/客观计数快照/依据单据只存 source_uri+sha256 指针）+ `dispatch/profiles.py`（L1–L4 晋级判据可复算查询——独立交付/复购/带教/四域短板下限，判据不足 422 `level_evidence_insufficient`，全过写证据链 + 更新档案 + `fde_level_promoted` 审计事件）。
+- **P0-4 分成落库**（§7.2/§7.4）：`payments` 只加 `acceptance_passed_at` 一列（唯一约束不动、D+7/15/30/60 催款读时现算零改动）；`delivery_settlements` 席位级结算表（商务四席位 platform/region/city/delivery，与交付包执行四席位不同名不同义）+ `dispatch/settlements.py`（四席位 35/5/20/40、冷启动同城前 3 单 40/5/15/40、平台吸收舍入尾差保证 Σ=实收基数；劳务报酬**累计预扣法**（率表集中一处待法务确认）；状态机 draft→accrued→payable→paid/disputed，accrued 双条件=实收+G8 过门，payable 发票前置 422，paid 凭证指针）。双钩子：收款实收回填 upsert 结算草稿（无交付包项目纯 no-op）；G8 过门打标验收时刻并推进计提（晚到尾款收款即补，幂等）。
+- **P0-7 配置常数**（§6.2）：`system_configuration` 增只读 `dispatch_constants` 节（时间常数 9 项 + Top-N + Stage B 权重 + 等级映射分 + 席位份额/冷启动 + 新人保护 + 拒单权，MappingProxyType 源级只读）——不进 PUBLIC_FIELDS（PUT 可写集精确等值校验天然拒改），实现代码唯一引用源，禁散落硬编码。
+- **P0-8 规则版本**（§6.2/规则表 B9）：`dispatch_rule_versions` + `dispatch/rules.py`（30 天公示窗强制：生效日 < 发布日+30 天 → 422 `notice_window_required`；到点 published→active、原 active→retired 至多一个 active；快照必备节校验 admin-only；版本切换后旧 offer 的 `match_breakdown.rule_version` 永指当时版本）。
+- **schema 调整**：`projects.enterprise_code` 全局唯一约束放宽为普通索引（派单 §3.3 复购判据要求同企业 ≥2 项目可表达；代号红线不动，三段两枚「·」格式校验保留——详见轮次报告留注③）。
+- 测试：新增 `server/tests/test_dispatch_p0_r2.py`（12 例：L1/L2 证据链正反例、7 里程碑×四席位+累计预扣链、冷启动、状态机、G8 过门 API 全链路含晚到尾款补计提、配置只读断言、规则版本公示窗/角色/旧 offer 不回写）；`tests/conftest.py` 每用例清理序补派单六模型（FK 安全序）。
+- 口径（goal-r2 实测）：82 张表、迁移头 `e3a7c5d9f2b8`（11 revision）、pytest 1357 passed + 6 skipped、桌面 654 用例零改动全绿。轮次报告 `docs/goal-r2-派单引擎.md`；台账新增第十四节。
+
 ## [未发布] — goal-r1 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P0 双闸门（对照派单设计文档 v1.0 §8.3）

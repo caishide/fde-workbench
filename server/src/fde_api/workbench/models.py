@@ -243,7 +243,10 @@ class Project(Base, TimestampMixin, VersionedMixin):
             "business_line IN ('FDE')",
             name="ck_projects_business_line",
         ),
-        UniqueConstraint("enterprise_code", name="uq_projects_enterprise_code"),
+        # goal-r2（派单设计 §3.3 复购判据）：「同一 enterprise_code ≥2 个项目」
+        # 需可表达——全局唯一约束放宽为普通索引（代号纪律保留：仍只存代号不存
+        # 明文，A2 红线不动；唯一性交还录入侧约定，复购走同代号二启项目）。
+        Index("ix_projects_enterprise_code", "enterprise_code"),
         Index("ix_projects_status", "status"),
         Index("ix_projects_leader_user_id", "leader_user_id"),
         Index("ix_projects_planned_dates", "planned_start_date", "planned_end_date"),
@@ -750,6 +753,10 @@ class Payment(Base, TimestampMixin):
     received_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     due_date: Mapped[date | None] = mapped_column(Date)
     received_at: Mapped[date | None] = mapped_column(Date)
+    # P0-4 分成落库（派单设计 §7.2）：验收通过时刻——G8 过门联动打标，
+    # 是 delivery_settlements 从 draft → accrued 的起算条件之一（实收 + 验收）。
+    # 催款（D+7/15/30/60）读时现算逻辑零改动。
+    acceptance_passed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     invoice_no: Mapped[str | None] = mapped_column(String(60))
     settlement_reason: Mapped[str | None] = mapped_column(String(20))
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")

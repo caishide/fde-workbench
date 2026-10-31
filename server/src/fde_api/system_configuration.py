@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlparse
 
@@ -54,6 +55,38 @@ INT_RANGES = {
 }
 URL_FIELDS = {"deepseek_base_url", "kimi_base_url", "dsh_base_url", "ai_internal_api_url", "dsh_market_registry_url", "oss_endpoint"}
 
+# 派单引擎时间常数与费率（设计 §6.2 唯一权威表 + §4.3 Top-N + §7.1 席位分配）。
+# P0-7：**锁定不可运行时改**——不进 PUBLIC_FIELDS（那是 PUT 可写集），只在 GET
+# 以只读 dispatch_constants 节暴露；实现代码只准 import 此处，禁止散落硬编码。
+# 改值 = 发版（代码变更 + 权重重大调整另需 ≥30 天公示，§6.2）。
+DISPATCH_CONSTANTS: MappingProxyType[str, Any] = MappingProxyType({
+    # §6.2 时间常数表（唯一权威）
+    "response_window_hours": 24,            # 指派响应窗（可按包覆盖）
+    "claim_eval_window_min_seconds": 3,     # 抢单评估窗下沿（收集期内点击都算）
+    "claim_eval_window_max_seconds": 5,     # 抢单评估窗上沿
+    "claim_confirm_window_minutes": 15,     # 中签确认窗（未确认即释放重派）
+    "radius_expand_wait_minutes": 15,       # 扩圈每级等待
+    "appeal_sla_hours": 48,                 # 申诉人工答复 SLA
+    "weight_public_notice_days": 30,        # 权重重大调整公示（提前 ≥30 天）
+    "matching_retention_years": 3,          # 撮合流水与评分留痕留存
+    "tax_retention_years": 10,              # 涉税资料留存
+    # §4.3/§4.8 输出契约
+    "top_n": 3,
+    # §4.3 Stage B 权重（40/30/20/10；取值同时进 dispatch_rule_versions 首版快照）
+    "stage_b_weights": {"level": 40, "industry": 30, "sla": 20, "geo_remote": 10},
+    # §3.2 等级映射分（等距 20；进版本快照不硬编码）
+    "level_score_map": {"L1": 40, "L2": 60, "L3": 80, "L4": 100},
+    # §7.1 席位分配（口径一：分母=一次成交额；对外严禁写成「抽佣率」）
+    "seat_shares": {"platform": 35, "region": 5, "city": 20, "delivery": 40},
+    # 冷启动：该城前 3 单平台 40%，上浮 5 个百分点自城市合伙人扣除（§7.1 建议，需确认）
+    "cold_start_first_orders": 3,
+    "cold_start_seat_shares": {"platform": 40, "region": 5, "city": 15, "delivery": 40},
+    # §6.5 新人保护期
+    "newcomer_protection_orders": 5,
+    # §6.7 拒单权
+    "daily_decline_quota": 4,
+})
+
 
 def _decrypt(item: SystemConfiguration | None) -> dict[str, str]:
     if item is None or not item.secrets_ciphertext:
@@ -73,7 +106,10 @@ def _serialize(item: SystemConfiguration | None, settings: Settings) -> dict[str
         values[key] = str(value) if key == "local_storage_root" else value
     secrets = _decrypt(item)
     return {"values": values, "secrets_configured": {key: bool(secrets.get(key)) for key in sorted(SECRET_FIELDS)}, "version": item.version if item else 0,
-            "bootstrap_fields": ["database_url", "redis_url", "jwt_secret", "api_host", "api_port", "desktop_api_url"]}
+            "bootstrap_fields": ["database_url", "redis_url", "jwt_secret", "api_host", "api_port", "desktop_api_url"],
+            # P0-7：派单常数只读节——不在 PUBLIC_FIELDS（PUT 可写集）里，
+            # 管理端无法运行时改；PUT 多带这些键会被 set 等值校验拒 400。
+            "dispatch_constants": dict(DISPATCH_CONSTANTS)}
 
 
 def _valid_url(name: str, value: Any, env: str) -> str | None:

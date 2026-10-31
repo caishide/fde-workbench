@@ -486,12 +486,23 @@ def decide_gate(
 
                 settlement = flag_g8_stop_settlement(session, actor, project.id)
                 changes["g8_stop_settlement"] = settlement
+            # P0-4（派单设计 §7.2）：G8 过门 = 验收通过——联动打标
+            # payments.acceptance_passed_at 并推进 delivery_settlements 计提
+            # （draft → accrued 双条件之二；无交付包项目零感知）。
+            acceptance: dict[str, Any] | None = None
+            if gate.gate_key == "G8" and result == "pass":
+                from fde_api.projects.payment_service import mark_acceptance_passed
+
+                acceptance = mark_acceptance_passed(session, actor, project.id)
+                changes["acceptance_marked"] = acceptance
             record_event(session, actor, "gate_decided", gate, changes)
             session.flush()
             sop_nodes = _sop_nodes_for_templates(session, templates)
             result_payload = _serialize_gate(gate, template, sop_nodes)
             if settlement is not None:
                 result_payload["g8_stop_settlement"] = settlement
+            if acceptance is not None:
+                result_payload["acceptance_marked"] = acceptance
             return result_payload
     except GateServiceError:
         raise

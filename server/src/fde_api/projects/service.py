@@ -1162,8 +1162,10 @@ _GATE_KEY_PATTERN = r"G[1-9]"
 
 def _enterprise_code(value: object) -> str:
     code = _required_text(value, maximum=80)
-    # 代号规则（设计 §3.1 v0.3.2 钉死）：立项时手工录入 + 唯一索引，
-    # 格式沿用「客户A·行业·城市」——三段、两枚「·」；实名映射只存 fdeops/openfde
+    # 代号规则（设计 §3.1 v0.3.2 钉死）：立项时手工录入 + 普通索引
+    # （goal-r2 起放宽原全局唯一约束：派单 §3.3 复购判据要求同企业 ≥2 项目
+    # 可表达；代号纪律不变），格式沿用「客户A·行业·城市」——三段、两枚「·」；
+    # 实名映射只存 fdeops/openfde
     if code.count("·") != 2:
         raise ValueError
     return code
