@@ -45,6 +45,12 @@ CAPABILITY_REQUIREMENTS = {
     # F1：立创商城查询属上游 fork 既有能力，不在 FDE 客户交付线内——
     # 收敛到系统运维员门槛，避免任何 AI 授权账号都能触发。
     "lcsc.browse": "system_operator",
+    # goal-d3（S1，自动交付 §5.1 建议档位）：agent 四能力。授权档位是上限，
+    # 每次 run 仍实时重判（架构方案 §6.4）；agent.meeting.convene 归 d5 工具面。
+    "agent.plan.generate": "project_operator",
+    "agent.code.write": "project_manager",
+    "agent.meeting.convene": "project_operator",
+    "agent.system.tool": "system_operator",
 }
 
 
@@ -85,7 +91,9 @@ def authorize_ai_capability(*, user: User, capability: str, project: Project | N
         return AIAccessDecision(False, level, source, "capability_unknown")
     if ACCESS_RANK[level] < ACCESS_RANK[required]:
         return AIAccessDecision(False, level, source, "ai_access_insufficient")
-    if capability.startswith("system."):
+    if capability.startswith("system.") or capability == "agent.system.tool":
+        # goal-d3：agent.system.tool 是系统级能力（=system_operator，架构方案
+        # §6.4 凭证分层），与 system.* 同规则——不要求项目上下文。
         return AIAccessDecision(level == "system_operator", level, source, "allowed" if level == "system_operator" else "system_operator_required")
     if project is None:
         return AIAccessDecision(False, level, source, "project_required")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
@@ -16,6 +16,9 @@ class ProjectSolution(Base, TimestampMixin, VersionedMixin):
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="ck_project_solutions_status"),
         CheckConstraint("version >= 1", name="ck_project_solutions_version"),
+        # goal-d3（架构方案 §9 E3）：生成来源列化——此前骨架溯源藏在
+        # source_json.kind；AI 不参与内容生成，'agent' 随 goal-d4 run 链启用。
+        CheckConstraint("generated_by IN ('human', 'agent')", name="ck_project_solutions_generated_by"),
         UniqueConstraint("project_id", "legacy_source_key", name="uq_project_solutions_legacy_source"),
         Index("ix_project_solutions_project_status", "project_id", "status"),
     )
@@ -33,6 +36,17 @@ class ProjectSolution(Base, TimestampMixin, VersionedMixin):
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     legacy_source_key: Mapped[str | None] = mapped_column(String(100))
     source_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # —— goal-d3（架构方案 §9 E3）：生成来源四列（列级 ALTER，非新表）——
+    generated_by: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="human", server_default="human"
+    )
+    agent_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT")
+    )
+    template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("industry_template_versions.id", ondelete="RESTRICT")
+    )
+    confidence: Mapped[float | None] = mapped_column(Float)
     opportunities: Mapped[list[ProjectSolutionOpportunity]] = relationship(
         back_populates="solution", cascade="all, delete-orphan", order_by="ProjectSolutionOpportunity.sort_order"
     )
