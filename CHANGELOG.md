@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r3 派单引擎轮（2026-10-31）
+
+### 派单引擎 P0 簇②收尾——P0 8 项全落地（对照派单设计文档 v1.0 §8.3：P0-1/P0-2 + §9.5）
+
+- **P0-1 交付包服务层**（§2.2/§2.3/§2.5）：`dispatch/packages.py`——canonical_json（键字典序/UTF-8 原样/Decimal→str/null/模块先排序）+ sha256 快照**发布时算一次即冻结**（改 solution/quote 不回写；撤回/拒绝/过期后重发 = dispatch_round+1 + 新编码 + 新哈希，版本对 Unique(project_id, round)）；§2.5 八态状态机通用迁移表（每次迁移写 OperationEvent）+ withdraw 的「本轮进行中 offer」防御守卫；发布前置=报价 finalized（422）；`PKG-{项目码尾段}-{轮次}` 编码；§9.3 接单交接以项目管理位（leader）为 actor 复用 `add_project_member(member)`（接单人本人交接前无 can_manage——留注⑧），幂等 + stale_version 重试。
+- **P0-2 package_access 第三语义**（§9.1/§9.2）：`package_access` 表（package×user×role 三元组唯一，lead/seller/delivery/audit，可撤销）+ `dispatch/access.py`（无授权 404 不泄露存在性；admin 平台域放行）+ 交付包 API 字段白名单 12 项 + 交付方席位 40% 金额（发布时物化冻结到 `delivery_seat_amount`——禁 join quotes 的代价，留注⑥）+ `dispatch/routes.py` 6 路由（守卫路由层前置；管理动作平台侧 403；接单=平台侧或被指派人本人+delivery 授权双门槛，冒名 403）。api_catalog ENTRIES +6。
+- **§9.5 隔离测试基线四条全绿**（开池四道闸之闸①）：跨主体访问 100% 拒绝（4 路由参数化 403/404）；响应体字段断言（键集精确等值、报价/收款/客户真名字段零出现）；静态检查（dispatch 读路径源级禁 Quote/Payment/Contract 引用、全包禁裸 `session.query(`）；渗透用例（越权接单 403、快照篡改无写入口 405、撤销授权重放 404 + 显式 re-grant 才复活）。
+- 测试：新增 `server/tests/test_dispatch_p0_r3.py` 15 例；迁移 `f4b8c2d6e3a1`。全量 1372 passed + 6 skipped；桌面 654 与 typecheck 零改动全绿。
+- 口径（goal-r3 实测）：83 表、迁移头 `f4b8c2d6e3a1`（12 revision）、路由 218（+6）、ENTRIES 60（+6）。轮次报告 `docs/goal-r3-派单引擎.md`；台账第十五节。
+
 ## [未发布] — goal-r2 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P0 簇②表建设（对照派单设计文档 v1.0 §8.3：P0-3/P0-4/P0-7/P0-8）

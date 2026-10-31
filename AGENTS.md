@@ -29,5 +29,5 @@ FDE（前端部署工程师）交付工作台：Flask + SQLAlchemy API（`server
 - v0.2.0：门禁 G1–G9、报价/收款/合同、集成桥（宿主 4h 采集 + 手动采集按钮）、内嵌使用帮助；本地 main == fork/main。
 - 版本号按发布列车同步 `desktop/package.json` 与 `server/pyproject.toml`，tag 打在 fork。
 - 待办台账：`docs/后续需求台账-F5与D11.md`；历史审计存档：`docs/goal-audit-2026-10-26.md`；派单引擎 goal 循环报告：`docs/goal-r<N>-派单引擎.md`。
-- 口径数字（实测 2026-10-31，goal-r2 派单引擎轮）：服务端 **82 张表**、迁移头 `e3a7c5d9f2b8`（**11 个 revision**，链条 `…→ a9c3f1d8e2b4 → d2f6b4c8a1e9 → e3a7c5d9f2b8`）、服务端 pytest **1357+ 用例**、桌面端 vitest **654 用例**（本轮零改动全绿）。goal-r1 新增 `delivery_packages`/`dispatch_offers` + `gates` 验收分离三列；goal-r2 新增 `fde_profiles`/`fde_level_evidence`/`dispatch_rule_versions`/`delivery_settlements` 四表 + `payments.acceptance_passed_at`，并把 `projects.enterprise_code` 唯一约束放宽为普通索引（§3.3 复购判据，详见 `docs/goal-r2-派单引擎.md` 留注③）。
+- 口径数字（实测 2026-10-31，goal-r3 派单引擎轮）：服务端 **83 张表**、迁移头 `f4b8c2d6e3a1`（**12 个 revision**，链条 `…→ d2f6b4c8a1e9 → e3a7c5d9f2b8 → f4b8c2d6e3a1`）、蓝图路由 **218**、api_catalog ENTRIES **60**、服务端 pytest **1372+ 用例**、桌面端 vitest **654 用例**（本轮零改动全绿）。goal-r3 新增 `package_access` 表 + `delivery_packages.delivery_seat_amount` 列 + dispatch 蓝图 6 路由（P0-1 快照服务层 + P0-2 第三语义 + §9.5 隔离基线四条全绿）；goal-r1/r2 详见 `docs/goal-r1|2-派单引擎.md`。
 - 派单引擎施工准绳：`D:\test\FDE\蔡工FDE工作台_文档中心\06_派单引擎\蔡工FDE工作台_派单撮合引擎产品与技术设计_v1.0.md`（2026-10-31 补齐版，冲突裁决顺序=代码实测 > 设计文档 > 规则表 > BP）。
