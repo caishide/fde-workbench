@@ -14,6 +14,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from fde_api.auth.models import User
 from fde_api.auth.permissions import ROLE_RANK, role_at_least
+from fde_api.dispatch.channel_guard import (
+    ChannelGuardError,
+    ensure_dispatch_entry,
+    ensure_enterprise_channel,
+    normalize_business_line,
+)
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
@@ -93,6 +99,27 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
     session = db.session()
     try:
         with session.begin():
+            # P2-4 私单封堵（派单设计 §8.5）：H1 立项入口 + H2 池内企业直签封堵，
+            # 先于任何行锁语句——封堵留痕（独立事务的 operation_events 外键
+            # KEY SHARE 检查）不得与外层 FOR UPDATE 等行锁形成等待环。
+            if values["business_line"] == "FDE_DISPATCH":
+                try:
+                    ensure_dispatch_entry(actor)
+                except ChannelGuardError as error:
+                    raise ProjectServiceError(
+                        error.code, error.message, error.status
+                    ) from None
+            try:
+                ensure_enterprise_channel(
+                    session,
+                    actor=actor,
+                    business_line=values["business_line"],
+                    enterprise_code=values["enterprise_code"],
+                )
+            except ChannelGuardError as error:
+                raise ProjectServiceError(
+                    error.code, error.message, error.status
+                ) from None
             leader = session.get(User, values["leader_user_id"], with_for_update=True)
             _authorize_project_creation(actor, leader)
             if values["template_version_id"]:
@@ -108,6 +135,7 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
                 project_code=values["project_code"] or _generated_project_code(),
                 name=values["name"],
                 enterprise_code=values["enterprise_code"],
+                business_line=values["business_line"],
                 openfde_engagement=values["openfde_engagement"],
                 fdeops_workspace=values["fdeops_workspace"],
                 background=values["background"],
@@ -1113,6 +1141,12 @@ def cancel_project_module(
 
 
 def _normalize_create_input(input: Mapping[str, Any]) -> dict[str, Any]:
+    # P2-4（派单设计 §8.5）：business_line 枚举封闭；越界转译为服务层错误
+    # （原生的 ChannelGuardError 不会过路由的 ProjectServiceError 边界）。
+    try:
+        business_line = normalize_business_line(input.get("business_line"))
+    except ChannelGuardError as error:
+        raise ProjectServiceError(error.code, error.message, error.status) from None
     try:
         values = {
             "name": _required_text(input.get("name"), maximum=160),
@@ -1126,6 +1160,8 @@ def _normalize_create_input(input: Mapping[str, Any]) -> dict[str, Any]:
             "background": _optional_text(input.get("background", "")),
             "notes": _optional_text(input.get("notes", "")),
             "project_code": _optional_text(input.get("project_code", ""), 40),
+            # P2-4（派单设计 §8.5）：立项入口带成交渠道；派单线走 channel_guard 钩子
+            "business_line": business_line,
             "planned_start_date": _date_value(input.get("planned_start_date")),
             "planned_end_date": _optional_date_value(input.get("planned_end_date")),
             "template_version_id": _optional_text(input.get("template_version_id") or "", 36) or None,
