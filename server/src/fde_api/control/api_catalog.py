@@ -79,6 +79,7 @@ ENTRIES = [
     ("dispatch.offers_accept", "POST", "/api/v1/dispatch/offers/{offer_id}/accept", "接单/中签确认（乐观锁 version；§9.3 交接随行）", "version"),
     ("dispatch.offers_decline", "POST", "/api/v1/dispatch/offers/{offer_id}/decline", "拒单（§6.7 拒单权；原因枚举选填、只进留痕）", "version；可选 reason=档期冲突/能力不匹配/距离/其他"),
     ("dispatch.offers_mine", "GET", "/api/v1/dispatch/offers/mine", "我的 offer 收件箱（候选人=当前用户全量留痕；§6.2 窗口 deadline 现算；§4.8 释明只回本人）", ""),
+    ("dispatch.package_offers_list", "GET", "/api/v1/dispatch/packages/{package_id}/offers", "包侧 offer 留痕（调度台运营视图：本轮谁被派/接了/拒了、确认窗 deadline 现算、rank 释明；平台侧）", ""),
     ("dispatch.settlements_mine", "GET", "/api/v1/dispatch/settlements/mine", "我的席位结算（只含自己席位的角色与金额；他席存在与金额不出现；预扣税原样透出）", ""),
     ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
     ("dispatch.packages_match", "POST", "/api/v1/dispatch/packages/{package_id}/match", "两段式撮合 Top3（Stage A 资格门 + 场景裁决 + Stage B；§4）", ""),
