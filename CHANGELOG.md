@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r4 派单引擎轮（2026-10-31）
+
+### 派单引擎 P1 首批（对照派单设计文档 v1.0 §8.4：P1-1/P1-3/P1-5，零迁移）
+
+- **P1-1 offer_service**（§6.2/§6.3/§6.7）：`dispatch/offer_service.py`——§6.3 乐观锁显式版本比对先行（冲突 409 `stale_version`，禁分布式锁）；同轮互斥（409 `offer_already_accepted`，包行 FOR UPDATE 串行化）+ 落选者自动 expired；claim 15 分钟确认窗 / assign 包响应窗超时批量释放（`expire_stale_offers`）；§6.7 拒单权（原因枚举 档期冲突/能力不匹配/距离/其他 只进 OperationEvent 留痕不进任何分值，**永不因配额拒绝拒单**——负面清单 A-6 #6 防护）；全拒后包 rejected=重派入口；§9.3 交接复用 `handover_accepted_member`（leader 为 actor）。路由 +4（指派发 offer / 接单 / 拒单 / 抢单登记），api_catalog ENTRIES 同步 +4。
+- **P1-3 一致性测试**：api_catalog 每条 ENTRIES 逐条在 url_map 可解析（防目录漂移）+ dispatch 每条路由逐条在册（防脱册）——双向钉死。
+- **P1-5 seeds 三处**：`gates.json` 加 `applicable_industries`（null=全行业通用；历史迁移回填哈希常量冻结不动，实时哈希由 `_gates_file_hash()` 现算）+ `dispatch_cities.json`（§12 六城建议名单，`claim_enabled` 全 false=§11.1 降级态）+ `acceptance_metrics.json`（BP §11 闸门指标投影）。
+- **§6.4/C9 开闸评估**：`dispatch/cities.py`——claim_gate_status 三条件可解释明细（供给=active 档案 / 需求=近 90 天 published 包 / 拒单率<40% / 公示=规则版本存在为代理，留注⑨）+ 种子城市开关 AND；未开闸 403 `claim_closed`。
+- 测试：`server/tests/test_dispatch_p1_r4.py` 14 例。全量 1386 passed + 6 skipped；桌面 654 与 typecheck 零改动全绿。
+- 口径（goal-r4 实测）：83 表、迁移头 `f4b8c2d6e3a1`（12 revision，零迁移）、路由 224（+4）、ENTRIES 64（+4）。轮次报告 `docs/goal-r4-派单引擎.md`；台账第十六节。
+
 ## [未发布] — goal-r3 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P0 簇②收尾——P0 8 项全落地（对照派单设计文档 v1.0 §8.3：P0-1/P0-2 + §9.5）
