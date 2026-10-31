@@ -8,6 +8,7 @@ import { useAuth } from "../auth/AuthProvider"
  *  delivery_seat_amount 一个（显示义务），报价/收款明细永不出现在响应里。 */
 
 export interface DispatchPackageView {
+  id: string
   package_code: string
   scope_summary: string | null
   deliverables_json: string | null
@@ -40,7 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
   withdrawn: "已撤回",
 }
 
-const MODE_LABELS: Record<string, string> = {
+export const MODE_LABELS: Record<string, string> = {
   assign: "指派制",
   claim: "抢单制",
 }
@@ -62,6 +63,8 @@ export function DispatchPoolPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [claimingId, setClaimingId] = useState<string | null>(null)
+  const [claimError, setClaimError] = useState("")
   const requestSequence = useRef(0)
 
   const load = useCallback(() => {
@@ -88,6 +91,29 @@ export function DispatchPoolPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  /** B1：抢单（§6.4）。开闸判定在服务端（claim_gate_status），前端直接
+   *  试错并把可解释的 403 claim_closed 信息展示出来（§11 降级态 UX）。 */
+  const claim = useCallback(
+    (row: DispatchPackageView) => {
+      setClaimingId(row.id)
+      setClaimError("")
+      void apiRequest<unknown>(`/api/v1/dispatch/packages/${row.id}/claim`, {
+        method: "POST",
+      })
+        .then(() => {
+          setExpanded(null)
+          load()
+        })
+        .catch((caught: unknown) => {
+          setClaimError(
+            caught instanceof ApiClientError ? caught.message : "抢单失败，请稍后重试。"
+          )
+        })
+        .finally(() => setClaimingId(null))
+    },
+    [apiRequest, load]
+  )
 
   return (
     <section className="page" aria-label="派单池">
@@ -162,9 +188,29 @@ export function DispatchPoolPage() {
                 <dd>{row.published_at || "—"}</dd>
               </dl>
             ) : null}
+            {expanded === row.package_code &&
+            row.dispatch_mode === "claim" &&
+            (row.dispatch_status === "published" || row.dispatch_status === "offered") ? (
+              <div className="dispatch-offer-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={claimingId !== null}
+                  onClick={() => claim(row)}
+                >
+                  {claimingId === row.id ? "抢单中…" : "抢单"}
+                </button>
+                <span className="muted">开闸判定在服务端（§6.4 三条件 + 城市开关）。</span>
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
+      {claimError ? (
+        <p className="error-text" role="alert">
+          {claimError}
+        </p>
+      ) : null}
     </section>
   )
 }

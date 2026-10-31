@@ -425,13 +425,14 @@ def test_cross_principal_access_denied(api_context, method, path_template):
 
 
 def test_package_response_field_whitelist(api_context):
-    """§9.5 基线②：白名单 12 项 + 席位金额；无报价明细、无客户真名字段。"""
+    """§9.5 基线②：白名单 12 项 + 席位金额 + id 支撑列；无报价明细、无客户真名字段。"""
     detail = api_context["fde_client"].get(
         f"/api/v1/dispatch/packages/{api_context['package'].id}"
     )
     assert detail.status_code == 200
     payload = detail.json["data"]
     assert set(payload) == {
+        "id",
         "package_code",
         "scope_summary",
         "deliverables_json",
