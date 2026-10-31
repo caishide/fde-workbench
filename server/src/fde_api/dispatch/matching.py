@@ -295,30 +295,31 @@ def match_package(
     ranked.sort(key=lambda item: item[0])
 
     top_n = int(DISPATCH_CONSTANTS["top_n"])
-    created: list[DispatchOffer] = []
+    created: list[tuple[DispatchOffer, dict[str, Any]]] = []
     for rank, (key, entry, stage_b) in enumerate(ranked[:top_n], start=1):
         profile = entry["profile"]
+        breakdown = {
+            "rule_version": version.id,
+            "version_no": version.version_no,
+            "scenario": scenario,
+            "stage_a": entry["gates"],
+            "stage_b": stage_b,
+            "rank": rank,
+            "explanation": _explanation(entry, scenario, rank),
+        }
         offer = DispatchOffer(
             package_id=package.id,
             dispatch_round=package.dispatch_round,
             candidate_user_id=profile.user_id,
             status="offered",
-            match_breakdown={
-                "rule_version": version.id,
-                "version_no": version.version_no,
-                "scenario": scenario,
-                "stage_a": entry["gates"],
-                "stage_b": stage_b,
-                "rank": rank,
-                "explanation": _explanation(entry, scenario, rank),
-            },
+            match_breakdown=breakdown,
             offered_at=datetime.now(timezone.utc),
         )
         session.add(offer)
-        created.append(offer)
+        created.append((offer, breakdown))
     session.flush()
     transition_package(session, actor=actor, package_id=package.id, action="offer")
-    for offer in created:
+    for offer, breakdown in created:
         record_event(
             session,
             actor,
@@ -326,7 +327,7 @@ def match_package(
             offer,
             {
                 "mode": "match",
-                "rank": offer.match_breakdown["rank"],
+                "rank": breakdown["rank"],
                 "scenario": scenario,
                 "rule_version_no": version.version_no,
                 "candidate_user_id": offer.candidate_user_id,
@@ -338,10 +339,10 @@ def match_package(
             {
                 "offer_id": offer.id,
                 "candidate_user_id": offer.candidate_user_id,
-                "rank": offer.match_breakdown["rank"],
-                "explanation": offer.match_breakdown["explanation"],
+                "rank": breakdown["rank"],
+                "explanation": breakdown["explanation"],
             }
-            for offer in created
+            for offer, breakdown in created
         ],
         "rejected": [item["profile"].user_id for item in rejected],
         "rule_version": version.version_no,
