@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 派单调度台操作面 B2（2026-11-01）
+
+### 平台侧调度台（零迁移）
+
+- **服务端包留痕路由**：`GET /dispatch/packages/{package_id}/offers`（平台侧 only）——一包全量 offer 留痕（谁被派/接了/拒了、§6.2 窗口 deadline 服务端现算、§4.8 rank/explanation 释明、候选人身份），调度台据此决定代接单/重派。ENTRIES 73→74 / 路由 233→234。
+- **桌面「调度台」tab**（第 6 子页，admin/project_lead 可见，动作权限服务端复核）：供给池候选勾选器（复用 `GET /profiles`，勾选即发布授权/指派名单）；包全景列表（draft 也在列）按状态出按钮——draft：等级覆盖（§4.5 必填 reason 留痕）+ 发布（携候选只读授权）；withdrawn/rejected/expired：重新发布（服务端 round+1 新版本对）；published：执行撮合（§4 两段式，结果面板展示场景 A/B/C + Top3 释明 + 资格门淘汰数）/ 指派 offer / 撤回（TRANSITIONS 仅 published 可撤）；offer 留痕面板 + offered 行「代接单」（`POST /accept` 携 delivery_user_id）。时间窗只展示不重算（B1 纪律延续）。
+- 测试：服务端 `test_dispatch_b2_console.py` 6 例（全量留痕/claim 15 分钟窗/空留痕/非平台侧 403/未知包 404/轮次倒序）；桌面 `dispatch-console.test.tsx` 10 例（路由解析/状态动作映射/角色门 tab 隐藏/发布携候选/撮合可解释结果/指派/撤回/等级覆盖 reason 闸/留痕+代接单）。台账第二十六节增补 B2 项。
+
 ## [未发布] — 派单接单工作台 B1（2026-10-31）
 
 ### 交付工程师专区（循环终止后首期派单范围增强，零迁移）

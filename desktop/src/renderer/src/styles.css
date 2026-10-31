@@ -1535,3 +1535,9 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .dispatch-offer-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .dispatch-decline-row { display: inline-flex; gap: 8px; align-items: center; }
 .dispatch-breakdown { background: var(--surface-alt, #f6f7f9); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; font-size: 12px; }
+.dispatch-console-pool { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.dispatch-console-candidates { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; }
+.dispatch-console-candidate { display: inline-flex; gap: 8px; align-items: center; }
+.dispatch-console-trail-title { margin: 12px 0 4px; font-size: 13px; }
+.dispatch-console-trail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dispatch-console-trail-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }

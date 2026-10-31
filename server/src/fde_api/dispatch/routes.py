@@ -471,6 +471,68 @@ def read_my_profile_route():
         session.close()
 
 
+@blueprint.get("/packages/<package_id>/offers")
+@require_auth
+def list_package_offers_route(package_id: str):
+    """包侧 offer 留痕（调度台操作面，B2；平台侧——全量留痕含候选人身份）。
+
+    调度台需要据此运营：看本轮谁被派、谁接了/拒了、确认窗还剩多久，
+    再决定代接单（accept）/重派（rejected/expired → publish round+1）。
+    deadline=§6.2 窗口现算（claim 15 分钟确认窗 / assign 包响应窗）；
+    rank/explanation 取自 match_breakdown（§4.8 释明对平台侧同可见）。
+    """
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可查看包的 offer 留痕。", 403)
+    from fde_api.dispatch.models import DispatchOffer
+    from fde_api.dispatch.offer_service import offer_deadline
+    from fde_api.workbench.models import User as UserModel
+
+    session = db.session()
+    try:
+        package = session.get(DeliveryPackage, package_id)
+        if package is None:
+            return error_response("package_not_found", "交付包不存在。", 404)
+        rows = session.execute(
+            select(DispatchOffer, UserModel.username, UserModel.display_name)
+            .join(UserModel, UserModel.id == DispatchOffer.candidate_user_id)
+            .where(DispatchOffer.package_id == package.id)
+            .order_by(
+                DispatchOffer.dispatch_round.desc(),
+                DispatchOffer.offered_at.desc().nullslast(),
+                DispatchOffer.created_at.desc(),
+            )
+        ).all()
+        data = []
+        for offer, username, display_name in rows:
+            mode = (offer.match_breakdown or {}).get("mode") or package.dispatch_mode
+            breakdown = offer.match_breakdown or {}
+            deadline = offer_deadline(offer, package)
+            data.append(
+                {
+                    "offer_id": offer.id,
+                    "candidate_user_id": offer.candidate_user_id,
+                    "candidate_username": username,
+                    "candidate_display_name": display_name,
+                    "dispatch_round": offer.dispatch_round,
+                    "mode": mode,
+                    "status": offer.status,
+                    "version": offer.version,
+                    "rank": breakdown.get("rank"),
+                    "explanation": breakdown.get("explanation"),
+                    "offered_at": offer.offered_at.isoformat()
+                    if offer.offered_at
+                    else None,
+                    "responded_at": offer.responded_at.isoformat()
+                    if offer.responded_at
+                    else None,
+                    "deadline": deadline.isoformat() if deadline else None,
+                }
+            )
+        return jsonify({"data": data, "error": None})
+    finally:
+        session.close()
+
+
 @blueprint.post("/packages/<package_id>/claim")
 @require_auth
 def claim_package_route(package_id: str):
