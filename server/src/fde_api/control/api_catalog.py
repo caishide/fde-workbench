@@ -77,6 +77,8 @@ ENTRIES = [
     ("dispatch.offers_accept", "POST", "/api/v1/dispatch/offers/{offer_id}/accept", "接单/中签确认（乐观锁 version；§9.3 交接随行）", "version"),
     ("dispatch.offers_decline", "POST", "/api/v1/dispatch/offers/{offer_id}/decline", "拒单（§6.7 拒单权；原因枚举选填、只进留痕）", "version；可选 reason=档期冲突/能力不匹配/距离/其他"),
     ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
+    ("dispatch.packages_match", "POST", "/api/v1/dispatch/packages/{package_id}/match", "两段式撮合 Top3（Stage A 资格门 + 场景裁决 + Stage B；§4）", ""),
+    ("dispatch.packages_level_override", "POST", "/api/v1/dispatch/packages/{package_id}/required-level", "发布前人工覆盖等级门槛（必填 reason 留痕；§4.5）", "level,reason"),
 ]
 
 CATALOG = {key: {"id": key, "method": method, "path": path, "description": description,

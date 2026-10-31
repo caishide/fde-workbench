@@ -58,6 +58,34 @@ BUSINESS_CATEGORIES: list[dict[str, str]] = [
 ]
 
 
+# 派单枚举（P1-4，派单设计 §8.4：席位分配 / 场景类型 / 匹配模式 / 拒单原因；
+# value 沿用存库值——席位键=delivery_settlements 列前缀，场景=match_breakdown.scenario）
+DISPATCH_SEAT_SHARES: list[dict[str, Any]] = [
+    {"value": "platform", "label": "平台方 35%"},
+    {"value": "region", "label": "区域代理 5%"},
+    {"value": "city", "label": "城市合伙人 20%"},
+    {"value": "delivery", "label": "交付方 40%"},
+]
+
+DISPATCH_SCENARIO_TYPES: list[dict[str, str]] = [
+    {"value": "onsite", "label": "A 到场型（字典序：地理档 → 能力 → 行业 → 时限）"},
+    {"value": "remote", "label": "B 远程/混合型（加权 40/30/20/10）"},
+    {"value": "C", "label": "C 到场无候选（不自动派，人工回退）"},
+]
+
+DISPATCH_MATCH_MODES: list[dict[str, str]] = [
+    {"value": "assign", "label": "指派制（默认）"},
+    {"value": "claim", "label": "抢单制（评估窗裁决）"},
+]
+
+DISPATCH_DECLINE_REASONS: list[dict[str, str]] = [
+    {"value": "档期冲突", "label": "档期冲突"},
+    {"value": "能力不匹配", "label": "能力不匹配"},
+    {"value": "距离", "label": "距离"},
+    {"value": "其他", "label": "其他"},
+]
+
+
 def options_payload() -> dict[str, Any]:
     """整包选项表（前端一次拉取，本地兜底见 options.ts）。"""
     return {
@@ -66,4 +94,8 @@ def options_payload() -> dict[str, Any]:
         "c_handling_options": C_HANDLING_OPTIONS,
         "sow_options": SOW_OPTIONS,
         "business_categories": BUSINESS_CATEGORIES,
+        "dispatch_seat_shares": DISPATCH_SEAT_SHARES,
+        "dispatch_scenario_types": DISPATCH_SCENARIO_TYPES,
+        "dispatch_match_modes": DISPATCH_MATCH_MODES,
+        "dispatch_decline_reasons": DISPATCH_DECLINE_REASONS,
     }

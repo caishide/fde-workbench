@@ -25,6 +25,7 @@ from fde_api.dispatch.offer_service import (
     create_assign_offers,
     decline_offer,
 )
+from fde_api.dispatch.matching import match_package, override_required_level
 from fde_api.dispatch.packages import (
     accept_package,
     create_package,
@@ -298,6 +299,55 @@ def claim_package_route(package_id: str):
                 "version": offer.version,
             }
         return jsonify({"data": data, "error": None}), 201
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/packages/<package_id>/match")
+@require_auth
+def match_package_route(package_id: str):
+    """撮合 Top3（§4.1–§4.8；平台侧；无公示规则版本 422=降级态人工排序）。"""
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可执行撮合。", 403)
+    session = db.session()
+    try:
+        with session.begin():
+            result = match_package(session, actor=g.current_user, package_id=package_id)
+        return jsonify({"data": result, "error": None})
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/packages/<package_id>/required-level")
+@require_auth
+def override_required_level_route(package_id: str):
+    """发布前人工覆盖 required_level（§4.5；必填 reason，留痕）。"""
+    payload = _json_body() or {}
+    if g.current_user.role not in _PLATFORM_ROLES:
+        return error_response("forbidden", "只有平台侧可覆盖等级门槛。", 403)
+    level, reason = payload.get("level"), payload.get("reason")
+    if not isinstance(level, str) or not isinstance(reason, str) or not reason.strip():
+        return error_response("invalid_request", "level 与非空 reason 必填。", 400)
+    session = db.session()
+    try:
+        with session.begin():
+            package = override_required_level(
+                session,
+                actor=g.current_user,
+                package_id=package_id,
+                level=level,
+                reason=reason,
+            )
+            data = {
+                "package_id": package.id,
+                "required_level": package.required_level,
+                "dispatch_status": package.dispatch_status,
+            }
+        return jsonify({"data": data, "error": None})
     except DispatchServiceError as error:
         return _dispatch_error(error)
     finally:

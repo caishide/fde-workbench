@@ -188,6 +188,7 @@ def create_package(
         raise DispatchServiceError(
             "package_exists", "该方案已有交付包（撤回/拒绝后重发走同一行）。", 409
         )
+
     package = DeliveryPackage(
         id=solution.id,
         solution_id=solution.id,
@@ -201,6 +202,8 @@ def create_package(
         dispatch_round=1,
         response_window_hours=DISPATCH_CONSTANTS["response_window_hours"],
         redispatch_radius_km=25,
+        # §4.5（C4 判据）：required_level 由 Quote 系数推导落库；发布前可
+        # 经 matching.override_required_level 人工覆盖（必填 reason + 留痕）
         required_modules=module_ids,
         required_industry=industry,
         onsite_required=_derive_onsite_required(solution.schedule),
