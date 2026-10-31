@@ -79,6 +79,7 @@ def _published_package(db_session, *, candidates: tuple[User, ...] = ()):
         project_code=f"R4-{uuid4().hex[:6].upper()}",
         name="r4 派单项目",
         enterprise_code=f"r4 企业·制造·苏州",
+        business_line="FDE_DISPATCH",  # P2-4 H3：交付包只建在派单线项目
         planned_start_date=datetime(2026, 10, 31).date(),
         leader_user_id=admin.id,
         source_template_version=version,

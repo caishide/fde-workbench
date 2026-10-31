@@ -33,6 +33,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from fde_api.auth.models import User
+from fde_api.dispatch.channel_guard import (
+    ChannelGuardError,
+    ensure_enterprise_channel,
+)
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
@@ -243,6 +247,19 @@ def create_quote(*, actor: User, project_id: str, payload: Mapping[str, Any]) ->
     try:
         with session.begin():
             project = _load_project(session, actor, project_id, manage=True)
+            # P2-4 私单封堵（派单设计 §8.5）H2：直签线项目 × 池内企业 → 报价
+            # 同样封堵（成交从报价开始；存量直签项目的防御纵深）。
+            try:
+                ensure_enterprise_channel(
+                    session,
+                    actor=actor,
+                    business_line=project.business_line or "FDE",
+                    enterprise_code=project.enterprise_code,
+                )
+            except ChannelGuardError as error:
+                raise QuoteServiceError(
+                    error.code, error.message, error.status
+                ) from None
             # 串行化同项目的报价创建（quote_key 按 count+1 生成，防并发撞唯一键）
             session.execute(
                 select(Project.id).where(Project.id == project.id).with_for_update()

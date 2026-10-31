@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
 from fde_api.dispatch.access import grant_package_access
+from fde_api.dispatch.channel_guard import ChannelGuardError, ensure_package_channel
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
 from fde_api.extensions import db
@@ -178,6 +179,11 @@ def create_package(
             "verifier_role_required", "只有平台侧（admin/project_lead）可建交付包。", 403
         )
     solution, project, module_ids, industry = _load_context(session, solution_id)
+    # P2-4 私单封堵（派单设计 §8.5）H3 渠道正交：交付包只能建在派单线项目上。
+    try:
+        ensure_package_channel(project)
+    except ChannelGuardError as error:
+        raise DispatchServiceError(error.code, error.message, error.status) from None
     quote = session.get(Quote, quote_id)
     if quote is None or quote.project_id != project.id:
         raise DispatchServiceError("invalid_request", "quote 必须属于同一项目。", 400)
