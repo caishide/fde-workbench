@@ -205,6 +205,8 @@ def register_cli(app: Flask) -> None:
         finally:
             session.close()
 
+    _MAINTENANCE_TYPE = "dispatch.maintenance"
+
     @app.cli.command("scheduler")
     @click.option("--once", is_flag=True, help="Dispatch due tasks once and exit.")
     @click.option("--interval", default=30, type=click.IntRange(5, 300), show_default=True)
@@ -213,12 +215,31 @@ def register_cli(app: Flask) -> None:
         from fde_api.health.heartbeat import beat
 
         click.echo("scheduler started")
+        from datetime import datetime as _dt
+
+        from fde_api.dispatch.maintenance import maintenance_due
+        from fde_api.extensions import db as _db
+        from fde_api.jobs.outbox import enqueue_outbox
+
         while True:
             # I4：同 worker——每轮刷新心跳（TTL 900s，覆盖最大 300s 间隔）。
             beat("scheduler")
             dispatched = dispatch_due_automations()
             if dispatched:
                 click.echo(f"dispatched={dispatched}")
+            # goal-r6（P1-7）：派单维护作业 24h 节流到期即投递（超时释放 /
+            # 留存扫描 / T+30 对账；topic 即 job_type=dispatch.maintenance，
+            # target=当日 token 由 ensure_background_job 天然去重）。
+            with _db.session() as _session:
+                if maintenance_due(_session):
+                    enqueue_outbox(
+                        _session,
+                        _MAINTENANCE_TYPE,
+                        f"daily-{_dt.now():%Y%m%d}",
+                        {},
+                    )
+                    _session.commit()
+                    click.echo("dispatch-maintenance enqueued")
             if once:
                 return
             time.sleep(interval)

@@ -645,6 +645,7 @@ class Quote(Base, TimestampMixin, VersionedMixin):
             name="ck_quotes_c_handling",
         ),
         Index("ix_quotes_project_id", "project_id"),
+        Index("ix_quotes_owner", "owner_user_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
@@ -692,6 +693,11 @@ class Quote(Base, TimestampMixin, VersionedMixin):
     quote_low: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     quote_high: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     c_handling: Mapped[str | None] = mapped_column(String(20))
+    # P1-6（派单设计 §8.4）：报价归属人（创建者；派单语境下交付方侧的归属
+    # 过滤维度）。nullable=存量报价不回填，语义=「无归属（平台侧台账报价）」。
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     # ---- 台账回填（卡 §八：成交后 48h 内） ----
     final_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     final_deviation_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))

@@ -27,6 +27,7 @@ from sqlalchemy import (
     JSON,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -429,3 +430,53 @@ class DeliverySettlement(Base, TimestampMixin):
     # 打款凭证指针（红线：不存本体）
     paid_proof_source_uri: Mapped[str | None] = mapped_column(String(500))
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class Dispute(Base, TimestampMixin):
+    """争议单（§6.6 四层仲裁 + §7.5 T+30 对账草稿，§8.1 第 8 张表）。
+
+    L0 机器对账（每次必跑，对账单只存 source_uri 指针）→ L1 平台运营
+    （≤¥50,000，48h 人工答复 SLA）→ L2 双人复核（双签留痕二期，goal-r6 留注⑯）
+    → L3 外部（二期）。**处罚类动作 100% 人工**（BP §7.3.3 表 3）——本表
+    只有「人工打开/人工裁决」写入路径，自动侧只产 L0 草稿。
+    """
+
+    __tablename__ = "disputes"
+    __table_args__ = (
+        CheckConstraint(
+            "layer IN ('L0', 'L1', 'L2', 'L3')", name="ck_disputes_layer"
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'open', 'reviewing', 'resolved', 'closed')",
+            name="ck_disputes_status",
+        ),
+        Index("ix_disputes_package", "package_id"),
+        Index("ix_disputes_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    package_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_packages.id", ondelete="RESTRICT"), nullable=False
+    )
+    # 对齐 Payment.milestone_key / DeliverySettlement.settlement_key 溯源
+    settlement_key: Mapped[str | None] = mapped_column(String(20))
+    layer: Mapped[str] = mapped_column(String(2), nullable=False, default="L0")
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="draft", server_default="draft"
+    )
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    resolution: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # L0 机器对账单指针（红线：只存指针 + 指纹，不存本体）
+    l0_report_source_uri: Mapped[str | None] = mapped_column(String(500))
+    # 争议锚定「当时那一版」快照（§2.3 规则 2）
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    opened_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    handled_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # §6.6：L1 人工答复 SLA 48h（§6.2 唯一权威表 appeal_sla_hours）
+    sla_due_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
