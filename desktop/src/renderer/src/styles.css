@@ -1512,3 +1512,20 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 
 /* P4 审查补：fdeops 指针等宽显示 */
 .mono { font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; }
+
+/* P2-1 派单页簇（goal-r7） */
+.dispatch-tabs { display: flex; gap: 8px; margin: 12px 0; }
+.dispatch-tab { border: 1px solid var(--border); background: transparent; padding: 6px 14px; cursor: pointer; border-radius: 6px; }
+.dispatch-tab.active { background: var(--accent, #2563eb); color: #fff; border-color: var(--accent, #2563eb); }
+.dispatch-package-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.dispatch-package-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.dispatch-package-summary { display: flex; gap: 12px; align-items: baseline; width: 100%; background: none; border: none; cursor: pointer; text-align: left; padding: 4px 0; }
+.dispatch-seat-amount { margin-left: auto; font-weight: 600; }
+.dispatch-package-detail { display: grid; grid-template-columns: 96px 1fr; gap: 4px 12px; margin: 8px 0 0; }
+.dispatch-package-detail dt { color: var(--muted); }
+.dispatch-package-detail dd { margin: 0; word-break: break-all; }
+.dispatch-profile-table, .dispatch-rules-table { width: 100%; border-collapse: collapse; font-size: var(--font-label); }
+.dispatch-profile-table th, .dispatch-profile-table td, .dispatch-rules-table th, .dispatch-rules-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+.load-bar { font-variant-numeric: tabular-nums; }
+.load-bar.load-full { color: #b91c1c; font-weight: 700; }
+.dispatch-constants { background: var(--surface-alt, #f6f7f9); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; font-size: 12px; }

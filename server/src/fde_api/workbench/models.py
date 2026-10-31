@@ -240,7 +240,9 @@ class Project(Base, TimestampMixin, VersionedMixin):
             name="ck_projects_status",
         ),
         CheckConstraint(
-            "business_line IN ('FDE')",
+            # P2-3（派单设计 §8.5）：预留 'FDE_DISPATCH'（§11.1 注释已预留路径）——
+            # 派单池立项的项目业务线；当前创建路径仍写 'FDE'，值随派单立项入口启用
+            "business_line IN ('FDE', 'FDE_DISPATCH')",
             name="ck_projects_business_line",
         ),
         # goal-r2（派单设计 §3.3 复购判据）：「同一 enterprise_code ≥2 个项目」

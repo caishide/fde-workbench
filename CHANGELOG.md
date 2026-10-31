@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-r7 派单引擎轮（2026-10-31）
+
+### 派单引擎 P2 批次（对照派单设计文档 v1.0 §8.5：P2-1/P2-3/P2-6；迁移 `c5d7e9f1a3b7`）
+
+- **P2-1 桌面派单页簇**：`desktop/src/renderer/src/dispatch/` 三页——派单池（§9.2 白名单只读视图 + 详情展开 + 席位金额显示义务，响应体不含报价/收款明细字段断言）、能力档案与产能看板（四域分=晋级评定维度展示、在途/上限负载条）、权重与规则版本（只读 + 版本取值对照，仿真对比二期=留注⑳）；nav 全角色入口（交付方看被授权包，平台侧看全量），hash 路由 `#dispatch[/(pool|profiles|rules)]`；服务端支撑路由 GET `/dispatch/profiles`、`/dispatch/rules`（平台侧，ENTRIES +2）。
+- **P2-3**：`projects.business_line` CHECK 放行 `'FDE_DISPATCH'`（§11.1 预留路径；写入入口随派单立项后续轮启用；存量数据零变化）。
+- **P2-6**：`dispatch_cities.json` 扩字段钉子（subsidy_scheme 选填 + metro_group 必备断言——schema r4 已含，本轮补 P2-6 语义钉）。
+- **P2-2（Project.status 枚举扩展）**：设计/规则表/BP 均未给出目标状态集——**不发明，待拍板**（台账第十九节留注）。
+- 测试：服务端 `test_dispatch_p2_r7.py` 4 例 + 桌面 `dispatch-page.test.tsx` 6 例；r1–r6 回归 87 例全绿。
+- 口径（goal-r7 实测）：86 表、迁移头 `c5d7e9f1a3b7`（15 revision）、路由 228（+2）、ENTRIES 68（+2）、桌面 660。轮次报告 `docs/goal-r7-派单引擎.md`；台账第十九节。
+
 ## [未发布] — goal-r6 派单引擎轮（2026-10-31）
 
 ### 派单引擎 P1 收官——§8.4 七项全过 + §8.1 八表齐（迁移 `b2c4d6e8f1a3`）
