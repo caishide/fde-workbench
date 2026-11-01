@@ -50,7 +50,7 @@ d12 收口时工程欠账已全清，剩余全部是待拍板类（7 项）与�
 | typecheck | 零错误 |
 | 变异 | **5/5 红**（m1 模型错标 / m2 翻转决策反转 / m3 翻转范围去守卫 / m4 闸条件反转 / m5 事件计数归零）；红判定 selftest 7/7 先行；old 串 apply 前 count==1 断言（5 锚点全唯一预核）；restore sha256 字节级断言零失败 + grep 残留复核全 0 |
 
-过程如实登记：①export 新用例首跑用错未认证 `d4_client` 吃 401（改 `leader` 包装器修正）；②helper 引用模块级 `d4_settings` fixture 函数（非解析值）AttributeError——helper 显式收 settings 参数修正；③测试库 socat 隧道（fde-pg-forward→twenty-db）一次「server closed unexpectedly」抖动，复测自愈非代码问题；④pytest 跑动触发 `template_manifest.json` 重写，内容与 fork/main 字节级 identical（hash 比对），M 标记为 stat 脏位，checkout 清除。
+过程如实登记：①export 新用例首跑用错未认证 `d4_client` 吃 401（改 `leader` 包装器修正）；②helper 引用模块级 `d4_settings` fixture 函数（非解析值）AttributeError——helper 显式收 settings 参数修正；③测试库 socat 隧道（fde-pg-forward→twenty-db）一次「server closed unexpectedly」抖动，复测自愈非代码问题；④pytest 跑动触发 `template_manifest.json` 重写，内容与 fork/main 字节级 identical（hash 比对），M 标记为 stat 脏位，checkout 清除；⑤**本地漏跑 mypy → CI server-tests 门挂**（`Result[Any]` 无 `rowcount` attr-defined ×1）——翻转实现改「select 先数 ids 再 update」，`check-python-types.py` 过（基线 289/当前 279 无新增）+ ruff 过 + 14 用例复跑全过；**流程教训：mypy 门必须与 pytest/vitest 同批本地跑，不能只靠 CI 兜底**。
 
 ## 四、不做边界与遗留
 
