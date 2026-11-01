@@ -363,12 +363,18 @@ def resolve_signoff(*, actor: User, project_id: str, solution_id: str, payload: 
         # 正式入口；拦截/降级留痕（linked=None）与 rejected 均不翻转。
         flipped = 0
         if decision == "approved":
-            flipped = int(session.execute(
-                update(AgentArtifact)
+            artifact_ids = set(session.scalars(
+                select(AgentArtifact.id)
                 .where(AgentArtifact.reviewed.is_(False))
                 .where(AgentArtifact.linked_solution_id == solution.id)
-                .values(reviewed=True)
-            ).rowcount or 0)
+            ))
+            if artifact_ids:
+                session.execute(
+                    update(AgentArtifact)
+                    .where(AgentArtifact.id.in_(artifact_ids))
+                    .values(reviewed=True)
+                )
+            flipped = len(artifact_ids)
         session.flush()
         # updated_at 走 onupdate=func.now()（server 端生成）：flush 后回读再序列化
         session.refresh(checkpoint)
