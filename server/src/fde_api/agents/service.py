@@ -711,7 +711,11 @@ def start_run(*, actor: User, agent_id: str, payload: dict[str, Any]) -> tuple[d
                     )
                 # T4 免手报：订单难度映射自动带入 run.difficulty（low→standard /
                 # medium→high）；显式手报与订单档位冲突 400（透明化，不静默覆盖）
-                order_run_difficulty = ORDER_DIFFICULTY_RUN_MAP.get(package.difficulty)
+                order_run_difficulty = (
+                    ORDER_DIFFICULTY_RUN_MAP.get(package.difficulty)
+                    if package.difficulty is not None
+                    else None
+                )
                 if order_run_difficulty is not None:
                     if (
                         payload.get("difficulty") is not None
