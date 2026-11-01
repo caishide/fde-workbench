@@ -74,10 +74,11 @@ d12 收口时工程欠账已全清，剩余全部是待拍板类（7 项）与�
 **复验**：pytest 1706 收集全绿 · vitest 730/730 · typecheck 零错误 · mypy 门无新增 · ruff 全过 · 容器重建后四容器 healthy + READY 200 + alembic head 不变。
 
 **补正轮过程如实登记**：
-①**本地全量 pytest 首跑 1675 errors**（31 passed）——根因是本地 shell 未设 `FDE_TEST_DATABASE_URL`（.env 只在 `FDE_DATABASE_URL` 里内嵌口令，无独立 `FDE_DB_PASSWORD`，conftest 的回退路径取不到口令 → 全部 DB 用例 setup error），非代码问题；改为显式指向 `127.0.0.1:15432` 隧道后复跑全绿。
-②`test_transient_error_backs_off_and_fails_classified` 在与桌面 vitest 并行时计时抖动失败 1 次，单跑复现为通过——计时敏感用例，负载下波动，非改动引入。
-③新增用例首版断言写成「翻译槽位默认 base_url ≠ 共享槽位默认 base_url」而两者默认值本就相同（都是 moonshot）→ 改为「改翻译槽位不动共享槽位」的独立性断言。
-④**mypy 门事故复盘（承前 d13 教训）**：本轮起 mypy 与 pytest、vitest **同批本地跑**，未再出现「本地漏跑、CI 兜底翻红」。
+①**PR #66 首版 CI server-tests 门挂 ×2**（约 1 分钟即红 → mypy 门）——根因：补正轮新增两个用例写在我**跑完 mypy 门之后**，新增用例里直接 `Settings()` 构造（该类 `database_url`/`redis_url`/`jwt_secret` 为必填）⇒ mypy 新增 6 处 `call-arg`（基线未覆盖）→ 门拦下。修法：用例改用 fixture 的 `d4_settings.model_copy(update=...)`（不重跑构造器）→ 本地 mypy 门重跑「无新增（基线 289 / 当前 279）」+ ruff 全过 + 目标用例 19 全绿后重推。**这条正是 d13 首轮教训的同款复发**：mypy 门必须与 pytest/vitest **同批**跑，且「改完代码再改测试」后必须**重跑**该门，不能沿用上一批结论。
+②**本地全量 pytest 首跑 1675 errors**（31 passed）——根因是本地 shell 未设 `FDE_TEST_DATABASE_URL`（.env 只在 `FDE_DATABASE_URL` 里内嵌口令，无独立 `FDE_DB_PASSWORD`，conftest 的回退路径取不到口令 → 全部 DB 用例 setup error），非代码问题；改为显式指向 `127.0.0.1:15432` 隧道后复跑全绿。
+③`test_transient_error_backs_off_and_fails_classified` 在与桌面 vitest 并行时计时抖动失败 1 次，单跑复现为通过——计时敏感用例，负载下波动，非改动引入。
+④新增用例首版断言写成「翻译槽位默认 base_url ≠ 共享槽位默认 base_url」而两者默认值本就相同（都是 moonshot）→ 改为「改翻译槽位不动共享槽位」的独立性断言。
+④**mypy 门事故复盘（承前 d13 教训）**：首轮起 mypy 与 pytest、vitest **同批本地跑**，首轮未再出现「本地漏跑、CI 兜底翻红」——但补正轮**又复发一次同款**（新增用例写在 mypy 门跑过之后 ⇒ CI 翻红，见补正轮登记①）。**教训升级**：该纪律不只在「开工时」成立，**每次改动（含只改测试）后都要重跑 mypy 门**，上一批的结论不可沿用。
 ⑤容器内实装核验时 `docker exec` 偶发 WSL 服务超时（`0x8007274c`，`docker ps` 同时正常）——改用宿主同代码核验 + 容器日志无 Traceback，判定为环境抖动非代码问题。
 
 

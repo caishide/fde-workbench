@@ -258,17 +258,16 @@ def test_translator_uses_own_base_url_slot(d4_app, d4_settings, monkeypatch) -> 
     assert captured["model"] == "kimi-k3"
 
 
-def test_translator_base_url_default_matches_kimi_model() -> None:
+def test_translator_base_url_default_matches_kimi_model(d4_settings) -> None:
     """goal-d13 补正：翻译槽位 base_url 默认与默认模型 kimi-k3 自洽（Moonshot）；
     且它是**独立一条配置**——改翻译槽位不动共享 kimi 槽位（断言 env 无关，
     只比「改一个不动另一个」）。"""
     fields = Settings.model_fields
     assert fields["kimi_translator_base_url"].default == "https://api.moonshot.cn/v1"
     assert fields["kimi_translator_model"].default == "kimi-k3"
-    base = Settings()
-    moved = Settings(kimi_translator_base_url="https://other.example.com/v1")
+    moved = d4_settings.model_copy(update={"kimi_translator_base_url": "https://other.example.com/v1"})
     assert moved.kimi_translator_base_url == "https://other.example.com/v1"
-    assert moved.kimi_base_url == base.kimi_base_url  # 共享槽位不受翻译槽位牵连
+    assert moved.kimi_base_url == d4_settings.kimi_base_url  # 共享槽位不受翻译槽位牵连
 
 
 def test_replay_skips_terminal_rows(db_session, d4_app, d4_client, d4_settings) -> None:
