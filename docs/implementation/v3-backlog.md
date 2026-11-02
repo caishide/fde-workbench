@@ -130,6 +130,7 @@
   - **cancel 幂等语义照服务层**：非终态 → 200 `cancelled=true`（未执行节点 cancelled，已执行外呼不回收）；重复取消 → 200 `cancelled=false`；终态 → 409 `already_terminal`；waiting_approval 可取消（pending 审批行不动，迟到拍板被 token 守卫中和——T-W4 语义）。
   - **resume failed-only**：failed → 200 `reset_nodes`（failed/skipped 放回 pending、attempt 归零，重投 `workflow.run`）；其余状态 → 409 `not_resumable`（waiting_approval 提示先拍板或取消）。
   - 测试：test_workflow_executor.py **26→27**（新增 `test_routes_cancel_and_resume_lifecycle_and_permissions`：viewer 403 / 幂等取消 / already_terminal / 跨项目 404 / failed-only 恢复+节点回 pending / not_resumable；服务层语义由既有用例 4/8 钉住，HTTP 用例直改状态造终态/失败场景）；test_migrations HEAD 不变。
+  - **同轮附带修复（CI 实测暴露的既有隐性 flake）**：`test_workflow_definition.py::test_definition_publish_locks_immutable_version_rows` 的事件断言裸查 `operation_events` **无 order_by**（堆物理序，PR #77 CI 同码双 run 一绿一红、实际 `[updated, published, created, published]`）→ 补 `order_by(occurred_at, id)` 定序（occurred_at=事务级时间戳各 commit 微秒互异；id 是 uuid4 不可作决胜键）。与本任务功能面无关，测试唯一改动。
   - 桌面控制台（run 列表/取消/恢复按钮）随 T-W6；当前 HTTP 面即 API 完整面。
 
 ### T-R1 agent_tool_groups（域 7）
