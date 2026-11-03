@@ -59,8 +59,8 @@ afterEach(() => {
   cleanup()
 })
 
-function changedSpy(): ReturnType<typeof vi.fn> {
-  return vi.fn()
+function changedSpy(): () => Promise<void> {
+  return vi.fn(async () => {})
 }
 
 it("renders usage stats and version history with current marker", async () => {
