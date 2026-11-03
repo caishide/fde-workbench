@@ -156,7 +156,7 @@
   - **消费方收敛（T-W1/T-W3 挂账清偿）**：`mcp_gateway._skills`、`published_skill_refs`（定义期 skill.ref 白名单）、`executor._dispatch_skill` 三处 `status=="active"` 全部收敛 `"published"`。
   - **既有 PATCH 开关调和（backlog 未列的隐藏面）**：桌面扩展页「停用/启用」走 `PATCH /extensions/skills/{id}`{status: active|disabled}——零桌面改动前提下保留旧值域作别名（active↔published / disabled↔deprecated）：个人 Skill=owner 自愈发布（幂等 no-op）；公共 Skill 的发布向开关 **409 `governance_required`**（开关不得旁路四闸），停用向照旧可用。桌面治理 UI（submit-review/publish 按钮）挂后续轮。
   - **迁移实现教训**：首轮把数据 UPDATE 写在 add_column 之前（引用尚不存在的列）——conftest 每会话 downgrade base→upgrade head 即红，测试库先于 CI 暴露；列先行→约束换值→迁数据的顺序才对。
-  - 测试：NEW test_skill_lifecycle.py **9 例**（四闸逐一可见/契约+报告免 waive/编辑回 draft 重走治理/回滚材料闸+already_current+404/弃用退出+复活封路/个人自发布+PATCH 幂等/公共开关防旁路/CHECK 状态域自检）+ 修 4 处直插 active（chat_mcp make_skill、executor _seed_skill、solution_skills/lcsc_other 的 _is_unchanged_builtin 自测）；test_migrations HEAD 钉 `c1e5f9a3d7b2`（往返含数据迁移双向归位）。
+  - 测试：NEW test_skill_lifecycle.py **7 例**（四闸逐一可见/契约+报告免 waive/编辑回 draft 重走治理+公共开关防旁路/回滚材料闸+already_current+404/弃用退出+复活封路/个人自发布+PATCH 幂等/CHECK 状态域自检）+ 修 5 处 active 语义既有用例（chat_mcp make_skill、executor _seed_skill、solution_skills/lcsc_other 的 _is_unchanged_builtin 自测、extension_management 的「建→停→改名重存」PATCH 流改治理语义）；test_migrations HEAD 钉 `c1e5f9a3d7b2`（往返含数据迁移双向归位）。
 
 ### T-S2 Skill 回滚+效果统计
 - 前置：T-S1。复杂度：**S**。

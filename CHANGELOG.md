@@ -12,8 +12,8 @@
 - **消费方收敛（T-W1/T-W3 挂账清偿）**：MCP 工具面（`mcp_gateway._skills`）、工作流 skill.ref 定义期白名单（`published_skill_refs`）、执行器 skill 节点分派三处全部只认 `published`。
 - **API 五条（278→283）**：submit-review / publish / rollback / deprecate / versions；content_sha256 指纹扩展覆盖全部发布材料（schema/测试报告变更即新版本）。
 - **兼容**：既有 PATCH 启停开关保留旧值域作别名——个人 Skill 自愈发布（幂等）；公共 Skill 发布向 409 `governance_required`（开关不得旁路四闸），停用向照旧。桌面治理 UI（审核/发布按钮）挂后续轮。
-- **测试**：NEW `test_skill_lifecycle.py` **9 例** + 修 4 处直插 active 的既有用例；`test_migrations.HEAD_REVISION` → `c1e5f9a3d7b2`。
-- **口径**：业务表 **101 不变** / 迁移头 **`c1e5f9a3d7b2`（27 revision，+1）** / 路由 **283（+5）** / pytest **1782 收集 = 1776 passed + 6 skipped** / vitest 730 沿用（零桌面改动）。
+- **测试**：NEW `test_skill_lifecycle.py` **7 例** + 修 5 处 active 语义既有用例（chat_mcp/executor/solution_skills/lcsc_other/extension_management PATCH 流）；`test_migrations.HEAD_REVISION` → `c1e5f9a3d7b2`。
+- **口径**：业务表 **101 不变** / 迁移头 **`c1e5f9a3d7b2`（27 revision，+1）** / 路由 **283（+5）** / pytest **1780 收集 = 1774 passed + 6 skipped**（全量实跑 1209s） / vitest 730 沿用（零桌面改动）。
 - **部署**：`docker compose build && up -d` 后 **`alembic upgrade head`**（skill 两表列变更 + 存量状态迁移；**api/worker/scheduler 三个镜像都要 build**）。
 
 ## [未发布] — V3 实施 T-W5：Workflow cancel/resume HTTP 面（服务端编排面收口，2026-11-03）
