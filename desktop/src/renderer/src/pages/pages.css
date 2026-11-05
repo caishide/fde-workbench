@@ -198,7 +198,7 @@
 .dispatch-tabs {
   position: sticky;
   top: 0;
-  z-index: 15;
+  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
@@ -225,7 +225,7 @@
 .dispatch-tab.active {
   background: var(--brand-gradient);
   color: var(--brand-ink);
-  box-shadow: 0 4px 14px rgba(201, 143, 43, 0.30);
+  box-shadow: var(--shadow-tab-brand);
 }
 .dispatch-tab:disabled { cursor: not-allowed; opacity: 0.55; }
 

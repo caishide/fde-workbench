@@ -7,6 +7,7 @@ import { useDialogA11y } from "../common/useDialogA11y"
 import { decodeTextPreview, filePreviewKind } from "./fileCapabilities"
 import { isFileUrlDto } from "./runtimeValidation"
 import type { FileUrlDto, ProjectFileDto } from "./types"
+import { Loading } from "../components/ui"
 
 interface FilePreviewProps {
   projectId: string
@@ -138,7 +139,7 @@ export function FilePreview({ projectId, file, canRegenerate = false, onClose }:
             <button className="secondary-button compact" type="button" onClick={onClose}>关闭</button>
           </div>
         </div>
-        {loading ? <p role="status">正在加载预览…</p> : notReady ? (
+        {loading ? <Loading label="正在加载预览…" /> : notReady ? (
           <div className="preview-unavailable" data-testid="preview-unavailable">
             <p className="form-error" role="alert">预览生成失败，原文件可下载。</p>
             {regenerationQueued ? <p className="notice" role="status">已提交重新生成。稍后关闭并重新打开预览即可查看结果。</p> : null}

@@ -14,6 +14,7 @@ import type { ResearchSubjectDto } from "../research/types"
 import { OpportunityFilter } from './OpportunityFilter'
 import { DocumentPreview } from "./DocumentPreview"
 import { DocumentVersionTimeline, versionCanDownload, versionCanPreview } from "./DocumentVersionTimeline"
+import { Loading } from "../components/ui"
 
 interface ProjectDocumentsProps {
   projectId: string
@@ -279,7 +280,7 @@ export function ProjectDocuments({ projectId, canManage, deliveryMode = false, h
       {!canManage ? <p className="field-hint">你可以查看并下载可用的文档，但当前角色无法创建或编辑。</p> : null}
       {error ? <p className="form-error banner" role="alert">{error}</p> : null}
       {actionError ? <p className="form-error banner" role="alert">{actionError}</p> : null}
-      {loading ? <p role="status">正在加载文档…</p> : visibleDocuments.length === 0 ? <p className="empty-state">{documents.length ? '暂无符合筛选条件的文档。' : '暂无项目文档。'}</p> : (
+      {loading ? <Loading label="正在加载文档…" /> : visibleDocuments.length === 0 ? <p className="empty-state">{documents.length ? '暂无符合筛选条件的文档。' : '暂无项目文档。'}</p> : (
         <div className="table-scroll"><table aria-label="项目文档"><thead><tr><th>文档</th><th>状态</th><th>操作</th></tr></thead><tbody>
           {visibleDocuments.map((document) => (
             <tr key={document.id}>

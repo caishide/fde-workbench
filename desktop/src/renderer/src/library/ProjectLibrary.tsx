@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
+import { confirmAsync } from "../common/ConfirmProvider"
 import { BUSINESS_CATEGORIES, BUSINESS_CATEGORY_LABELS, BUSINESS_CATEGORY_UNCATEGORIZED_LABEL } from "../businessCategory"
 import { useDangerConfirm } from "../common/DangerConfirmProvider"
 import { useAsyncAction } from "../common/useAsyncAction"
@@ -128,7 +129,7 @@ export function ProjectLibrary({ projectId, canManage, documentType }: { project
 
   async function retryGeneration(file: ProjectFileDto) {
     if (!file.generation_form_id) return
-    if (!window.confirm(`确定重新生成“${file.display_name}”吗？\n\n确认后系统会在后台生成，期间可继续使用其他功能。`)) return
+    if (!(await confirmAsync({ title: "重新生成", description: `确定重新生成“${file.display_name}”吗？确认后系统会在后台生成，期间可继续使用其他功能。`, confirmLabel: "重新生成" }))) return
     setActionError("")
     try {
       await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/research/forms/${encodeURIComponent(file.generation_form_id)}/export`, { method: "POST", body: {} })

@@ -87,7 +87,7 @@
 .task-board-progress { display: flex; align-items: center; gap: 9px; margin-top: var(--space-3); }
 .task-board-progress > span { flex: 1; overflow: hidden; height: 5px; border-radius: var(--radius-pill); background: var(--surface-2); }
 .task-board-progress i { display: block; height: 100%; background: var(--brand-gradient); border-radius: inherit; }
-.task-board-progress small { min-width: 25px; color: var(--muted); font-size: 11px; }
+.task-board-progress small { min-width: 25px; color: var(--muted); font-size: var(--font-micro); }
 .task-board-next-run { margin: 10px 0 0; color: var(--muted); font-size: var(--font-caption); line-height: 1.7; }
 .task-board-blocked-reason {
   margin: var(--space-3) 0 0;
@@ -146,7 +146,7 @@
   outline: 2px solid var(--brand-blue);
   outline-offset: 2px;
 }
-.task-board-readonly, .task-board-saving { font-size: 11px; color: var(--muted); }
+.task-board-readonly, .task-board-saving { font-size: var(--font-micro); color: var(--muted); }
 .task-board-card-actions .compact-button { padding: 6px 10px; min-height: var(--control-height-sm); font-size: var(--font-caption); }
 .task-board-sr-only {
   position: absolute;
@@ -162,7 +162,7 @@
 .task-board-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-rail);
   display: grid;
   place-items: center;
   padding: var(--space-6);
@@ -182,5 +182,9 @@
 .task-board-dialog p { color: var(--muted); line-height: 1.7; }
 .task-board-dialog textarea { resize: vertical; }
 .task-board-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-6); }
+/* S3 说明：主窗口 minWidth=960px（src/main/index.ts:103），但用户可用 Ctrl +/- 缩放，
+   viewport 随之变窄，因此下列窄屏断点在缩放下仍会生效——保留，不作为「死 @media」删除。
+   若要清理，先确认 Electron 缩放最低倍率下的 viewport 宽度再动。 */
+
 @media (max-width: 900px) { .task-board-heading { align-items: flex-start; flex-direction: column; gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { .task-board-lane { transition: none; } }

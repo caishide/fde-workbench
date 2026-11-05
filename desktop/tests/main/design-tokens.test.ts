@@ -209,9 +209,11 @@ describe("S0 · 焦点与可读性", () => {
 })
 
 describe("S0 起禁止新增原生确认旁路（裁决 4）", () => {
-  // 2026-11-06 实施基线实测 16 处 window.confirm / window.alert。
-  // 归一属 S2（单独排期），本守卫只锁「不得新增」，不改写既有用例。
-  const BASELINE_NATIVE_CONFIRM_CALLS = 16
+  // 2026-11-06 S2 归一后实测 8 处：均为「必须同步返回 boolean」的
+  // registerHashNavigationGuard 守卫回调与同步关闭流程，不能改成异步 Modal，
+  // 否则切页保护会失效。其余 8 处已改走 ConfirmProvider / ToastProvider。
+  // 本守卫锁「不得新增」，不改写既有用例；S2 后续归一时同步下调此值。
+  const BASELINE_NATIVE_CONFIRM_CALLS = 8
 
   it("window.confirm / window.alert 调用数不超过实施基线", () => {
     const srcDir = join(REPO_ROOT, "desktop/src/renderer/src")
@@ -222,5 +224,121 @@ describe("S0 起禁止新增原生确认旁路（裁决 4）", () => {
     expect(hits, "如需新增原生确认，请改走统一 Modal（见方案 F6 / 裁决 4）").toBeLessThanOrEqual(
       BASELINE_NATIVE_CONFIRM_CALLS,
     )
+  })
+})
+
+/** S3：收集 8 个 CSS 文件（去注释后）的正文。 */
+function collectCssBodies(): Array<{ file: string; body: string }> {
+  const cssDir = join(REPO_ROOT, "desktop/src/renderer/src")
+  const out: Array<{ file: string; body: string }> = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) walk(full)
+      else if (entry.endsWith(".css")) {
+        out.push({
+          file: full.slice(REPO_ROOT.length + 1).replace(/\\/g, "/"),
+          body: stripComments(readFileSync(full, "utf8")),
+        })
+      }
+    }
+  }
+  walk(cssDir)
+  return out
+}
+
+describe("S3 · 数值治理：z-index / 字号 / 阴影只允许走令牌", () => {
+  const cssFiles = collectCssBodies()
+
+  it("z-index 全部取自 --z-* 令牌，无裸数值", () => {
+    const offenders = cssFiles
+      .map((file) => ({
+        file: file.file,
+        hits: file.body.match(/z-index\s*:\s*\d+/g) ?? [],
+      }))
+      .filter((entry) => entry.hits.length > 0)
+    expect(
+      offenders,
+      `以下文件仍有裸 z-index，请改用 --z-base/--z-sticky/--z-dropdown/--z-rail/--z-float/--z-float-top：\n${offenders
+        .map((entry) => `${entry.file}: ${entry.hits.join(", ")}`)
+        .join("\n")}`,
+    ).toEqual([])
+  })
+
+  it("z-index 令牌已在 :root 定义", () => {
+    for (const name of [
+      "--z-base",
+      "--z-sticky",
+      "--z-dropdown",
+      "--z-rail",
+      "--z-float",
+      "--z-float-top",
+    ]) {
+      expect(root.has(name), `:root 缺少 ${name}`).toBe(true)
+    }
+  })
+
+  it("字体��号不再出现裸 px（现存非标准值已登记为已知差距）", () => {
+    // 2026-11-06 S3 实测残留 15 处非标准值（15/17/18/19/22/23/24/26px），
+    // 属遗留、不属任何语义档位，见 无障碍规范-v1.md §7。
+    const ALLOWED_LEGACY = new Set(["15px", "17px", "18px", "19px", "22px", "23px", "24px", "26px"])
+    const offenders: string[] = []
+    for (const entry of cssFiles) {
+      for (const match of entry.body.matchAll(/font-size\s*:\s*(\d+px)/g)) {
+        if (!ALLOWED_LEGACY.has(match[1])) {
+          offenders.push(`${entry.file}: font-size: ${match[1]}`)
+        }
+      }
+    }
+    expect(
+      offenders,
+      `以下字号未走字阶令牌，请改用 --font-tiny/--font-micro/--font-caption/--font-label/--font-body/--font-section/--font-title/--font-page：\n${offenders.join("\n")}`,
+    ).toEqual([])
+  })
+
+  it("阴影不出现令牌误用（把阴影值拼进 box-shadow 当颜色）", () => {
+    // 误用形态：`box-shadow: 0 1px 3px var(--shadow-sm)` —— 阴影令牌被当成颜色拼进阴影值。
+    // 合法形态：多段阴影里阴影令牌独占一段，如
+    //   `box-shadow: 0 0 0 1px var(--gold-5), var(--shadow-brand-hover)`。
+    // 因此按逗号分段：某段内既有数值又有阴影令牌 → 误用。
+    const offenders: string[] = []
+    for (const entry of cssFiles) {
+      for (const match of entry.body.matchAll(/box-shadow\s*:\s*([^;]+);/g)) {
+        const segments = match[1].split(",").map((part) => part.trim())
+        for (const segment of segments) {
+          if (!segment.includes("var(--shadow")) continue
+          // 该段除阴影令牌外还有别的内容 → 令牌被拼进了阴影值
+          const withoutToken = segment.replace(/var\(--shadow[\w-]*\)/g, "").trim()
+          if (withoutToken.length > 0) {
+            offenders.push(`${entry.file}: ${match[1].trim()}`)
+            break
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      `阴影令牌被当成颜色拼进 box-shadow（属语法错误，见方案 G6）：\n${offenders.join("\n")}`,
+    ).toEqual([])
+  })
+
+  it("box-shadow 不出现裸 rgba 阴影（焦点环与 inset 描边除外）", () => {
+    const offenders: string[] = []
+    for (const entry of cssFiles) {
+      for (const match of entry.body.matchAll(/box-shadow\s*:\s*([^;]+);/g)) {
+        const value = match[1].trim()
+        if (value === "none") continue
+        // 整段都含令牌 → 已归一（含多段阴影）
+        if (value.includes("var(--shadow")) continue
+        // 焦点环（0 0 0 Npx var(--brand-*)）与 inset 描边保留
+        if (/^0 0 0 \d+px var\(/.test(value)) continue
+        if (/^inset /.test(value) && value.includes("var(")) continue
+        offenders.push(`${entry.file}: ${value}`)
+      }
+    }
+    expect(
+      offenders,
+      `以下 box-shadow 仍是裸数值，请补 --shadow-* 令牌：\n${offenders.join("\n")}`,
+    ).toEqual([])
   })
 })

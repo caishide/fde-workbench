@@ -7,6 +7,7 @@ import { FilePreview } from "./FilePreview"
 import { fileTooLarge, versionCanBePreviewed } from "./fileCapabilities"
 import { isFileUrlDto, isUploadCompleteDto, isUploadedPartDto, isUploadSessionDto } from "./runtimeValidation"
 import type { ProjectFileDto, ProjectFileVersionDto, UploadSessionDto } from "./types"
+import { Loading } from "../components/ui"
 
 interface FileVersionTimelineProps {
   projectId: string
@@ -139,7 +140,7 @@ export function FileVersionTimeline({ projectId, file, canManage = false, mode =
         </div>
       </div>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {loading ? <p role="status">正在加载版本…</p> : entries.length === 0 ? (
+      {loading ? <Loading label="正在加载版本…" /> : entries.length === 0 ? (
         <p className="empty-state">该文件暂无版本。</p>
       ) : (
         <div className="table-scroll version-history-table">

@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthProvider"
 import { useDangerConfirm } from "../common/DangerConfirmProvider"
 import { useAsyncAction } from "../common/useAsyncAction"
 import { UserAIAccessDialog } from "./UserAIAccessDialog"
+import { errorMessage } from "../common/errorMessages"
 
 interface ApiUser {
   id: string
@@ -392,11 +393,10 @@ function formatDate(value: string): string {
 }
 
 function apiErrorMessage(error: unknown): string {
-  if (error instanceof ApiClientError && error.code === "authentication_refreshed_resubmit") return "登录状态已刷新，请重新提交本次操作。"
+  // S2 / F4：公共错误码走统一表；本页专属的业务错误码仍在这里维护。
   if (error instanceof ApiClientError && error.code === "username_already_exists") return "用户名已存在。"
   if (error instanceof ApiClientError && error.code === "self_disable_not_allowed") return "不能停用当前登录账号。"
   if (error instanceof ApiClientError && error.code === "user_leads_active_projects") return "该用户仍负责进行中的项目，请先转移项目负责人。"
   if (error instanceof ApiClientError && error.code === "user_has_active_project_memberships") return "该用户仍参与进行中的项目，请先移除其成员身份。"
-  if (error instanceof ApiClientError && error.code === "password_too_weak") return "临时密码至少需要 6 位。"
-  return "操作失败，请稍后重试。"
+  return errorMessage(error, "操作失败，请稍后重试。")
 }
