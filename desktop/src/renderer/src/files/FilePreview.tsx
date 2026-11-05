@@ -3,6 +3,7 @@ import { renderAsync } from "docx-preview"
 
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
+import { useDialogA11y } from "../common/useDialogA11y"
 import { decodeTextPreview, filePreviewKind } from "./fileCapabilities"
 import { isFileUrlDto } from "./runtimeValidation"
 import type { FileUrlDto, ProjectFileDto } from "./types"
@@ -16,6 +17,7 @@ interface FilePreviewProps {
 
 export function FilePreview({ projectId, file, canRegenerate = false, onClose }: FilePreviewProps) {
   const { apiRequest } = useAuth()
+  const dialogRef = useDialogA11y(onClose)
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -128,7 +130,7 @@ export function FilePreview({ projectId, file, canRegenerate = false, onClose }:
 
   return (
     <div className="dialog-backdrop" role="presentation" onClick={handleBackdrop}>
-      <div className="dialog file-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览：${file.display_name}`} onClick={(event) => event.stopPropagation()}>
+      <div ref={dialogRef} className="dialog file-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览：${file.display_name}`} onClick={(event) => event.stopPropagation()}>
         <div className="dialog-heading">
           <h3>预览：{file.display_name}</h3>
           <div className="row-actions">

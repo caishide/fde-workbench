@@ -1,5 +1,5 @@
 /* 任务中心看板（#task-center）
-   此前该文件使用了一套独立的硬编码配色（#edf1f7 / #64748b / #3077e5 …），
+   此前该文件使用了一套独立的蓝绿系硬编码配色，
    与全局设计令牌脱节，导致看板页与其它页面观感割裂。
    现已全部改走 styles.css 的令牌，视觉体系与全站统一。 */
 
@@ -166,7 +166,7 @@
   display: grid;
   place-items: center;
   padding: var(--space-6);
-  background: rgba(17, 24, 39, 0.5);
+  background: rgba(20, 24, 28, 0.5);
   backdrop-filter: blur(4px);
 }
 .task-board-dialog {

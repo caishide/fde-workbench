@@ -4,6 +4,7 @@ import { PASSWORD_MAX_LENGTH, USERNAME_MAX_LENGTH } from "../../../shared/contra
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
 import { useDangerConfirm } from "../common/DangerConfirmProvider"
+import { useAsyncAction } from "../common/useAsyncAction"
 import { UserAIAccessDialog } from "./UserAIAccessDialog"
 
 interface ApiUser {
@@ -26,6 +27,7 @@ interface UserList {
 
 export function UsersPage() {
   const { apiRequest } = useAuth()
+  const action = useAsyncAction()
   const dangerConfirm = useDangerConfirm()
   const [users, setUsers] = useState<ApiUser[]>([])
   const [page, setPage] = useState(1)
@@ -332,7 +334,7 @@ export function UsersPage() {
                   <td><div className="row-actions">
                     <button className="secondary-button compact" type="button" onClick={() => openEditDialog(user)} aria-label={`编辑 ${user.username} 的信息`}>编辑</button>
                     <button className="secondary-button compact" type="button" onClick={() => setAIAccessTarget(user)} aria-label={`管理 ${user.username} 的 AI 权限`}>AI 权限</button>
-                    <button className="secondary-button compact" type="button" onClick={() => void toggleUser(user)} aria-label={`${user.is_active ? "停用" : "启用"} ${user.username}`}>{user.is_active ? "停用" : "启用"}</button>
+                    <button className="secondary-button compact" type="button" disabled={action.isBusy} aria-busy={action.busyKey === `toggle:${user.username}`} onClick={() => void action.run(`toggle:${user.username}`, () => toggleUser(user))} aria-label={`${user.is_active ? "停用" : "启用"} ${user.username}`}>{action.busyKey === `toggle:${user.username}` ? "处理中…" : user.is_active ? "停用" : "启用"}</button>
                     <button className="secondary-button compact" type="button" onClick={(event) => openResetDialog(user, event.currentTarget)} aria-label={`重置 ${user.username} 的密码`}>重置密码</button>
                   </div></td>
                 </tr>

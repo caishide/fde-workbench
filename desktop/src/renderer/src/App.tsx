@@ -6,6 +6,7 @@ import { DispatchPage } from "./dispatch/DispatchPage"
 import { ChangePasswordPage } from "./auth/ChangePasswordPage"
 import { LoginPage } from "./auth/LoginPage"
 import { DangerConfirmProvider } from "./common/DangerConfirmProvider"
+import { RouteErrorBoundary } from "./common/RouteErrorBoundary"
 import { AIExecutionProvider } from "./ai/AIExecutionProvider"
 import { DocumentTemplatesPage } from "./documentTemplates/DocumentTemplatesPage"
 import { AppShell } from "./layout/AppShell"
@@ -60,7 +61,9 @@ function AuthenticatedApp() {
   if (user.mustChangePassword) return <ChangePasswordPage />
   return (
     <AppShell route={permittedRoute}>
-      <RoutePage route={permittedRoute} />
+      <RouteErrorBoundary key={routeHash(permittedRoute)}>
+        <RoutePage route={permittedRoute} />
+      </RouteErrorBoundary>
     </AppShell>
   )
 }

@@ -10,6 +10,7 @@ import {
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
 import { useDangerConfirm } from "../common/DangerConfirmProvider"
+import { useAsyncAction } from "../common/useAsyncAction"
 import { fetchAllPages } from "../workbench/fetchAllPages"
 import { isModuleCatalogDto } from "../workbench/runtimeValidation"
 import type { ModuleCatalogDto } from "../workbench/types"
@@ -29,6 +30,7 @@ const emptyCreateForm = {
 
 export function ModulesPage() {
   const { apiRequest } = useAuth()
+  const action = useAsyncAction()
   const dangerConfirm = useDangerConfirm()
   const [modules, setModules] = useState<ModuleCatalogDto[]>([])
   const [loading, setLoading] = useState(true)
@@ -247,7 +249,7 @@ export function ModulesPage() {
               <td><span className={`badge ${module.is_active ? "success" : "muted"}`}>{module.is_active ? "启用" : "停用"}</span></td>
               <td><div className="row-actions">
                 <button className="secondary-button compact" type="button" aria-label={`编辑 ${module.name}`} onClick={() => openEditor(module)}>编辑</button>
-                <button className="secondary-button compact" type="button" aria-label={`${module.is_active ? "停用" : "启用"} ${module.name}`} onClick={() => void toggleModule(module)}>{module.is_active ? "停用" : "启用"}</button>
+                <button className="secondary-button compact" type="button" aria-label={`${module.is_active ? "停用" : "启用"} ${module.name}`} disabled={action.isBusy} aria-busy={action.isBusy} onClick={() => void action.run("toggle-module", () => toggleModule(module))}>{action.isBusy ? "处理中…" : module.is_active ? "停用" : "启用"}</button>
               </div></td>
             </tr>)}</tbody>
           </table></div>

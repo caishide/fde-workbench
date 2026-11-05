@@ -224,8 +224,8 @@
 .dispatch-tab:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .dispatch-tab.active {
   background: var(--brand-gradient);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(26, 130, 160, 0.32);
+  color: var(--brand-ink);
+  box-shadow: 0 4px 14px rgba(201, 143, 43, 0.30);
 }
 .dispatch-tab:disabled { cursor: not-allowed; opacity: 0.55; }
 
