@@ -314,8 +314,54 @@ function collectCssBodies(): Array<{ file: string; body: string }> {
 describe("S3 · 数值治理：z-index / 字号 / 阴影只允许走令牌", () => {
   const cssFiles = collectCssBodies()
 
-  it("z-index 全部取自 --z-* 令牌，无裸数值", () => {
-    const offenders = cssFiles
+  it("行高只允许走 --lh-* 令牌（单行元素的 line-height:1 除外）", () => {
+    // 2026-11-06 S3 收口：原为 13 种行高散值，按方案 C6「新增 --lh-tight/--lh-body/
+    // --lh-relaxed」就近归并到 3 档，89 处收敛完成。
+    // `line-height: 1` 是图标/单行元素的语义值（不需行距），保留但计数。
+    const offenders: string[] = []
+    let singleLine = 0
+    for (const entry of cssFiles) {
+      for (const match of entry.body.matchAll(/line-height\s*:\s*([0-9]*\.?[0-9]+)/g)) {
+        if (match[1] === "1") {
+          singleLine++
+          continue
+        }
+        offenders.push(`${entry.file}: line-height: ${match[1]}`)
+      }
+    }
+    expect(
+      offenders,
+      `以下行高未走令牌，请改用 --lh-tight/--lh-body/--lh-relaxed：\n${offenders.join("\n")}`,
+    ).toEqual([])
+    expect(singleLine, "line-height:1 只用于图标/单行元素，出现过多说明误改").toBeLessThanOrEqual(10)
+  })
+
+  it("同名 @keyframes 不重复定义（方案 G4）", () => {
+    const seen = new Map<string, string[]>()
+    for (const entry of cssFiles) {
+      for (const match of entry.body.matchAll(/@keyframes\s+([\w-]+)/g)) {
+        const name = match[1]
+        if (!seen.has(name)) seen.set(name, [])
+        seen.get(name)!.push(entry.file)
+      }
+    }
+    const duplicates = [...seen.entries()]
+      .filter(([, files]) => files.length > 1)
+      .map(([name, files]) => `${name} × ${files.length}（${files.join(", ")}）`)
+    expect(
+      duplicates,
+      `同名 @keyframes 重复定义，后定义者会覆盖前者（见方案 G4）：\n${duplicates.join("\n")}`,
+    ).toEqual([])
+  })
+
+  it("C7 高对比与动效适配存在（prefers-contrast / forced-colors / reduced-motion）", () => {
+    const all = cssFiles.map((entry) => entry.body).join("\n")
+    expect(all, "缺 @media (prefers-contrast: more)").toContain("prefers-contrast: more")
+    expect(all, "缺 @media (forced-colors: active)").toContain("forced-colors: active")
+    expect(all, "缺 @media (prefers-reduced-motion: reduce)").toContain("prefers-reduced-motion: reduce")
+  })
+
+  it("z-index 全部取自 --z-* 令牌，无裸数值", () => {    const offenders = cssFiles
       .map((file) => ({
         file: file.file,
         hits: file.body.match(/z-index\s*:\s*\d+/g) ?? [],
@@ -342,21 +388,21 @@ describe("S3 · 数值治理：z-index / 字号 / 阴影只允许走令牌", () 
     }
   })
 
-  it("字体��号不再出现裸 px（现存非标准值已登记为已知差距）", () => {
-    // 2026-11-06 S3 实测残留 15 处非标准值（15/17/18/19/22/23/24/26px），
-    // 属遗留、不属任何语义档位，见 无障碍规范-v1.md §7。
-    const ALLOWED_LEGACY = new Set(["15px", "17px", "18px", "19px", "22px", "23px", "24px", "26px"])
+  it("字体字号不再出现裸 px（C6 字阶锁档已完成）", () => {
+    // 2026-11-06 S3 收口：此前残留 15 处散值（15/17/18/19/22/23/24/26px），
+    // 已按方案 C6「字阶锁 5 档 + 26/28px 归并」全部收敛到语义档位：
+    //   --font-card (15) / --font-title (20) / --font-display (24) / --size-icon (22)
+    // 图标字形尺寸（chevron、拖拽手柄）走 --size-icon，不属文字层级。
+    // 现已零散值，白名单移除——新增裸 px 会被本守卫拦下。
     const offenders: string[] = []
     for (const entry of cssFiles) {
       for (const match of entry.body.matchAll(/font-size\s*:\s*(\d+px)/g)) {
-        if (!ALLOWED_LEGACY.has(match[1])) {
-          offenders.push(`${entry.file}: font-size: ${match[1]}`)
-        }
+        offenders.push(`${entry.file}: font-size: ${match[1]}`)
       }
     }
     expect(
       offenders,
-      `以下字号未走字阶令牌，请改用 --font-tiny/--font-micro/--font-caption/--font-label/--font-body/--font-section/--font-title/--font-page：\n${offenders.join("\n")}`,
+      `以下字号未走字阶令牌，请改用 --font-tiny/--font-micro/--font-caption/--font-label/--font-body/--font-card/--font-section/--font-title/--font-display/--font-page（图标用 --size-icon）：\n${offenders.join("\n")}`,
     ).toEqual([])
   })
 

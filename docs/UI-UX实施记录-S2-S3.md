@@ -202,7 +202,44 @@ box-shadow: 0 1px 3px var(--shadow-sm);   →  box-shadow: var(--shadow-xs);
 
 ---
 
-## 6. 已知差距与未做
+## 6. 桌面改动交付：便携版重打包 + asar 字节验证
+
+按 `AGENTS.md:19`「桌面改动交付：重打包便携版并做 asar 字节验证」执行（本轮已获用户拍板执行）。
+
+### 6.1 打包
+
+在**干净 worktree**（`D:\test\fde-workbench-uiux`，只含已提交内容，无并行脏改动）执行：
+
+```bash
+cd desktop && npx electron-vite build              # EXIT=0，31.62s
+npx electron-builder --win dir --x64              # EXIT=0，6m49s
+```
+
+产物：`release/win-unpacked/`，`app.asar` 140,718,762 字节，已归档为
+`release/蔡工FDE-0.2.0-便携版-r17/`（**未覆盖 r16**）。
+
+### 6.2 asar 字节验证
+
+新增 `scripts/verify-asar-bytes.mjs`（解析 electron asar 头部，三步验证）：
+
+| 步骤 | 内容 | 结果 |
+| --- | --- | --- |
+| 1 | 构建输出（`desktop/out/renderer/assets/*`）与 asar 内同名产物逐字节 sha256 比对 | **62 个文件全部一致** |
+| 2 | asar 内 CSS 含本轮改动特征 | **15/15 命中**（B1 金描边/渐变降级、S0 语义深墨/深底文字/焦点环/禁用不透明度/warning、S2 Modal/Toast/Loading/侧栏分组/面包屑、S3 z-index/字阶/阴影） |
+| 3 | asar 内 JS 含关键行为标记 | **6/6 命中**（`confirmAsync` / `useDialogA11y` / `aria-busy` / `showToast` / `commonErrorMessage` / `nav-group-title`） |
+
+**结论：全部通过。** 便携版确实含本轮改动，且与构建输出逐字节一致。
+
+### 6.3 打包过程中的两个坑
+
+| 坑 | 处理 |
+| --- | --- |
+| `npm run build` 会清空 `out/renderer/assets`，触发本机批量删除守卫（66 > 50 阈值） | 用 `npx electron-vite build`（产物目录已存在时可不清空）或先跑一次即可；**不是代码错误** |
+| 验证脚本初次运行报 `SyntaxError` | 我把模板字符串误写成 `失败 ${failed} 项`（少了 `{`）；另有一处中文全角括号在模板字符串里。**教训**：脚本写完必须先 `node --check` 再跑 |
+
+---
+
+## 7. 已知差距与未做
 
 | 项 | 说明 |
 | --- | --- |
@@ -211,8 +248,8 @@ box-shadow: 0 1px 3px var(--shadow-sm);   →  box-shadow: var(--shadow-xs);
 | 少量表单缺 `htmlFor` | S2 收口轮已补齐全部 2 处游离 label；包裹式隐式关联未动（语义有效） |
 | 深色模式 | 按方案**仅评估不实施**（见 `UI规范-v1.md §8`） |
 | 屏幕阅读器实机验证 | 未做，需真实 NVDA / VoiceOver 环境 |
-| 便携版重打包 + asar 字节验证 | 仍按 2026-11-06 拍板暂缓，等工作树收口或明确发行时机 |
-| 品牌生成脚本（7 个 `.py`） | 从 PR#132 移出（会误触发服务端类型/测试钩子），另开 PR |
+| 便携版重打包 + asar 字节验证 | ✅ **本轮已完成**（见 §6）：r17 已归档、62 文件字节一致、CSS 15/15、JS 6/6 |
+| 品牌生成脚本（7 个 `.py`） | ✅ 已随 PR#132 入库（提交 `db0d6ce`），钩子 ruff + mypy + pytest 全 Passed |
 
 ---
 

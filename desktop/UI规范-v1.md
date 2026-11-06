@@ -52,15 +52,31 @@
 | `--font-caption` | 12px | 注释、次要说明、版本号 |
 | `--font-label` | 13px | 表单标签、表格次要列 |
 | `--font-body` | 14px | 正文、按钮 |
+| `--font-card` | 15px | 卡片标题、弹窗标题、小节标题 |
 | `--font-section` | 16px | 小节标题 |
-| `--font-title` | 20px | 卡片标题 |
+| `--font-title` | 20px | 页面级标题、登录页品牌标题 |
+| `--font-display` | 24px | 页面级展示数字（完成度、汇总数）、富文本 h1 |
 | `--font-page` | 24px | 页面标题 |
 
-**规则**：CSS 里**不允许**再写裸 `font-size: Npx`（现存 15 处非标准值属遗留，新增一律用令牌）。
+**规则**：CSS 里**不允许**再写裸 `font-size: Npx`。S3 收口已把原 15 处散值（15/17/18/19/22/23/24/26px）全部归入语义档位。
 
-### 2.2 字重与行高
+**图标字形尺寸**（chevron、拖拽手柄等「用字号当图标大小」）走 `--size-icon`（22px），**不属文字层级**，不参与字阶。
 
-`--weight-regular / --weight-medium / --weight-semibold / --weight-bold`；正文行高 1.5–1.6，标题 1.45。
+**位移留痕**：归并时 17px→15px、18px→15px、26px→24px、19px→20px、23px→22px 有小幅视觉位移；22px（chevron）与 24px（汇总数）零位移。位移方向均为「向语义档位靠拢」，未出现层级倒置。
+
+### 2.2 行高
+
+| 令牌 | 值 | 用途 |
+| --- | --- | --- |
+| `--lh-tight` | 1.4 | 标题、紧凑文本 |
+| `--lh-body` | 1.55 | 正文、表格、说明 |
+| `--lh-relaxed` | 1.7 | 长文、富文本段落 |
+
+**规则**：不允许裸 `line-height: N`（`line-height: 1` 除外，仅用于图标/单行元素）。S3 收口已把原 13 种行高散值归并到这 3 档（89 处）。
+
+### 2.3 字重与行高
+
+`--weight-regular / --weight-medium / --weight-semibold / --weight-bold`。
 
 ---
 
@@ -116,11 +132,23 @@ S3 已把 8 个 CSS 文件里的**全部裸 z-index 收敛为令牌**，静态�
 
 ---
 
-## 6. 响应式
+## 6. 响应式与系统偏好
+
+### 6.1 响应式
 
 - 主机制：`@container workspace` + 侧栏折叠 + `clamp()` padding。
 - 窄屏断点（`max-width: 560–900px`）**保留**：主窗口 `minWidth=960px`，但用户可用 `Ctrl +/-` 缩放使 viewport 变窄，这些断点在缩放下仍生效。S3 已核实并加注释，不是「死 @media」。
 - 折叠态侧栏仅剩图标，**必须保留 `aria-label` / `title`**。
+
+### 6.2 系统偏好适配（C7）
+
+| 媒体查询 | 行为 |
+| --- | --- |
+| `@media (prefers-contrast: more)` | 语义色加深（`--success-ink` 等）、边框加深、渐变与半透明叠层改实底 |
+| `@media (forced-colors: active)` | 交回系统色（`Canvas` / `CanvasText` / `Highlight`），作者颜色一律不生效；激活态用 `Highlight` 底 + `HighlightText` 字 |
+| `@media (prefers-reduced-motion: reduce)` | 关掉循环动画与过渡（`animation-duration: .01ms`），状态反馈仍由颜色/边框承担 |
+
+这三块是**全局兜底**，新增页面无需重复实现；页面级特例须写明理由。
 
 ---
 
@@ -130,9 +158,12 @@ S3 已把 8 个 CSS 文件里的**全部裸 z-index 收敛为令牌**，静态�
 | --- | --- |
 | 新增 `window.confirm` / `window.alert` | `design-tokens.test.ts`（上限 8 处，均为同步导航守卫） |
 | 未定义 `var(--primary)` | `design-tokens.test.ts` |
-| 裸 `z-index` | S3 新增断言 |
-| 裸 `font-size: Npx` | S3 新增断言 |
-| 阴影令牌误用 | S3 新增断言 |
+| 裸 `z-index` | `design-tokens.test.ts` |
+| 裸 `font-size: Npx` | `design-tokens.test.ts`（**白名单已清空**，零散值） |
+| 裸 `line-height: N` | `design-tokens.test.ts`（`line-height: 1` 除外） |
+| 同名 `@keyframes` 重复定义 | `design-tokens.test.ts`（方案 G4） |
+| 缺高对比 / 强制色 / 减少动效适配 | `design-tokens.test.ts`（方案 C7） |
+| 阴影令牌误用 | `design-tokens.test.ts` |
 | 主按钮铺渐变 | `design-tokens.test.ts` |
 | 硬编码产品全名 | `brand-hardcode.test.ts`（红线①） |
 

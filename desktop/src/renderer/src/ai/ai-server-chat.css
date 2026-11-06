@@ -114,7 +114,7 @@
 
 .ai-chat-transcript { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5); }
 .ai-chat-welcome h3 { font-size: var(--font-title); margin: 14px 0; }
-.ai-chat-welcome p { color: var(--muted); line-height: 1.7; }
+.ai-chat-welcome p { color: var(--muted); line-height: var(--lh-relaxed); }
 .ai-chat-welcome small { color: var(--info); }
 .ai-chat-welcome button {
   display: block;
@@ -139,7 +139,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ai-chat-answer { padding: 14px 2px 0; line-height: 1.65; overflow-wrap: anywhere; }
+.ai-chat-answer { padding: 14px 2px 0; line-height: var(--lh-body); overflow-wrap: anywhere; }
 .ai-chat-answer > small { font-weight: var(--weight-medium); color: var(--muted); }
 .ai-chat-answer p { margin: var(--space-2) 0; }
 .ai-chat-answer pre { overflow-x: auto; background: var(--surface-2); padding: var(--space-3); border-radius: var(--radius-sm); }
