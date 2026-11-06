@@ -1,7 +1,9 @@
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+
+import { walkSourceFiles } from "./source-walk"
 
 /**
  * 设计令牌静态守卫（B / S0）
@@ -73,16 +75,7 @@ function rootDeclarations(): Map<string, string> {
 }
 
 function collectTsx(dir: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) {
-      files.push(...collectTsx(full))
-    } else if (entry.endsWith(".tsx")) {
-      files.push(full)
-    }
-  }
-  return files
+  return walkSourceFiles(dir, (name) => name.endsWith(".tsx"))
 }
 
 const root = rootDeclarations()
@@ -295,19 +288,12 @@ describe("S2 · 弹窗与表单语义归一", () => {
 function collectCssBodies(): Array<{ file: string; body: string }> {
   const cssDir = join(REPO_ROOT, "desktop/src/renderer/src")
   const out: Array<{ file: string; body: string }> = []
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry)
-      if (statSync(full).isDirectory()) walk(full)
-      else if (entry.endsWith(".css")) {
-        out.push({
-          file: full.slice(REPO_ROOT.length + 1).replace(/\\/g, "/"),
-          body: stripComments(readFileSync(full, "utf8")),
-        })
-      }
-    }
+  for (const full of walkSourceFiles(cssDir, (name) => name.endsWith(".css"))) {
+    out.push({
+      file: full.slice(REPO_ROOT.length + 1).replace(/\\/g, "/"),
+      body: stripComments(readFileSync(full, "utf8")),
+    })
   }
-  walk(cssDir)
   return out
 }
 
