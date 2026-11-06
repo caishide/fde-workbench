@@ -26,12 +26,24 @@ const tokens = JSON.parse(read("docs/tokens.json")) as {
     brand: {
       primary: { value: string }
       accent: { value: string }
+      accentOnDark: { value: string }
       interactive: { value: string }
       interactiveDeep: { value: string }
     }
-    background: { page: { value: string }; surface: { value: string } }
-    text: { primary: { value: string }; secondary: { value: string } }
-    border: { default: { value: string }; buttonPrimary: { value: string } }
+    background: {
+      page: { value: string }
+      surface: { value: string }
+      print: { value: string }
+      dark: { value: string }
+      darkAlt: { value: string }
+      sidebarB: { value: string }
+    }
+    text: {
+      primary: { value: string }
+      secondary: { value: string }
+      siteScale: { ink3: { value: string }; ink4: { value: string }; ink5: { value: string } }
+    }
+    border: { default: { value: string }; buttonPrimary: { value: string }; official: { value: string } }
     status: {
       success: { base: string }
       warning: { base: string }
@@ -436,5 +448,71 @@ describe("S3 · 数值治理：z-index / 字号 / 阴影只允许走令牌", () 
       offenders,
       `以下 box-shadow 仍是裸数值，请补 --shadow-* 令牌：\n${offenders.join("\n")}`,
     ).toEqual([])
+  })
+})
+
+/** 抽出官网 site/index.html 的 :root 令牌。 */
+function siteRootDeclarations(): Map<string, string> {
+  const rootBlock = stripComments(block(site, ":root{"))
+  const declarations = new Map<string, string>()
+  for (const match of rootBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+    declarations.set(match[1].trim(), match[2].trim())
+  }
+  return declarations
+}
+
+const siteRoot = siteRootDeclarations()
+
+describe("官网 site/index.html · 令牌与真源一致", () => {
+  // 官网侧令牌此前只存在于 site/index.html，docs/tokens.json 未登记 →
+  // 官网改色不会触发任何守卫（真源治理薄弱点）。本块把官网侧钉死。
+  const expected: Array<[string, string]> = [
+    ["--paper", tokens.color.background.page.value],
+    ["--paper-2", tokens.color.background.print.value],
+    ["--card", tokens.color.background.surface.value],
+    ["--dark-bg", tokens.color.background.dark.value],
+    ["--dark-bg-2", tokens.color.background.darkAlt.value],
+    ["--ink-2", tokens.color.background.sidebarB.value],
+    ["--ink-3", tokens.color.text.siteScale.ink3.value],
+    ["--ink-4", tokens.color.text.siteScale.ink4.value],
+    ["--ink-5", tokens.color.text.siteScale.ink5.value],
+    ["--line", tokens.color.border.official.value],
+    ["--gold", tokens.color.brand.accent.value],
+    ["--gold-lt", tokens.color.brand.accentOnDark.value],
+    ["--gold-ink", tokens.color.brand.interactive.value],
+    ["--gold-deep", tokens.color.brand.interactiveDeep.value],
+    ["--ink", tokens.color.brand.primary.value],
+  ]
+
+  it("官网 :root 令牌值与 docs/tokens.json 逐项一致", () => {
+    for (const [name, value] of expected) {
+      expect(siteRoot.get(name)?.toUpperCase(), `官网 ${name} 应与 tokens.json 一致`).toBe(
+        value.toUpperCase(),
+      )
+    }
+  })
+
+  it("官网 :root 令牌全部已在 tokens.json 登记（无游离色值）", () => {
+    const known = new Set(expected.map(([name]) => name))
+    const unregistered = [...siteRoot.keys()].filter((name) => !known.has(name))
+    expect(
+      unregistered,
+      `以下官网令牌未在 docs/tokens.json 登记，请补登记或纳入 expected：\n${unregistered.join("\n")}`,
+    ).toEqual([])
+  })
+
+  it("官网 --line 与桌面端 --line 的 1 级差为已登记现状（未擅自收敛）", () => {
+    // tokens.json 已注明「与桌面端 --line 有 1 级差，待治理收敛」。
+    // 本守卫钉住「差值仍在、且两端各自与真源一致」，
+    // 待治理时改官网 --line 会自动报红，避免无声漂移。
+    expect(siteRoot.get("--line")?.toUpperCase()).toBe(
+      tokens.color.border.official.value.toUpperCase(),
+    )
+    expect(root.get("--line")?.toUpperCase()).toBe(
+      tokens.color.border.default.value.toUpperCase(),
+    )
+    expect(tokens.color.border.official.value.toUpperCase()).not.toBe(
+      tokens.color.border.default.value.toUpperCase(),
+    )
   })
 })
