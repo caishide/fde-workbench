@@ -38,7 +38,7 @@
 - **「外部完成无真实回执=未知」纪律的落法**：`operation_events.changes` 大载荷不外泄；AI 审计只投影调用事实元数据（模型/耗时/token/状态三值，无明文上下文）；**无回执即无行**，由前端呈现「无记录」，不由模型自述或时间线推断拼装任何「已完成」语义。
 - **桌面**：NEW `evidence/ExecutionFactChain.tsx` 只读面板，项目 tab +1「执行事实」（11 tab）：三源筛选、类型徽标、AI 调用「账号维度」明示、空态不编造、CR-035 同型序列守卫（筛选切换只认最新响应）。纯只读——无任何写操作按钮。
 - **测试**：NEW `server/tests/test_execution_fact_chain.py` 4 例（三源归并排序＋changes 不泄漏＋AI 字段白名单＋未知不编造／actor 隔离跨账号泄漏钉／过滤与 limit 有界＋非法 400／权限 viewer 200·外人 403·404·不进 api_catalog）＋**变异三连**（actor 过滤失效／changes 泄漏／scope 谎称 project）逐一转红；桌面改 1 处 tab 断言数组（vitest 用例数不变）。
-- **口径**：pytest **1985 收集 = 1979 passed + 6 skipped**（+4）／vitest **791**（不变）／mypy **279**（不变）／蓝图路由 **301**（+1）／业务表 **105**（不变）／api_catalog ENTRIES **94**（不变）／迁移头 `b2e8f4a6c9d3`（36 rev，不变）。**server 变更 ⇒ 合并后 rebuild 三镜像 + `alembic upgrade head`**（零迁移，幂等）；桌面便携版重打包挂账（随下次桌面交付轮）。
+- **口径**：pytest **1985 收集 = 1979 passed + 6 skipped**（+4）／vitest **825**（本条自身不变；含并入的 UI-UX 黑金轮增量 791→825）／mypy **279**（不变）／蓝图路由 **301**（+1）／业务表 **105**（不变）／api_catalog ENTRIES **94**（不变）／迁移头 `b2e8f4a6c9d3`（36 rev，不变）。**server 变更 ⇒ 合并后 rebuild 三镜像 + `alembic upgrade head`**（零迁移，幂等）；桌面便携版重打包挂账（随下次桌面交付轮）。
 ## [未发布] — V3 技能结构化契约 + 自洽校验（B#36+B#37，2026-11-06）
 
 ### 契约与测试（零迁移零路由零桌面；零 src 改动——无需重建镜像）
