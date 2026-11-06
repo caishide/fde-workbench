@@ -173,7 +173,7 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: "prerequisites",
-    title: "开始前的三件必查事",
+    title: "开始前：三件必查的事",
     body: (
       <>
         <p className="help-lead">
@@ -445,7 +445,7 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: "gates",
-    title: "门禁 G1–G9：阶段放行机制",
+    title: "门禁 G1–G9（最常卡住的地方）",
     body: (
       <>
         <p className="help-lead">
@@ -559,7 +559,7 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: "gates-evidence",
-    title: "实操：证据文件怎么准备",
+    title: "实操示例：证据文件怎么准备（somwyn 样板）",
     body: (
       <>
         <p className="help-lead">
@@ -1012,7 +1012,7 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: "ai",
-    title: "AI 对话、模型与扩展",
+    title: "AI Server 对话与扩展",
     body: (
       <>
         <h3>AI 对话</h3>
@@ -1073,7 +1073,7 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: "admin",
-    title: "系统管理（仅管理员）",
+    title: "管理页（仅管理员）",
     body: (
       <>
         <p className="help-lead">

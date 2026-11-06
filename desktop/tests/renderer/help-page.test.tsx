@@ -18,19 +18,19 @@ it("lists every workbench module, the gate flow and the failure checklist", asyn
   expect(await screen.findByRole("heading", { name: "使用帮助" })).toBeVisible()
   for (const section of [
     "新手上路：5 分钟跑通第一个项目",
-    "开始前的三件必查事",
+    "开始前：三件必查的事",
     "角色与权限：为什么某个按钮不见了",
     "项目工作台",
-    "门禁 G1–G9：阶段放行机制",
-    "实操：证据文件怎么准备",
+    "门禁 G1–G9（最常卡住的地方）",
+    "实操示例：证据文件怎么准备（somwyn 样板）",
     "报价收款与合同",
     "工作流",
     "术语表与变更集评审",
     "执行事实（只读）",
     "集成桥",
     "任务中心",
-    "AI 对话、模型与扩展",
-    "系统管理（仅管理员）",
+    "AI Server 对话与扩展",
+    "管理页（仅管理员）",
     "故障排查（照顺序查最快）",
   ]) {
     expect(screen.getByRole("heading", { name: section })).toBeVisible()
@@ -60,14 +60,16 @@ it("carries the somwyn walkthrough with concrete paths and privacy rules", async
   render(<HelpPage />)
 
   expect(
-    await screen.findByRole("heading", { name: "实操：证据文件怎么准备" }),
+    await screen.findByRole("heading", { name: "实操示例：证据文件怎么准备（somwyn 样板）" }),
   ).toBeVisible()
-  // 具体到这台机器的路径与工具
-  expect(screen.getByText(/somwyn/)).toBeVisible()
-  expect(screen.getByText("哈希清单.ps1")).toBeVisible()
-  expect(screen.getByText("不用新写")).toBeVisible()
-  // 隐私铁律：.fde 仓库永不加远程
-  expect(screen.getByText(/永不配置远程/)).toBeVisible()
+  // 具体到这台机器的路径与工具（somwyn 出现在标题与目录按钮多处 → 用容器文本断言）
+  const { container: walkContainer } = render(<HelpPage />)
+  const walkText = walkContainer.textContent ?? ""
+  expect(walkText).toContain("somwyn")
+  expect(walkText).toContain("哈希清单.ps1")
+  expect(walkText).toContain("不用新写")
+  // 隐私铁律：.fde 仓库永不加远程（正则会同时命中「永不配置远程」与「永不配置远程仓库」→ 用容器文本）
+  expect(walkText).toContain("永不配置远程")
 })
 
 it("jumps to a section from the table of contents without navigating away", async () => {
