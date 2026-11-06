@@ -69,3 +69,13 @@ export function hasCommonErrorMessage(error: unknown): boolean {
   const code = errorCodeOf(error)
   return code !== null && code in COMMON_ERROR_MESSAGES
 }
+
+/**
+ * 只查公共表，不回退到页面兜底——供「本页已有专属映射表」的页面使用：
+ * 命中则用统一文案，未命中返回空串，由页面自己的映射表决定。
+ */
+export function commonErrorMessage(error: unknown, fallback: string): string {
+  const code = errorCodeOf(error)
+  if (!code) return fallback
+  return COMMON_ERROR_MESSAGES[code] ?? fallback
+}

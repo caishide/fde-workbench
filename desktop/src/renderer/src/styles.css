@@ -1978,6 +1978,20 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
    S2 · UI 原语与反馈一致性（F2 / F3 / N1）
    只新增类，不改既有类契约；色值一律走 :root 令牌（真源 docs/tokens.json）。
    ============================================================ */
+/* N2 面包屑：上级 › 当前，仅展示、不新增路由 */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--text); text-decoration: underline; }
+.breadcrumb-separator { color: var(--line-strong); }
+.breadcrumb [aria-current="page"] { color: var(--text); }
+
 .ui-modal-danger { border-top: 3px solid var(--danger-border); }
 .ui-modal-warning { border-top: 3px solid var(--warning-border); }
 .ui-modal h2 { margin: 0 0 var(--space-3); color: var(--text); }

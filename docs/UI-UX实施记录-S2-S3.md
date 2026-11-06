@@ -147,13 +147,68 @@ box-shadow: 0 1px 3px var(--shadow-sm);   →  box-shadow: var(--shadow-xs);
 
 ---
 
-## 4. 已知差距与未做
+## 5. S2 收口轮（补齐方案 §5 剩余条目）
+
+上一轮 S2 落地后仍有 4 项方案条目未闭合，本轮补齐。
+
+### 5.1 原生 `<dialog>` 归一
+
+`research/OpportunityAdjustment.tsx` 原用原生 `<dialog>` + `showModal()`：缺 `aria-modal`、无焦点陷阱、无焦点归还、label 未关联控件。改为统一 `Modal` 原语，`ProposalField` 子组件用 `useId()` 生成 id 关联 label。
+
+**守卫**：`design-tokens.test.ts` 新增断言「全仓零原生 `<dialog>`」。
+
+### 5.2 `DangerConfirmDialog` 吸收为 `Modal tone="danger"`
+
+呈现层改用统一 Modal 原语（ARIA 契约 / Esc / Tab 陷阱 / 焦点归还）。
+
+**人工确认强度不变**：密码仍由本组件自行校验（`/api/v1/auth/verify-password`），`aria-invalid` / `aria-describedby` 保留；`verifying` 期间通过 `busy={busy || verifying}` 锁住 Esc——原先靠组件自身的 `onKeyDown` 实现，迁到 Modal 后必须显式传入，否则验证中的对话框会被 Esc 关掉。
+
+### 5.3 表单 label 关联
+
+全仓扫描后确认**只有 2 处** label 真正没有关联控件（方案点名的正是这两处）：`research/ProjectResearchFormBuilder.tsx` 的「选项（每行一个）」「默认选项（每行一个）」。已用 `useId()` 补 `htmlFor` + `id`。
+
+其余包裹式 `<label>`（含控件）属**隐式关联**，语义有效，不动。
+
+**守卫**：新增断言「无游离 label」。
+
+### 5.4 N2 面包屑 / N3 tab 归一
+
+| 项 | 内容 |
+| --- | --- |
+| N2 | `ProjectDetailPage` 与 `DispatchPage` 加「上级 › 当前」文本面包屑（`nav.breadcrumb` + `aria-current="page"`），**仅展示、不新增路由** |
+| N3 | `DispatchPage` 的 tab 从裸 `<nav>` 收敛到 `ProjectDetailPage` 范式：`role="tablist"` + `role="tab"` + `aria-selected` + `aria-controls` + `tabIndex` 漫游 + 方向键（ArrowLeft/Right/Home/End）切换 + `role="tabpanel"` 容器 |
+
+### 5.5 F4 补齐剩余公共错误码
+
+新增 `commonErrorMessage(error, fallback)`——**只查公共表、不回退页面兜底**，供「本页已有专属映射表」的页面使用：命中用统一文案，未命中返回空串交回页面自己的表。
+
+接入 `BridgePage`（原先直接抛服务端原文）与 `ResearchOpportunity`。
+
+### 5.6 本轮修的问题
+
+| 问题 | 修复 |
+| --- | --- |
+| **又踩了一次「统一表覆盖页面专属措辞」** | `ResearchOpportunity` 的 `stale_version` 被公共表通用措辞覆盖，丢了「AI 机会」这一上下文 → 恢复本地措辞，并加守卫用例钉住 |
+| dispatch 测试 5 例失败 | tab 从 `role="button"` 升为 `role="tab"`（语义升级的正向变化），测试查询改用 `getByRole("tab")` |
+| 守卫误判注释里的 `<dialog>` | `stripComments` 只剥 CSS 块注释，不认 TS 行注释 → 新增 `stripTsComments` |
+| 两个文件残留未使用 import | `ResearchOpportunity` / `IndustryTemplateAIAssistant` 改回本地措辞后 import 失效 → 已清理 |
+
+### 5.7 守卫扩到 20 + 8 例
+
+| 文件 | 用例数 | 新增 |
+| --- | --- | --- |
+| `design-tokens.test.ts` | 15 → **20** | 零原生 `<dialog>`；`DangerConfirmDialog` 保留密码校验与 Modal 吸收；无游离 label；二级 tab 的 `role=tablist`/`aria-selected`/`role=tabpanel`；面包屑存在性与 `aria-current` |
+| `ui-primitives.test.tsx` | 6 → **8** | `commonErrorMessage` 只查公共表；页面专属措辞不被公共表覆盖 |
+
+---
+
+## 6. 已知差距与未做
 
 | 项 | 说明 |
 | --- | --- |
 | 15 处非标准字号 | 15/17/18/19/22/23/24/26px，不属任何语义档位；已登记、可后续补档 |
 | 8 处原生确认 | 同步导航守卫，不可异步化；已锁上限 |
-| 少量表单缺 `htmlFor` | 已在部分页面存在，未逐页补齐 |
+| 少量表单缺 `htmlFor` | S2 收口轮已补齐全部 2 处游离 label；包裹式隐式关联未动（语义有效） |
 | 深色模式 | 按方案**仅评估不实施**（见 `UI规范-v1.md §8`） |
 | 屏幕阅读器实机验证 | 未做，需真实 NVDA / VoiceOver 环境 |
 | 便携版重打包 + asar 字节验证 | 仍按 2026-11-06 拍板暂缓，等工作树收口或明确发行时机 |

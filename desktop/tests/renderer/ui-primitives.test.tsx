@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ConfirmProvider, useConfirm } from "../../src/renderer/src/common/ConfirmProvider"
 import { ToastProvider, showToast, useToast } from "../../src/renderer/src/components/ui"
 import { Loading } from "../../src/renderer/src/components/ui"
-import { errorMessage } from "../../src/renderer/src/common/errorMessages"
+import { errorMessage, commonErrorMessage } from "../../src/renderer/src/common/errorMessages"
 import { ApiClientError } from "../../src/renderer/src/api/client"
 
 afterEach(() => {
@@ -121,5 +121,22 @@ describe("S2 · Loading 与统一错误码表", () => {
     expect(errorMessage(custom, "页面兜底")).toBe("页面兜底")
     // 非服务端错误：走页面兜底
     expect(errorMessage(new Error("boom"), "页面兜底")).toBe("页面兜底")
+  })
+
+  it("commonErrorMessage 只查公共表，未命中返回空串交回页面", () => {
+    const stale = new ApiClientError({ code: "stale_version", message: "server raw" })
+    expect(commonErrorMessage(stale, "")).toBe("内容已被其他操作更新；本地状态未改变，请刷新后重试。")
+    // 未收录码返回 fallback（本例为空串），由页面自己的映射表决定
+    expect(commonErrorMessage(new ApiClientError({ code: "ai_rate_limited", message: "x" }), "")).toBe("")
+    // 非服务端错误
+    expect(commonErrorMessage(new Error("boom"), "")).toBe("")
+  })
+
+  it("页面专属措辞不被公共表覆盖（AI 机会的 stale_version 保留本地口径）", async () => {
+    const { opportunityProfileErrorMessage } = await import(
+      "../../src/renderer/src/research/ResearchOpportunity"
+    )
+    const stale = new ApiClientError({ code: "stale_version", message: "server raw" })
+    expect(opportunityProfileErrorMessage(stale)).toBe("AI 机会已被其他人更新，请刷新后重试。")
   })
 })

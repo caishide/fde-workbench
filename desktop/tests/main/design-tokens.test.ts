@@ -55,6 +55,13 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "")
 }
 
+/** 剥离 TS/TSX 的行注释与块注释，避免说明文字里的字样被当成真实代码。 */
+function stripTsComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+}
+
 /** 抽出 :root 中的自定义属性声明。 */
 function rootDeclarations(): Map<string, string> {
   const rootBlock = stripComments(block(styles, ":root {"))
@@ -224,6 +231,63 @@ describe("S0 起禁止新增原生确认旁路（裁决 4）", () => {
     expect(hits, "如需新增原生确认，请改走统一 Modal（见方案 F6 / 裁决 4）").toBeLessThanOrEqual(
       BASELINE_NATIVE_CONFIRM_CALLS,
     )
+  })
+})
+
+describe("S2 · 弹窗与表单语义归一", () => {
+  const srcDir = join(REPO_ROOT, "desktop/src/renderer/src")
+
+  it("不再使用原生 <dialog> 元素（统一走 Modal 原语）", () => {
+    const offenders = collectTsx(srcDir).filter((file) =>
+      /<dialog[\s>]/.test(stripTsComments(readFileSync(file, "utf8"))),
+    )
+    expect(
+      offenders.map((file) => file.slice(REPO_ROOT.length + 1).replace(/\\/g, "/")),
+      "原生 <dialog> 缺 aria-modal / 焦点陷阱，请改走 components/ui 的 Modal 原语（见方案 F6）",
+    ).toEqual([])
+  })
+
+  it("DangerConfirmDialog 仍保留密码二次校验（人工确认强度不降）", () => {
+    const source = readFileSync(join(srcDir, "common/DangerConfirmDialog.tsx"), "utf8")
+    expect(source, "必须校验当前账号密码").toContain("/api/v1/auth/verify-password")
+    expect(source, "必须保留密码输入框").toContain('type="password"')
+    expect(source, "必须保留 aria-describedby 关联").toContain("aria-describedby")
+    // 呈现层已吸收到 Modal 原语
+    expect(source, "应使用统一 Modal 原语").toContain('from "../components/ui"')
+  })
+
+  it("label 与控件显式关联（htmlFor + id），无游离 label", () => {
+    const offenders: string[] = []
+    for (const file of collectTsx(srcDir)) {
+      const source = stripTsComments(readFileSync(file, "utf8"))
+      for (const match of source.matchAll(/<label(?![^>]*htmlFor)[^>]*>(.*?)<\/label>/gs)) {
+        const body = match[1]
+        // 隐式关联：label 内直接包含控件 → 有效
+        if (/<(input|select|textarea)\b/.test(body)) continue
+        offenders.push(file.slice(REPO_ROOT.length + 1).replace(/\\/g, "/"))
+      }
+    }
+    expect(
+      [...new Set(offenders)],
+      "以下 label 未关联任何控件，请补 htmlFor + id（见无障碍规范-v1.md §4）",
+    ).toEqual([])
+  })
+
+  it("二级 tab 统一为 role=tablist + aria-selected", () => {
+    for (const rel of ["dispatch/DispatchPage.tsx", "projects/ProjectDetailPage.tsx"]) {
+      const source = readFileSync(join(srcDir, rel), "utf8")
+      expect(source, `${rel} 缺 role="tablist"`).toContain('role="tablist"')
+      expect(source, `${rel} 缺 aria-selected`).toContain("aria-selected")
+      expect(source, `${rel} 缺 role="tabpanel"`).toContain('role="tabpanel"')
+    }
+  })
+
+  it("详情页提供「上级 › 当前」面包屑（仅展示，不新增路由）", () => {
+    for (const rel of ["projects/ProjectDetailPage.tsx", "dispatch/DispatchPage.tsx"]) {
+      const source = readFileSync(join(srcDir, rel), "utf8")
+      expect(source, `${rel} 缺面包屑`).toContain('className="breadcrumb"')
+      expect(source, `${rel} 面包屑缺 aria-current`).toContain('aria-current="page"')
+    }
   })
 })
 
