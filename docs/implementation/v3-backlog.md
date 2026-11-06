@@ -2,7 +2,7 @@
 
 > 状态：**T-\* 任务 33 节全部 DONE**（P0–P2 全部 DONE 或核销；P3 四项已定案收口，见 §P3 与 v3-p3 三报告）；「开源借鉴清单登记」段 B#1–B#40（#127 登记 34 项＋#133 评审补登记 6 项）：**P0 先行批表 10 项 ✅ 已实施**（#128~#131），其余按逐条状态标注——PROPOSED/冻结/封存/修复项（登记≠排期≠默认实施）。任务 ID 与差距矩阵/风险登记册互引。
 > 复杂度：S（≤1 天）/ M（数天）/ L（≥1 周）。均按既有 goal-d 循环节奏逐个交付，不并行开双实施线。
-> **2026-11-06 新增节「售前主线登记（T-A 系列）」**：11 条（**T-A1..T-A9 / T-B1 / T-Z1**）**全部 PROPOSED（登记轮，零代码零迁移零路由）**——上位文档=`docs/architecture/售前驱动交付模式改造方案.md` v1.2，评审依据=`docs/audit/售前驱动交付模式改造方案-多专家评审-2026-11-06.md`（五专家 party mode）；**登记≠排期≠实施授权**，逐条闸见该节与 §拍板闸第 6 条。
+> **2026-11-06 新增节「售前主线登记（T-A 系列）」**：11 条（**T-A1..T-A9 / T-B1 / T-Z1**）登记轮零代码——上位文档=`docs/architecture/售前驱动交付模式改造方案.md` v1.2，评审依据=`docs/audit/售前驱动交付模式改造方案-多专家评审-2026-11-06.md`（五专家 party mode）；同日拍板轮 8 项闸全收口；**已实施：T-A1（#156）/ T-A2（代号化自动替换层，词典单点+CI 收敛+落库前置+confirm 复核闸）**；**登记≠排期≠默认实施**，逐条闸见该节与 §拍板闸第 6 条。
 > 通用约定：所有服务端改动 → `docker compose build && up -d` → `alembic upgrade head`（README 纪律）；桌面改动 → 重打包 + asar 字节验证；CI 4 job 全绿才合并。
 
 ## P0（基线与数据治理）
@@ -407,7 +407,7 @@
 - 回滚：revert 单 commit（纯前端）。风险：低（错误体已含清单）。依赖：无。复杂度：**S**。
 - 闸：**无**（可随第一阶段任一轮开工）；须走 PR→4 CI。
 
-### T-A2 代号化自动替换层（入库前企业名→代号） — **PROPOSED（登记轮，零代码）**
+### T-A2 代号化自动替换层（入库前企业名→代号） — **✅ 已实施（2026-11-06，纯服务端轮）**
 - 目标：售前上传访谈资料时，正文中的**真实企业名在入库前被自动替换为代号**，使「客户真实资料永不进 git 历史与远端」红线在**文件正文面**也成立（当前该红线只由 CI 扫数据库 dump 覆盖）。
 - 现状实测（fork/main@d3adf1c）：① `scripts/check-pseudonymization.sh` 只扫 `pg_dump --data-only --inserts`（`:104`），**不扫上传文件的二进制内容** ⇒ 文件正文含真实企业名时 CI **静默通过**；② `server/src/fde_api/guidance/redaction.py:22` `redact_text` 已脱敏 email/mobile/idcard/landline，**故意不脱企业名**（企业名非 PII 格式）；③ **`redact_presurvey`（`redaction.py:31`）全仓零调用点**（`git grep` 仅命中定义处自身）⇒ presurvey 链（`ai/kimi.py` 抽取 → 落库）**当前零脱敏**；④ `projects.enterprise_code` 已是三段式代号（`client·industry·city`，格式检查 `check-pseudonymization.sh:206`）。
 - 形态：**非-AI 纯函数层**（字典匹配 + 确定性替换，合借鉴登记 B#31「导入零模型调用」）。
@@ -419,6 +419,14 @@
 - 验收：合成样本入库存中零真实企业名；非企业名文本零改动；误替换集合为空。
 - 回滚：开关关闭即回退（原文不落库，回滚无数据面残留）。风险：中（正则误替换，靠②钉死）。依赖：无。复杂度：**M**。
 - 闸：✅ **已拍板（2026-11-06，§拍板闸 6①）：分层失败语义**——替换器**异常**（词典加载失败/正则编译失败等机制性故障）→ **fail-closed 硬阻断入库**；**疑似企业名但词典未收录**（正则命中「技术公司」类通用词）→ **放行但记入待复核清单**，方案审核人 confirm 前必须复核。
+- **实施记录（2026-11-06，本条 DONE）**：
+  - **词典单点** `server/src/fde_api/guidance/enterprise_vocab.py`（纯标准库零 fde_api 内部依赖）：种子 `server/seeds/enterprise_redaction.json`（detection=中文 2–15 字+公司/集团/厂 后缀词表，与原脚本内联 perl 正则逐位等价，实施时已做 perl↔python 对拍 diff 逐位一致）+ `replacements` 收录条目（名称→代号，长名优先确定性替换）+ 本地覆盖合并（显式参数 > `FDE_ENTERPRISE_DICT` > 约定 gitignored 路径 `server/seeds/enterprise_redaction.local.json`）。机械性故障（缺文件/坏 JSON/形状非法/正则编译失败/**替换值自撞检测模式**的自洽律）一律 `EnterpriseDictionaryError`。
+  - **词典内容纪律（红线级，本实施裁决）**：repo 种子文件**只存检测词表+合成示例条目**（与 `.github/ci-assets/synthetic-leads-blacklist.txt` 同族三名）；**真实企业名→代号映射永不进 git**——只经 `FDE_ENTERPRISE_DICT` 本地覆盖文件注入（与 `FDE_LEADS_MD` 同一注入模型，约定路径已 gitignore），AGENTS.md「真实姓名只留本地」红线上位维持。
+  - **CI 侧收敛**：`scripts/extract_company_names.py`（Python 单点，CI 脚本经其提取黑名单）+ `check-pseudonymization.sh` 摘除内联 perl（解析序 `FDE_PYTHON_BIN`→venv→`python`→`python3`，全败显式 FAIL 不静默降级；提取器退出码显式核查）；`pytest` 钉死「提取器输出 == 种子 replacements 键」逐条一致。
+  - **analyze 链落库前置**：`guidance/jobs.py` 在 `validate_guidance_output` 之后、落库之前串入 `redact_guidance_draft`（`redaction.py`：redact_text→企业名替换，覆盖 3 长文本字段+evidence 值+11 列表字段条目 text）——`redact_presurvey` 零调用点缺口同步闭合（该链此前**零脱敏**）。分层失败：疑似凭据→`sensitive_content_detected`（沿用既有硬拒）、词典故障→`redaction_failed`，两者分析落 failed **零字段落库**。
+  - **复核面与确认闸（derived state，同 B#13-C 手法）**：`serialize_analysis` 增派生字段 `redaction_review`（field 定位含 `evidence.<key>`/`<field>[i].text`，不落库不写回）；`confirm_analysis` 消费同一推导——有命中且请求未带 `redaction_reviewed=true`（路由只认字面 true，fail 向安全侧）→ 409 `redaction_review_required`；带 ack 放行并随 `guidance_analysis_confirmed` 事件留痕 `redaction_reviewed`/`redaction_review_hits`（零新增持久化状态面）。人工修正走既有 PATCH 编辑后确认。
+  - **边界如实登记**：①`presurvey_intakes`（售前手录字段）与本轮闸不接线（抽取链先行，手录面随 T-A3/A5 轮）；②`kimi_local_docx_extract=false` 时原始 DOCX 仍整件送外部模型（既有行为，本轮不动）；③上传文件二进制仍不入 CI 扫描面（现状①不变，正文面由本轮闭合）。
+  - 测试：NEW `server/tests/test_enterprise_redaction.py` 16 例（种子↔CI fixture 逐条一致/提取器 subprocess 一致性/长名优先/覆盖合并与冲突覆盖/四种机械故障 fail-closed/替换零残留自洽/草稿链替换+PII 掩码/疑似放行+派生清单三定位面/job 级落库前置 redact+凭据硬拒+词典故障 fail-closed/serialize 复核面/confirm 无 ack 409+ack 放行事件留痕/干净确认免 ack）。变异四连（摘除落库前替换/摘除 confirm 闸/放行自洽律/摘除复核面）逐一转红→反向替换还原绿。零迁移零路由零桌面改动。
 
 ### T-A3 调研表三态流转（confirm/reject/revise）桌面入口 — **PROPOSED（登记轮，零代码）**
 - 目标：补齐「调研 → 方案」链路的桌面断点——三态流转目前**桌面零引用**（服务端状态机与端点已完整）。
@@ -594,8 +602,8 @@ B#15 Lens 正交叠加（触发=多行业模板成本失控实测）｜B#16 交�
 4. Q4 代号化题库/隐藏数据落 fdeops 工作目录的落点与权限；Q5 每 run 一容器/境内模型口径；Q6 上游许可证链法务口径；
 5. 待澄清 6.1 原遗留：B#7 Skill 口径顺延与否、B#15/B#20 触发判据业务数据、zcode CLI 会话续接能力。
 6. **售前主线闸（T-A 系列登记轮新增，2026-11-06；同日拍板轮收口 ①②③⑥，④⑤⑦⑧ 按登记口径确认）**：
-   ① **T-A2 代号化未命中失败语义**——✅ **DECIDED（2026-11-06 拍板）：分层语义**——替换器**异常**（词典加载失败/正则编译失败等机制性故障）→ **fail-closed 硬阻断入库**（保红线完整性，与 `_render_context` 422 先例同构）；**疑似企业名但词典未收录**（正则命中「技术公司」类通用词）→ **放行但记入待复核清单**，方案审核人 confirm 前必须复核（复核点与「确认事实是拍板权」分工对齐，防全阻断崩可用性）；
-   ② **T-A2 词典形态**——✅ **DECIDED（2026-11-06 拍板）：仓库内种子文件**——词典存 `server/seeds/`（CI 扫库与入库替换**读同一个文件**，「词典一致性断言」天然成立），企业名词典变动频率极低（新客户才加一词）撑不起 DB 表成本，零迁移零 DB 依赖，变更走 git 审计；
+   ① **T-A2 代号化未命中失败语义**——✅ **DECIDED（2026-11-06 拍板）：分层语义**——替换器**异常**（词典加载失败/正则编译失败等机制性故障）→ **fail-closed 硬阻断入库**（保红线完整性，与 `_render_context` 422 先例同构）；**疑似企业名但词典未收录**（正则命中「技术公司」类通用词）→ **放行但记入待复核清单**，方案审核人 confirm 前必须复核（复核点与「确认事实是拍板权」分工对齐，防全阻断崩可用性）。**✅ 已随 T-A2 实施落地（2026-11-06）：fail-closed=分析落 `redaction_failed` 零字段落库；复核=confirm 闸 `redaction_review_required` 409 + ack 事件留痕，清单派生不落库**；
+   ② **T-A2 词典形态**——✅ **DECIDED（2026-11-06 拍板）：仓库内种子文件**——词典存 `server/seeds/`（CI 扫库与入库替换**读同一个文件**，「词典一致性断言」天然成立），企业名词典变动频率极低（新客户才加一词）撑不起 DB 表成本，零迁移零 DB 依赖，变更走 git 审计。**✅ 已随 T-A2 实施落地（2026-11-06），并补一条内容纪律（红线级）：种子文件只存检测词表+合成示例条目——真实企业名→代号映射永不进 git，只经 `FDE_ENTERPRISE_DICT` 本地覆盖文件注入（与 `FDE_LEADS_MD` 同一注入模型）**；
    ③ **T-A7 谈判稿实体**——✅ **DECIDED（2026-11-06 拍板）：复用既有 solution 版本行**（登记默认获确认）——谈判稿=未冻结版本，最终 SOW 只认 frozen，桌面把未冻结版本标注为「谈判稿」即可；**零新表零迁移**，独立谈判稿表=对「方案版本快照不可变」既有设计的重复建模；
    ④ **T-B1 封包前置**——✅ **确认（按登记口径）**——D11 立项拍板 + 首批真实数据到位前**只做 artifacts 扩列，封包部分不开工**；
    ⑤ **T-Z1 执行通道形态**——✅ **确认（按登记口径）**——开工前半天实测（zcode 能否进 sandbox-runner 容器）后拍板，**不预设复用 openfde**；

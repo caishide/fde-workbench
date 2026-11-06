@@ -20,6 +20,7 @@ from fde_api.guidance.models import (
     ProjectGuidanceAnalysis,
     ProjectPresurveySource,
 )
+from fde_api.guidance.redaction import collect_redaction_review
 from fde_api.jobs.outbox import enqueue_outbox
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
@@ -182,7 +183,10 @@ def create_manual_revision(*, actor: User, project_id: str, analysis_id: str, ex
         session.close()
 
 
-def confirm_analysis(*, actor: User, project_id: str, analysis_id: str, expected_version: int) -> dict[str, Any]:
+def confirm_analysis(
+    *, actor: User, project_id: str, analysis_id: str, expected_version: int,
+    redaction_reviewed: bool = False,
+) -> dict[str, Any]:
     session = db.session()
     try:
         with session.begin():
@@ -194,6 +198,17 @@ def confirm_analysis(*, actor: User, project_id: str, analysis_id: str, expected
                 raise GuidanceServiceError("guidance_not_confirmable", "只有分析完成的草稿可以确认。", 409)
             if row.version != expected_version:
                 raise GuidanceServiceError("stale_version", "项目指引已被更新，请刷新后重试。", 409)
+            # T-A2 复核闸（拍板 6①）：疑似企业名未收录→放行入库但 confirm 前
+            # 必须复核。清单从读面同一推导取得（redaction_review）；复核动作
+            # =确认请求显式携带 redaction_reviewed=true（复核点与「确认事实是
+            # 拍板权」分工对齐），并随确认事件留痕——不新增持久化状态面。
+            review = collect_redaction_review(_redaction_fields(row))
+            if review and not redaction_reviewed:
+                raise GuidanceServiceError(
+                    "redaction_review_required",
+                    f"存在 {len(review)} 处疑似企业名待复核：请修改正文清除，或确认已人工复核后重试。",
+                    409,
+                )
             for old in session.scalars(select(ProjectGuidanceAnalysis).where(ProjectGuidanceAnalysis.project_id == project_id, ProjectGuidanceAnalysis.status == "confirmed")).all():
                 old.status = "superseded"
                 old.version += 1
@@ -238,6 +253,8 @@ def confirm_analysis(*, actor: User, project_id: str, analysis_id: str, expected
                 "analysis_id": row.id, "version_number": row.version_number,
                 "source_file_version_id": row.source_file_version_id,
                 "source_kind": row.source_kind,
+                "redaction_reviewed": redaction_reviewed,
+                "redaction_review_hits": len(review),
             })
             session.flush()
             return serialize_analysis(row, source)
@@ -362,6 +379,22 @@ def serialize_analysis(row: ProjectGuidanceAnalysis, source: ProjectPresurveySou
         data["source_is_stale"] = False
     else:
         data["source_is_stale"] = source is None or source.current_file_version_id != row.source_file_version_id
+    # T-A2（拍板 6①）：疑似企业名待复核清单是派生事实——只读推导，不落库；
+    # 确认闸（confirm_analysis）消费同一推导，读面与闸永不漂移。
+    data["redaction_review"] = collect_redaction_review(_redaction_fields(row))
+    return data
+
+
+def _redaction_fields(row: ProjectGuidanceAnalysis) -> dict[str, Any]:
+    """collect_redaction_review 的行侧取数面（与 serialize_analysis 同源）。"""
+    data: dict[str, Any] = {
+        "customer_vision": row.customer_vision,
+        "current_phase_objective": row.current_phase_objective,
+        "executive_summary": row.executive_summary,
+        "evidence": row.evidence_json,
+    }
+    for field in LIST_FIELDS:
+        data[field] = getattr(row, f"{field}_json")
     return data
 
 

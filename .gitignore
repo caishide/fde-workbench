@@ -72,3 +72,7 @@ desktop/src/renderer/out/
 desktop/build/icon-old-*
 # 本机 Agent 工具缓存（plans / workflow-drafts / workflow-runs），永不入库
 .zcode/
+
+# T-A2：企业名词典本地覆盖文件（真实企业名→代号映射的唯一合法入口，
+# 与 FDE_LEADS_MD 同一注入模型）——真实姓名永不进 git 历史与远端。
+server/seeds/enterprise_redaction.local.json

@@ -12,7 +12,9 @@ from fde_api.extensions import db, object_storage
 from fde_api.files.models import ProjectFileVersion
 from fde_api.guidance.ai_prompt import build_kimi_presurvey_analysis_messages
 from fde_api.guidance.ai_schema import GuidanceContractError, LIST_FIELDS, validate_guidance_output
+from fde_api.guidance.enterprise_vocab import EnterpriseDictionaryError
 from fde_api.guidance.models import ProjectGuidanceAnalysis
+from fde_api.guidance.redaction import SensitiveCredentialDetected, redact_guidance_draft
 from fde_api.jobs.handlers import register_handler, register_job_failure_handler
 from fde_api.storage.base import StorageNotFoundError
 
@@ -80,6 +82,22 @@ def handle_presurvey_analysis(job) -> None:
                         build_messages=lambda content: build_kimi_presurvey_analysis_messages(content, source_ref),
                     )
                 draft = validate_guidance_output(payload, source_refs={source_ref})
+                # T-A2：落库前的最后一道脱敏（redact_text→企业名替换串联，
+                # 上游 Q1 钉的顺序）。分层失败语义（拍板 6①）：疑似凭据沿用
+                # 既有硬拒；词典机械性故障 fail-closed——两者都让分析落
+                # failed 且零字段落库，绝不静默降级放行。
+                try:
+                    draft = redact_guidance_draft(draft)
+                except SensitiveCredentialDetected as error:
+                    _safe_fail(session, job.target_id, "sensitive_content_detected", str(error))
+                    return
+                except EnterpriseDictionaryError:
+                    logger.warning("presurvey redaction failed (EnterpriseDictionaryError)")
+                    _safe_fail(
+                        session, job.target_id, "redaction_failed",
+                        "代号化词典不可用，已按红线纪律阻断入库；请检查词典配置后重新发起分析。",
+                    )
+                    return
                 break
             except KimiError as error:
                 # 只有可重试错误（限流/超时/偶发畸形输出）才消耗重试额度；

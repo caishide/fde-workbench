@@ -2,6 +2,25 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — T-A2 代号化自动替换层：入库前企业名→代号（2026-11-06）
+
+### 词典单点（零迁移零路由零新依赖）
+
+- NEW `server/src/fde_api/guidance/enterprise_vocab.py`（纯标准库）：种子词典 `server/seeds/enterprise_redaction.json`（检测词表=中文 2–15 字 + 公司/集团/厂 后缀，与原 CI 脚本内联 perl 正则逐位等价，实施时 perl↔python 对拍 diff 一致；收录条目=名称→代号，长名优先确定性替换）+ 本地覆盖合并（`FDE_ENTERPRISE_DICT` env / 约定 gitignored 路径 `server/seeds/enterprise_redaction.local.json`，键级冲突覆盖方赢）。机械性故障（缺文件/坏 JSON/形状非法/正则编译失败/替换值自撞检测模式自洽律）一律 `EnterpriseDictionaryError`。
+- **词典内容纪律（红线级）**：repo 种子文件只存检测词表 + 合成示例条目（与 `.github/ci-assets/synthetic-leads-blacklist.txt` 同族）；真实企业名→代号映射**永不进 git 历史与远端**，只经本地覆盖文件注入（与 `FDE_LEADS_MD` 同一注入模型）。
+- **CI 收敛**：NEW `scripts/extract_company_names.py`——`check-pseudonymization.sh` 摘除内联 perl 改调 Python 单点，「替换器词典 == CI 词典」由 pytest 逐条钉死不再是文字承诺；python 缺失/提取器故障显式 FAIL，绝不静默降级。
+
+### analyze 链落库前置 + 复核闸
+
+- `guidance/jobs.py` 在契约校验之后、落库之前串入 `redact_guidance_draft`（`redaction.py`：`redact_text` PII 掩码 → 企业名替换，覆盖 3 个长文本字段、`evidence` 引文值与 11 个列表字段的条目 text）——预调研分析链此前**零脱敏**（`redact_presurvey` 全仓零调用点）的缺口同步闭合。
+- 分层失败语义（拍板 6①）：疑似凭据 → 分析落 `sensitive_content_detected`（沿用既有硬拒语义）；词典机械故障 → `redaction_failed`；两者**零字段落库**。疑似企业名未收录（「技术公司」类通用词）→ 放行入库 + 派生待复核清单。
+- `serialize_analysis` 增派生字段 `redaction_review`（字段级定位，含 `evidence.<key>` 与 `<field>[i].text`；只读推导不落库）；`confirm_analysis` 复核闸——有命中且请求未显式 `redaction_reviewed=true`（路由只认字面 true）→ 409 `redaction_review_required`；带 ack 放行并随 `guidance_analysis_confirmed` 事件留痕 `redaction_reviewed`/`redaction_review_hits`。零新增持久化状态面（与 B#13-C derived state 同手法）。
+- NEW `server/tests/test_enterprise_redaction.py` 16 例：种子↔CI fixture 逐条一致、提取器 subprocess 一致性、长名优先、覆盖合并、四种机械故障 fail-closed、替换零残留自洽、草稿链替换+PII 掩码+疑似放行、job 级落库前置（redact/凭据硬拒/词典故障）、复核读面与 confirm 闸（409/ack/事件留痕/干净免 ack）。变异四连逐一转红后反向替换还原。
+
+### 已知边界（如实登记）
+
+- `presurvey_intakes`（售前手录字段）本轮不接线（抽取链先行，手录面随 T-A3/A5 轮）；`kimi_local_docx_extract=false` 时原始 DOCX 仍整件送外部模型（既有行为）；上传文件二进制仍不在 CI 扫描面（现状不变，正文入库面由本轮闭合）。
+
 ## [未发布] — V3 到期治理收口：B#13-C API confirmation 主动超时 + B#13-D 跨域只读投影（2026-11-06）
 
 ### B#13-C（零迁移零路由零新依赖；server 变更 ⇒ 合并后 rebuild 三镜像）

@@ -53,6 +53,33 @@ PG_CONTAINER="${FDE_PG_CONTAINER:-qiflow-twenty-db}"
 PG_USER="${FDE_PG_USER:-twenty}"
 PG_DB="${FDE_PG_DB:-fde_workbench}"
 
+# T-A2：企业名提取收敛到 Python 单点（scripts/extract_company_names.py ←
+# fde_api.guidance.enterprise_vocab ← server/seeds/enterprise_redaction.json），
+# 与入库替换层共享同一词典文件与同一模式定义。python 缺失必须显式 FAIL，
+# 不许静默降级回任何内联正则（双路径=漂移温床，正是本轮消灭的东西）。
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+resolve_python() {
+  local candidate
+  for candidate in \
+    "${FDE_PYTHON_BIN:-}" \
+    "$REPO_ROOT/server/.venv/Scripts/python" \
+    "$REPO_ROOT/server/.venv/bin/python" \
+    "$(command -v python 2>/dev/null || true)" \
+    "$(command -v python3 2>/dev/null || true)"; do
+    [ -n "$candidate" ] || continue
+    if "$candidate" -c "pass" >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+PYTHON_BIN="$(resolve_python)" || {
+  echo "FAIL 找不到可用的 python——企业名提取已收敛到 Python 单点（T-A2），不回退内联正则"
+  echo "     请安装 python 或用 FDE_PYTHON_BIN 指定解释器后重跑"
+  exit 2
+}
+
 run_host() {
   if [ "$IN_WSL" = "1" ]; then
     bash -lc "$1"
@@ -83,13 +110,15 @@ psql_exec() {
 }
 
 extract_blacklist() {
-  # 企业名提取：GNU grep 的多字节区间 [一-龥] 不可移植——UTF-8 locale 报
-  # 「Invalid collation character」匹配 0 个（=黑名单静默失效，自测都发现
-  # 不了，哨兵手机号照样被抓）、C locale 按字节碰巧能跑、MSYS 又是另一套
-  # （实测三环境三种结果）。perl 按码位区间提取，与 locale 完全无关。
-  perl -Mutf8 -CSD -ne \
-    'while (/([\x{4E00}-\x{9FA5}]{2,15}(?:公司|集团|厂))/g) { print "$1\n" }' \
-    "$LEADS_MD" | sort -u
+  # T-A2：企业名提取收敛到 Python 单点——模式定义（中文 2–15 字 + 公司/集团/
+  # 厂 结尾）来自 server/seeds/enterprise_redaction.json，与入库替换层共用
+  # （「替换器词典 == CI 词典」由 pytest 逐条钉死）。历史上这里是内联 perl：
+  # GNU grep 的多字节区间 [一-龥] 不可移植——UTF-8 locale 报「Invalid collation
+  # character」匹配 0 个（=黑名单静默失效）、C locale 按字节碰巧能跑、MSYS 又
+  # 是另一套（实测三环境三种结果）；python re 按码位匹配，与 locale 完全无关，
+  # 同一可移植性结论原样继承。输出经 tr -d '\r'（Windows python 的 CRLF，
+  # 与 dump_db 同一套卫生纪律）。
+  "$PYTHON_BIN" "$REPO_ROOT/scripts/extract_company_names.py" "$LEADS_MD" | tr -d '\r'
 }
 
 TMP_DUMP="$(mktemp /tmp/fde_pseudonym.XXXXXX.sql)"
@@ -172,14 +201,20 @@ scan_dump() {
   scan_one "邮箱" "$EMAIL" email HIT_EMAIL
 
   # 企业名黑名单：leads.md 的真实企业名一个都不许进库。
-  # 提取结果 0 条 = 黑名单失效（perl 缺失/文件空）= 这条防线没跑，必须 FAIL
-  # （H2 实测：本机 perl 缺失时会静默输出「0 个」仍 exit 0）。
+  # 提取结果 0 条 = 黑名单失效（词典故障/文件空）= 这条防线没跑，必须 FAIL
+  # （H2 实测：提取器静默输出「0 个」仍 exit 0 是不可接受的）。
   if [ -f "$LEADS_MD" ]; then
-    extract_blacklist > "$TMP_BLACKLIST"
+    local extract_rc=0
+    extract_blacklist > "$TMP_BLACKLIST" || extract_rc=$?
+    if [ "$extract_rc" -ne 0 ]; then
+      echo "FAIL 企业名提取器退出码 $extract_rc（词典/文本故障，拒绝扫描）——提取失败不等于 0 命中（C-8c）"
+      fail=1
+      return
+    fi
     local bl_count bl_hits=0 name
     bl_count=$(wc -l < "$TMP_BLACKLIST" | tr -d '[:space:]')
     if [ "${bl_count:-0}" -eq 0 ]; then
-      echo "FAIL 黑名单提取 0 条（perl 缺失或 $LEADS_MD 无企业名）——黑名单失效等于没扫（C-8b）"
+      echo "FAIL 黑名单提取 0 条（词典检测词表失配或 $LEADS_MD 无企业名）——黑名单失效等于没扫（C-8b）"
       fail=1
       return
     fi
