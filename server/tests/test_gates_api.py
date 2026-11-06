@@ -514,8 +514,9 @@ def test_gate_evidence_superseded_flag_detects_recollected_source(
         },
     )
     assert response.status_code == 201, response.get_data(as_text=True)
-    new_evidence_id = response.json["data"]["evidence"]["id"]
-    assert new_evidence_id != original_evidence_id
+    new_evidence = response.json["data"]["evidence"]
+    assert new_evidence["id"] != original_evidence_id
+    assert new_evidence["content_sha256"] != original_hash  # 换版前提：指纹确已不同
 
     db_session.expire_all()
     after = admin_client.get(gates_url).json["data"]["gates"]
