@@ -117,7 +117,6 @@ def test_contract_happy_path() -> None:
 
 
 def test_contract_rejects_bad_shapes() -> None:
-    payload = _valid_ai_payload()
     # 键集不完整
     with _raises("invalid_extraction"):
         validate_extraction_output({"facts": []})

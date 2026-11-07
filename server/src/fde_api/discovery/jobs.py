@@ -16,7 +16,6 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from flask import current_app
 from sqlalchemy import select
 
 from fde_api.control.ai_server_client import DSHRuntimeError, execute_ai_prompt

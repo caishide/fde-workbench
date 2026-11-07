@@ -17,9 +17,11 @@
 - **红线对齐**：整批失败零写入；推断/开放问题强制待澄清；无来源需求不得自动接受；输出端 T-A2 兜底脱敏+复核事件；重跑仅 failed（审阅痕迹不可覆盖）；全部路由不进 api_catalog。
 - **测试**：14 例全绿+回归簇 46 passed+邻域 37+上游 simulation 14；mypy 279 不变；测试库外来戳重建（教训：版本戳骗过 upgrade——重建必须清全表）。
 
-## P0-1 批B（桌面，pending）
+## P0-1 批B（桌面，completed 随批A PR 同窗交付）
 
-DiscoveryPanel（抽取发起+事实清单审阅〔锚点跳转/接受/拒绝/澄清〕+需求审阅+复核清单呈现）挂项目 tab；沿 GuidanceReview/TranscriptDraftsPanel 范式；vitest 用例随交付。**批A 合并后开工。**
+- NEW `desktop/src/renderer/src/discovery/DiscoveryPanel.tsx`（挂项目 overview tab、转写面板之后——访谈区聚合）：抽取发起（纪要下拉+幂等 created 双文案）/抽取记录表（状态徽标+失败码+脱敏复核条目 tooltip+重跑仅 failed）/事实清单（审阅状态过滤+三动作接受/拒绝/澄清+**批量接受本页待审**〔逐条 PATCH、失败计数如实汇报〕+锚点三形态呈现 line/transcript_segment/char_span）/需求清单（批准/否决/澄清+验收条数+来源计数）。写操作 canManage 显隐。
+- NEW `desktop/tests/renderer/discovery-panel.test.tsx` 7 例（三列表加载+复核呈现/锚点三形态/POST 形状+幂等提示/重跑显隐/PATCH 形状/批量只打 pending/viewer 全隐）。
+- 口径：vitest 944→951（+7）；typecheck 0 错；零服务端改动。
 
 ## 遗留问题
 
