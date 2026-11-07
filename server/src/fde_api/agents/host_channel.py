@@ -49,6 +49,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from fde_api.agents import zcode_contract as zc
 from fde_api.agents.adapter import AgentRunContext, AgentRunResult
 from fde_api.agents.sandbox import FORBIDDEN_MOUNT_MARKERS
 
@@ -123,25 +124,17 @@ def host_channel_argv(
     prompt: str,
     workspace: str,
 ) -> list[str]:
-    """宿主 spawn 参数（T-Z1 §1.1 实测契约）。
+    """宿主 spawn 参数——**委托 ``zcode_contract.build_cli_argv``**（#193 拍板：唯一 argv 形状来源）。
 
-    ``-p <prompt>``：单发执行（无 ``run`` 子命令——T-Z1 勘误③确认）；
-    ``--json``：单对象汇总（终态 + usage，单发 run 够用）；``--cwd``：
-    workspace 锚定；``--mode build``：显式档位（CLI 缺省 yolo，不依赖
-    隐式行为）。prompt 文字面携带任务书路径（workspace 内 ``task.md``，
-    zcode 自行读取）——避免超长参数行（Windows 命令行长度上限）。
+    本函数只补宿主壳前缀（``<ZCode.exe> <zcode.cjs>``——Electron 转 node
+    运行时，T-Z1 §1.1 实测）与 ``--mode`` 档位；核心 ``-p <prompt> --json
+    --cwd <workspace>`` 由契约层生成（含 prompt/cwd 空值守卫）。prompt
+    文字面携带任务书路径（workspace 内 ``task.md``）——避免超长参数行。
     """
-    return [
-        zcode_bin,
-        cjs_path,
-        "-p",
-        prompt,
-        "--json",
-        "--cwd",
-        workspace,
-        "--mode",
-        PROMPT_MODE,
-    ]
+    core_argv = zc.build_cli_argv(prompt=prompt, cwd=workspace, cli_command=zcode_bin, mode=PROMPT_MODE)
+    # 契约层 argv = [zcode_bin, -p, prompt, --json, --cwd, workspace, --mode, mode]
+    # 宿主壳形态在 bin 与子命令之间插 cjs 入口：[bin, cjs, -p, ...]
+    return [core_argv[0], cjs_path, *core_argv[1:]]
 
 
 def host_channel_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -203,13 +196,15 @@ def parse_host_summary(stdout_text: str) -> Mapping[str, Any]:
 
 
 def summarize_host_payload(payload: Mapping[str, Any]) -> int:
-    """usage.outputTokens → token 成本；缺失/非正整数 → 0（诚实计 0）。"""
-    usage = payload.get("usage")
-    if isinstance(usage, Mapping):
-        raw = usage.get("outputTokens")
-        if isinstance(raw, int) and raw > 0:
-            return raw
-    return 0
+    """汇总 → token 成本——**委托 ``zcode_contract.parse_json_summary``**。
+
+    计账口径取 ``billable_units``（优先投影 totalTokenCount，缺失回落
+    input+output——与容器版 cost 事件同口径）；缺失/坏类型诚实归 0，
+    不猜数字（契约层 P3 数据闸同款纪律）。``parse_host_summary`` 的
+    fail-closed 外壳（空/非对象拒绝）仍由本模块承担——契约层只在
+    payload 为对象后接管。
+    """
+    return zc.parse_json_summary(payload).billable_units
 
 
 def run_host_channel(

@@ -170,12 +170,12 @@ def test_workspace_agent_root_allowed() -> None:
 
 def test_parse_summary_happy_path() -> None:
     payload = parse_host_summary(json.dumps(_SUMMARY))
-    assert summarize_host_payload(payload) == 128
+    assert summarize_host_payload(payload) == 192  # billable_units = input 64 + output 128
 
 
 def test_parse_summary_tolerates_prefix_noise() -> None:
     noisy = "zcode 0.17.1\n" + json.dumps(_SUMMARY) + "\n"
-    assert summarize_host_payload(parse_host_summary(noisy)) == 128
+    assert summarize_host_payload(parse_host_summary(noisy)) == 192
 
 
 def test_parse_summary_empty_is_fail_closed() -> None:
@@ -213,7 +213,7 @@ def test_completed_path_scans_artifacts_and_returns_summary() -> None:
     )
     assert result.status == "completed"
     assert result.exit_code == 0
-    assert result.token_cost == 128
+    assert result.token_cost == 192  # billable_units 口径
     assert result.duration_ms == 2000  # started + argv 构造两跳
     assert result.artifacts == () and scanner.scanned is True
     assert result.degraded is False and result.degraded_reason is None
@@ -270,23 +270,23 @@ def test_exit_zero_with_unparsable_summary_fails_closed() -> None:
 
 def test_budget_exceeded_truncates_cost_and_discards_artifacts() -> None:
     """B-2 宿主版：成本超上限按上限截断 + budget_exceeded（越界不入账）。"""
-    proc = FakeProc(stdout=json.dumps(_SUMMARY), returncode=0)  # 128 tokens
+    proc = FakeProc(stdout=json.dumps(_SUMMARY), returncode=0)  # billable 192
     result = run_host_channel(
-        _ctx(max_cost_units=100),
+        _ctx(max_cost_units=150),
         _SETTINGS,
         output_scanner=FakeScanner(),
         spawner=RecordingSpawner(proc),
         clock=FakeClock(),
     )
     assert result.status == "budget_exceeded"
-    assert result.token_cost == 100
+    assert result.token_cost == 150
     assert result.artifacts == ()
 
 
 def test_budget_within_cap_is_completed() -> None:
     proc = FakeProc(stdout=json.dumps(_SUMMARY), returncode=0)
     result = run_host_channel(
-        _ctx(max_cost_units=128),
+        _ctx(max_cost_units=192),
         _SETTINGS,
         output_scanner=FakeScanner(),
         spawner=RecordingSpawner(proc),
