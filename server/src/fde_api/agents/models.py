@@ -65,8 +65,8 @@ class AgentRun(Base, TimestampMixin):
     __tablename__ = "agent_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('queued', 'running', 'completed', 'succeeded_but_receipt_invalid',"
-            " 'failed', 'timeout', 'budget_exceeded')",
+            "status IN ('queued', 'running', 'host_running', 'completed',"
+            " 'succeeded_but_receipt_invalid', 'failed', 'timeout', 'budget_exceeded')",
             name="ck_agent_runs_status",
         ),
         CheckConstraint(
@@ -122,6 +122,17 @@ class AgentRun(Base, TimestampMixin):
     difficulty: Mapped[str] = mapped_column(
         String(16), nullable=False, default="standard", server_default="standard"
     )
+    # —— P2′① 宿主轮询领取（§11.3 六条约束；迁移 f6d3a9c1e7b2）——
+    # 执行通道：sandbox（容器，默认）/ host_poll（宿主代理轮询领取）。
+    # 领取/回执/失联三时刻为幂等与失联审计锚；host_token_hash 是领取代理
+    # 令牌的 sha256（零明文落库——约束 4 凭据只在宿主内存管道）。
+    execution_provider: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="sandbox", server_default="sandbox"
+    )
+    host_claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    host_token_hash: Mapped[str | None] = mapped_column(String(64))
+    host_receipt_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    host_lost_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
 
 class AgentArtifact(Base, TimestampMixin):
