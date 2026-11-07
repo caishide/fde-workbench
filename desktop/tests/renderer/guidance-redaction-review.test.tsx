@@ -67,6 +67,8 @@ it("读面复核清单渲染（名称/次数/词典命中标注），服务端�
       projectId="project-1"
       initial={analysisFixture({ redaction_review: REVIEW_ENTRIES }) as never}
       canManage
+      onClose={() => {}}
+      onSaved={() => {}}
     />,
   )
   expect(screen.getByLabelText("企业名替换复核清单")).toBeInTheDocument()
@@ -91,7 +93,7 @@ it("干净分析零额外负担：confirm 请求体不带 redaction_reviewed 键
     }
     throw new Error(`unexpected ${method}`)
   })
-  render(<GuidanceReview projectId="project-1" initial={analysisFixture() as never} canManage />)
+  render(<GuidanceReview projectId="project-1" initial={analysisFixture() as never} canManage onClose={() => {}} onSaved={() => {}} />)
   fireEvent.click(screen.getByRole("button", { name: "确认并用于项目指引" }))
   await waitFor(() => expect(bodies.length).toBe(1))
   expect(Object.prototype.hasOwnProperty.call(bodies[0], "redaction_reviewed")).toBe(false)
@@ -125,6 +127,8 @@ it("409 redaction_review_required：呈现拦截提示，勾选已复核后重�
       projectId="project-1"
       initial={analysisFixture({ redaction_review: REVIEW_ENTRIES }) as never}
       canManage
+      onClose={() => {}}
+      onSaved={() => {}}
     />,
   )
   fireEvent.click(screen.getByRole("button", { name: "确认并用于项目指引" }))
@@ -163,7 +167,7 @@ it("本地读面缺清单时 409 触发回读读面补渲染（仍用服务端�
     }
     throw new Error(`unexpected ${method}`)
   })
-  render(<GuidanceReview projectId="project-1" initial={analysisFixture() as never} canManage />)
+  render(<GuidanceReview projectId="project-1" initial={analysisFixture() as never} canManage onClose={() => {}} onSaved={() => {}} />)
   fireEvent.click(screen.getByRole("button", { name: "确认并用于项目指引" }))
   // 409 → 回读读面 → 清单出现在面板
   expect(await screen.findByText("某疑似企业")).toBeInTheDocument()
