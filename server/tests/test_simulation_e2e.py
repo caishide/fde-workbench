@@ -100,7 +100,7 @@ def _clean_simulation(db_session):
 def seeded_scenarios(db_session):
     """把 6 个内置案例 × 3 变体播种进库（18 行）。"""
     with db.session() as session:
-        outcome = seed_scenarios(session)
+        seed_scenarios(session)
         session.commit()
     with db.session() as session:
         rows = list(
