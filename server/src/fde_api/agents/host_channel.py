@@ -74,8 +74,11 @@ class HostProcess(Protocol):
     """子进程最小面（``subprocess.Popen`` 同构；测试假件按此实现）。"""
 
     pid: int
+    returncode: int | None
 
     def kill(self) -> None: ...
+
+    def communicate(self, input: str | None = None, timeout: float | None = None) -> tuple[str, str]: ...  # noqa: A002 - 对齐 subprocess.Popen 签名
 
 
 class HostSpawner(Protocol):
@@ -109,6 +112,7 @@ def _default_spawner(
         stdout=stdout,
         stderr=stderr,
         stdin=stdin,
+        text=True,  # communicate 返回 str（--json 文本解析面；与 HostProcess 协议对齐）
     )
 
 
