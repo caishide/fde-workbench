@@ -1,10 +1,35 @@
 # V3.1 阶段状态
 
-- 基线 SHA：`65db88c53dab1bcdea24dd9d9ad4e212acd0fc24`（fork/main）
-- 当前分支：`feat/v31-p0-0-baseline-audit`（隔离 worktree `D:/test/fde-wt-v31p0`）
-- 当前阶段：P0-0 基线审计
-- 状态：completed
-- 开始/完成时间：2026-11-07 / 2026-11-07
+- 基线 SHA：P0-0 审计=`65db88c`；P0-1 批A 开发基线=fork/main `9aaa4ef`（含 #197 本线 P0-0 与 #198–201 V3.2 模拟训练场并发并入）
+- 当前分支：`feat/v31-p0-1-discovery`（隔离 worktree `D:/test/fde-wt-v31p0`）
+- 当前阶段：P0-1 访谈事实与需求结构化——**批A（服务端）completed 待合并；批B（桌面审阅 UI）pending**
+- 状态：in_progress（批A 已交付）
+- 开始/完成时间：P0-0=2026-11-07 完成（PR #197 已合并 fork/main `14d2b62`）；P0-1 批A=2026-11-08 完成
+
+## P0-0（completed，已合并）
+
+四报告+任务书入库+复用/扩展/新建裁决（详见 `00-baseline-audit.md` 等），PR #197 squash 合并为 `14d2b62`，CI 4 job 全绿。遗留：拍板项 D-1~D-4 待蔡工确认（不阻塞 P0-1 批A——批A 不踩跨项目别名/发布权限/锚点粒度三议题；D-3 宿主通道对齐已由 #195 落地自动消解大半）。
+
+## P0-1 批A（服务端，completed）
+
+- **交付**：NEW `discovery/` 五文件（models/contract/prompt/jobs/routes）+ 迁移 `c3d5e7f9a1b4`（挂上游 V3.2 G6 头 `e8b1d5f9a3c7`）+ 8 路由 + 14 例测试；7 处注册点（app 蓝图/jobs handler+失败钩子/reconcile RECOVERABLE/env.py/conftest 清理序/test_migrations HEAD/extract 脚本 BLUEPRINTS）+ 提示词卫生闸登记（`_ALLOWED_PROMPT_CONSTANTS`）。
+- **设计裁决**（00-gap-register P0-1 全部落地）：七组示例收敛 facts[].fact_type 十值+requirements 独立组；classification 对齐 guidance 五分类；抽取行 status 四值（accepted/rejected=派生态不物化，B#13-C 先例）；requirements 结构化 acceptance_criteria 列表；requirement_sources 关系表（任务书原文）。
+- **红线对齐**：整批失败零写入；推断/开放问题强制待澄清；无来源需求不得自动接受；输出端 T-A2 兜底脱敏+复核事件；重跑仅 failed（审阅痕迹不可覆盖）；全部路由不进 api_catalog。
+- **测试**：14 例全绿+回归簇 46 passed+邻域 37+上游 simulation 14；mypy 279 不变；测试库外来戳重建（教训：版本戳骗过 upgrade——重建必须清全表）。
+
+## P0-1 批B（桌面，pending）
+
+DiscoveryPanel（抽取发起+事实清单审阅〔锚点跳转/接受/拒绝/澄清〕+需求审阅+复核清单呈现）挂项目 tab；沿 GuidanceReview/TranscriptDraftsPanel 范式；vitest 用例随交付。**批A 合并后开工。**
+
+## 遗留问题
+
+1. 拍板项 D-1（跨项目别名冲突）/D-2（发布权限）待蔡工确认——分别阻塞 P0-2 部分/不阻塞。
+2. D-4（锚点粒度）已在批A 以三形态闭合枚举（line/transcript_segment/char_span）落地，契约层收敛，批B UI 按此呈现。
+3. 任务书 §16 其余文档（architecture/api-contracts/data-model/security-review/pilot-runbook）随对应阶段交付。
+
+## 是否允许进入下一阶段
+
+P0-1 批B（桌面）→ 批B 合并后 P0-1 整阶段收口 → **P0-2 本体候选与稳定 ID**（先落 ADR-002 文档+D-1 拍板确认）。
 
 ## 本阶段目标
 
