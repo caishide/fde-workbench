@@ -283,6 +283,7 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
             </div>
           </div>
           {detailError ? <p role="alert" className="empty-copy">{detailError}</p> : null}
+          {artifactNotice ? <p role="status" className="notice">{artifactNotice}</p> : null}
           {detailLoading ? <p className="empty-copy" role="status">正在加载详情…</p> : null}
           {detail && !detailLoading ? (
             <div className="page-stack">

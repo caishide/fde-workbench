@@ -89,7 +89,9 @@ def test_derive_test_results_counts_and_other_kinds_return_none() -> None:
     }
     # 自由格式逐条输出也累计（宁多计不漏计，摘要可从原件复核）
     free = "1 passed\n1 error\nok 5 passed".encode("utf-8")
-    assert derive_artifact_summary("test_results", free)["errors"] == 1
+    free_summary = derive_artifact_summary("test_results", free)
+    assert free_summary is not None
+    assert free_summary["errors"] == 1
     # 非 diff/test_results 零派生（不发明数字）
     assert derive_artifact_summary("code", b"print('hi')") is None
     assert derive_artifact_summary("doc", b"# readme") is None
