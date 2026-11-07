@@ -84,6 +84,8 @@ class AgentRun(Base, TimestampMixin):
         CheckConstraint("token_cost >= 0", name="ck_agent_runs_token_cost"),
         CheckConstraint("duration_ms >= 0", name="ck_agent_runs_duration"),
         Index("ix_agent_runs_project_status", "project_id", "status"),
+        # P2′① 宿主领取面：按 provider+status 定位待领取 run
+        Index("ix_agent_runs_provider_status", "execution_provider", "status"),
         # 幂等键只建索引不设唯一：重试行与原 run 共享同一 key，幂等去重语义
         # 在服务层（d4）按 retry_of 链收敛，唯一约束会封死重试链。
         Index("ix_agent_runs_idempotency", "idempotency_key"),

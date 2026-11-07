@@ -67,7 +67,7 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # V3.2 G5：simulation_findings + improvement_proposals（改进层两表，additive）
 # V3.2 G6：regression_suites + regression_results（回归层两表）+ proposals 扩列 override_json
 # V3.1 P0-1：discovery 四表（discovery_extractions/business_facts/requirements/requirement_sources，additive）
-HEAD_REVISION = "c3d5e7f9a1b4"
+HEAD_REVISION = "f6d3a9c1e7b2"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1066,7 +1066,7 @@ def test_v4_subject_type_domain_roundtrip_preserves_subjects(alembic_config, eng
 
 
 def test_known_alembic_revisions_covers_current_head(test_settings):
-    """本树判定基准必须包含当前 HEAD_REVISION（含 35 个迁移文件全集）。"""
+    """本树判定基准必须包含当前 HEAD_REVISION（含 45 个迁移文件全集）。"""
     from alembic.config import Config
 
     config = Config(str(SERVER_ROOT / "alembic.ini"))

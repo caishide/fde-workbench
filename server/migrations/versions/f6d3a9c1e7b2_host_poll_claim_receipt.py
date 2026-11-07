@@ -54,24 +54,23 @@ def upgrade() -> None:
             sa.String(length=16),
             nullable=False,
             server_default="sandbox",
-            comment="执行通道：sandbox（容器，默认）/ host_poll（宿主轮询领取，P2′①）",
         ),
     )
     op.add_column(
         "agent_runs",
-        sa.Column("host_claimed_at", sa.DateTime(), nullable=True, comment="宿主代理领取时刻（UTC；领取幂等锚）"),
+        sa.Column("host_claimed_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.add_column(
         "agent_runs",
-        sa.Column("host_token_hash", sa.String(length=64), nullable=True, comment="领取代理令牌 sha256（零明文落库）"),
+        sa.Column("host_token_hash", sa.String(length=64), nullable=True),
     )
     op.add_column(
         "agent_runs",
-        sa.Column("host_receipt_at", sa.DateTime(), nullable=True, comment="宿主回执落账时刻（UTC；回执幂等锚）"),
+        sa.Column("host_receipt_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.add_column(
         "agent_runs",
-        sa.Column("host_lost_at", sa.DateTime(), nullable=True, comment="失联标记时刻（H4：只标记不自动重试）"),
+        sa.Column("host_lost_at", sa.DateTime(timezone=True), nullable=True),
     )
     # 领取面查询索引：待领取 run 按 queued+provider 定位（列表小，单列即可）
     op.create_index("ix_agent_runs_provider_status", "agent_runs", ["execution_provider", "status"])
