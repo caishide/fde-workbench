@@ -66,6 +66,12 @@ describe("CR-034 index.ts 接线静态钉（防再次静默脱线）", () => {
     expect(INDEX_SOURCE).toMatch(/window\.close\(\)/)
   })
 
+  it("确认框悬起期间重复关闭只拦不再弹（防叠框）", () => {
+    expect(INDEX_SOURCE).toMatch(/closeGuardDialogPending = true/)
+    expect(INDEX_SOURCE).toMatch(/if \(closeGuardDialogPending\) return/)
+    expect(INDEX_SOURCE).toMatch(/closeGuardDialogPending = false/)
+  })
+
   it("activeMutations 既有累计/递减点仍存在（保护数据源不被移除）", () => {
     expect(INDEX_SOURCE).toMatch(/activeMutations\+\+/)
     expect(INDEX_SOURCE).toMatch(/activeMutations--/)

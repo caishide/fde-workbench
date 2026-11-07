@@ -38,6 +38,8 @@ let mainWindow: BrowserWindow | null = null
 let activeMutations = 0
 // CR-034：一次性放行旗标——确认对话框选「仍然退出」后仅对紧随的那次关闭生效。
 let allowMainWindowCloseOnce = false
+// CR-034：确认框悬起标记——防悬框期间重复触发弹窗叠开。
+let closeGuardDialogPending = false
 let lcscSession: Session | null = null
 let lcscWindow: BrowserWindow | null = null
 
@@ -120,17 +122,20 @@ function createWindow(): BrowserWindow {
 
   // CR-034：「在途写不退出」保护——仍有非 GET 请求在途（activeMutations>0）时
   // 拦下主窗口关闭，先问人：「等待完成」取消本次关闭，「仍然退出」一次性放行。
+  // closeGuardDialogPending：确认框悬着时再点 X 只拦不再弹（防叠开多框）。
   window.on("close", (event) => {
     const allow = allowMainWindowCloseOnce
     allowMainWindowCloseOnce = false
     if (!shouldDeferWindowClose(activeMutations, allow)) return
     event.preventDefault()
+    if (closeGuardDialogPending) return
+    closeGuardDialogPending = true
     void dialog.showMessageBox(window, buildCloseGuardDialogSpec(activeMutations)).then(({ response }) => {
       if (response === 1) {
         allowMainWindowCloseOnce = true
         window.close()
       }
-    })
+    }).finally(() => { closeGuardDialogPending = false })
   })
 
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
