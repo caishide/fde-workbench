@@ -656,7 +656,7 @@
 - 验收：一次 run 的产物可封包为 `handover_packages` 且逐项 sha256 可校验；原件不进库。
 - 回滚：alembic downgrade（新表零外键依赖安全）；**已封包行不可逆**（指纹链已出系统，需人工处置）。风险：中（迁移纪律）。依赖：T-A8。复杂度：**M**。
 
-### T-Z1 zcode 真机跑通 + 执行通道裁定 — **◐ 实测半 DONE（goal-tb tb3，2026-11-07）/ 通道形态待拍板（裁定提案已落，红线扩张不代决）**
+### T-Z1 zcode 真机跑通 + 执行通道裁定 — **◐ 实测半 DONE（goal-tb tb3，2026-11-07）/ 通道形态 DECIDED＝A（2026-11-07 20:08 拍板）/ P2′ 咬合方式 DECIDED＝① 宿主轮询领取（2026-11-07 20:38 拍板）/ 宿主代理接线待实施**
 - 目标：让编码智能体这条线**跑出真实证据**，同时**先实测再裁定执行通道形态**（不预先承诺复用 openfde）。
 - **实测事实（2026-11-06 复审，登记为裁决依据）**：① zcode 装在 `D:/software/zcode`（Electron 应用 + 内置 CLI **0.17.1**），**不在 PATH** ⇒ 需 wrapper；② **provider 根因＝查找路径错位，非文件缺失**——`zcode-builtin.json` 实存于 `resources/config/provider/`（约 260KB / 35 templateId），而 CLI 查的是 `resources\glm\provider\` 与 `D:/config/provider/`（两者不存在）⇒ 修复＝部署一份到 `D:/config/provider/`；③ **`ZcodeAdapter` 契约错位**——`agents/adapter.py` 的 `spawn_argv` 按 `zcode run --task --output --events ndjson` 调用，**真实 zcode 0.17.1 无 `run` 子命令、无 `--task`/`--events`**，真实形态为 `zcode -p/--mode/--json/--cwd` 或 `zcode app-server`（stdio ZCode Protocol）⇒ **适配器 CLI 调用段必须重写**；④ **`--resume` 为布尔开关**（`[["--resume"],0]`，无 sessionId 取值）⇒ **「会话续接」能力未验证**（借鉴总览 §6.6 采集项口径：未核实则以降级路径为默认；B#2 repair 增强档维持降级）；⑤ `--json` 事件流格式**未实测**（实跑被 429 截断）。
 - **执行通道关键实测（登记为开工前置）**：服务端跑在 Linux 容器内，**subprocess 够不到任何宿主侧编码 CLI**——`server/src/fde_api/bridge/__init__.py:3-8` 明示「openfde CLI 是宿主侧 Windows Node 工具（better-sqlite3 按 Win 编译 + pnpm/tsx），Linux 容器 subprocess 不到它——采集在宿主侧」；zcode 同为 Windows 宿主侧 Electron 工具 ⇒ **「工作台 Flask 侧直接 spawn zcode」不成立**，编码执行必须落在宿主侧进程空间。
@@ -670,6 +670,13 @@
   - **闸①会话续接核查 ✅**——0.17.1 实测 `--resume <sessionId>` 为**取值开关**（本条登记原文「布尔开关」记载过时，勘误入档）+ `-c/--continue` 在；真机双跑验证同 sessionId 上下文携带（`--json` 汇总 payload 648B 样本存本地 tz1-probe，永不进仓）。**闸①商用条款核验 ⚠️**——zcode 本体无独立 LICENSE 授予文件（仅 Electron/Chromium 第三方许可+NOTICES 组件清单）；商用集成前须向供应商书面确认，如实挂账不代决。
   - **闸②实测证据**——容器内直跑四重阻断（node 20 缺 `node:sqlite`〔node:24-alpine 实测可跑=JS 层唯一硬阻断〕/ provider 配置缺 / 登录态缺 / `network_mode: none` 零 egress）；`--json` 实测为**单对象汇总**（非 ndjson 事件流；粒度事件流在 app-server stdio 协议）——适配器契约含义一并勘误。**裁定提案**：A=宿主侧 zcode 代理（推荐，零 sandbox 基座变更，沿 bridge-poll 宿主纪律）/ B=openfde 加 executor（须补 B#35 登记）/ C=容器内直连（不建议）；**无论 A/B 均须先办 AGENTS「bridge 只读」红线修订 + 商用条款确认两件拍板**，办结前编码执行通道维持 `adapter_missing` 降级（闸③原样生效）。
   - **适配器契约勘误（登记原文③④⑤三处）**：无 `run` 子命令（`-p` 单发）；`--resume` 取值；`--json` 单对象汇总。适配器 CLI 段重写随通道拍板后的实施轮执行（本实测轮零代码）。
+- **拍板落地（2026-11-07 20:08，用户「D1–D3 按你推荐的拍板」；留痕 `docs/audit/D1-D3拍板留痕与实施轮交付-2026-11-07.md`）**：
+  - **D1＝A 宿主侧 zcode 代理**（B 降为可选演进、C 否决）；**D2** AGENTS.md「bridge 只读」红线已显式扩写宿主侧写通道授权＋五条边界；**D3** 商用条款按「供应商书面确认后方可商用集成」拍板——**决策已定，外部书面回执仍缺**，回执到位前生产启用闸不解除。
+  - **登记原文「修改文件」行口径校正**：`docker/sandbox/Dockerfile` **不再承载** zcode CLI／provider 镜像钉定（A 通道下 zcode 不进容器）；钉定对象改为宿主侧代理进程，`docs/试点前联调-iptables与zcodeCLI-检查单.md` 二表同步改写。
+  - **本轮可独立验证的技术资产（零生产链路改动）**：NEW `agents/zcode_contract.py`（真实 CLI argv 生成 + `--json` 单对象汇总解析 + 汇总→监听段事件映射，纯函数零副作用）＋ NEW `server/tests/fixtures/zcode_json_summary.json`（脱敏夹具）＋ NEW `test_zcode_contract.py` 契约用例；供宿主代理与适配器实施轮共用同一形状，避免两边各写一套。
+  - **`spawn_argv` 未机械改写的理由（防假象）**：A 通道下服务端容器的 `sandbox.exec → zcode` 整段执行位置不成立，只把 argv 从 `run --task --events ndjson` 换成 `-p --json --cwd` 会制造「契约修好了但仍跑不通」的假象；`adapter.py:93` 已加定向警示注释指向新契约模块，**spawn 段整体重划随 P2′ 架构决策执行**。
+  - **P2′ 咬合方式 ✅ DECIDED（2026-11-07 20:38 用户「确认」按推荐）＝① 宿主轮询领取**：宿主→服务端**单向**（容器不反向连宿主）；领取／回执两条写路由**幂等且复用既有鉴权**，状态机纳入 `queued`／`host_running`；超时失联**只标记不自动重试**（H4）；凭据只在宿主内存管道、零落盘，客户真实资料零外发；`zcode_contract.py` 为**唯一 argv／汇总形状来源**。② 常驻长连接否决、③ 人工中转仅作①上线前降级验证。**形态层开工闸已解除，接线实装仍待实施轮**；`adapter_missing` 维持到「① 实装 + D3 书面回执 + N2 联调签核」三者齐备。〔20:08 原文「新识别待拍板、不预设形态」保留作决策沿革〕决策卡见台账 §11.3／本轮报告 §4。
+  - **降级声明不变**：接线未实施 + D3 回执未到位期间，`kind` 维持 `adapter_missing`，**不阻塞第一阶段主线**（登记闸③原样生效）。
 
 ### 售前主线的度量口径（登记即声明，防「看起来达标」）
 
@@ -764,7 +771,7 @@ B#15 Lens 正交叠加（触发=多行业模板成本失控实测）｜B#16 交�
    ② **T-A2 词典形态**——✅ **DECIDED（2026-11-06 拍板）：仓库内种子文件**——词典存 `server/seeds/`（CI 扫库与入库替换**读同一个文件**，「词典一致性断言」天然成立），企业名词典变动频率极低（新客户才加一词）撑不起 DB 表成本，零迁移零 DB 依赖，变更走 git 审计；
    ③ **T-A7 谈判稿实体**——✅ **DECIDED（2026-11-06 拍板）：复用既有 solution 版本行**（登记默认获确认）——谈判稿=未冻结版本，最终 SOW 只认 frozen，桌面把未冻结版本标注为「谈判稿」即可；**零新表零迁移**，独立谈判稿表=对「方案版本快照不可变」既有设计的重复建模；
    ④ **T-B1 封包前置**——✅ **确认（按登记口径）**——D11 立项拍板 + 首批真实数据到位前**只做 artifacts 扩列，封包部分不开工**；
-   ⑤ **T-Z1 执行通道形态**——✅ **DECIDED（2026-11-07 拍板）：A 宿主侧 zcode 代理**——T-Z1 真机实测（#191）否决容器内直连（四重阻断全在沙箱红线面）；与 bridge-poll 宿主纪律同构；B（openfde 加 executor）作为 A 落地后扩展评估；落地属实施轮，开口前须 zcode 商用条款书面授予。裁定依据=`docs/audit/T-Z1-zcode真机实测与通道裁定提案-2026-11-07.md` §2；
+   ⑤ **T-Z1 执行通道形态**——✅ **DECIDED（2026-11-07 20:08 用户拍板「D1 按推荐」＝A 宿主侧 zcode 代理）**——开工前半天实测已由 #191 完成：容器内直连四重阻断（全在沙箱红线面）⇒ C 否决；裁定 A（与 `bridge-poll.mjs` 宿主纪律同构），B（openfde 加 executor）降为 A 落地后的可选演进，**不预设复用 openfde** 的登记口径原样满足；落地属实施轮，开口前须 zcode 商用条款书面授予。D2 红线修订与 D3 商用条款确认两前置同轮办结（D3 决策已定、**外部书面回执仍缺** ⇒ 生产启用闸不解除、`adapter_missing` 维持）。裁定依据=`docs/audit/T-Z1-zcode真机实测与通道裁定提案-2026-11-07.md` §2；
    ⑥ **T-A8 与 B#9 合批口径**——✅ **DECIDED（2026-11-06 拍板）：同 PR 批次交付、界面分离**——两者服务端改动都只是只读路由，合批省一轮 PR；界面分离因数据源与用途不重叠（T-A8=智能体运行态 agents runs + meetings；B#9=证据/审计事实链 `project_evidence`+`operation_events`+`ai_call_audits`），强行聚合徒增认知负担；
    ⑦ **§度量口径与 G9 关系**——✅ **DECIDED（2026-11-07 拍板，原「确认按登记口径」升格）**——并存（§8 过程指标不设阈值 + G9 结果验收线，不得互代）；**「工程师小时数/交付毛利率」接受 simulation 口径**；**埋点显式未立项**（待 T-B1 后评估）；商业主张验证以《商业验证决策单》线下台账为准；
    ⑧ **真实客户验收时点**——✅ **DECIDED（2026-11-07 拍板，原「确认按登记口径」升格）**——**2027-02-05 强制复评，以首个真实项目立项为先到者**；90 天止损线（无真实项目进链路，或人工工时占比 >70% 且无下降趋势）与线下台账 owner=蔡工，见 `docs/audit/商业验证决策单-2026-11-07.md`；
