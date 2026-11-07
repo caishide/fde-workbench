@@ -10,11 +10,15 @@
  * 因此无需任何新端点即可反查「该方案最新冻结进 SOW 的版本号」。
  */
 
-/** 项目文档列表摘要中与本功能相关的最小字段。 */
+/** 项目文档列表摘要中与本功能相关的最小字段（scope 形态对齐 DocumentSummaryDto.opportunity_scope）。 */
 export interface DocumentScopeRef {
   document_type: string
   status: string
-  opportunity_scope?: { solution?: { id?: string; version?: number } | null } | null
+  opportunity_scope?: {
+    solution?: { id?: string; version?: number } | null
+    opportunities?: Array<{ source_opportunity_id: string; opportunity_name: string; opportunity_tracking_code: string; version: number }>
+    instructions?: string
+  } | null
 }
 
 /**
