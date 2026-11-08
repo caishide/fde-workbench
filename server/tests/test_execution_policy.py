@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from hashlib import sha256
 from pathlib import Path
 
@@ -89,13 +90,13 @@ def test_normalize_workspace_denied_markers(tmp_path: Path) -> None:
 
 def test_command_allowed_and_rejections() -> None:
     assert_command_allowed(["C:/bin/zcode.exe", "-p", "hi"], allowed_bin="C:/bin/zcode.exe")
-    assert_command_allowed(["ZCODE.EXE", "--json"], allowed_bin="zcode.exe"), "大小写不敏感"
+    assert_command_allowed(["ZCODE.EXE", "--json"], allowed_bin="zcode.exe")  # 大小写不敏感
     with pytest.raises(ExecutionPolicyError):
         assert_command_allowed([], allowed_bin="zcode.exe")
     with pytest.raises(ExecutionPolicyError):
         assert_command_allowed(["evil.exe", "-p"], allowed_bin="zcode.exe")
     with pytest.raises(ExecutionPolicyError):
-        assert_command_allowed([42], allowed_bin="zcode.exe")
+        assert_command_allowed(cast("list[str]", [42]), allowed_bin="zcode.exe")  # type: ignore[list-item]
     with pytest.raises(ExecutionPolicyError):
         assert_command_allowed(["zcode.exe"] * 65, allowed_bin="zcode.exe")
 
@@ -131,17 +132,27 @@ def test_policy_snapshot_deterministic_and_order_insensitive() -> None:
 # 授权票据（前置 3，5.3）
 
 
-def _issue(**overrides):
-    kwargs = dict(
-        user_id="u-1",
-        project_id="p-1",
-        run_id="r-1",
-        workspace="D:/ws/r-1",
-        actions=("workspace.read", "command.run"),
-        issued_at=_NOW,
+def _issue(
+    *,
+    user_id: str = "u-1",
+    project_id: str = "p-1",
+    run_id: str = "r-1",
+    workspace: str = "D:/ws/r-1",
+    actions: tuple[str, ...] = ("workspace.read", "command.run"),
+    issued_at: datetime = _NOW,
+    ttl_seconds: int = GRANT_TTL_SECONDS,
+    secret: bytes = _SECRET,
+):
+    return issue_execution_grant(
+        secret,
+        user_id=user_id,
+        project_id=project_id,
+        run_id=run_id,
+        workspace=workspace,
+        actions=actions,
+        issued_at=issued_at,
+        ttl_seconds=ttl_seconds,
     )
-    kwargs.update(overrides)
-    return issue_execution_grant(_SECRET, **kwargs)
 
 
 def test_grant_issue_and_verify_happy_path() -> None:
@@ -182,7 +193,7 @@ def test_grant_rejections() -> None:
 
 def test_grant_issue_gates() -> None:
     with pytest.raises(ExecutionGrantError):
-        issue_execution_grant(b"short", user_id="u", project_id="p", run_id="r", workspace="w", actions=("workspace.read",), issued_at=_NOW)
+        _issue(user_id="u", project_id="p", run_id="r", workspace="w", actions=("workspace.read",), secret=b"short")
     with pytest.raises(ExecutionGrantError):
         _issue(actions=("not.registered",))
     with pytest.raises(ExecutionGrantError):
