@@ -73,6 +73,13 @@ jobs:
         working-directory: server
         run: .venv/bin/python -m ruff check --select F401,F841 src tests
 
+      - name: archify diagram freshness (图纸口径防陈旧闸)
+        # 图纸里的「N 蓝图 / N 路由 / N 表 / N 迁移」必须与机器可读结构口径
+        # docs/audit/v3-workbench-inventory.json 逐项一致——否则结构变了图没变，
+        # 而没有任何机器能发现（架构评估 P2-7）。stdlib only，无需额外依赖。
+        working-directory: server
+        run: .venv/bin/python ../scripts/audit/check_archify_diagram_freshness.py
+
       - name: mypy (baseline + no new errors)
         run: python scripts/check-python-types.py
 
