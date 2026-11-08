@@ -161,6 +161,9 @@ def _project_id_for_target(session: Session, target: EventTarget) -> str | None:
     if isinstance(target, OntologyChangeSet):
         # 变更集永远属于某个项目（V3 T-O3 项目内治理）
         return target.project_id
+    if isinstance(target, TestPlan):
+        # 测试计划永远属于某个项目（V3.1 P1-2 质量域）
+        return target.project_id
     if isinstance(target, DispatchOffer):
         # offer 只挂 package_id；project_id 经交付包反查（一次主键点查）
         return session.scalar(
