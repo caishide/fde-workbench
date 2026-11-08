@@ -73,7 +73,7 @@ P1-1 合并并部署后（部署义务：三镜像 rebuild + `alembic upgrade he
 ## P1-3（completed，本 PR）
 
 - **交付**（00-gap-register 7.1/7.3 落地；7.4/7.5 维持暂缓；7.2 零代码=事件名等价映射注记）：metrics 报表 +`v31` 节七指标（workflow 完成率/审批时延/hops 分布 + 需求批准率/本体候选采纳率/方案转任务率/测试首过率），全部进既有报表走 `_metric` insufficient_data 语义。**实施注记**：跨域测试序列曾观察到分解路径 FOR UPDATE 挂起（idle-in-transaction 持 xid，terminate 后前进）——测试改直插链接行绕开（根因不在生产代码，留观察）。
-- **口径**：路由 384/蓝图 47/表 128/50 rev 单头 `e7c4a9d2f6b8` 全不变（纯指标轮零结构零迁移）；pytest +3；mypy 279 不变；vitest 951 不变；CSV 零变化。
+- **口径**：本指标轮零结构零迁移；**rebase 融合 #217（G1）后=路由 391/蓝图 49/表 130/51 rev 单头 `e9c4a1f7b3d2`**；pytest +3（本地 2354=2348+6s EXIT=0；融合树 metrics+commercial+migrations 52 例绿）；mypy 279 不变；vitest 951 不变；CSV 392/131 行。
 
 ## 是否允许进入下一阶段（P1-3 后）
 
