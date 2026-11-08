@@ -78,7 +78,14 @@ jobs:
 
       - name: pytest (isolated PostgreSQL test database)
         working-directory: server
-        run: PYTHONPATH=src .venv/bin/python -m pytest -q
+        # 并行跑测（架构评估 P1-3）：`-n 4 --dist loadfile` 把 2348 例的墙钟
+        # 从 1 小时量级压到分钟量级。**每个 worker 一个独立测试库**
+        # （conftest 按 PYTEST_XDIST_WORKER 派生 fde_workbench_w{N}_test；
+        # CI 的 postgres:16 里 POSTGRES_USER=fde 是超级用户，天然有建库权限）——
+        # 否则并发 worker 的每用例 DELETE-all 清库与会话级 advisory lock 会
+        # 互相踩踏（那是「慢」与「不可信的绿」的区别）。
+        # --dist loadfile：同一文件内的用例留在同一 worker，保住文件内顺序语义。
+        run: PYTHONPATH=src .venv/bin/python -m pytest -q -n 4 --dist loadfile
 
   pseudonymization:
     # B7：代号化验收。扫 CI 自己的 service 库（合成数据），黑名单来自
