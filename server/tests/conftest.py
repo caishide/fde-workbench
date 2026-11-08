@@ -195,7 +195,8 @@ def _resolve_worker_database_url(base_url: str) -> str:
 
 def _worker_schema_from_url(database_url: str) -> str | None:
     """从 URL 里读回 worker schema（B 路径）；A 路径或单进程返回 None。"""
-    options = make_url(database_url).query.get("options", "")
+    raw_options = make_url(database_url).query.get("options", "")
+    options = raw_options if isinstance(raw_options, str) else ""
     match = re.search(r"search_path=([A-Za-z0-9_]+)", options)
     return match.group(1) if match else None
 
