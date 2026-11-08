@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 桌面侧栏账号区两行式压紧（纯桌面，2026-11-09）
+
+- **反馈**：侧栏滚动修复（#227）落地后，蔡工指出底部账号区四行（系统管理员 / 管理员 / v0.3.0 / 退出登录）占高过大、不协调。
+- **改造**：四行 → **两行**，信息一条不减。上行 `.account-identity` ＝ 显示名 + 角色（`align-items: baseline` 同基线；名字可收缩省略、角色恒不缩）；下行 `.account-foot` ＝ 版本 | 退出登录（`justify-content: space-between` 分居两端）。CSS 类名 `.account-foot` 取全仓唯一名——`AccountPage` 的 `.account-meta` 是另一套全局网格规则，刻意不共用，防隐式耦合。
+- **压紧**：页脚行距 5px→2px、上内边距 16px→10px、退出按钮 `min-height` 26px→22px。浏览器实测页脚总高 **60.4px**（四行式约 100px）。
+- **折叠态**：账号区**整体**让位（`.app-shell.sidebar-collapsed .sidebar-account { display: none; }`）——此前逐元素隐藏会留下一条孤儿细线；折叠态下退出走账号页。
+- **测试钉**：`design-tokens.test.ts` 新增「侧栏账号区两行式契约」**5 例**（上行同基线 flex + 名字可省略 / 下行两端对齐 / 折叠态整体让位 / C3 版本号小字不回退 11px / 页脚压紧三项：行距 2px、上内边距 10px、退出按钮 22px）。
+- **真浏览器验证**（gui-harness + Playwright）：既有两链回归 **11/11** 全过（指引链 5 + 集成桥 4 + 控制台无应用级错误）；`desktop/gui-harness/sidebar-probe.mjs` 侧栏探针由 5 扩到 **10/10**（新增：两行结构上下相邻无重叠 / 页脚总高 ≤64px / 四条信息都真有文本 / 版本与退出同处一行且版本在左 / 折叠态账号区整体隐藏）+ 截图目检（短视口 / 高视口 / 折叠态 / 侧栏特写）。
+- **顺带修 harness 保真度**：gui-harness 的 shim 此前把服务端 snake_case `user` 原样回传，缺桌面端 `main/auth-ipc.ts:377` 的 `display_name → displayName` 转换 ⇒ 浏览器里账号名恒空（桌面本体不受影响，是 harness 与桌面不同尺）。本轮补齐该转换（harness 为 dev-only，`apply: "serve"`，零生产影响），探针因此得以断言「四条信息都真有文本」而非「元素存在」。
+- **口径**：vitest **965**（82 文件，+5 = 两行式契约钉）；typecheck web+node 双绿；零服务端改动 ⇒ 路由 / 蓝图 / 表 / 迁移 / pytest / mypy 口径零变化。桌面变更 ⇒ **便携版 r24**（`release/蔡工FDE-0.3.0-便携版-r24/`，asar sha256 `657e37e914c280955ec322ee8a23a8ceae1c2b3846ce84721ed98dedd20b3fa3`；本轮独有 marker＝`account-identity` 字节命中 **2**、`account-foot` 命中 **4**、`min-height: 22px` 命中 **1**、`padding: 10px var(--space-3) 0` 命中 **1**，中文 sanity marker「退出登录」命中 **7**）。
+
 ## [未发布] — 桌面侧栏滚动修复与质感打磨（纯桌面 CSS，2026-11-09）
 
 - **事故**：`.sidebar` 是 100vh + `overflow:hidden` 的 flex 列，nav 不可滚——admin 可见 17 个导航项时，底部账号区（账号名/角色/退出登录）被静默裁掉（2026-11-09 蔡工报告「最下面的信息已经看不到了」）。
