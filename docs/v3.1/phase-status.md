@@ -44,6 +44,7 @@
 - **交付**（00-gap-register 4.4~4.10 全落地）：①种子通道——NEW `seeds/workflow-templates.json` 三套首批模板（任务书 §8：需求发现/方案实施/自动化交付，全部用既有四类节点表达）+ NEW `workflows/templates.py`（fail-fast 装载+`seed_workflow_templates` 幂等落库〔沿 seed_public_skills 先例：active admin actor、落库即 publish 锁版；幂等锚=平台定义 name，已存在绝不覆盖〕+`list_published_templates` 只读投影）+ CLI `seed-workflow-templates`（部署顺序：先 seed-public-skills）；②节点契约扩展——`validate_dag` 白名单 +5 草稿期字段（`timeout_seconds` 1..86400/`input_schema`/`output_schema`/`failure_class` 三值闭集/`plan_ref`），执行器消费随 P1 执行通道轮（补偿动作需设计轮拍板，不建字段）；③draft-from-plan——`compile_plan_workflow` 纯函数（只收 approved/published；三节点形 plan_review→implement〔skill 注入制+契约字段首发〕→acceptance_review；标题剔除 `{{}}` 防占位符误判）+ `POST /api/v1/projects/{id}/workflows/draft-from-plan`（落库走既有 create_definition 通道，不建平行入口）；④validate 干跑——`POST /api/v1/projects/{id}/workflows/{def_id}/validate`（can_view 零副作用，errors/warnings/order 明细）；⑤模板只读面——`GET /api/v1/workflow-templates`（已认证可见 published 平台模板，dag 全文携带）。**D-2 拍板执行**：发布权限维持 admin-only（零代码，publish 路由不动；留痕可推翻）。
 - **口径**：路由 374→**377**（+3，全不进 api_catalog）；蓝图 46 不变（新路由挂既有 workflows_blueprint，BLUEPRINTS 无需同步）；**零迁移**（48 rev 单头不变）；表 125 不变；pytest 2321→**2331**（+10 NEW `test_workflow_templates.py`：种子对账/fail-fast/字段校验/纯函数确定性/路由全闸/干跑/模板只读面）；mypy 279 不变；vitest 951 不变（零桌面）。
 - **测试纪律**：三变异验证全红→还原→绿（幂等跳过摘除/`failure_class` 校验摘除/plan 状态闸摘除）；种子↔DB 对账钉（行名+dag 逐字节一致）。
+- **顺带修复（#209 CI 实红）**：P0-2 候选组序非确定性（单事务 created_at 全同+uuid4 id 无序）→分组迭代改 subject 字典序；测试期望同步。
 - **Gate 纪律（4.11）**：现状维持——workflow 产物只能经 `output_json.gate_evidence` 挂候选，采纳唯一入口=真人提交闸；模板③证据段文案如实表述该边界。
 
 ## 是否允许进入下一阶段
