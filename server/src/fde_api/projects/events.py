@@ -36,6 +36,7 @@ from fde_api.ontology.models import (  # V3 T-O1/T-O2/T-O3（只引 models，无
     OntologyRelationType,
     OntologyTerm,
 )
+from fde_api.quality.models import TestPlan  # V3.1 P1-2（只引 models，无环）
 from fde_api.workflows.models import WorkflowDefinition, WorkflowRun  # V3 T-W1/T-W2（只引 models，无环）
 
 
@@ -69,6 +70,8 @@ EventTarget: TypeAlias = (
     | OntologyRelationType
     # V3 T-O3：变更集确认留痕（逐项物化结果，项目内）
     | OntologyChangeSet
+    # V3.1 P1-2：测试计划留痕（生成/审阅/执行登记，quality 模块）
+    | TestPlan
 )
 
 _TARGET_TYPES = {
@@ -94,6 +97,7 @@ _TARGET_TYPES = {
     OntologyTerm: "ontology_term",  # V3 T-O1
     OntologyRelationType: "ontology_relation_type",  # V3 T-O2
     OntologyChangeSet: "ontology_change_set",  # V3 T-O3
+    TestPlan: "test_plan",  # V3.1 P1-2（quality 测试计划）
 }
 _SENSITIVE_KEY = re.compile(
     r"password|passwd|pwd|token|secret|credential|privatekey|apikey|"
