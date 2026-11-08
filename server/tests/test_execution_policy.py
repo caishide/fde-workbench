@@ -112,18 +112,26 @@ def test_clamp_timeout() -> None:
 
 
 def test_policy_snapshot_deterministic_and_order_insensitive() -> None:
-    base = dict(
-        provider="host_channel",
-        workspace_ref="D:/ws/run-1",
-        allowed_tools=("tool.b", "tool.a"),
-        timeout_ms=60000,
-        max_cost_units=100,
+    # 显式关键字实参（不用 **dict 展开——Linux mypy 对 dict[str, object] 展开
+    # 判 arg-type，Windows 不报：平台差异实锤，本文件即首例）
+    first = policy_snapshot(
+        provider="host_channel", workspace_ref="D:/ws/run-1",
+        allowed_tools=("tool.b", "tool.a"), timeout_ms=60000, max_cost_units=100,
     )
-    first = policy_snapshot(**base)
-    second = policy_snapshot(**{**base, "allowed_tools": ("tool.a", "tool.b")})
+    second = policy_snapshot(
+        provider="host_channel", workspace_ref="D:/ws/run-1",
+        allowed_tools=("tool.a", "tool.b"), timeout_ms=60000, max_cost_units=100,
+    )
     assert first == second, "工具集合顺序无关"
-    assert first == policy_snapshot(**base), "同输入恒同 hash"
-    other = policy_snapshot(**{**base, "timeout_ms": 61000})
+    again = policy_snapshot(
+        provider="host_channel", workspace_ref="D:/ws/run-1",
+        allowed_tools=("tool.b", "tool.a"), timeout_ms=60000, max_cost_units=100,
+    )
+    assert first == again, "同输入恒同 hash"
+    other = policy_snapshot(
+        provider="host_channel", workspace_ref="D:/ws/run-1",
+        allowed_tools=("tool.b", "tool.a"), timeout_ms=61000, max_cost_units=100,
+    )
     assert first != other
     assert len(first) == 64
 
@@ -231,5 +239,6 @@ def test_config_default_literal_false() -> None:
     found: list[object] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "agent_host_channel_enabled":
-            found.append(ast.literal_eval(node.value))
+            if node.value is not None:  # AnnAssign.value 可空（Linux mypy strict）
+                found.append(ast.literal_eval(node.value))
     assert found == [False], f"默认值必须字面 False，实测 {found}"
