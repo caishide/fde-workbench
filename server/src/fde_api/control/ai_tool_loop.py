@@ -191,9 +191,9 @@ def direct_tool_completion(
     ran so the caller can show the user what actually looked up — the
     direct path has no DSH execution timeline to borrow.
 
-    V31-P1：推理模型输出预算 ×2 预留（与 ``direct_provider_completion`` 同款）——
-    工具循环里 reasoning_content 与 content/tool_calls 共享 max_tokens，多轮
-    循环下不预留更易挤掉正文。
+    V31-P1：输出预算**不加码**（与 ``direct_provider_completion`` 同款）——
+    实测推理模型的思考长度随授予预算增长，加码只会更慢更易触顶（见
+    ``ai_server_client`` 文件头注释）。
     """
     from fde_api.control.ai_server_client import effective_max_tokens, _reasoning_extra_pattern
     from fde_api.control.dsh_runtime import DSHRuntimeError

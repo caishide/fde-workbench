@@ -1,18 +1,23 @@
-"""V31-P1：推理模型直连腿输出预算预留与诚实截断报错。
+"""V31-P1：推理模型直连腿输出预算与诚实截断报错（实测定案版）。
 
-背景（somwyn 试点 Step 2 实录）：MiniMax-M3.1-Flash 的 reasoning_content 与
-content **共享** max_tokens——16,384 预算被 reasoning 吃掉 15,223，抽取结果
-JSON 截断（finish_reason=length）→ 笼统 ``ai_output_invalid`` 两连败且重试
-同输必败。修复＝①推理模型预算 ×2 预留（两条直连腿）＋②截断诚实报错
-``ai_output_truncated``（含处置指引、不可重试）＋③usage 携带截断证据。
+背景（somwyn 试点 Step 2 实录 + 2026-11-09 实弹定案）：MiniMax-M3.1-Flash 的
+``reasoning_content`` 与 ``content`` **共享** max_tokens，且供应商 completion
+**硬顶 16,384 tokens**。全文 10K 字符纪要一次成抽时，模型把 16,383/16,384
+tokens 全花在思考上、正文零产出（``finish_reason=length``）。
+
+修复＝①**不给推理模型加预算**（实弹证伪「×2 预留」：32,768 预算下思考同步
+变长，同一篇纪要 >900s 未返回——加预算只会更慢更易触顶）；②截断诚实报错
+``ai_output_truncated``（含处置指引、不可重试）；③截断证据写进 usage
+（``truncated`` 标记 / ``finish_reason``）；④截断判定不依赖供应商措辞——
+输出 token 触达请求预算即视为截断（模型自然收尾时必小于预算）。
 """
 from __future__ import annotations
 
 import pytest
 
 from fde_api.control.ai_server_client import (
-    effective_max_tokens,
     direct_provider_completion,
+    effective_max_tokens,
     is_reasoning_model,
 )
 from fde_api.control.dsh_runtime import DSHRuntimeError
@@ -50,7 +55,7 @@ def provider_model(**overrides):
     return model
 
 
-# --- is_reasoning_model / effective_max_tokens -----------------------------
+# --- is_reasoning_model ------------------------------------------------------
 
 
 @pytest.mark.parametrize("model_name,expected", [
@@ -63,7 +68,7 @@ def provider_model(**overrides):
     ("o4-mini", True),
     ("gpt-o1", True),
     ("vendor-abc-thinking", True),
-    ("deepseek-v4", False),            # 非推理：预算不得放大
+    ("deepseek-v4", False),
     ("deepseek-chat", False),
     ("kimi-k3", False),
     ("gpt-4o", False),                 # 词中 o 无边界，不命中
@@ -83,26 +88,26 @@ def test_reasoning_model_detection_extra_pattern_and_bad_regex() -> None:
     assert is_reasoning_model("MiniMax-M3.1-Flash", extra_pattern="(") is True
 
 
-@pytest.mark.parametrize("model_name,requested,expected", [
-    ("MiniMax-M3.1-Flash", 16384, 32768),
-    ("deepseek-reasoner", 1024, 2048),
-    ("deepseek-v4", 16384, 16384),
-    ("deepseek-v4", 0, 0),             # 0=不限制请求方原样透传
+# --- effective_max_tokens：推理模型**不加码** --------------------------------
+
+
+@pytest.mark.parametrize("model_name,requested", [
+    ("MiniMax-M3.1-Flash", 16384),
+    ("deepseek-reasoner", 1024),
+    ("deepseek-v4", 16384),
+    ("deepseek-v4", 0),
 ])
-def test_effective_max_tokens_reservation(model_name: str, requested: int, expected: int) -> None:
-    assert effective_max_tokens(model_name, requested) == expected
+def test_effective_max_tokens_never_inflates(model_name: str, requested: int) -> None:
+    """实测证伪「×2 预留」：思考长度随授予预算增长，加码只更慢更易触顶。"""
+    assert effective_max_tokens(model_name, requested) == requested
 
 
-# --- direct_provider_completion：预算预留 -----------------------------------
-
-
-def test_direct_completion_reserves_budget_for_reasoning_model() -> None:
+def test_direct_completion_keeps_budget_for_reasoning_model() -> None:
     session = FakeSession(FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]}))
 
     direct_provider_completion(model=provider_model(), prompt="抽取", max_tokens=16384, session=session)
 
-    body = session.calls[0][1]["json"]
-    assert body["max_tokens"] == 32768  # ×2：多出的整份供 reasoning 消耗
+    assert session.calls[0][1]["json"]["max_tokens"] == 16384
 
 
 def test_direct_completion_keeps_budget_for_non_reasoning_model() -> None:
@@ -117,8 +122,9 @@ def test_direct_completion_keeps_budget_for_non_reasoning_model() -> None:
 # --- direct_provider_completion：诚实截断 -----------------------------------
 
 
-def truncated_payload(content, finish_reason="length", reasoning_tokens=15223):
-    usage = {"prompt_tokens": 3000, "completion_tokens": 16384}
+def truncated_payload(content, finish_reason="length", reasoning_tokens=16383,
+                      completion_tokens=16384):
+    usage = {"prompt_tokens": 5635, "completion_tokens": completion_tokens}
     if reasoning_tokens is not None:
         usage["completion_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
     choice = {"finish_reason": finish_reason}
@@ -137,18 +143,31 @@ def test_direct_completion_empty_content_length_raises_truncated() -> None:
 
     assert caught.value.code == "ai_output_truncated"
     assert caught.value.retryable is False  # 同输入重放同败：不给无意义的自动重试
-    assert "15223" in caught.value.public_message
-    assert "人工整理" in caught.value.public_message
+    assert "16383" in caught.value.public_message
+    assert "分段" in caught.value.public_message
 
 
 def test_direct_completion_empty_content_stop_stays_invalid() -> None:
-    session = FakeSession(FakeResponse(200, truncated_payload(content="", finish_reason="stop")))
+    """未触顶、正文空 → 仍是「未返回有效结果」，不是截断（不误诊）。"""
+    session = FakeSession(FakeResponse(200, truncated_payload(
+        content="", finish_reason="stop", reasoning_tokens=None, completion_tokens=12)))
 
     with pytest.raises(DSHRuntimeError) as caught:
         direct_provider_completion(model=provider_model(), prompt="抽取", session=session)
 
     assert caught.value.code == "ai_output_invalid"
     assert caught.value.retryable is True
+
+
+def test_direct_completion_budget_exhaustion_flags_truncation_without_finish_reason() -> None:
+    """供应商不说 length、但输出 token 触达请求预算 → 同样判定截断。"""
+    session = FakeSession(FakeResponse(200, truncated_payload(
+        content=None, finish_reason="stop", reasoning_tokens=None, completion_tokens=16384)))
+
+    with pytest.raises(DSHRuntimeError) as caught:
+        direct_provider_completion(model=provider_model(), prompt="抽取", max_tokens=16384, session=session)
+
+    assert caught.value.code == "ai_output_truncated"
 
 
 def test_direct_completion_truncated_nonempty_content_annotates_usage() -> None:
@@ -160,27 +179,42 @@ def test_direct_completion_truncated_nonempty_content_annotates_usage() -> None:
 
     assert text == '{"facts": [{"sub'
     call = usage["calls"][0]
+    assert call["truncated"] is True
     assert call["finish_reason"] == "length"
-    assert call["reasoning_tokens"] == 15223
+    assert call["reasoning_tokens"] == 16383
     # 记账汇总不受附加键影响
-    assert call["input_tokens"] == 3000 and call["output_tokens"] == 16384
+    assert call["input_tokens"] == 5635 and call["output_tokens"] == 16384
 
 
 def test_direct_completion_truncated_without_reasoning_detail_still_flags() -> None:
-    # 供应商不报 reasoning 明细：finish_reason 证据仍在，reasoning_tokens 不发明
+    # 供应商不报 reasoning 明细：截断证据仍在，reasoning_tokens 不发明
     session = FakeSession(FakeResponse(200, truncated_payload(content=None, reasoning_tokens=None)))
 
     with pytest.raises(DSHRuntimeError) as caught:
         direct_provider_completion(model=provider_model(), prompt="抽取", session=session)
 
     assert caught.value.code == "ai_output_truncated"
-    assert "15223" not in caught.value.public_message
+    assert "16383" not in caught.value.public_message
+
+
+def test_direct_completion_budget_not_exhausted_keeps_usage_clean() -> None:
+    """未触顶的正常回答不带截断标记（不误伤常规路径）。"""
+    session = FakeSession(FakeResponse(200, {
+        "choices": [{"finish_reason": "stop", "message": {"content": '{"facts": []}'}}],
+        "usage": {"prompt_tokens": 1422, "completion_tokens": 15834},
+    }))
+
+    text, usage = direct_provider_completion(model=provider_model(), prompt="抽取", session=session)
+
+    assert text == '{"facts": []}'
+    assert "truncated" not in usage["calls"][0]
 
 
 # --- 部署扩展正则接线（app 上下文） -----------------------------------------
 
 
-def test_settings_extra_pattern_extends_reservation(app, monkeypatch) -> None:
+def test_settings_extra_pattern_does_not_change_budget(app, monkeypatch) -> None:
+    """扩展正则只影响「是否推理模型」的诊断措辞，**不影响预算**（不加码）。"""
     monkeypatch.setattr(app.config["SETTINGS"], "ai_reasoning_model_pattern", r"think-\d+")
     session = FakeSession(FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]}))
 
@@ -188,7 +222,7 @@ def test_settings_extra_pattern_extends_reservation(app, monkeypatch) -> None:
         # custom-think-7：内置特征不命中（'-thinking' 才命中），扩展正则命中
         direct_provider_completion(
             model=provider_model(model="custom-think-7"), prompt="抽取", max_tokens=1000, session=session)
-        assert session.calls[0][1]["json"]["max_tokens"] == 2000
+        assert session.calls[0][1]["json"]["max_tokens"] == 1000
 
         session2 = FakeSession(FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]}))
         direct_provider_completion(
