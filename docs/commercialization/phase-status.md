@@ -10,7 +10,7 @@
 ## G3：订阅、培训与科目结算（T-10 / T-11 / T-13）— 当前阶段
 
 - 分支：`feat/commercial-g3-revenue-ledger`（工作树 `D:\test\fde-wt-g1`）
-- 基线 SHA：fork/main `e06ae8d`（开工时）
+- 基线 SHA：fork/main `e06ae8d`（开工时）；合并前融合上游 #231／#232／AI 原生化差距评估 v1.1（冲突仅 AGENTS.md 与 CHANGELOG.md，两边全留；融合后结构口径逐位不变）
 - 状态：**in_progress**（实现与自测完成；待 PR CI 四绿 → 合并 → main run 收口 → 部署活体绿——收口证据由本节的后续修订回写）
 
 ### 目标
@@ -61,7 +61,7 @@
 ### 测试命令与结果
 
 - `PYTHONPATH=src ./.venv/Scripts/python.exe -m pytest tests/test_commercial_revenue_ledger.py -q` → **26 passed**。
-- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **2428 收集 = 2422 passed + 6 skipped，0 failed**（EXIT=0，14m47s；G2 轮基线 2402 收集 + 本轮 +26）——**终值以本 PR CI server-tests 实测为权威**。
+- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **2454 收集 = 2448 passed + 6 skipped，0 failed**（EXIT=0，8m16s；G2 轮基线 2402 收集 + 本轮 +26 + 融合上游 #231 的 26 ＝ 2454）——**终值以本 PR CI server-tests 实测为权威**。
 - `python scripts/check-python-types.py` → **OK：baseline 279 occurrences / 104 distinct，current 279**（无新增）。
 - `ruff check`（改动文件）→ All checks passed。
 - **变异十连全转红→还原→绿**（任务书 §12.10）：M1 不重复收判定整体失效／M2 未选定方案仍扣费／M3 验收前仍扣费／M4 项目分成按比例重算（不引用分账）／M5 名目归属校验失效／M6 关联对象必填失效／M7 通过线未设也判通过／M8 书面证据指纹闸失效／M9 认证费缺省可收款／M10 陪跑期限未配置也落默认天数。
