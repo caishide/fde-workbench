@@ -10,7 +10,7 @@
 ## G4：商机归属与渠道保护（T-09）— 实施完成（闭环收口中）
 
 - 分支：`feat/commercial-g4-opportunity-attribution`（工作树 `D:\test\fde-wt-g1`）
-- 基线 SHA：fork/main `9497b2c`（开工时）；合并前 rebase 融合上游 AI 原生化 N2（迁移 `c4f7a2d9e1b6` 53→54 rev）与 #240（+10 测试）⇒ 本轮迁移改挂 `c4f7a2d9e1b6` 之后，**55 rev 单链单头 `e7b2c4d9f1a3`**
+- 基线 SHA：fork/main `9497b2c`（开工时）；合并前**两轮 rebase** 融合上游三笔——#240（AI 原生化 N2，迁移 `c4f7a2d9e1b6` 53→54 rev，+10 测试）、#239（V3.2 G9b 真机两闸轮，+4 测试）、#235（V31-P1b 大纪要分段抽取，+52 测试，零迁移零路由）⇒ 本轮迁移改挂 `c4f7a2d9e1b6` 之后，**55 rev 单链单头 `e7b2c4d9f1a3`**
 - 状态：**implemented**（本节终值——PR 编号／CI run／部署活体断言——在合并收口 PR 回填）
 
 ### 目标
@@ -60,7 +60,7 @@
 ### 测试命令与结果
 
 - `pytest tests/test_commercial_opportunity_attribution.py -q` → **23 passed**。
-- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **2487 收集 = 2481 passed + 6 skipped，0 failed**（EXIT=0；G3 轮基线 2454 收集 + AI 原生化 N2 +10 + 本轮 +23 ＝ 2487）。
+- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **2543 收集 = 2537 passed + 6 skipped，0 failed**（EXIT=0 / 8m39s；G3 轮基线 2454 收集 + AI 原生化 N2 +10 + #239 +4 + #235 +52 + 本轮 +23 ＝ 2543）。
 - **PR CI server-tests 实测 PR 在途——合并后由收口 PR 回填（终值以本 PR CI server-tests 实测为准）**（**终值以本 PR CI server-tests 实测为准**）。
 - `python scripts/check-python-types.py` → **OK：baseline 279 occurrences / 104 distinct，current 279**（实施期补一处测试断言形状〔re.search Optional 收窄〕后归零，无新增）。
 - `ruff check`（全部改动文件）→ All checks passed。
