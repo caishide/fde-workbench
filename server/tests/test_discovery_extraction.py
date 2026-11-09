@@ -288,6 +288,110 @@ def test_rerun_only_failed(db_session, d4_client, d4_settings) -> None:
     assert response.get_json()["data"]["status"] == "queued"
 
 
+def test_create_extraction_version_bump_creates_new_row(db_session, d4_client, d4_settings) -> None:
+    """幂等键含版本（V31-P1b 实弹抓到的缺陷：查找漏版本过滤 → rerun 永远
+    拿回旧代际的行）：旧版本失败行保留为历史，同源再抽生成当前版本**新行**。"""
+    from fde_api.discovery.models import EXTRACTOR_VERSION, PROMPT_VERSION
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户L")
+    minutes = _minutes(db_session, project, leader.user)
+    legacy = DiscoveryExtraction(
+        project_id=project.id,
+        created_by_user_id=leader.user.id,
+        source_type="interview_minutes",
+        source_id=minutes.id,
+        source_sha256=minutes.content_sha256,
+        status="failed",
+        failure_code="ai_output_invalid",
+        failure_message="v1 整篇成抽必截断",
+        extractor_version="discovery-extractor-v1",
+        prompt_version="discovery-prompt-v1",
+    )
+    db_session.add(legacy)
+    db_session.commit()
+
+    response = leader.post(
+        "/api/v1/projects/{}/discovery/extractions".format(project.id),
+        json={"source_type": "interview_minutes", "source_id": minutes.id},
+    )
+    assert response.status_code == 201, response.get_json()
+    data = response.get_json()["data"]
+    assert data["created"] is True
+    assert data["id"] != legacy.id
+    assert data["extractor_version"] == EXTRACTOR_VERSION == "discovery-extractor-v2"
+    assert data["prompt_version"] == PROMPT_VERSION == "discovery-prompt-v2"
+
+    # 同版本再 POST → 幂等返回当前版本行；旧 v1 行原样保留
+    again = leader.post(
+        "/api/v1/projects/{}/discovery/extractions".format(project.id),
+        json={"source_type": "interview_minutes", "source_id": minutes.id},
+    )
+    assert again.status_code == 200
+    assert again.get_json()["data"]["id"] == data["id"] and again.get_json()["data"]["created"] is False
+    db_session.expire_all()
+    assert db_session.get(DiscoveryExtraction, legacy.id).extractor_version == "discovery-extractor-v1"
+
+
+def test_rerun_failed_extraction_bumps_versions_with_conflict_guard(db_session, d4_client, d4_settings) -> None:
+    """重跑由当前代代码执行 → 行版本标签如实换代；同源已有当前版本行时 409
+    指路新行（唯一约束会撞），旧失败行保留为历史。"""
+    from fde_api.discovery.models import EXTRACTOR_VERSION, PROMPT_VERSION
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户M")
+    minutes = _minutes(db_session, project, leader.user)
+    legacy = DiscoveryExtraction(
+        project_id=project.id,
+        created_by_user_id=leader.user.id,
+        source_type="interview_minutes",
+        source_id=minutes.id,
+        source_sha256=minutes.content_sha256,
+        status="failed",
+        failure_code="ai_output_truncated",
+        failure_message="截断",
+        extractor_version="discovery-extractor-v1",
+        prompt_version="discovery-prompt-v1",
+    )
+    db_session.add(legacy)
+    db_session.commit()
+
+    response = leader.post(f"/api/v1/discovery/extractions/{legacy.id}/run")
+    assert response.status_code == 200, response.get_json()
+    db_session.expire_all()
+    row = db_session.get(DiscoveryExtraction, legacy.id)
+    assert row.status == "queued"
+    assert row.extractor_version == EXTRACTOR_VERSION and row.prompt_version == PROMPT_VERSION
+
+    # 同源已存在另一条当前版本行（如已完成的 v2）→ 重跑旧失败行 409 指路
+    other = _minutes(db_session, project, leader.user, content="另一篇")
+    stale = DiscoveryExtraction(
+        project_id=project.id,
+        created_by_user_id=leader.user.id,
+        source_type="interview_minutes",
+        source_id=other.id,
+        source_sha256=other.content_sha256,
+        status="failed",
+        failure_code="ai_output_invalid",
+        failure_message="旧失败",
+        extractor_version="discovery-extractor-v1",
+        prompt_version="discovery-prompt-v1",
+    )
+    current = DiscoveryExtraction(
+        project_id=project.id,
+        created_by_user_id=leader.user.id,
+        source_type="interview_minutes",
+        source_id=other.id,
+        source_sha256=other.content_sha256,
+        status="review_required",
+    )
+    db_session.add_all([stale, current])
+    db_session.commit()
+    response = leader.post(f"/api/v1/discovery/extractions/{stale.id}/run")
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "extraction_version_conflict"
+
+
 # ---------------------------------------------------------------------------
 # 抽取管线（handler 直调）
 
