@@ -63,7 +63,7 @@ function mockGet(url: string): unknown {
   throw new Error(`unexpected GET ${url}`)
 }
 
-type ApiCall = [string, { method?: string; body?: string } | undefined]
+type ApiCall = [string, { method?: string; body?: unknown } | undefined]
 
 function postCalls(): ApiCall[] {
   return (mocks.apiRequest.mock.calls as ApiCall[]).filter((call) => call[1]?.method === "POST")
