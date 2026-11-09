@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — V31-P1 推理模型输出预算预留与诚实截断（试点遗留缺陷修复，零迁移零路由，2026-11-09）
+
+- **起因（somwyn 试点 Step 2 实录，backlog V31-P1）**：MiniMax-M3.1-Flash 为推理模型——`reasoning_content` 与正文 **共享** `max_tokens`，10,008 字符纪要抽取时 reasoning 吃掉 15,223/16,384 预算，抽取结果 JSON 在 3,754 字符处截断（`finish_reason=length`）→ 契约解析失败报笼统 `ai_output_invalid`，契约重试**同输必败**白烧两轮推理费用；65536 预算方案又撞 900s 超时（更大预算让 reasoning 同步变长）。大纪要 × 推理模型组合此前必败，仅人工整理稿（1,387 字符）可过。
+- **修复三面**：①**预算预留**——`REASONING_MODEL_PATTERN`（内置特征：MiniMax-M 系列/DeepSeek reasoner·R1/QwQ/通用 `reasoner`·`-thinking`/OpenAI o1·o3·o4）∪ `FDE_AI_REASONING_MODEL_PATTERN` 部署扩展正则（**额外**分支并入，坏正则忽略告警、误配只放宽不收窄）；两条直连腿（`direct_provider_completion` + `direct_tool_completion` 工具循环）对命中模型的输出预算 **×2**（`REASONING_OUTPUT_RESERVE_FACTOR=2`——多出的整份供 reasoning 消耗，content 份额不缩水；实测案例 16,384→32,768 即覆盖 reasoning 15,223+正文 ~8K）。②**诚实截断**——`finish_reason=length` 且正文零产出 → NEW `ai_output_truncated`（含 reasoning tokens 实测值与处置指引「精简输入/人工整理纪要/换非推理模型」，**不可重试**——同输入重放同败，不再伪装成「格式不正确」的 `ai_output_invalid`）；正文非空但截断 → 返回内容（对话场景可用）但 usage 附 `finish_reason`/`reasoning_tokens` 证据。③**消费方诊断**——discovery 抽取契约失败时先查 usage 截断证据，命中即 fail-fast `ai_output_truncated`（不重试同输必败，AI 调用恰 1 次）。
+- **边界如实声明**：DSH 运行时腿未动（本部署 `dsh_enabled=False`，DSH 侧预算语义属运行时适配层，留 DSH 部署时对齐）；识别是**名字特征**不是自动探测——识别误漏降级回旧行为（截断时报错指路），不发明智能。
+- **测试**：NEW `test_ai_reasoning_budget.py` 20 例（内置特征 15 组参数化含反例 gpt-4o/o13/扩展正则/坏正则忽略/预算预留/截断三态/无 reasoning 明细不发明数字/settings 扩展接线）；`test_ai_tool_loop.py` +1（工具循环预留）；`test_discovery_extraction.py` +1（fail-fast 恰 1 次调用零写入）；`test_ai_server_direct_fallback.py` 断言校正（MiniMax-M3.1-Flash 1024→2048＝预留行为本身入钉）。**变异三连全红→还原→绿**（M1 摘预留→三测试红；M2 摘诚实截断分支→两测试红；M3 摘 discovery fail-fast→红）。
+- **口径**：pytest 本地全量 `-n 4 --dist loadfile` 实测 **2457 收集 = 2451 passed + 6 skipped，EXIT=0**（7m35s；本轮 **+29**＝NEW `test_ai_reasoning_budget.py` 27 收集〔15 特征参数化+1 扩展/坏正则+4 预算参数化+7 直连腿行为〕+ tool loop 1 + discovery 1；`test_ai_server_direct_fallback.py` 仅断言校正零增量）——CI PR-head 实测终审；mypy **279 基线不变**（官方闸 OK）/ 零迁移零路由零桌面（server 变更 ⇒ 合并后 rebuild 三镜像 + alembic 幂等 no-op）。
+- **配置登记**：`server/.env.example` + README 配置边界表补 `FDE_AI_REASONING_MODEL_PATTERN` 行。
+
+
 ## [未发布] — AI 原生化 N2 归因仪表化轮（Path 2a：purpose 四层强制 + 提示词指纹 + 人工接受信号消费面；迁移 `c4f7a2d9e1b6` 53→54 rev，2026-11-09）
 
 - **动机与认领**：任务书 §4/N2（Path 2a 仪表化，无业务闸依赖）。D-1（真实订单/通道/审阅人三连拍板）**未获答复 ⇒ 按任务书 §6 默认执行：N1 挂起、不擅自开真实订单通道**，先做 N2——「无归因仪表的决策位 AI 不可审计、不可进化」。本轮认领台账 **G-09（提示词无指纹）/G-16（审计匿名行）/G-08（reviewed 只写不读）** 三条；顺带登记 **G-17**（宿主通道 zcode 内部 AI 调用不经工作台 AI 入口、不进归因台账——Path 2a/4，体量 M，依赖 G-09）。

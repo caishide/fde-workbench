@@ -44,6 +44,9 @@ RETRY_BACKOFF_SECONDS = 1.0
 UNEXPECTED_FAILURE_CODE = "discovery_unexpected_error"
 WORKER_LOST_CODE = "discovery_worker_lost"
 OUTPUT_INVALID_CODE = "ai_output_invalid"
+# V31-P1：推理模型把输出预算花在 reasoning 上、正文被截断（finish_reason=length）。
+# 与 ai_output_invalid 分开记账——处置动作不同（整理纪要/换模型 vs 重跑）。
+OUTPUT_TRUNCATED_CODE = "ai_output_truncated"
 
 
 def _redact_out(value: str, *, project_code: str, sink: list[dict[str, Any]]) -> str:
@@ -125,6 +128,23 @@ def handle_discovery_extraction(job) -> None:
                 draft = validate_extraction_output(payload)
                 break
             except (json.JSONDecodeError, DiscoveryContractError) as error:
+                # V31-P1：正文被推理挤到截断（usage 带 finish_reason=length 证据）
+                # 时重试同样必败——直接诚实失败并给处置指引，不白烧同输重放。
+                usage = answer.get("provider_usage") if isinstance(answer, dict) else None
+                if isinstance(usage, dict) and any(
+                    isinstance(call, dict) and call.get("finish_reason") == "length"
+                    for call in usage.get("calls", [])
+                ):
+                    logger.warning(
+                        "discovery output truncated by reasoning budget (extraction=%s)",
+                        extraction.id,
+                    )
+                    _fail(
+                        session, extraction, OUTPUT_TRUNCATED_CODE,
+                        "AI 输出被模型思考挤到截断（finish_reason=length），重试同样必败；"
+                        "请人工整理纪要（精简输入）或更换非推理模型后重跑。",
+                    )
+                    return
                 code = getattr(error, "code", None)
                 path = getattr(error, "path", "")
                 if attempts > CONTRACT_RETRY_LIMIT:

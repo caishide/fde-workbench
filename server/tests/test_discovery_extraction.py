@@ -569,3 +569,51 @@ def test_list_endpoints_filters_and_cross_project(db_session, d4_client, d4_sett
     stranger = api_client(d4_client, db_session, d4_settings, "project_lead")
     assert stranger.get(f"/api/v1/projects/{project.id}/business-facts").status_code == 403
     assert stranger.get(f"/api/v1/discovery/extractions/{extraction.id}").status_code == 403
+
+
+def test_extraction_output_truncated_fail_fast_no_retry(app, db_session, d4_client, d4_settings) -> None:
+    """V31-P1：正文被推理挤到截断（usage 带 finish_reason=length 证据）→
+    诚实失败 ai_output_truncated 并给处置指引，不重试同输必败（AI 调用恰 1 次）。"""
+    import fde_api.discovery.jobs as jobs_module
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户H")
+    minutes = _minutes(db_session, project, leader.user)
+    extraction = DiscoveryExtraction(
+        project_id=project.id, created_by_user_id=leader.user.id,
+        source_type="interview_minutes", source_id=minutes.id,
+        source_sha256=minutes.content_sha256, status="queued",
+    )
+    db_session.add(extraction)
+    db_session.commit()
+
+    calls: list[str] = []
+    truncated_usage = {
+        "complete": True,
+        "calls": [{"finish_reason": "length", "reasoning_tokens": 15223}],
+    }
+
+    def _fake_execute(**kwargs):
+        calls.append(str(kwargs.get("execution_id")))
+        return {
+            "text": '{"facts": [{"sub',
+            "model": {"provider": "test", "name": "MiniMax-M3.1-Flash"},
+            "provider_usage": truncated_usage,
+        }
+
+    original = jobs_module.execute_ai_prompt
+    jobs_module.execute_ai_prompt = _fake_execute
+    job = SimpleNamespace(target_id=extraction.id)
+    try:
+        with app.app_context():
+            jobs_module.handle_discovery_extraction(job)
+    finally:
+        jobs_module.execute_ai_prompt = original
+    db_session.expire_all()
+
+    row = db_session.get(DiscoveryExtraction, extraction.id)
+    assert row.status == "failed" and row.failure_code == "ai_output_truncated"
+    assert "人工整理" in (row.failure_message or "")
+    assert len(calls) == 1  # fail-fast：无第二次同输重放
+    assert db_session.query(BusinessFact).filter_by(extraction_id=row.id).count() == 0
+    assert db_session.query(Requirement).filter_by(extraction_id=row.id).count() == 0

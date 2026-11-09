@@ -442,3 +442,20 @@ def test_quote_tool_is_registered_and_readable(app, db_session, ai_user):
     assert description
     # T-R2：结构化元数据——报价卡读取 = 纯只读零风险
     assert effect == "read" and risk == 0
+
+
+def test_tool_loop_reserves_output_budget_for_reasoning_models(app, db_session, ai_user):
+    """V31-P1：推理模型输出预算 ×2 预留——多轮工具循环下 reasoning 与
+    content/tool_calls 共享 max_tokens，不预留更易挤掉正文。非推理模型不动。"""
+    session = FakeSession([final_response("直接回答。")])
+
+    direct_tool_completion(
+        model=provider_model(), prompt="你好", user=ai_user, project_id=None,
+        execution_id="exec-reserve", session=session, max_tokens=2048)
+    assert session.calls[0][1]["json"]["max_tokens"] == 4096  # MiniMax-M3.1-Flash ×2
+
+    session2 = FakeSession([final_response("直接回答。")])
+    direct_tool_completion(
+        model=provider_model(model="deepseek-v4"), prompt="你好", user=ai_user,
+        project_id=None, execution_id="exec-keep", session=session2, max_tokens=2048)
+    assert session2.calls[0][1]["json"]["max_tokens"] == 2048

@@ -83,7 +83,8 @@ def test_direct_completion_calls_openai_compatible_endpoint_with_expected_body()
     assert kwargs["headers"]["Content-Type"] == "application/json"
     body = kwargs["json"]
     assert body["model"] == "MiniMax-M3.1-Flash"
-    assert body["max_tokens"] == 1024
+    # V31-P1：推理模型输出预算 ×2 预留（reasoning 与正文共享 max_tokens）
+    assert body["max_tokens"] == 2048
     assert [message["role"] for message in body["messages"]] == ["system", "user"]
     assert body["messages"][1]["content"] == "你好"
     # A chat answer is not a JSON task: no response_format, no reasoning flags.
