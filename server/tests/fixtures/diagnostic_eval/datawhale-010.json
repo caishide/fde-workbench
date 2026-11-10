@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "datawhale-010",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "MIT",
+    "license_holder": "Copyright (c) 2026 guminghao-avi contributors",
+    "attribution_line": "示例案例 · 据公开案例整理｜来源：FDE-case-library（MIT License, © 2026 guminghao-avi contributors），原始出处 Datawhale《FDE案例100》NO.10｜本卡为独立重写",
+    "original_url": "https://assets.datawhale.cn/Datawhale%20FDE%E6%A1%88%E4%BE%8B100.pdf#page=96",
+    "case_page_url": "https://fde100.datawhale.cn/cases/cases-015",
+    "snapshot": {
+      "library_commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+      "library_commit_date": "2026-09-23",
+      "source_accessed_at": "2026-09-19",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/datawhale-010.json",
+    "sha256": "4e52f5f8376d9546726d09e7f170fdf8b67aa983c8e20df310309917d4cf3430",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "线下零售，便利店和专卖店都有",
+      "org.scale": "十几家店（未确认）",
+      "org.main_business": "门店零售",
+      "org.delivery_mode": "到店 + 线上渠道混合",
+      "biz.current_process": "财务天天对账，对到半夜",
+      "biz.pain_stage": "对账 / 勾稽",
+      "biz.decision_maker": "财务负责人",
+      "biz.cycle_time": "每天 / 每月结账期集中爆发",
+      "biz.volume": "渠道多但说不清单量",
+      "sys.systems": "收银系统各自一套，微信支付宝美团银联都有账单",
+      "sys.data_assets": "各渠道账单流水",
+      "sys.integration_status": "账单格式不统一，靠人工看",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "（未填写）"
+    },
+    "free_text_pain": "我们开了十几家店，微信、支付宝、美团、银联，还有自己的收银系统，每个月财务要把这些账单跟系统对上，一个一个核，有时候到半夜。格式还不统一，字段名乱得很。",
+    "imperfection_notes": [
+      "刻意缺失：门店数、每店月流水、月单量、对账耗时（案例未披露统一 ROI）",
+      "口语化；『十几个店』为约数非精确值",
+      "未提出明确诉求——诊断须区分『统一口径』与『自动匹配』两层"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "medium",
+    "contamination_class": "public_mit",
+    "meta_role": "eval_case",
+    "eval_eligible": true
+  }
+}

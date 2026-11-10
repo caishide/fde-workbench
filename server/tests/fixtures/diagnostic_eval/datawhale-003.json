@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "datawhale-003",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "MIT",
+    "license_holder": "Copyright (c) 2026 guminghao-avi contributors",
+    "attribution_line": "示例案例 · 据公开案例整理｜来源：FDE-case-library（MIT License, © 2026 guminghao-avi contributors），原始出处 Datawhale《FDE案例100》NO.17｜本卡为独立重写",
+    "original_url": "https://assets.datawhale.cn/Datawhale%20FDE%E6%A1%88%E4%BE%8B100.pdf#page=166",
+    "case_page_url": "https://fde100.datawhale.cn/cases/cases-019",
+    "snapshot": {
+      "library_commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+      "library_commit_date": "2026-09-23",
+      "source_accessed_at": "2026-09-19",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/datawhale-003.json",
+    "sha256": "b7e47df489688ca5debd2b671f68be41011a467cd536311b7f26b788a6053bf0",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "非标设备制造，给食品厂和化工做生产线",
+      "org.scale": "厂子六十来号人",
+      "org.main_business": "非标产线定制，接单生产",
+      "org.delivery_mode": "按订单定制交付，图纸驱动",
+      "biz.current_process": "客户邮件问价，销售拿着需求去问老工程师",
+      "biz.pain_stage": "报价",
+      "biz.decision_maker": "老板拍板，销售对外",
+      "biz.cycle_time": "一来一回两三天",
+      "biz.volume": "（未填写）",
+      "sys.systems": "报价单是 Word 改的",
+      "sys.data_assets": "历史方案好像在老工程师电脑里",
+      "sys.integration_status": "没接任何系统",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "老板说想搞个 AI，但不知道怎么下手"
+    },
+    "free_text_pain": "我们厂子六十来人，做非标设备，客户发邮件过来问价，销售就拿着需求去问老工程师，老工程师得看看图纸才能估个价，一来一回两三天。老板说想搞个AI，但是不知道从哪下手，反正现在报价单都是Word改的，历史方案也没存。",
+    "imperfection_notes": [
+      "刻意缺失：月询盘量、客单价、毛利、现有客户管理系统（答『没接任何系统』属口语泛答，非事实澄清）",
+      "口语化：『搞个AI』『反正』『也没存』——模拟真实中小企业主表达，非书面语",
+      "只给了痛点未给诉求：不提『要智能报价系统』，诊断须自行推导而非被引导"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "medium",
+    "contamination_class": "public_mit",
+    "meta_role": "eval_case",
+    "eval_eligible": true
+  }
+}

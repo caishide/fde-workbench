@@ -1,0 +1,30 @@
+{
+  "registry_version": "diag-eval-v0",
+  "note": "答案键指纹登记表——改答案必留 diff（与 fixtures 逐项一致）",
+  "cases": {
+    "datawhale-001": {
+      "relative_path": "cards/datawhale-001.json",
+      "sha256": "ac36ceaba2889177afdf6da6608632e632fb41d89d23ee612722c4867722ece8"
+    },
+    "datawhale-003": {
+      "relative_path": "cards/datawhale-003.json",
+      "sha256": "b7e47df489688ca5debd2b671f68be41011a467cd536311b7f26b788a6053bf0"
+    },
+    "datawhale-009": {
+      "relative_path": "cards/datawhale-009.json",
+      "sha256": "288b2e2e37556da9f8555f52386e233ef5dee853f718b0f55d1d5e608308bd9d"
+    },
+    "datawhale-010": {
+      "relative_path": "cards/datawhale-010.json",
+      "sha256": "4e52f5f8376d9546726d09e7f170fdf8b67aa983c8e20df310309917d4cf3430"
+    },
+    "datawhale-023": {
+      "relative_path": "cards/datawhale-023.json",
+      "sha256": "bdd366875f1d7ff141e37f4f5a6eb5e0e806f526ad57de46cde6f16ff097071a"
+    },
+    "somwyn": {
+      "relative_path": "cards/somwyn.json",
+      "sha256": "c704ea1185be99675703299109bfd465e6404ae86fa8af8380f71bcc79f52f69"
+    }
+  }
+}

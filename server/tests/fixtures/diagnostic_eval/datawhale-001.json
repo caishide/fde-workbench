@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "datawhale-001",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "MIT",
+    "license_holder": "Copyright (c) 2026 guminghao-avi contributors",
+    "attribution_line": "示例案例 · 据公开案例整理｜来源：FDE-case-library（MIT License, © 2026 guminghao-avi contributors），原始出处 Datawhale《FDE案例100》NO.01｜本卡为独立重写",
+    "original_url": "https://assets.datawhale.cn/Datawhale%20FDE%E6%A1%88%E4%BE%8B100.pdf#page=7",
+    "case_page_url": "https://fde100.datawhale.cn/cases/cases-009",
+    "snapshot": {
+      "library_commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+      "library_commit_date": "2026-09-23",
+      "source_accessed_at": "2026-09-19",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/datawhale-001.json",
+    "sha256": "ac36ceaba2889177afdf6da6608632e632fb41d89d23ee612722c4867722ece8",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "德国零部件制造",
+      "org.scale": "（未填写）",
+      "org.main_business": "（未填写）",
+      "org.delivery_mode": "（未填写）",
+      "biz.current_process": "老师傅带新人，出问题就找老师傅",
+      "biz.pain_stage": "新人上手 / 故障处理",
+      "biz.decision_maker": "生产经理",
+      "biz.cycle_time": "（未填写）",
+      "biz.volume": "（未填写）",
+      "sys.systems": "（未填写）",
+      "sys.data_assets": "SOP 应该有，但都是纸质的吧（未确认）",
+      "sys.integration_status": "（未填写）",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "（未填写）"
+    },
+    "free_text_pain": "我们厂子做零部件，来了几个新徒弟啥也不会，一上台面出问题就找老师傅，老师傅忙起来就排队等着，一台设备停在那儿。SOP是有的但都压在纸上，人一走就断了。",
+    "imperfection_notes": [
+      "刻意缺失：老师傅人数、新人比例、设备停机损失、故障类型分布（案例未披露量化收益）",
+      "口语化且带推测『应该是纸质的吧』——须在报告中标注为待澄清而非事实",
+      "企业未主动提出诉求，诊断须自行判断该走培训还是走知识沉淀路径"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "medium",
+    "contamination_class": "public_mit",
+    "meta_role": "eval_case",
+    "eval_eligible": true
+  }
+}
