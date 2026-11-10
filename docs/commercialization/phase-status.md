@@ -755,3 +755,12 @@ docs/commercialization/
 - **测试**：NEW `enterprise-register.test.tsx` **4 例** ＋ NEW `enterprise-space.test.tsx` **5 例**；**变异三连全红→还原→绿**（M1 注册载荷丢 subject_key→1 红／M2 提示先落被吞→1 红／M3 预填短路→1 红）；typecheck 绿。
 - 口径：vitest **999**（87 文件，+9；本地全量 EXIT=0 实测，PR CI 复核）；pytest 2706 不变（纯桌面零服务端）；零迁移零路由；迁移头仍 `f3a9c7e1d5b2`。
 - 遗留（显式维持挂账，不假装完成）：①ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；②ADR-004 §1.4 多子公司集团归并（法务）；③任务书 §17 商业数值拍板（轮 4 运维面板已呈现缺口，数值仍不落）；④GAP-15 首批真实 run 复审（触发器已登记，样本=0 不可实施）；⑤便携版重打包（桌面变更挂账，随下次桌面交付轮）。
+---
+
+## 收口轮：部署活体复验 ＋ 便携版 r31 交付 — 已完成
+
+- 分支：`chore/round5-closeout-docs`（工作树 `D:\test\fde-wt-g1`，基线 fork/main `b39ca9b`）
+- 状态：**completed**（纯文档零代码零迁移零路由零桌面）
+- **部署**：确定版 rebuild 从合并态 `8c0b113` 干净 server 树——三镜像 api `f863fe65…`／worker `a0d9fe40…`／scheduler `749c618a…`（容器 `.Image` ≡ 构建产物且 healthy）；alembic 幂等 no-op（`f3a9c7e1d5b2 (head)`）；活体 url_map non-static **448** ≡ 口径；ready **200**。部署即覆盖轮 3（权益行锁）＋轮 4（就绪度汇总面）全部 server 变更；轮 5 纯桌面不需重建。main run 轮 4 `42797107137`／轮 5 `42800276475` 双四绿收口。
+- **便携版 r31**：从合并态 `b39ca9b` 打包；asar sha256 `113289d4…24cb`；中文 marker ×3 全命中（商业化运维／读取企业空间／企业自助）；交付目录 `release/蔡工FDE-0.3.0-便携版-r31`（旧目录零覆盖）。**轮 3/4/5 累计便携版重打包挂账就此清偿**。
+- 剩余开放挂账（全部带外部闸，非本轮可实施）：①GAP-15 首批真实 run 复审（触发器已登记，样本=0）；②ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；③ADR-004 §1.4 多子公司集团归并（法务）；④任务书 §17 商业数值拍板（数值位 unset 为有意 fail-closed，运维面板已呈现缺口）。

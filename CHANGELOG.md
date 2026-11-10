@@ -45,6 +45,11 @@
 - **指纹纪律生效实录**：`rubric/裁定单-首批6卡.md` 因预评填入而变更 ⇒ 指纹由 `23fcbd91…` 变为 `8592ae7f…`，仓库侧登记表同步更新（**改答案必留 diff**）；**六张案例卡本体未改**（`card_version` 仍 `card-v1`，`ground_truth` 未动）⇒ 无需升版本、无曲线断点。
 - **口径**：pytest/mypy/vitest 全不动；**零服务端源码改动、零迁移、零路由、零蓝图、零桌面** ⇒ 无需 rebuild 镜像 / alembic / 便携版重打包。
 
+## [未发布] — 商业化挂账清偿收口轮：部署活体复验补记 ＋ 便携版 r31 交付（纯文档零代码零迁移零路由零桌面，2026-11-10）
+
+- **部署（确定版 rebuild，覆盖轮 3＋轮 4 全部 server 变更；轮 5 纯桌面零服务端）**：从合并态 fork/main `8c0b113`（轮 4 squash，含轮 3 `4e1d6c5`）干净 server 树构建三镜像并 up -d——api `sha256:f863fe65f5bb…`／worker `sha256:a0d9fe40d37f…`／scheduler `sha256:749c618afce0…`，三容器 `.Image` 与构建产物逐位一致且 healthy；`alembic upgrade head` 幂等 no-op（容器内 `alembic current`＝`f3a9c7e1d5b2 (head)`，轮 3/4/5 零迁移）；活体 `url_map` non-static **448** ≡ 口径（轮 4 readiness 路由在场）；`/api/v1/health/ready` **200**。main run 收口：轮 4 run `42797107137`／轮 5 run `42800276475` 各四 job 全绿（轮 5 squash＝`b39ca9b`，纯桌面不需重建）。
+- **便携版 r31（清偿轮 3/4/5 累计「便携版重打包挂账」）**：从合并态 `b39ca9b` 打包（`npm run build` ＋ `electron-builder --win dir --x64`，EXIT=0）；asar sha256 `113289d4783d1eab45d0159d2776b414ce4d57a1a8b4aa7fab22dca50e2124cb`；中文 marker 字节验证（marker 文件法防编码假阴性）×3 全命中——「商业化运维」×2（轮 4 运维面板）／「读取企业空间」×2／「企业自助」×2（轮 5 企业空间面）；交付目录 `release/蔡工FDE-0.3.0-便携版-r31`（旧目录零覆盖；release/ 已 gitignore 永不入库）。轮 3 焦点竞态修复无独立 UI 文案故无 marker（其交付证据＝PR #283 用例＋users 30 轮/danger-confirm 20 轮零红实录，代码已随合并态进包）。
+
 ## [未发布] — 商业化挂账清偿轮 5：G7 企业空间桌面呈现面（企业自助注册公开页 ＋ 企业空间视图；ADR-010 §3-4 桌面挂账销号；纯桌面零服务端零迁移零路由，2026-11-10）
 
 - **起因**：外部评审①「商业化桌面呈现面为零」——核实为**部分失实**：项目侧 `CommercialBoard.tsx`（931 行）已消费 G1–G4；真实的零面在 **G6 企业侧**——企业自助注册与企业空间三个服务端面（`POST /enterprise-registrations`／`GET /enterprise-spaces/<subject_key>`／`POST …/paid-option-choices`）**桌面零消费**，企业用户只能拿 API 文档（ADR-010 §3-4 桌面呈现挂账）。本轮清偿。
