@@ -51,7 +51,7 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const PATH_TRAVERSAL = /(^|\/)\.{1,2}(\/|$)/
 const REDACTED = "[REDACTED]"
 
-class ApiIpcError extends Error implements ApiErrorDto {
+export class ApiIpcError extends Error implements ApiErrorDto {
   readonly code: string
   readonly details?: unknown
 

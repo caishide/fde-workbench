@@ -120,3 +120,34 @@ describe("浏览器版 window.fde 桥", () => {
     expect(webBridgeSessionState()).toEqual({ hasAccess: false, hasRefresh: false, username: null })
   })
 })
+
+
+describe("web 桥 openLcscBrowser 域白名单（CR-070）", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("只放行立创三域 https URL（与桌面 allowsLcscUrl 同尺）", async () => {
+    const opened: string[] = []
+    vi.spyOn(window, "open").mockImplementation(((url: string) => {
+      opened.push(url)
+      return null
+    }) as typeof window.open)
+    await window.fde.app.openLcscBrowser?.("https://www.szlcsc.com/product-detail?code=C123")
+    await window.fde.app.openLcscBrowser?.("https://so.szlcsc.com/global.html?k=cap")
+    await window.fde.app.openLcscBrowser?.("https://item.szlcsc.com/C123.html")
+    expect(opened).toHaveLength(3)
+  })
+
+  it("非白名单域不打开（钓鱼/污染 URL 拦截）", async () => {
+    const opened: string[] = []
+    vi.spyOn(window, "open").mockImplementation(((url: string) => {
+      opened.push(url)
+      return null
+    }) as typeof window.open)
+    await window.fde.app.openLcscBrowser?.("https://evil.example.com/C123.html")
+    await window.fde.app.openLcscBrowser?.("http://www.szlcsc.com/product-detail")
+    await window.fde.app.openLcscBrowser?.("https://www.szlcsc.com.evil.com/x")
+    expect(opened).toHaveLength(0)
+  })
+})

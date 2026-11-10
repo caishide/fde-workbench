@@ -285,7 +285,12 @@ const bridge: FdeBridge = {
   app: {
     version: async () => "0.3.0-web",
     setLcscEnabled: async () => {},
-    openLcscBrowser: async (url: string) => { window.open(url, "_blank", "noopener,noreferrer") },
+    openLcscBrowser: async (url: string) => {
+      // CR-070：与桌面 main 层 allowsLcscUrl 同尺三域 https 白名单——
+      // 分发的 API 面应收窄；桌面同操作会报「只允许打开立创商城公开页面」。
+      if (!/^https:\/\/(www|so|item)\.szlcsc\.com\//.test(url)) return
+      window.open(url, "_blank", "noopener,noreferrer")
+    },
     showLcscDownload: async () => {},
     copyLcscRunId: async (id: string) => { void navigator.clipboard?.writeText(id) },
   },

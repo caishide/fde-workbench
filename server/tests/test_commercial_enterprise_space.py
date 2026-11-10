@@ -575,7 +575,9 @@ def test_no_cancel_path_source_and_route_scan(app) -> None:
     # 裸 create_app() 会因 Settings 缺 database_url/redis_url/jwt_secret 爆炸
     # （审计抽取脚本「不调 create_app」同一坑，教训同源）。
     source = ENTERPRISE_SERVICE.read_text(encoding="utf-8")
-    assert ".delete(" not in source
+    # CR-076：同时封 ORM 会话方法（.delete(）与 SQLAlchemy 表达式形态
+    # （execute(sa.delete(...)) / stmt = delete(...)）——后者此前可绕过本钉。
+    assert re.search(r"\.delete\(|\bdelete\s*\(", source) is None
     assert "def cancel" not in source.lower()
     for rule in app.url_map.iter_rules():
         if "enterprise" in rule.rule:

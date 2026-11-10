@@ -150,7 +150,10 @@ def test_audit_row_records_prompt_fingerprint_and_version(app, db_session, ai_us
     assert row.prompt_fingerprint == compute_prompt_fingerprint(
         system_prompt="你是访谈事实抽取器。"
     )
-    assert "纪要正文" not in (row.prompt_fingerprint or "")
+    # CR-075：原「纪要正文 not in 指纹」为恒真断言（指纹是 64 位 hex 摘要，
+    # 不可能含中文正文）——改写为有判别力的字符集断言。
+    assert len(row.prompt_fingerprint or "") == 64
+    assert all(c in "0123456789abcdef" for c in (row.prompt_fingerprint or ""))
 
 
 # --- G-16：purpose 强制 ---------------------------------------------------
