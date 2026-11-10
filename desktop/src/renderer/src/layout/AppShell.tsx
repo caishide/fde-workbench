@@ -67,6 +67,7 @@ export function AppShell({
           <div className="nav-group">
             <p className="nav-group-title">交付与商业</p>
             <NavLink route={route} target={{ kind: "dispatch" }} label="派单池" icon={<GridIcon />} />
+            <NavLink route={route} target={{ kind: "enterprise-space" }} label="企业空间" icon={<GaugeIcon />} />
             {isDeliverySide ? (
               <NavLink route={route} target={{ kind: "simulation" }} label="模拟训练场" icon={<BoxesIcon />} />
             ) : null}

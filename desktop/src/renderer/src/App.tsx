@@ -32,6 +32,8 @@ import { LcscToolPage } from "./extensions/LcscToolPage"
 import { LcscComparePage } from "./extensions/LcscComparePage"
 import { SystemConfigurationPage } from "./system/SystemConfigurationPage"
 import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
+import { EnterpriseRegisterPage } from "./commercial/EnterpriseRegisterPage"
+import { EnterpriseSpacePage } from "./commercial/EnterpriseSpacePage"
 import { TranslatorPortalPage } from "./translator/TranslatorPortalPage"
 import { MetricsReportPage } from "./metrics/MetricsReportPage"
 import { PilotReportPage } from "./pilot/PilotReportPage"
@@ -63,7 +65,10 @@ function AuthenticatedApp() {
   if (status === "loading") {
     return <main className="loading-page"><Loading label="正在加载工作台…" /></main>
   }
-  if (status === "unauthenticated" || !user) return <LoginPage />
+  // 自助注册是**公开面**：未登录时也可进入（服务端按来源 IP 限流）。
+  if (status === "unauthenticated" || !user) {
+    return route.kind === "enterprise-register" ? <EnterpriseRegisterPage /> : <LoginPage />
+  }
   if (user.mustChangePassword) return <ChangePasswordPage />
   return (
     <AppShell route={permittedRoute}>
@@ -95,6 +100,8 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "users") return <UsersPage />
   if (route.kind === "system-configuration") return <SystemConfigurationPage />
   if (route.kind === "commercial-ops") return <CommercialOpsPage />
+  if (route.kind === "enterprise-register") return <EnterpriseRegisterPage />
+  if (route.kind === "enterprise-space") return <EnterpriseSpacePage />
   if (route.kind === "modules") return <ModulesPage />
   if (route.kind === "templates") return <TemplatesPage />
   if (route.kind === "document-templates") return <DocumentTemplatesPage />
