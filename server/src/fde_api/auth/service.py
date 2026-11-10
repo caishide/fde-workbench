@@ -18,6 +18,7 @@ from fde_api.auth.limits import (
 from fde_api.auth.passwords import hash_password, verify_password
 from fde_api.auth.tokens import issue_access_token, new_refresh_token
 from fde_api.config import Settings
+from fde_api.projects.events import record_event
 from fde_api.extensions import db
 
 
@@ -201,6 +202,14 @@ def change_password(
             current_user.password_hash = hash_password(new_password)
             current_user.must_change_password = False
             current_user.auth_version += 1
+            # CR-042：自助改密同样落 actor=self 审计事件（新密码本体永不入事件）。
+            record_event(
+                session,
+                current_user,
+                "user_password_changed",
+                current_user,
+                {"must_change": {"to": False}},  # 键名避开 events 脱敏正则
+            )
             pair = _issue_token_pair(session, current_user, "Password change")
 
         return current_user, pair

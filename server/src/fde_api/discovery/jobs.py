@@ -46,6 +46,12 @@ CONTRACT_RETRY_LIMIT = 1
 TRANSIENT_RETRY_CODES = frozenset({"ai_rate_limited", "ai_timeout", "ai_service_unavailable", "ai_unavailable"})
 RETRY_BACKOFF_SECONDS = 1.0
 UNEXPECTED_FAILURE_CODE = "discovery_unexpected_error"
+# CR-050：词典机制性故障专码——沿 guidance 家族同码（pseudonym_dict_unavailable，
+# 唯一权威 guidance/enterprise_dict.DICT_FAILURE_CODE），文案同构（修复词典配置）。
+DICT_FAILURE_MESSAGE = (
+    "词典机制性故障导致抽取失败（fail-closed 已阻断落库，未烧 AI 预算外的重试）。"
+    "请联系管理员修复词典配置后重跑；不要反复重试。"
+)
 WORKER_LOST_CODE = "discovery_worker_lost"
 OUTPUT_INVALID_CODE = "ai_output_invalid"
 # V31-P1：推理模型把输出预算花在 reasoning 上、正文被截断（finish_reason=length）。
@@ -408,6 +414,14 @@ def handle_discovery_extraction(job) -> None:
                 )
             )
         session.commit()
+    except RedactionConfigError as error:
+        # CR-050：词典机制性故障 → fail-closed 硬阻断（沿 guidance 同构分类，
+        # 不落 unexpected_error——误导用户重跑白烧 AI 预算，运维看不出该修词典）。
+        logger.warning("discovery extraction dict failure (%s)", type(error).__name__)
+        session.rollback()
+        stuck = session.get(DiscoveryExtraction, job.target_id)
+        if stuck is not None:
+            _fail(session, stuck, DICT_FAILURE_CODE, DICT_FAILURE_MESSAGE)
     except Exception as error:  # noqa: BLE001 - 抽取绝不能卡在 running 态
         logger.warning("discovery extraction unexpected failure (%s)", type(error).__name__)
         session.rollback()

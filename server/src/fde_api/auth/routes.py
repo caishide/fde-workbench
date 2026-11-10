@@ -5,6 +5,10 @@ from typing import Any
 from flask import Blueprint, current_app, g, jsonify, request
 from redis.exceptions import RedisError
 
+from fde_api.auth.confirm_throttle import (
+    confirm_attempts_blocked,
+    record_confirm_failure,
+)
 from fde_api.auth.decorators import require_auth
 from fde_api.auth.models import User
 from fde_api.auth.service import (
@@ -146,11 +150,21 @@ def verify_password_route():
     values = _required_strings(_json_payload(), "password")
     if values is None:
         return _invalid_request()
+    # CR-047：密码确认尝试限流（沿 ai 确认闸同 key 同阈值——持会话不等于可无限试错）。
+    if confirm_attempts_blocked(g.current_user.id):
+        return _service_error(
+            AuthServiceError(
+                "too_many_attempts",
+                "密码错误次数过多，请 15 分钟后重试。",
+                429,
+            )
+        )
     try:
         valid = verify_current_password(g.current_user, values[0])
     except AuthServiceError as error:
         return _service_error(error)
     if not valid:
+        record_confirm_failure(g.current_user.id)
         return error_response(*INVALID_CURRENT_PASSWORD)
     return jsonify({"data": {"valid": True}, "error": None})
 

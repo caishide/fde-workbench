@@ -582,3 +582,21 @@ def test_service_write_primitives_are_independent_of_each_other() -> None:
             assert f"{column} =" not in source, (
                 f"{func_name} 不应写 {column}（四类权益互不推导，ADR-002）"
             )
+
+
+def test_confirm_password_throttled_after_repeated_failures(
+    admin_client, authorized_client_factory
+) -> None:
+    """CR-047：commercial 密码确认闸与 auth/ai 确认闸共用失败计数（同 key 同阈值同窗口）。"""
+    target = authorized_client_factory("viewer").user
+    for _ in range(5):
+        denied = admin_client.post(
+            _role_url(target.id), json={"role": "R1", "confirm_password": "wrong-pass"}
+        )
+        assert denied.status_code == 403
+        assert denied.json["error"]["code"] == "invalid_password"
+    blocked = admin_client.post(
+        _role_url(target.id), json={"role": "R1", "confirm_password": "wrong-pass"}
+    )
+    assert blocked.status_code == 429
+    assert blocked.json["error"]["code"] == "too_many_attempts"

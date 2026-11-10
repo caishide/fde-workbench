@@ -245,3 +245,39 @@ def test_pilot_rehearsal_run_does_not_verify_contract(db_session, d4_settings) -
     assert status["runs_used"] == 0  # 排除口径一致
     assert status["contract_unverified"] is True
     assert status["warnings"]
+
+
+def test_pilot_report_metrics_exclude_rehearsal_runs(db_session, d4_client, d4_settings) -> None:
+    """CR-049：build_report 六指标排除 rehearsal: 前缀演练 run（CR-031 同型残留）。"""
+    started = datetime.now(timezone.utc) - timedelta(hours=1)
+    settings = d4_settings.model_copy(
+        update={"agent_pilot_enabled": True, "agent_pilot_started_at": started.isoformat()}
+    )
+    app = create_app(settings)
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    leader = _api(client, db_session, settings, "project_lead")
+    project = _persist_project(db_session, leader.user, code=f"PL{uuid4().hex[:4]}")
+    agent = seed_agent(db_session, settings)
+
+    def _run(*, status, token, key, degraded=False, reason=None):
+        run = AgentRun(
+            project_id=project.id, agent_id=agent.id, initiated_by_user_id=leader.user.id,
+            capability_used=agent.capability_tier, status=status, token_cost=token,
+            context_ref="agent-workspaces/m/context.md", idempotency_key=key,
+            degraded=degraded, degraded_reason=reason,
+        )
+        db_session.add(run)
+        db_session.commit()
+        return run
+
+    _run(status="completed", token=2, key=f"m:{uuid4().hex}")
+    _run(status="completed", token=4, key=f"m:{uuid4().hex}", degraded=True, reason="tool_denied")
+    # 演练 run：L1 形态（completed+degraded+零费）——若混入则 degraded_rate 抬高、中位数被拉低
+    _run(status="completed", token=0, key=f"rehearsal:{uuid4().hex}", degraded=True, reason="rehearsal_l1")
+
+    data = _api(client, db_session, settings, "admin").get("/api/v1/agents/pilot-report").json["data"]
+    metrics = data["metrics"]
+    assert metrics["total_runs"] == 2
+    assert metrics["degraded_rate"] == 0.5  # 演练 run 不进分母（1/2 而非 2/3）
+    assert metrics["median_run_cost_units"] == 3.0  # [2,4]——零费演练行不拉低中位数

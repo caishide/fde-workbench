@@ -230,7 +230,9 @@ def update_user(
         session.close()
 
 
-def reset_password(*, target: User, temporary_password: str) -> User:
+def reset_password(
+    *, actor: User, target: User, temporary_password: str
+) -> User:
     validate_password_strength(temporary_password)
     session = db.session()
     try:
@@ -245,6 +247,18 @@ def reset_password(*, target: User, temporary_password: str) -> User:
             current_target.auth_version += 1
             session.flush()
             session.refresh(current_target)
+            # CR-042：管理员重置他人密码必须留 actor 归因审计（临时密码本体永不入事件）。
+            record_event(
+                session,
+                actor,
+                "user_password_reset",
+                current_target,
+                {
+                    # 键名不得含 password（events._SENSITIVE_KEY 会整键丢弃）
+                    "must_change": {"to": True},
+                    "active_sessions_revoked": True,
+                },
+            )
         return current_target
     finally:
         session.close()

@@ -102,7 +102,9 @@ def reset_password_route(user_id: str):
         return _invalid_request()
     try:
         target = get_user(user_id)
-        user = reset_password(target=target, temporary_password=values[0])
+        user = reset_password(
+            actor=g.current_user, target=target, temporary_password=values[0]
+        )
     except (UserServiceError, AuthServiceError) as error:
         return _service_error(error)
     return jsonify({"data": _serialize_user(user), "error": None})

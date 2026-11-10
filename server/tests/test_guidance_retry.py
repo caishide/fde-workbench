@@ -479,3 +479,55 @@ def test_duplicate_delivery_of_a_failed_analysis_does_not_rerun_ai(app, db_sessi
     assert analysis.analysis_state == "failed"
     assert analysis.failure_code == "ai_output_invalid"
     assert calls == []
+
+
+def test_contract_retry_does_not_double_redaction_entries(app, db_session, monkeypatch):
+    """CR-051：契约失败重试成功后，复核清单条目不翻倍（sink 重试前清空）。"""
+    from docx import Document
+
+    from fde_api.guidance.models import REDACTION_EVENT_TYPE
+    from fde_api.workbench.models import OperationEvent
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("与合成测试集团聊排程。")
+    doc.save(buf)
+    docx_bytes = buf.getvalue()
+    analysis, job, version = _seed_analysis(db_session, data=docx_bytes)
+    source_ref = f"kimi-file:{version.id}"
+
+    calls = _CallLog()
+
+    class _FakeKimiClient:
+        """真 client 语义：构造请求前先 build（sink 在此逐轮累积）。"""
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def analyze_docx_json(self, *, stream, filename, request_id, build_messages):
+            index = len(calls)
+            content = stream.read()
+            calls.append(content)
+            # 真 client 语义：本地抽取文本后交给 build_messages（sink 在此累积）
+            from fde_api.ai.kimi import KimiFileClient as RealKimiClient
+            text = RealKimiClient._extract_docx_locally(io.BytesIO(content), filename)
+            build_messages(text)
+            if index == 0:
+                return _contract_violating_payload(source_ref)
+            return _valid_payload(source_ref)
+
+    monkeypatch.setattr(guidance_jobs, "KimiFileClient", _FakeKimiClient)
+
+    with app.app_context():
+        handle_presurvey_analysis(job)
+
+    db_session.refresh(analysis)
+    assert analysis.analysis_state == "ready"
+    assert len(calls) == GUIDANCE_ANALYSIS_RETRY_LIMIT + 1
+    events = db_session.query(OperationEvent).filter_by(
+        target_type="project_guidance_analysis", target_id=analysis.id,
+        event_type=REDACTION_EVENT_TYPE,
+    ).all()
+    assert len(events) == 1
+    names = [entry["name"] for entry in events[0].changes["entries"]]
+    assert names.count("合成测试集团") == 1, f"重试不得使复核条目翻倍：{names}"

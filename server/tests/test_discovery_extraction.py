@@ -923,3 +923,130 @@ def test_extraction_chunk_truncation_splits_then_succeeds(app, db_session, d4_cl
     assert len(facts) == 2  # 二分后的两片各一条
     # 行号按二分后的片回基：左片首行=1，右片首行=2
     assert sorted(f.source_locator["line"] for f in facts) == [1, 2]
+
+
+def test_extraction_dict_failure_classified_not_unexpected(app, db_session, d4_client, d4_settings, monkeypatch) -> None:
+    """CR-050：词典机制性故障落词典失败码（沿 guidance 同构 fail-closed），不再误报 unexpected_error。"""
+    from fde_api.guidance.enterprise_dict import RedactionConfigError
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户J")
+    minutes = _minutes(db_session, project, leader.user)
+    extraction = DiscoveryExtraction(
+        project_id=project.id, created_by_user_id=leader.user.id,
+        source_type="interview_minutes", source_id=minutes.id,
+        source_sha256=minutes.content_sha256, status="queued",
+    )
+    db_session.add(extraction)
+    db_session.commit()
+
+    def broken_redact(value, *args, **kwargs):
+        raise RedactionConfigError("种子缺失（测试注入）")
+
+    monkeypatch.setattr(discovery_jobs, "redact_text_detailed", broken_redact)
+    row = _run_handler(app, db_session, extraction, [_valid_ai_payload()])
+    assert row.status == "failed"
+    assert row.failure_code == "pseudonym_dict_unavailable"
+    assert "词典" in row.failure_message
+
+
+def test_create_extraction_race_returns_existing_row(app, db_session, d4_client, d4_settings, monkeypatch) -> None:
+    """CR-052：并发双击撞唯一约束 → 返回既有行（created=False），而非 500。
+
+    用真实唯一约束端到端复现竞态：预检查通过后、flush 前，独立连接抢插同键行
+    （模拟 READ COMMITTED 下先行提交的并发事务）→ flush 抛 IntegrityError → 兜底
+    重读既有行返回幂等语义。
+    """
+    from sqlalchemy import text as sql_text
+    from sqlalchemy.orm import Session as OrmSession
+
+    from fde_api.discovery.models import EXTRACTOR_VERSION, PROMPT_VERSION
+    from fde_api.extensions import db
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户K")
+    minutes = _minutes(db_session, project, leader.user)
+
+    original_flush = OrmSession.flush
+    raced = {"done": False}
+
+    def racing_flush(self, *args, **kwargs):
+        # 只在「新 extraction 真正待 flush」的那次抢插：更早的无害 autoflush
+        # 触发会让 rival 行在预检查前就可见，走不到 IntegrityError 路径。
+        if not raced["done"] and self.new and any(
+            isinstance(o, DiscoveryExtraction) for o in self.new
+        ):
+            raced["done"] = True
+            OrmSession.flush = original_flush  # 只劫持一次
+            with db.engine.begin() as conn:
+                conn.execute(
+                    sql_text(
+                        "INSERT INTO discovery_extractions (id, project_id, created_by_user_id, "
+                        "source_type, source_id, source_sha256, status, extractor_version, prompt_version, "
+                        "created_at, updated_at) VALUES (:id, :pid, :uid, :st, :sid, :sha, 'queued', :ev, :pv, now(), now())"
+                    ),
+                    {
+                        "id": uuid4().hex, "pid": project.id, "uid": leader.user.id,
+                        "st": "interview_minutes", "sid": minutes.id,
+                        "sha": minutes.content_sha256,
+                        "ev": EXTRACTOR_VERSION, "pv": PROMPT_VERSION,
+                    },
+                )
+        return original_flush(self, *args, **kwargs)
+
+    monkeypatch.setattr(OrmSession, "flush", racing_flush)
+    response = leader.post(
+        f"/api/v1/projects/{project.id}/discovery/extractions",
+        json={"source_type": "interview_minutes", "source_id": minutes.id},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    data = response.get_json()["data"]
+    assert data["created"] is False  # 幂等语义在并发窗口仍然成立（created=False ⇒ 路由 200）
+
+
+def test_review_paths_take_row_locks(db_session, d4_client, d4_settings, monkeypatch) -> None:
+    """CR-054：review_fact/review_requirement 的终态检查必须走行锁（with_for_update）。"""
+    from sqlalchemy.orm import Session as OrmSession
+
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户L")
+    minutes = _minutes(db_session, project, leader.user)
+    extraction = DiscoveryExtraction(
+        project_id=project.id, created_by_user_id=leader.user.id,
+        source_type="interview_minutes", source_id=minutes.id,
+        source_sha256=minutes.content_sha256, status="review_required",
+    )
+    db_session.add(extraction)
+    db_session.flush()
+    fact = BusinessFact(
+        project_id=project.id, extraction_id=extraction.id,
+        fact_type="process", classification="customer_stated",
+        subject="询盘处理", predicate="当前步骤", object_value={"step": "人工"},
+        source_ref=f"interview_minutes:{minutes.id}",
+        source_locator={"type": "line", "line": 1}, review_status="pending",
+    )
+    requirement = Requirement(
+        project_id=project.id, extraction_id=extraction.id, created_by_user_id=leader.user.id,
+        requirement_key="R-abc12346", title="自动分配", requirement_type="functional",
+        priority="high", acceptance_criteria=["5 分钟内分配"], status="pending",
+    )
+    db_session.add_all([fact, requirement])
+    db_session.commit()
+
+    captured = []
+    original_get = OrmSession.get
+
+    def spy_get(self, entity, ident, **kwargs):
+        if entity in (BusinessFact, Requirement):
+            captured.append((entity.__name__, kwargs.get("with_for_update")))
+        return original_get(self, entity, ident, **kwargs)
+
+    monkeypatch.setattr(OrmSession, "get", spy_get)
+    assert leader.patch(
+        f"/api/v1/business-facts/{fact.id}/review", json={"review_status": "accepted"}
+    ).status_code == 200
+    assert leader.patch(
+        f"/api/v1/requirements/{requirement.id}/review", json={"status": "rejected"}
+    ).status_code == 200
+    assert ("BusinessFact", True) in captured
+    assert ("Requirement", True) in captured
