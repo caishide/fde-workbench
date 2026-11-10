@@ -1,0 +1,145 @@
+{
+  "_comment": "考卷口语原话值 → 生产问卷闭集适配（评测器侧裁量，逐条可审计）。kind=choice/multi：原话值必须逐条登记，目标值 null=省略该槽位；kind=free：占位符（未填写）→ 省略，其余原文直通。未登记值 fail-closed。多选槽位目标一律 [原话直通]，不做编辑加工。",
+  "_case_overrides": {
+    "_uncertain": "必答槽位（org.scale / pol.digitalization_project）在访谈原稿里未提到的卡，由考官按案例其他信息补最接近的诚实档（生产 UI 必答，不能空考卷）；此为评测装配裁量、非案例原文。",
+    "datawhale-001": {
+      "org.scale": "20–99人",
+      "pol.digitalization_project": "不清楚"
+    },
+    "datawhale-009": {
+      "org.scale": "100–499人"
+    },
+    "datawhale-010": {
+      "pol.digitalization_project": "不清楚"
+    },
+    "datawhale-023": {
+      "org.scale": "20–99人"
+    }
+  },
+  "org.industry": {
+    "kind": "choice",
+    "values": {
+      "德国零部件制造": "制造与工业",
+      "非标设备制造，给食品厂和化工做生产线": "制造与工业",
+      "央国企下属公司": "企业运营与其他",
+      "线下零售，便利店和专卖店都有": "零售与消费",
+      "汽车零部件，做配套件": "制造与工业",
+      "外贸，做工业品": "其他"
+    }
+  },
+  "org.scale": {
+    "kind": "choice",
+    "values": {
+      "（未填写）": null,
+      "厂子六十来号人": "20–99人",
+      "十几家店（未确认）": "20–99人",
+      "小工厂": "20–99人"
+    }
+  },
+  "org.main_business": {
+    "kind": "free",
+    "values": {
+      "（未填写）": null
+    }
+  },
+  "org.delivery_mode": {
+    "kind": "choice",
+    "values": {
+      "（未填写）": null,
+      "按订单定制交付，图纸驱动": "项目制交付",
+      "到店 + 线上渠道混合": "门店零售",
+      "订单驱动排产 + 交付": "离散制造",
+      "接单生产 + 出口": "离散制造"
+    }
+  },
+  "biz.current_process": {
+    "kind": "free",
+    "values": {}
+  },
+  "biz.pain_stage": {
+    "kind": "choice",
+    "values": {
+      "新人上手 / 故障处理": "生产与交付",
+      "报价": "报价与方案",
+      "报销 / 建单 / 审核": "财务与内部流程",
+      "对账 / 勾稽": "财务与内部流程",
+      "经营异常发现与追溯": "经营决策与数据",
+      "获客": "获客与销售"
+    }
+  },
+  "biz.decision_maker": {
+    "kind": "choice",
+    "values": {
+      "生产经理": "生产负责人",
+      "老板拍板，销售对外": "老板",
+      "财务部": "财务负责人",
+      "财务负责人": "财务负责人",
+      "老板每天问一圈才心里有数": "老板",
+      "老板": "老板"
+    }
+  },
+  "biz.cycle_time": {
+    "kind": "free",
+    "values": {
+      "（未填写）": null
+    }
+  },
+  "biz.volume": {
+    "kind": "free",
+    "values": {
+      "（未填写）": null
+    }
+  },
+  "sys.systems": {
+    "kind": "multi",
+    "values": {
+      "（未填写）": null,
+      "报价单是 Word 改的": ["几乎没有系统"],
+      "OA 和 ERP 都上有": ["OA", "ERP"],
+      "收银系统各自一套，微信支付宝美团银联都有账单": ["电商平台"],
+      "管家婆 ERP": ["ERP"],
+      "没用过获客工具，官网用 WordPress": ["几乎没有系统"]
+    }
+  },
+  "sys.data_assets": {
+    "kind": "free",
+    "values": {}
+  },
+  "ctx.free_text": {
+    "kind": "free",
+    "values": {}
+  },
+  "sys.integration_status": {
+    "kind": "choice",
+    "values": {
+      "（未填写）": null,
+      "没接任何系统": null,
+      "两个系统各干各的，对不上": "互不相通",
+      "账单格式不统一，靠人工看": "互不相通",
+      "ERP 没人动过，也不敢动": "只有一个系统",
+      "没有系统，WordPress 有个表单": null
+    }
+  },
+  "pol.qualification": {
+    "kind": "multi",
+    "values": {
+      "（未填写）": null
+    }
+  },
+  "pol.declaration_history": {
+    "kind": "choice",
+    "values": {
+      "（未填写）": null
+    }
+  },
+  "pol.digitalization_project": {
+    "kind": "choice",
+    "values": {
+      "（未填写）": null,
+      "老板说想搞个 AI，但不知道怎么下手": "打算做",
+      "集团提过数字化，但没定到我们这儿": "不清楚",
+      "之前上过一版看板，没人看": "做过但停滞",
+      "在看 SaaS（Clay / Apollo 高级版）这类，也想过自己写 CRM": "打算做"
+    }
+  }
+}

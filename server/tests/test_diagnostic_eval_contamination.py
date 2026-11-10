@@ -126,7 +126,9 @@ def _sha256(path: Path) -> str:
 def _load_fixtures() -> dict[str, dict[str, Any]]:
     fixtures: dict[str, dict[str, Any]] = {}
     for path in _iter_json_files(FIXTURES_DIR):
-        if path.name == REGISTRY_FILE.name:
+        # registry（答案键指纹登记簿）与 answer_mapping（考卷口语值 → 生产
+        # 问卷闭集适配表）是 fixtures 目录里的非考卷数据文件，均不按考卷校验。
+        if path.name in (REGISTRY_FILE.name, "answer_mapping.json"):
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         fixtures[str(payload.get("case_id"))] = payload
