@@ -1,10 +1,10 @@
 {
  "route_count": 451,
  "blueprint_count": 50,
- "table_count": 147,
- "revision_count": 60,
+ "table_count": 148,
+ "revision_count": 61,
  "heads": [
-  "b7e4c1a9f3d5"
+  "a5e9c3f1b7d4"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -27,6 +27,18 @@
     "ontology_term_aliases"
    ],
    "add_column_tables": []
+  },
+  "a5e9c3f1b7d4": {
+   "file": "a5e9c3f1b7d4_m1_org_tenant_base.py",
+   "down_revision": "b7e4c1a9f3d5",
+   "create_tables": [
+    "orgs"
+   ],
+   "add_column_tables": [
+    "operation_events",
+    "projects",
+    "users"
+   ]
   },
   "a7b4d9e2c6f1": {
    "file": "a7b4d9e2c6f1_o3_seat_quota.py",

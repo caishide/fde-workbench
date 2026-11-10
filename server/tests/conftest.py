@@ -438,6 +438,17 @@ def db_session(app) -> Session:
     from fde_api.files.models import ProjectFile, ProjectFileVersion, UploadSession
     from fde_api.guidance.models import PresurveyIntake, ProjectGuidanceAnalysis, ProjectPresurveySource
     from fde_api.jobs.models import BackgroundJob, OutboxEvent
+    # 多客户工作平台 M1：orgs 归属表。users/projects/operation_events.org_id
+    # 均以 **RESTRICT** 引用 orgs（归属不级联删）⇒ 全表清空顺序＝先在
+    # _clear_tables 顶部把三处 org_id 引用置 NULL 解除引用，再删 orgs 行；
+    # orgs 自身经 created_by 引用 users（RESTRICT），故 orgs 必须先于 users
+    # 删除（元组位置在 User 之前）。内部组织行清空后由 _clear_tables 尾部
+    # 幂等重播（归属戳的 FK 兜底目标必须在每个用例都在场）。
+    from fde_api.orgs.models import (
+        INTERNAL_ORG_ID,
+        INTERNAL_ORG_NAME,
+        Org,
+    )
     from fde_api.mailing.models import MailingEvent, MailingSend
     from fde_api.control.models import (
         AIModelConfig,
@@ -711,12 +722,18 @@ def db_session(app) -> Session:
         IndustryTemplateVersion,
         IndustryTemplate,
         ModuleCatalog,
+        Org,
         RefreshSession,
         User,
     )
 
     def _clear_tables(engine) -> None:
         with engine.begin() as connection:
+            # 多客户 M1：orgs 三处引用先解除（RESTRICT——全表清空路径不能依赖
+            # 逐行顺序），orgs 行本身在元组 Org 位删除；内部组织行随后重播。
+            connection.execute(text("UPDATE users SET org_id = NULL"))
+            connection.execute(text("UPDATE projects SET org_id = NULL"))
+            connection.execute(text("UPDATE operation_events SET org_id = NULL"))
             connection.execute(
                 text("UPDATE project_research_forms SET current_revision_id = NULL")
             )
@@ -747,6 +764,16 @@ def db_session(app) -> Session:
             )
             for model in cleanup_models:
                 connection.execute(delete(model))
+            # 多客户 M1：平台内部组织幂等重播（迁移在 schema 层播种，本夹具
+            # 清空会带走它——归属戳的 RESTRICT 兜底目标必须对每个用例在场）。
+            connection.execute(
+                text(
+                    "INSERT INTO orgs (id, org_type, name) "
+                    "VALUES (:org_id, 'internal', :name) "
+                    "ON CONFLICT (id) DO NOTHING"
+                ),
+                {"org_id": INTERNAL_ORG_ID, "name": INTERNAL_ORG_NAME},
+            )
 
     with app.app_context():
         engine = db.engine

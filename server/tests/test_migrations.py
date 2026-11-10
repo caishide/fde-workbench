@@ -83,7 +83,8 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # 获客诊断 T-10b：lead_diagnostic_sessions 扩两列（报告请求时刻 + 分享令牌指纹，
 #            additive）
 # F 线 T1：dispatch_settlement_allocations 单表（五席位纵向分配明细，additive）
-HEAD_REVISION = "b7e4c1a9f3d5"
+# 多客户 M1：orgs 表＋users/projects/operation_events.org_id 归属列（组织底座，additive）
+HEAD_REVISION = "a5e9c3f1b7d4"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1113,7 +1114,7 @@ def test_v4_subject_type_domain_roundtrip_preserves_subjects(alembic_config, eng
 
 
 def test_known_alembic_revisions_covers_current_head(test_settings):
-    """本树判定基准必须包含当前 HEAD_REVISION（含 50 个迁移文件全集）。"""
+    """本树判定基准必须包含当前 HEAD_REVISION（迁移文件全集）。"""
     from alembic.config import Config
 
     config = Config(str(SERVER_ROOT / "alembic.ini"))
@@ -1122,9 +1123,10 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # 迁移文件全集权威=alembic ScriptDirectory（V3.1 P1-1 e7c4a9d2f6b8 +
     # 商业化 G1 e9c4a1f7b3d2 + 商业化 G2 b3e7c9d1a5f2 + 商业化 G3 d5f9a3c7e1b4
     # + AI 原生化 N2 c4f7a2d9e1b6 + 商业化 G4 e7b2c4d9f1a3 + 商业化 G5 b3e8a6c2d4f7 + 商业化 G6 e8b3f7c2d9a5 + 获客诊断 T-10a f3a9c7e1d5b2 + 获客诊断 T-10b b7e4d1c9a3f2
-    # + F 线 T1 分账口径改造 b7e4c1a9f3d5（改挂 T-10b 之后保单头）之后 = 60）；
+    # + F 线 T1 分账口径改造 b7e4c1a9f3d5（改挂 T-10b 之后保单头）
+    # + 多客户 M1 组织底座 a5e9c3f1b7d4（改挂 T1 之后保单头）之后 = 61）；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 60
+    assert len(known) == 61
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical

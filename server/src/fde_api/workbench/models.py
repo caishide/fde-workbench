@@ -251,6 +251,7 @@ class Project(Base, TimestampMixin, VersionedMixin):
         Index("ix_projects_enterprise_code", "enterprise_code"),
         Index("ix_projects_status", "status"),
         Index("ix_projects_leader_user_id", "leader_user_id"),
+        Index("ix_projects_org_id", "org_id"),
         Index("ix_projects_planned_dates", "planned_start_date", "planned_end_date"),
     )
 
@@ -286,6 +287,13 @@ class Project(Base, TimestampMixin, VersionedMixin):
     planned_end_date: Mapped[date | None] = mapped_column(Date)
     leader_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    # 多客户工作平台 M1（ADR-M1 §3）：项目归属 org——项目域 83 张表经本列
+    # 推导，不逐表加列；NULL 仅存在于回填前的瞬间（迁移随即回填 internal org）。
+    # 归属戳在 orgs/org_scope.py 统一落（未显式携带时按 leader 归属），隔离
+    # 逻辑不进本文件（红线 15）。
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="RESTRICT")
     )
     source_template_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("industry_template_versions.id", ondelete="RESTRICT"),
@@ -893,6 +901,7 @@ class OperationEvent(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_operation_events_project_occurred", "project_id", "occurred_at"),
         Index("ix_operation_events_actor_user_id", "actor_user_id"),
+        Index("ix_operation_events_org_occurred", "org_id", "occurred_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
@@ -901,6 +910,12 @@ class OperationEvent(Base, TimestampMixin):
     )
     project_id: Mapped[str | None] = mapped_column(
         ForeignKey("projects.id", ondelete="RESTRICT")
+    )
+    # 多客户工作平台 M1（任务书 §5 审计口径重定义）：org 维度可空 = 平台级
+    # 事件；有 project 的事件从项目归属推导（数据归属口径），归属戳在
+    # orgs/org_scope.py 统一落。
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("orgs.id", ondelete="RESTRICT")
     )
     target_type: Mapped[str] = mapped_column(String(80), nullable=False)
     target_id: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -915,6 +930,9 @@ class OperationEvent(Base, TimestampMixin):
 
 
 from fde_api.research import models as research_models  # noqa: E402, F401
+# 多客户工作平台 M1：orgs 域 models + 归属戳单一入口（导入即注册 before_flush
+# 监听——凡加载 models 的进程（app/cli/测试）归属戳一律在位，无遗漏路径）。
+from fde_api.orgs import org_scope as orgs_org_scope  # noqa: E402, F401
 
 
 class AICallAudit(Base, TimestampMixin):
