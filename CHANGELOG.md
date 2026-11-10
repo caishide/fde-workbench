@@ -45,7 +45,16 @@
 - **指纹纪律生效实录**：`rubric/裁定单-首批6卡.md` 因预评填入而变更 ⇒ 指纹由 `23fcbd91…` 变为 `8592ae7f…`，仓库侧登记表同步更新（**改答案必留 diff**）；**六张案例卡本体未改**（`card_version` 仍 `card-v1`，`ground_truth` 未动）⇒ 无需升版本、无曲线断点。
 - **口径**：pytest/mypy/vitest 全不动；**零服务端源码改动、零迁移、零路由、零蓝图、零桌面** ⇒ 无需 rebuild 镜像 / alembic / 便携版重打包。
 
-## [未发布] — 商业化挂账清偿轮 4：商业化运维就绪度可见面（服务端汇总读面 ＋ 桌面运维面板；配置缺口与法务闸状态一眼可见；零迁移零新表，2026-11-11)
+## [未发布] — 商业化挂账清偿轮 5：G7 企业空间桌面呈现面（企业自助注册公开页 ＋ 企业空间视图；ADR-010 §3-4 桌面挂账销号；纯桌面零服务端零迁移零路由，2026-11-10）
+
+- **起因**：外部评审①「商业化桌面呈现面为零」——核实为**部分失实**：项目侧 `CommercialBoard.tsx`（931 行）已消费 G1–G4；真实的零面在 **G6 企业侧**——企业自助注册与企业空间三个服务端面（`POST /enterprise-registrations`／`GET /enterprise-spaces/<subject_key>`／`POST …/paid-option-choices`）**桌面零消费**，企业用户只能拿 API 文档（ADR-010 §3-4 桌面呈现挂账）。本轮清偿。
+- **NEW `commercial/EnterpriseRegisterPage.tsx`（公开面）**：未登录可达且**顶替登录页**（App 未登录分支按路由分发，登录墙不叠加）；走 `window.fde.api.request` **直连**而不经 api client——api client 无会话即抛 `authentication_required`，注册入口本就免鉴权（`accessToken: ""`；服务端按来源 IP 限流是滥用防线）；**只提交代号与必要登记信息**——企业名称以代号登记、真实资料留客户工作目录（客户资料红线在桌面侧的承接）。
+- **NEW `commercial/EnterpriseSpacePage.tsx`（登录后；绑定账号本人或 admin）**：读面五板块呈现（主体登记／免费额度状态／交付状态〔自助／已选付费〕／付费选项与现行选择／交付项目）；选择付费选项＝POST 后**先复读刷新再落提示**（顺带修一处真缺陷：原实现先落提示后被复读清空＝成功提示被吞，测试红→页面修复→变异 M2 钉住）；主体代码入 `localStorage`（`fde.enterprise.subject_key`）再进自动预填；**零数值呈现**——付费选项标签/描述由服务端单一权威下发原样呈现，桌面不推导任何金额。
+- **接线**：路由 `#enterprise-register`／`#enterprise-space`（`authorizedRoute` **不加闸**——企业账号即 viewer 档〔注册面创建 `users.role=viewer` ＋ `commercial_role='R1'`〕，服务端「绑定账号本人或 admin」是最终防线）；侧栏「交付与商业」组加「企业空间」入口。
+- **测试**：NEW `desktop/tests/renderer/enterprise-register.test.tsx` **4 例**（未登录可达且顶替登录页／免鉴权直连钉〔`accessToken===""` 且 URL/载荷逐键〕／服务端 429 如实呈现不伪造成功／桥层失败如实呈现）；NEW `desktop/tests/renderer/enterprise-space.test.tsx` **5 例**（空代码零请求拦截／五面呈现＋GET 面正确／本地记忆预填〔waitFor 收敛 passive effect〕／选择＝GET→POST→GET 三调用且载荷正确／读面失败不伪造内容）；**变异三连全红→还原→绿**（M1 注册载荷丢 `subject_key`→1 红／M2 提示先落被吞→1 红／M3 预填短路→1 红）；typecheck 绿。
+- 口径：vitest **999**（87 文件；+9＝NEW 注册页 4 例＋NEW 空间页 5 例；本地全量 87 文件 999/999 EXIT=0 实测，PR CI 复核）〔前值 990／85 文件〕；pytest 不变（纯桌面零服务端）；零迁移零路由零服务端改动 ⇒ 无需 rebuild/alembic；桌面变更 ⇒ 便携版重打包挂账。
+
+## [未发布] — 商业化挂账清偿轮 4：商业化运维就绪度可见面（服务端汇总读面 ＋ 桌面运维面板；配置缺口与法务闸状态一眼可见；零迁移零新表，2026-11-10)
 
 - **起因**：外部评审列出「未配置槽位无管理员可见面」与「法务审查未完成只活在文档里」两项——核实**确无**：服务端有分散的配置位读面（fee-configs／split-rules／opportunity-rules）与售卖闸读面，但**没有汇总面**，桌面端对 26 条 commercial admin 路由**零消费**——「缺什么、缺到哪一步」只能翻文档，管理员在系统里看不到。
 - **服务端**：NEW `commercial/readiness_service.py` ＋ `GET /api/v1/admin/commercial/readiness`（admin 只读，治理面不进 api_catalog）。汇总三类配置槽位＋售卖闸四项合规条件：①**按权威键集枚举**槽位（`FEE_CONFIG_KEYS`／`OPPORTUNITY_RULE_KEYS`），行只提供状态——槽位永不缺项（缺行即少报＝「缺什么」漏报）；②**只报状态不落数值**（`unset`/`configured`、`registered`/`unregistered`），**绝不补默认值**——缺省即「不可收款／不可触限」的 fail-closed 方向不变；③每个未就绪项带**「等谁拍板」**指针（§17 商业数值／分成比例／法务合规输入），话术的单一权威在服务端（桌面端只渲染，不自带口径）。

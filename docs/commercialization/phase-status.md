@@ -740,3 +740,18 @@ docs/commercialization/
 - **测试**：NEW `server/tests/test_commercial_readiness.py` **7 例** ＋ NEW `desktop/tests/renderer/commercial-ops.test.tsx` **5 例**；**变异三连全红→还原→绿**（M1 摘 admin 闸→1 红／M2 摘闸条件呈现→1 红／M3 槽位改按行枚举→1 红）。
 - 口径：pytest **2706 收集 = 2700 passed + 6 skipped**（本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测，PR CI 复核）；vitest **990**（85 文件，+5）；mypy 279 基线零新增；ruff 全过；路由 **447 → 448**（审计清单已重生成，CSV 恰 +1 行）；迁移头仍 `f3a9c7e1d5b2`。
 - 遗留（显式维持挂账，不假装完成）：①**企业空间桌面呈现面**（自助注册页／空间视图，ADR-010 §3-4）——下一轮 G7 专项；②ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；③ADR-004 §1.4 多子公司集团归并（法务）；④任务书 §17 商业数值拍板（本轮只**呈现缺口**，不落数）；⑤GAP-15 首批真实 run 复审（触发器已登记，样本=0 不可实施）。
+---
+
+## 挂账清偿轮 5：G7 企业空间桌面呈现面 — 已完成
+
+- 分支：`feat/commercial-enterprise-space`（工作树 `D:\test\fde-wt-g1`）
+- 基线 SHA：fork/main 含挂账清偿轮 4（PR #286 squash → `8c0b113`）
+- 状态：**completed**（实现＋测试＋文档同 PR；ADR-010 §3-4 桌面呈现挂账销号）
+- **起因与核实**：外部评审①「商业化桌面呈现面为零」核实为**部分失实**——项目侧 `CommercialBoard.tsx`（931 行）已消费 G1–G4；真实零面＝G6 企业注册/企业空间的桌面消费（本轮清偿）。
+- **落点**：
+  1. **企业自助注册公开页**（NEW `commercial/EnterpriseRegisterPage.tsx`）：未登录可达且顶替登录页；`window.fde.api.request` 直连＋`accessToken: ""`（api client 无会话即拒，公开入口本就免鉴权）；只提交代号与必要登记信息（客户资料红线桌面侧承接）。
+  2. **企业空间视图**（NEW `commercial/EnterpriseSpacePage.tsx`）：主体登记／免费额度状态／交付状态／付费选项与现行选择／交付项目五板块；选择付费选项＝POST 后先复读刷新再落提示（顺带修真缺陷：原顺序提示被复读清空）；主体代码 localStorage 记忆预填；**零数值呈现**（服务端单一权威下发原样呈现，不推导金额）。
+  3. **接线**：`#enterprise-register`／`#enterprise-space` 路由（authorizedRoute 不加闸——企业账号即 viewer 档，服务端最终防线）；侧栏「交付与商业」组「企业空间」入口。
+- **测试**：NEW `enterprise-register.test.tsx` **4 例** ＋ NEW `enterprise-space.test.tsx` **5 例**；**变异三连全红→还原→绿**（M1 注册载荷丢 subject_key→1 红／M2 提示先落被吞→1 红／M3 预填短路→1 红）；typecheck 绿。
+- 口径：vitest **999**（87 文件，+9；本地全量 EXIT=0 实测，PR CI 复核）；pytest 2706 不变（纯桌面零服务端）；零迁移零路由；迁移头仍 `f3a9c7e1d5b2`。
+- 遗留（显式维持挂账，不假装完成）：①ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；②ADR-004 §1.4 多子公司集团归并（法务）；③任务书 §17 商业数值拍板（轮 4 运维面板已呈现缺口，数值仍不落）；④GAP-15 首批真实 run 复审（触发器已登记，样本=0 不可实施）；⑤便携版重打包（桌面变更挂账，随下次桌面交付轮）。
