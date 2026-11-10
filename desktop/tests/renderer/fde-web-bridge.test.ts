@@ -133,9 +133,9 @@ describe("web 桥 openLcscBrowser 域白名单（CR-070）", () => {
       opened.push(url)
       return null
     }) as typeof window.open)
-    await window.fde.app.openLcscBrowser("https://www.szlcsc.com/product-detail?code=C123")
-    await window.fde.app.openLcscBrowser("https://so.szlcsc.com/global.html?k=cap")
-    await window.fde.app.openLcscBrowser("https://item.szlcsc.com/C123.html")
+    await window.fde.app.openLcscBrowser?.("https://www.szlcsc.com/product-detail?code=C123")
+    await window.fde.app.openLcscBrowser?.("https://so.szlcsc.com/global.html?k=cap")
+    await window.fde.app.openLcscBrowser?.("https://item.szlcsc.com/C123.html")
     expect(opened).toHaveLength(3)
   })
 
@@ -145,9 +145,9 @@ describe("web 桥 openLcscBrowser 域白名单（CR-070）", () => {
       opened.push(url)
       return null
     }) as typeof window.open)
-    await window.fde.app.openLcscBrowser("https://evil.example.com/C123.html")
-    await window.fde.app.openLcscBrowser("http://www.szlcsc.com/product-detail")
-    await window.fde.app.openLcscBrowser("https://www.szlcsc.com.evil.com/x")
+    await window.fde.app.openLcscBrowser?.("https://evil.example.com/C123.html")
+    await window.fde.app.openLcscBrowser?.("http://www.szlcsc.com/product-detail")
+    await window.fde.app.openLcscBrowser?.("https://www.szlcsc.com.evil.com/x")
     expect(opened).toHaveLength(0)
   })
 })
