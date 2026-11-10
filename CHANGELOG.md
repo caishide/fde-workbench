@@ -2,6 +2,24 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审修复 r4：拍板批（goal-review-fix r4：20 条挂账经蔡工三批交互问答裁决，10 项按推荐落地＋4 项定向 r5 迁移窗口＋6 项结构化维持挂账，2026-11-10）
+
+- **形态**：goal-review-fix r4 修复轮（拍板批）。20 条挂账经蔡工三批交互问答逐条裁决：16 条按推荐执行、6 条结构化维持挂账（全部留痕可推翻）。变异验证 5/5 判别（红→反向替换→绿；CR-065 行为断言对 uuid 抽签仅 1/3 概率判别力，补静态源码钉后变异必然红）。发现登记与全量证据见 r1 报告 `docs/audit/全面代码审查报告-2026-11-10.md` §六。
+- **CR-043（P1）host_poll 启用闸第四前置**：拍板＝「workflow agent 节点异步消费语义设计轮」并入 host_poll 生产启用闸裁决包成为**第四前置**——`server/.env.example` POLL_ENABLED 注记落地；生产开启 host_poll 前四前置必须全清（设计缺口不解决不开闸）。
+- **CR-044（P1）确认人豁免显式留痕**：transcripts service docstring＋models 列注释落拍板口径——确认人＝本方员工手填**职务泛称**（不填真实姓名），豁免自动脱敏；正则机制层拦不住人名＝如实留痕，输入面约束靠填表指引。
+- **CR-046（P1）FDE_PRODUCT_NAME 死键修复**：`config.py` `fde_product_name` 加 `validation_alias="FDE_PRODUCT_NAME"`——README/.env.example/AGENTS 六处承诺的 env 覆写通道真实生效；NEW `test_config_product_name.py` 4 例（覆写生效/默认回退/历史死键 `FDE_FDE_PRODUCT_NAME` 不再生效/短键优先）。
+- **CR-062（P3）存在性泄露口径统一**：拍板＝他人一律 404——quota `get_quota_view` 他人视角 403 `commercial_entitlement_forbidden` → 404 `quota_not_found`；企业空间非管理员分支先判他人 404 `enterprise_space_not_found` 再判存在性；测试断言存在/不存在两态错误载荷逐位一致（探测不可分辨）。
+- **CR-064（P3）高风险写闸豁免成文**：NEW `docs/architecture/高风险写确认闸适用清单-v1.md`——适用面/有意豁免面（users.role、派单规则发布：admin 门＋operation_events 留痕理由）/裁决记录三节。
+- **CR-065（P3）首过率 tie-break 确定性**：metrics 首条查询 order_by 补 `TestExecution.result, TestExecution.id`（原按 uuid4 id＝同 created_at 批量写抽签）；指标定义文本补 tie-break 注记；测试＝行为钉（同刻 blocked/passed 必取 blocked）＋静态源码钉（order_by 必含 result，uuid 抽签变异必然红）双保险。
+- **CR-066（P3）草稿 discard 权限对齐**：弃置＝不可逆破坏（含文件根删除）——非创建者须 can_manage（沿 promote 同尺），只读成员 403 `project_forbidden`；测试 owner/member2/leader 三态。
+- **CR-067（P3）superseded 语义标注**：拍板＝维持现状态值不新增——plans/quality 两处行内注释标注「否决稿复用 superseded（区分靠 operation_events.decision）」；零净增行（热点行数预算内）。
+- **CR-069（P3）reconcile 错误码区分**：bridge reconcile except 拆分——真无快照 409 `no_snapshot`；投影 DB 故障 500 `sync_failed`（不再把数据库故障误报成「没有可重放快照」误导排障方向）；NEW `test_bridge_reconcile_errors.py` monkeypatch 双态。
+- **CR-072（P3）明文降级可观测**：desktop auth-store safeStorage 不可用分支带显式前缀 `fde-session-plain-v1:` ＋ console.warn PLAINTEXT 告警（不再静默）；load 侧识别剥前缀，旧版无前缀明文继续兼容；测试改写真回环（load 读 save 实际写出字节——修掉 readFile 空 mock 的假绿）。
+- **测试**：NEW `test_config_product_name.py` 4 例＋`test_bridge_reconcile_errors.py` 1 例；`test_transcript_drafts` +1（discard 三态）；`test_metrics_v31` +1（tie-break 双钉）；`test_commercial_enterprise_quota/space` 他人 404 适配；desktop `auth-store.test.ts` 前缀/告警/剥前缀改写（8 例全绿）。受影响域 62 例本地绿＋桌面 typecheck 绿。
+- **拍板留痕（4＋6 条不落地项）**：CR-045/048/053/059 拍板定向 **r5 迁移窗口一次做**（部分唯一索引×2＋AgentArtifact 唯一约束＋FK 索引＋宿主回执写事务重校验，用户授权突破迁移禁区并留痕）；CR-055 维持观察（用例编辑/需求撤销通道立项时补护栏钉）；CR-056 挂触发条件（renderer 直连分片上传真实场景出现时选型）；CR-057 挂触发条件（远程 https API/OSS 一等形态立项时裁决 CSP）；CR-061 结构化挂账（host_claim 并发真实化或令牌改多实例时补行锁）；CR-071 结构化挂账（web 桥暴露面扩大/公网部署前系统性补齐校验族）；CR-074 迁移禁区（下次触碰该迁移文件的轮次顺带修正）。
+- **口径**：零迁移零路由零新表（结构口径沿 448 路由/50 蓝图/146 表/58 rev 单头 `f3a9c7e1d5b2`，r5 迁移窗口另行推进）；pytest 本轮 +7，终值以本 PR CI 为准；server 变更 ⇒ rebuild 三镜像挂账（随 r5 一并）；桌面变更 ⇒ 便携版 r33 重打包挂账（随 r5 部署轮一并交付）。
+
+
 ## [未发布] — 获客诊断工具 W2 T-10b 轮：diagnostics/ AI 报告层（异步生成 + R-1~R-7 契约闸 + 分享只读页；扩列 + 迁移 `b7e4d1c9a3f2`，2026-11-11）
 
 - **范围与拆分**：T-10 剩余的 AI 报告半（**T-10b**）——T-10a 已落规则层（匿名会话 + 首屏政策补贴测算卡 + 闭集问卷），本轮补齐**AI 报告生成 + 只读分享页**。报告走本仓既有 outbox → background job → worker 三段（**异步**：公网免注册面不能同步等模型）。D-1/D-2 沿用 T-10a 默认；★**完整报告要留资**（D-2 的全文留资闸，同时是**成本闸**——免注册白烧 AI token 的代价远高于留资转化）。

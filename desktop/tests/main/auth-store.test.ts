@@ -62,14 +62,32 @@ describe("auth store", () => {
 
   it("falls back to plaintext only when OS-backed storage is unavailable", async () => {
     const { files, store } = createHarness({ encryptionAvailable: false })
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     await store.save("raw-refresh-token")
+    // 回读走 save 实际写出的字节（readFile 默认 mock 无返回值，
+    // 直接 load 会拿到 undefined——回环断言必须显式接线）。
+    const written = vi.mocked(files.writeFile).mock.calls[0]?.[1] as Buffer
+    vi.mocked(files.readFile).mockResolvedValue(written)
 
+    // CR-072：明文降级带显式前缀＋告警日志（不再静默）。
     expect(files.writeFile).toHaveBeenCalledWith(
       TMP_PATH,
-      Buffer.from("raw-refresh-token"),
+      Buffer.from("fde-session-plain-v1:raw-refresh-token"),
       { flag: "wx", mode: 0o600 },
     )
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("PLAINTEXT")
+    warnSpy.mockRestore()
+    await expect(store.load()).resolves.toBe("raw-refresh-token")
+  })
+
+  it("strips the explicit plaintext prefix on load (CR-072)", async () => {
+    const { files, store } = createHarness({ encryptionAvailable: true })
+    vi.mocked(files.readFile).mockResolvedValue(
+      Buffer.from("fde-session-plain-v1:raw-token"),
+    )
+    await expect(store.load()).resolves.toBe("raw-token")
   })
 
   it("round-trips an encrypted session", async () => {

@@ -318,7 +318,7 @@ def build_metrics_report(session: Session) -> dict[str, Any]:
     # 7.1④ 自动测试首次通过率（P1-2 域：每用例第一条执行 passed 占比——重试不重复计数）
     exec_rows = session.execute(
         select(TestExecution.case_id, TestExecution.result, TestExecution.created_at)
-        .order_by(TestExecution.case_id, TestExecution.created_at, TestExecution.id)
+        .order_by(TestExecution.case_id, TestExecution.created_at, TestExecution.result, TestExecution.id)
     ).all()
     first_results: dict[str, str] = {}
     for case_id, result, _created in exec_rows:
@@ -329,7 +329,7 @@ def build_metrics_report(session: Session) -> dict[str, Any]:
         "自动测试首次通过率",
         value=round(first_values.count("passed") / len(first_values), 4) if first_values else 0.0,
         sample_size=len(first_values),
-        definition="有执行的用例中首条执行为 passed 的占比（每用例只计首条——重试不重复计数）",
+        definition="有执行的用例中首条执行为 passed 的占比（每用例只计首条——重试不重复计数；同 created_at 的批量执行按 result 字典序再按 id 取首条——CR-065 口径钉）",
     )
 
     return {

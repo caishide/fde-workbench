@@ -291,3 +291,26 @@ def test_discard_tombstones_immediately(db_session, d4_client, d4_settings) -> N
     assert "content" not in detail.get_json()["data"], "墓碑详情不回正文"
     second = member.post(f"/api/v1/transcript-drafts/{draft['id']}/discard")
     assert second.status_code == 409
+
+
+def test_discard_requires_owner_or_manager(db_session, d4_client, d4_settings) -> None:
+    """CR-066：弃置＝不可逆破坏——创建者本人可弃；非属主成员 403；can_manage 可弃。"""
+    leader = api_client(d4_client, db_session, d4_settings, "project_lead")
+    project = _new_project(db_session, leader.user, "客户M")
+    member, _u = _member_client(db_session, d4_client, d4_settings, project)
+    draft = _create_draft(member, project)
+
+    # 非属主成员（viewer）→ 403
+    viewer, _vu = _member_client(db_session, d4_client, d4_settings, project, role="viewer")
+    denied = viewer.post(f"/api/v1/transcript-drafts/{draft['id']}/discard")
+    assert denied.status_code == 403
+    assert denied.json["error"]["code"] == "project_forbidden"  # manage 闸既有码
+    # 草稿未受影响
+    assert member.get(f"/api/v1/transcript-drafts/{draft['id']}").get_json()["data"]["status"] == "draft"
+
+    # 另一非属主普通成员 → 403
+    member2, _u2 = _member_client(db_session, d4_client, d4_settings, project)
+    assert member2.post(f"/api/v1/transcript-drafts/{draft['id']}/discard").status_code == 403
+
+    # can_manage（leader）可弃他人草稿
+    assert leader.post(f"/api/v1/transcript-drafts/{draft['id']}/discard").status_code == 200

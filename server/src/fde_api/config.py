@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     # 红线① 产品名单一来源（服务端侧单点）：默认值=desktop/src/shared/brand.ts 的
     # PRODUCT_NAME；改动需双侧同步（桌面 brand.ts + 此处/env 覆写 FDE_PRODUCT_NAME）。
     # 界面文案（chat 系统提示词等）从此处取值，不再硬编码。
-    fde_product_name: str = DEFAULT_PRODUCT_NAME
+    # CR-046：env 覆写键=FDE_PRODUCT_NAME（validation_alias 单点钉死）——
+    # 无别名时 env_prefix 会拼出 FDE_FDE_PRODUCT_NAME 死键（六处文档承诺失效）。
+    fde_product_name: str = Field(
+        default=DEFAULT_PRODUCT_NAME,
+        validation_alias="FDE_PRODUCT_NAME",
+    )
     storage_backend: Literal["local", "oss"] = "local"
     local_storage_root: Path = Path(".fde-storage")
     oss_endpoint: str | None = None

@@ -218,14 +218,17 @@ def register_enterprise(
 def get_enterprise_space_view(
     session: Session, *, actor: User, subject_key_raw: object
 ) -> dict[str, Any]:
-    """企业空间读面（绑定账号本人或 admin；他人 403 不透 existence 域外信息）。"""
+    """企业空间读面（绑定账号本人或 admin；他人一律 404——CR-062 拍板：不透主体存在性，对齐 regional partner 面先例）。"""
     subject_key = normalize_subject_key(subject_key_raw)
     subject = session.get(EnterpriseQuotaSubject, subject_key)
     quota = session.get(EnterpriseFreeQuota, subject_key)
-    if subject is None or quota is None:
+    if actor.role != ROLE_ADMIN:
+        # CR-062：他人先于存在性判断——404 同码同文案，USCC 批量探测不可分辨
+        # 「主体不存在」与「主体存在但非本方」。
+        if subject is None or quota is None or quota.bound_user_id != actor.id:
+            raise _error("enterprise_space_not_found", "企业空间不存在。", 404)
+    elif subject is None or quota is None:
         raise _error("enterprise_space_not_found", "企业空间不存在。", 404)
-    if actor.role != ROLE_ADMIN and quota.bound_user_id != actor.id:
-        raise _error("enterprise_space_forbidden", "只能查看本人主体的企业空间。", 403)
     triage_rows = session.scalars(
         select(EnterpriseTriageDecision)
         .where(EnterpriseTriageDecision.subject_key == subject_key)

@@ -98,7 +98,7 @@ class TranscriptDraft(Base, TimestampMixin):
     # asr 来源的引擎标注（如 faster-whisper:base）；引擎不进平台依赖，纯来源标注
     engine: Mapped[str | None] = mapped_column(String(60))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", server_default="draft")
-    # —— 客户确认三要素（晋升时必填；确认人是客户侧人名的代号化文本，非平台用户）——
+    # —— 客户确认三要素（晋升时必填；确认人＝本方员工手填职务泛称（不填真实姓名；CR-044 拍板豁免自动脱敏，见 service 模块 docstring），非平台用户）——
     client_confirmed_by: Mapped[str | None] = mapped_column(String(160))
     client_confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     client_confirmation_method: Mapped[str | None] = mapped_column(String(16))

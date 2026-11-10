@@ -211,3 +211,51 @@ def test_v31_domain_rate_metrics(db_session, d4_client, d4_settings) -> None:
     first_pass = cards["test_first_pass_rate"]
     assert first_pass["sample_size"] == 2, "每用例只计首条（case1 的第二条 failed 不重复计数）"
     assert first_pass["value"] == 0.5
+
+
+def test_first_pass_rate_tiebreak_is_deterministic(db_session, d4_client, d4_settings) -> None:
+    """CR-065：同 created_at 批量执行的首条 tie-break 按 result 字典序——确定性，
+    与插入序无关（修复前 order_by id=uuid4 抽签，重跑同数据两次指标可能不同）。"""
+    leader, project = _leader(db_session, d4_client, d4_settings, "客户N65")
+    _seed_requirements(db_session, project, leader.user, 2)
+    quality_plan = _generate(db_session, leader, project)
+    _approve(db_session, leader, quality_plan["id"])
+    from datetime import UTC, datetime
+
+    from fde_api.quality.models import TestExecution
+
+    case_id = quality_plan["cases"][0]["id"]
+    same_moment = datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC)
+    # 同 case 同 created_at 两条：先插 passed 再插 blocked——首条必须取
+    # result 字典序最小的 blocked（确定性），而非插入序里的 passed。
+    db_session.add_all([
+        TestExecution(plan_id=quality_plan["id"], case_id=case_id, project_id=project.id,
+                      executed_by_user_id=leader.user.id, environment="dev", result="passed",
+                      created_at=same_moment),
+        TestExecution(plan_id=quality_plan["id"], case_id=case_id, project_id=project.id,
+                      executed_by_user_id=leader.user.id, environment="dev", result="blocked",
+                      created_at=same_moment),
+    ])
+    db_session.commit()
+
+    user = _user("metrics.v31.tiebreak")
+    db_session.add(user)
+    db_session.commit()
+    cards = _v31(_get_report(d4_client, user, d4_settings).get_json()["data"])
+    first_pass = cards["test_first_pass_rate"]
+    assert first_pass["sample_size"] == 1
+    # 首条=blocked（字典序）→ first-pass=0.0；若 tie-break 抽签回 passed 则 1.0。
+    assert first_pass["value"] == 0.0
+    # 静态钉：行为断言对 uuid 抽签只有概率判别力（3 值枚举摘掉 result 列后
+    # 1/3 概率假绿），变异必然红靠源码钉——首条查询的 order_by 必须含 result。
+    from pathlib import Path
+
+    import re as _re
+
+    _src = Path(__file__).resolve().parents[1].joinpath(
+        "src", "fde_api", "metrics", "service.py"
+    ).read_text(encoding="utf-8")
+    _m = _re.search(r"\.order_by\(TestExecution[^)]*\)", _src)
+    assert _m is not None and "TestExecution.result" in _m.group(0), (
+        "CR-065：首条 tie-break 的 order_by 必须含 TestExecution.result（确定性口径钉）"
+    )

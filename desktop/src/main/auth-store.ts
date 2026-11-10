@@ -56,6 +56,9 @@ export function createAuthStore(options: CreateAuthStoreOptions): AuthStore {
   )
   // 加密文件带版本前缀；无前缀视为旧版明文（兼容升级前已登录的会话）。
   const encryptionPrefix = Buffer.from("fde-session-enc-v1:", "utf8")
+  // CR-072：safeStorage 不可用时的明文降级带显式前缀＋告警日志（可观测，
+  // 不再静默）——load 侧识别剥前缀，旧版无前缀明文继续兼容。
+  const plaintextPrefix = Buffer.from("fde-session-plain-v1:", "utf8")
 
   async function save(refreshToken: string): Promise<void> {
     if (!refreshToken) {
@@ -68,6 +71,11 @@ export function createAuthStore(options: CreateAuthStoreOptions): AuthStore {
         encryptionPrefix,
         options.safeStorage.encryptString(refreshToken),
       ])
+    } else {
+      console.warn(
+        "[fde-auth] safeStorage unavailable: refresh token stored as PLAINTEXT in session.bin (mode 0600). Consider logging out on machines without an OS keyring.",
+      )
+      payload = Buffer.concat([plaintextPrefix, payload])
     }
     await files.mkdir(options.userDataPath, { recursive: true, mode: 0o700 })
     await unlinkIfPresent(files, temporaryPath)
@@ -106,7 +114,13 @@ export function createAuthStore(options: CreateAuthStoreOptions): AuthStore {
       token = options.safeStorage.decryptString(
         value.subarray(encryptionPrefix.length),
       )
+    } else if (
+      value.subarray(0, plaintextPrefix.length).equals(plaintextPrefix)
+    ) {
+      // CR-072：显式明文前缀（save 侧降级时写入）——剥前缀取原文。
+      token = value.subarray(plaintextPrefix.length).toString("utf8")
     } else {
+      // 旧版无前缀明文（升级前已登录的会话）——兼容读取。
       token = value.toString("utf8")
     }
     if (!token) {

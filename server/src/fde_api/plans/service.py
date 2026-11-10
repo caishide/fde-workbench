@@ -202,7 +202,7 @@ def review_plan(*, actor, plan_id: str, payload: dict[str, Any]) -> dict[str, An
                 )
                 plan.status = "approved"
             else:
-                plan.status = "superseded"
+                plan.status = "superseded"  # CR-067：否决稿复用 superseded（区分靠 operation_events.decision）
             plan.reviewed_by_user_id = actor.id
             plan.reviewed_at = datetime.now(UTC)
             if comment is not None:
