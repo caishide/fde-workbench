@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断工具 W2 T-10a 轮：diagnostics/ 规则层（匿名会话 + 首屏政策测算卡 + 闭集问卷；NEW 蓝图+表+迁移 `f3a9c7e1d5b2`，2026-11-11）
+
+- **范围与拆分**：T-10 拆两半实施（蔡工拍板「按建议走」——T-07/T-08 评测器需要先有一个生成器才可评测，故 MVP 域先行）：**T-10a＝纯规则层**（匿名会话生命周期 + 首屏政策补贴测算卡 + 闭集诊断问卷，**零 AI 零 token**）；T-10b（AI 报告生成 + purpose 登记 + share token 页）另轮。D-1＝企业免注册自诊为主、D-2＝摘要免费+全文留资 按默认推荐执行（留痕可推翻）。
+- **本仓第一个公网免注册写面 ⇒ 五重防线（AGENTS 红线新条）**：①**部署闸默认关**——`FDE_DIAGNOSTICS_ENABLED=0`，关闭时诊断路由一律 **404（不确认面存在）**；②匿名令牌**只存 sha256 指纹**（明文客户端持有、`X-Diagnostic-Token` 头传递不入 URL——URL 进访问日志；`POST /sessions` 返回明文**只此一次**）；③来源 IP 只存**域分隔 sha256 假名**（非明文）；④Redis 配额双闸（每 IP 每日 20 动作 + 每令牌每日 3 动作）**默认 fail-closed**——与登录面默认 fail-open 相反，公开写面被刷的代价高得多；⑤自填文本落库前过 **T-A2 脱敏管线**（企业名→代号；词典机制故障 503 `pseudonym_dict_unavailable` fail-closed 同码、凭据串 422）。
+- **数据模型**：NEW 表 `lead_diagnostic_sessions`（迁移 `f3a9c7e1d5b2` 挂 `e8b3f7c2d9a5` 之后 57→58 单头）——状态机 `draft→submitted→report_ready→claimed|expired` 五值 CHECK（T-10a 只落 draft/submitted；report_ready/claimed 归 T-10b/T-11）；`token_sha256` 唯一索引 + 64 位长度 CHECK；`claim_window_expires_at` NOT NULL（90 天认领窗口，P-2 只落结构）；`claimed_by_user_id` FK SET NULL users；**零外键指向 `projects`**（线索≠项目，metadata 扫描钉死）；留存期 30 天 `expires_at`（个保法：留存期+删除通道）。
+- **首屏测算卡（纯规则、确定性）**：`assessment.py::compute_assessment` 同答案必同结果——**定性四档位**（具备申报基础/方向契合但缺前提/尚不满足申报前提/先做基础准备），**无分数无金额**（R-1 占位分教训＋R-4 未溯源数字 fail-closed 落进代码：弹药库五条均未披露额度，任何金额都是编造）；匹配政策条目**双层依据分键不混写**——`original_basis`＝「原文口径」（逐字）与 `interpretation_basis`＝「我方解读」显式标注 + `official_source_url` + `snapshot_date`（2026-10-19，30 天失效重核）；`policy_data.py` 五条政策条目随行弹药库两条勘误（70% 是应用普及率非智能体普及率；279 号第十四条是服务商能力清单，「隔着屏幕干完」是我方解读）；行业+资质门控（智能工厂梯度培育须资质齐备）；`next_actions` 感知申报历史（退回意见优先）+ 核验步骤注入，封顶 5 条。
+- **闭集问卷**：`questionnaire.py` 首屏 5 槽位 + 诊断 13 槽位（总量 ≤30 上限内）；single/multi 选项**闭集**（未定义选项 400）；未知槽位键一律拒绝（防脏数据越权写入）；`ctx.contact` 刻意不在问卷定义——留资走独立 `POST /session/lead`（consent 必须 `true`），报告只在已留资后可见（留资闸）。
+- **路由 6 条**（NEW `diagnostics_blueprint`，url_prefix `/api/v1/diagnostics`，**不进 api_catalog**，匿名面无 JWT）：GET /questionnaire · POST /sessions · GET /session · POST /session/assessment · POST /session/answers（未做首屏 409 `first_screen_required`）· POST /session/lead；`DiagnosticsServiceError` 统一映射 error_response。
+- **测试 NEW `test_diagnostics_mvp.py` 26 例**：部署闸默认关 404 ＋ **出厂默认值安全钉**（`diagnostics_enabled is False ∧ rate_fail_closed is True` 双断言）/令牌·IP 指纹形状/零 projects 外键元数据扫描/测算卡纯度（无「元」无「/100」、双层依据分离、资质门控、确定性）/校验闸（未知槽位/闭集选项/必答缺项/首屏前置 409/scope 分离）/留资闸（consent 必填+报告门）/配额（IP 429＋令牌 429＋**Redis 故障 fail-closed**＋显式 `FDE_DIAGNOSTICS_RATE_FAIL_CLOSED=0` fail-open）/归因结构（channel 必带 channel_ref）/脱敏（企业名不落库）/令牌头缺失 401。**变异十连全红→还原→绿**（M1 部署闸默认开/M2 令牌明文/M3 IP 明文/M4 加 projects FK/M5 测算卡落分数/M6 原文解读混写/M7 摘 IP 上限/M8 fail-open 默认/M9 绕脱敏/M10 摘首屏前置闸；**首版 M8 无判别力**——diag_app 夹具显式置 fail_closed=True 掩盖默认值翻转 ⇒ 补出厂默认值安全钉 `test_shipped_defaults_are_safe` 后转红，变异判别力本身要验收的家族教训再现）。
+- **7 注册点**：app.py `_BLUEPRINT_SPECS`（49→**50** 蓝图）/migrations/env.py/conftest 清理序（users 前置，FK SET NULL）/test_migrations `HEAD_REVISION="f3a9c7e1d5b2"` + 58 全集断言/结构清单三件套重生成（**441→447 路由 / 50 蓝图 / 145→146 表 / 58 rev 单头 `f3a9c7e1d5b2`**，与口径行逐位一致）/archify 卡片口径同步＋finalize 四闸全绿＋preview.png 整页实拍（freshness 闸 OK）/config 四新字段＋`.env.example` 注释块。
+- **口径**：pytest 定向实测 test_diagnostics_mvp **26 passed** ＋ 结构/迁移/蓝图/路由同步四套 36 passed（全量收集预期 2650+26＝**2676**，终值以本 PR CI 为准）/mypy 官方闸 OK（基线 279 不变、零新增）/ruff 触碰文件零告警；**server 变更 ⇒ 合并后 rebuild 三镜像 + `alembic upgrade head`（新迁移）**；桌面零改动不重打包。
+
 ## [未发布] — 获客诊断工具 T-02 裁定轮（rubric v0.1 落地 + 裁定单落定 + 元验证重算；纯文档零代码零迁移零路由零桌面，2026-11-11）
 
 - **拍板**：蔡工授权「总体按建议实施」——**rubric v0.1 落地**（C1–C4 四项）、**裁定单落定**、**元验证夹具重算**、任务书回写。

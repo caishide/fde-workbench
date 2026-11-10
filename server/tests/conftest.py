@@ -498,6 +498,12 @@ def db_session(app) -> Session:
 
     cleanup_models = (
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
+        # 获客诊断 T-10a：匿名诊断会话行。唯一外键指向 users（claimed_by，
+        # **FK SET NULL**）——必须先于 users 清理；**零外键指向 projects**
+        # （线索 ≠ 项目，metadata 扫描钉死）。
+        __import__(
+            "fde_api.diagnostics.models", fromlist=["LeadDiagnosticSession"]
+        ).LeadDiagnosticSession,
         # 商业化 G5：区域合作商四表。结算关联行引用伙伴/G3 科目行/项目，
         # 伙伴行引用 users（**FK RESTRICT**）——必须先于 G4 两表、科目层、
         # 派单簇与 users 清理；内部子先父后。
