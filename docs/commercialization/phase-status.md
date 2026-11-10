@@ -723,3 +723,20 @@ docs/commercialization/
 - **桌面焦点竞态修复（⑥，纯桌面零服务端）**：焦点管理挂在 **passive effect** 时，焦点生效落在 commit 之后的宏任务，而断言/读屏侧常由 DOM 变更的 MutationObserver（微任务）唤醒，两条链先后不定 ⇒「提交失败后焦点回到输入框」偶发断言红（实测 12 轮红 1 轮 ≈8%）。修法＝焦点管理改挂 **useLayoutEffect**（焦点属布局关注点，commit 内同步生效，早于任何观察者回调）：`users/UsersPage.tsx`（复位对话框两处）＋`common/DangerConfirmDialog.tsx`（危险确认两处）；**不靠放宽断言蒙过去**。验证＝users 连跑 30 轮零红、danger-confirm 连跑 20 轮零红、桌面全量 84 文件/985 例全绿。
 - 口径：pytest **2699 收集 = 2693 passed + 6 skipped**（融合树本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测，PR CI 复核）；vitest **985**（84 文件）不变；mypy 279 基线零新增；ruff 全过；零迁移零新路由零新表。
 - 遗留（显式维持挂账，不假装完成）：①**企业空间桌面呈现面**（自助注册页／空间视图，ADR-010 §3-4）——下一轮 G7 专项；②**商业化运维可见面**（配置缺口汇总槽位＋售卖闸状态＋法务审查未完成提示；服务端 admin 26 条路由桌面零消费）——下一轮；③ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；④ADR-004 §1.4 多子公司集团归并（法务）；⑤任务书 §17 商业数值拍板（保护期长度／续期条件／归属判定／分成比例／认证费金额／试运营升级指标与首期金额）——本轮不落数；⑥GAP-15 首批真实 run 复审（触发器已登记，样本=0 不可实施）。
+---
+
+## 挂账清偿轮 4：商业化运维就绪度可见面 — 已完成
+
+- 分支：`feat/commercial-ops-readiness`（工作树 `D:\test\fde-wt-g1`）
+- 基线 SHA：fork/main 含挂账清偿轮 3（PR #283）
+- 状态：**completed**（实现＋测试＋文档同 PR）
+- **起因与核实**：外部评审列出五项改进空间，逐项核实——②「未配置槽位无管理员可见面」**确无**（服务端有分散配置位读面但无汇总面；桌面对 26 条 commercial admin 路由零消费）；③「法务审查未完成只活在文档里」**确无可见面**；④「GAP-15 埋点无数据」**本轮不可实施**（需真实 run）；①与⑤⑥已在挂账清偿轮 3 落地。本轮清偿②③。
+- **落点**：
+  1. **服务端汇总面**：NEW `commercial/readiness_service.py` ＋ `GET /api/v1/admin/commercial/readiness`（admin 只读；治理面不进 api_catalog；零迁移零新表）。
+  2. **枚举纪律**：槽位按**权威键集**枚举（`FEE_CONFIG_KEYS`／`OPPORTUNITY_RULE_KEYS`），行只提供状态——槽位永不缺项（缺行即少报＝「缺什么」漏报，变异 M3 钉）。
+  3. **数值纪律**：只报状态（`unset`/`configured`、`registered`/`unregistered`），**绝不补默认值**——fail-closed 方向不变；用例钉死「响应里不得出现金额形态数字」。
+  4. **等待来源**：每个未就绪项带「等谁拍板」指针（§17 商业数值／分成比例／法务合规输入），话术单一权威在服务端，桌面端只渲染。
+  5. **桌面面板**：NEW `commercial/CommercialOpsPage.tsx` ＋ 路由 `#commercial-ops`（admin 专属）＋ 侧栏「商业化运维」入口——未就绪横幅 ＋ 槽位状态表 ＋ 售卖闸逐项登记态。
+- **测试**：NEW `server/tests/test_commercial_readiness.py` **7 例** ＋ NEW `desktop/tests/renderer/commercial-ops.test.tsx` **5 例**；**变异三连全红→还原→绿**（M1 摘 admin 闸→1 红／M2 摘闸条件呈现→1 红／M3 槽位改按行枚举→1 红）。
+- 口径：pytest **2706 收集 = 2700 passed + 6 skipped**（本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测，PR CI 复核）；vitest **990**（85 文件，+5）；mypy 279 基线零新增；ruff 全过；路由 **447 → 448**（审计清单已重生成，CSV 恰 +1 行）；迁移头仍 `f3a9c7e1d5b2`。
+- 遗留（显式维持挂账，不假装完成）：①**企业空间桌面呈现面**（自助注册页／空间视图，ADR-010 §3-4）——下一轮 G7 专项；②ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；③ADR-004 §1.4 多子公司集团归并（法务）；④任务书 §17 商业数值拍板（本轮只**呈现缺口**，不落数）；⑤GAP-15 首批真实 run 复审（触发器已登记，样本=0 不可实施）。

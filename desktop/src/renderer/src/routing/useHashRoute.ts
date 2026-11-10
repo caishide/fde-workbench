@@ -13,6 +13,7 @@ export type AppRoute =
   | { kind: "modules" }
   | { kind: "users" }
   | { kind: "system-configuration" }
+  | { kind: "commercial-ops" }
   | { kind: "task-center" }
   | { kind: "translator" }
   | { kind: "metrics" }
@@ -62,6 +63,7 @@ export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#modules") return { kind: "modules" }
   if (hash === "#users") return { kind: "users" }
   if (hash === "#system-configuration") return { kind: "system-configuration" }
+  if (hash === "#commercial-ops") return { kind: "commercial-ops" }
   if (hash === "#task-center") return { kind: "task-center" }
   if (hash === "#translator") return { kind: "translator" }
   if (hash === "#metrics") return { kind: "metrics" }
@@ -145,6 +147,7 @@ export function routeHash(route: AppRoute): string {
     case "modules": return "#modules"
     case "users": return "#users"
     case "system-configuration": return "#system-configuration"
+    case "commercial-ops": return "#commercial-ops"
     case "task-center": return "#task-center"
     case "translator": return "#translator"
     case "metrics": return "#metrics"
@@ -159,7 +162,7 @@ export function routeHash(route: AppRoute): string {
 }
 
 export function authorizedRoute(route: AppRoute, role: UserRole): AppRoute {
-  if (route.kind === "templates" || route.kind === "document-templates" || route.kind === "modules" || route.kind === "users" || route.kind === "system-configuration") {
+  if (route.kind === "templates" || route.kind === "document-templates" || route.kind === "modules" || route.kind === "users" || route.kind === "system-configuration" || route.kind === "commercial-ops") {
     return role === "admin" ? route : projectsRoute
   }
   // J6：扩展中心（LCSC 工具页 / 插件审批 / 模型配置）属管理口径——非管理员
