@@ -25,6 +25,7 @@ from fde_api.auth.models import ROLE_ADMIN, User
 from fde_api.auth.passwords import verify_password
 from fde_api.commercial.service import CommercialServiceError
 from fde_api.commercial.models import (
+    AI_DRAFT_ADOPTION_OUTCOMES,
     DIAGNOSIS_PROJECT_TIERS,
     EXPERIENCE_LIMITS,
     EXPERIENCE_LIMITS_PLACEHOLDER,
@@ -190,11 +191,17 @@ def complete_diagnosis(
     subject_key_raw: object,
     deliverables: object,
     confirm_password: object,
+    ai_draft_adoption: object = None,
 ) -> dict[str, Any]:
     """标记诊断完成（交付咨询环节治理写，admin+密码确认，ADR-007）。
 
     **恰好六键全真**（FREE_DIAGNOSIS_DELIVERABLES）方可完成：缺失/未真
     逐键点名 409 ``deliverables_incomplete``；多余键 400（闭集拒绝）。
+
+    ``ai_draft_adoption``（GAP-15 采纳率埋点，可省略）：交付咨询环节对
+    「AI 草稿→人工登记六项」这一步的采纳申报，闭集 accepted/modified/
+    rejected（ADR-007 §2.5 复审触发器的数据承载）；申报值随
+    ``commercial_quota_completed`` 事件留痕，缺省不落键（未申报）。
     """
     _require_admin(actor)
     _confirm_password(session, actor, confirm_password)
@@ -220,19 +227,29 @@ def complete_diagnosis(
             "六项免费交付物未齐备：" + "、".join(missing) + "。",
             409,
         )
+    if ai_draft_adoption is not None and (
+        not isinstance(ai_draft_adoption, str) or ai_draft_adoption not in AI_DRAFT_ADOPTION_OUTCOMES
+    ):
+        raise _error(
+            "invalid_request",
+            "ai_draft_adoption 仅可为 " + "/".join(AI_DRAFT_ADOPTION_OUTCOMES) + " 之一（申报可省略）。",
+        )
     quota.state = "completed"
     quota.completed_at = datetime.now(timezone.utc)
     quota.deliverables = {key: True for key in FREE_DIAGNOSIS_DELIVERABLES}
+    completion_changes: dict[str, Any] = {
+        "request_id": str(uuid4()),
+        "subject_key": subject_key,
+        "deliverables": dict(quota.deliverables),
+    }
+    if ai_draft_adoption is not None:
+        completion_changes["ai_draft_adoption"] = ai_draft_adoption
     record_event(
         session,
         actor,
         "commercial_quota_completed",
         actor,
-        {
-            "request_id": str(uuid4()),
-            "subject_key": subject_key,
-            "deliverables": dict(quota.deliverables),
-        },
+        completion_changes,
     )
     return {"quota": serialize_quota(quota), "changed": True}
 
@@ -391,6 +408,7 @@ __all__ = [
     "normalize_subject_key",
     "serialize_quota",
     "start_diagnosis",
+    "AI_DRAFT_ADOPTION_OUTCOMES",
     "DIAGNOSIS_PROJECT_TIERS",
     "EXPERIENCE_LIMITS",
     "EXPERIENCE_LIMITS_PLACEHOLDER",

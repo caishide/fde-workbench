@@ -677,3 +677,17 @@ docs/commercialization/
 - 总结论：**18/18 全过**（其中 #6/#16 附诚实注记——挂账项均为任务书 §17 预期内的外部输入或显式架构边界〔V3.2 simulation 接线、GAP-15 埋点〕，非验收缺口）。
 - 收尾核查轮零代码零迁移零路由零桌面：无需 rebuild/alembic/重打包；部署活体维持 G6 收口态（url_map 442／容器内 alembic `e8b3f7c2d9a5` head／三镜像 ID 一致／`/health/ready` 200）。
 - **商业化 G1–G6 Goal 循环至此全部收口**（G0 基线审计与四个歧义 ADR → G1–G6 六个实施阶段 → §16 收尾核查轮）；开放挂账汇总见各阶段「遗留问题」节与 ADR-010 §3。
+
+---
+
+## 挂账清偿轮 1：GAP-15 AI 草稿采纳率埋点 — 已完成
+
+- 分支：`feat/commercial-gap15-adoption`（工作树 `D:\test\fde-wt-g1`）
+- 基线 SHA：fork/main `edac1b7`（§16 收口后上游四笔 #266/#267/#269/#270 之上；G6 遗留清单与 ADR-007 §2.5 复审触发器的第一顺位开放项）
+- 状态：**completed**（实现＋文档同 PR；PR/main run ID 与合并 SHA 以合并记录为准——本节测试数为本地 CI 同命令 `-n 4 --dist loadfile` 实测，PR CI 复核）
+- 落点（零新表零迁移零新路由零桌面；`api_catalog` ENTRIES 94 不变）：
+  1. **方案确认流（系统派生，GAP-15 处置方向①）**：`solutions/service.py` NEW `_ai_draft_provenance` 派生助手——`solution_signoff_resolved`（人工拍板 approved/rejected）与 `project_solution_archived`（弃用＝拒绝/放弃信号）事件在 `generated_by='agent'` 方案上携带 `ai_draft` 块（generated_by/agent_run_id/modified_after_generation）；`update_solution` 对 agent 方案**首改即落** `source_json.ai_draft_modified` 戳（幂等不翻回，首改时间戳/操作人定格）；人工方案零触碰——事件不带 ai_draft 键（既有形状零漂移，用例钉住）。
+  2. **诊断确认流（人工申报，GAP-15 处置方向②）**：`complete_diagnosis` 新增可选 `ai_draft_adoption` ∈ `AI_DRAFT_ADOPTION_OUTCOMES`（accepted/modified/rejected 闭集，models.py 新常量）——交付咨询环节申报「AI 草稿→人工登记六项」的采纳形态，随 `commercial_quota_completed` 事件留痕；缺省不落键（向后兼容）；非法值 400 闭集拒绝零副作用。
+- 测试：NEW `server/tests/test_solution_ai_draft_adoption.py` **8 例**（首改落戳幂等/人工零戳/signoff 块三形态〔approved 未修改＝接受原稿、approved+修改戳＝修改后接受、rejected〕/人工方案两处 omit 钉/archive 块）＋ `test_commercial_enterprise_quota.py` **+3 例**（申报两值落事件/非法 400+零副作用/省略不落键）；**变异三连全红→还原→绿**（摘派生块→4 红；摘首改戳→3 红；摘申报校验与落键→2 红）；全量套件本地 `-n 4 --dist loadfile` EXIT=0（**2638 收集 = 2632 passed + 6 skipped**＝G6 后基线 2627 收集＋本轮 +11；第八度上游插队 rebase 融合 #271/#272/#273/#274 四笔〔pytest 增量 #274 评测集 +12〕⇒ 融合树 **2650 收集 = 2644 passed + 6 skipped** 实测）；ruff 触碰文件全过；mypy 279 基线零新增。
+- 语义注记：采纳率口径＝事件序可查（approved+未修改／approved+已修改／rejected／弃用），不建第二套事件体系、零聚合表——聚合在复审轮按 BP §1.3a 证据口径现算（「口径引用前现测」）。
+- 遗留：数据仍待首批真实 run（复审触发器另一半「agent_runs 非零」不变）；gap-register GAP-15 条目已附处置结果（登记维持，待首批数据后复审销号）。

@@ -386,7 +386,7 @@ def resolve_signoff(*, actor: User, project_id: str, solution_id: str, payload: 
         session.flush()
         # updated_at 走 onupdate=func.now()（server 端生成）：flush 后回读再序列化
         session.refresh(checkpoint)
-        record_event(session, actor, "solution_signoff_resolved", project, {
+        signoff_changes: dict[str, Any] = {
             "checkpoint_id": checkpoint.id,
             "solution_id": solution.id,
             "decision": decision,
@@ -394,7 +394,14 @@ def resolve_signoff(*, actor: User, project_id: str, solution_id: str, payload: 
             "run_id": checkpoint.handoff_run_id,
             "required_level": checkpoint.required_level,
             "artifacts_reviewed_flipped": flipped,
-        })
+        }
+        # GAP-15 采纳留痕：拍板对象是 AI 草稿方案时，事件携带 ai_draft 派生块
+        # （approved+未修改=接受原稿；approved+已修改=修改后接受；rejected=拒绝
+        # ——采纳率在事件序上可查，不建第二套事件体系）。
+        provenance = _ai_draft_provenance(solution)
+        if provenance is not None:
+            signoff_changes["ai_draft"] = provenance
+        record_event(session, actor, "solution_signoff_resolved", project, signoff_changes)
         project.version += 1
         return {
             "checkpoint_id": checkpoint.id,
@@ -406,6 +413,23 @@ def resolve_signoff(*, actor: User, project_id: str, solution_id: str, payload: 
             "evidence_ref": checkpoint.evidence_ref,
             "updated_at": checkpoint.updated_at.isoformat(),
         }
+
+
+def _ai_draft_provenance(solution: ProjectSolution) -> dict[str, Any] | None:
+    """GAP-15 采纳留痕的 AI 溯源派生块（仅 ``generated_by='agent'`` 携带）。
+
+    ``modified_after_generation`` 取自 ``source_json`` 的 ``ai_draft_modified``
+    戳（``update_solution`` 首次修改时落，首改即定不翻回）——人工方案返回
+    None，事件形状与既有用例完全兼容。
+    """
+    if solution.generated_by != "agent":
+        return None
+    marks = solution.source_json or {}
+    return {
+        "generated_by": solution.generated_by,
+        "agent_run_id": solution.agent_run_id,
+        "modified_after_generation": bool(marks.get("ai_draft_modified")),
+    }
 
 
 def create_solution(*, actor: User, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -442,6 +466,12 @@ def update_solution(*, actor: User, project_id: str, solution_id: str, payload: 
         if solution.source_json and solution.source_json.get("kind") == "legacy_opportunity_delivery":
             solution.source_json = {**solution.source_json, "reviewed": True,
                                     "reviewed_by_user_id": actor.id, "reviewed_at": datetime.now(timezone.utc).isoformat()}
+        # GAP-15：AI 草稿方案首次被修改即落「已修改」戳（首改即定、幂等不翻回
+        # ——采纳率口径里「修改后接受」以本戳为准；人工方案零触碰）。
+        if solution.generated_by == "agent" and not (solution.source_json or {}).get("ai_draft_modified"):
+            solution.source_json = {**(solution.source_json or {}), "ai_draft_modified": True,
+                                    "ai_draft_modified_at": datetime.now(timezone.utc).isoformat(),
+                                    "ai_draft_modified_by_user_id": actor.id}
         solution.version += 1
         solution.updated_at = datetime.now(timezone.utc)
         project.version += 1
@@ -469,7 +499,13 @@ def archive_solution(*, actor: User, project_id: str, solution_id: str, payload:
         solution.version += 1
         solution.updated_at = datetime.now(timezone.utc)
         project.version += 1
-        record_event(session, actor, "project_solution_archived", project, {"solution_id": solution.id, "solution_version": solution.version})
+        archive_changes: dict[str, Any] = {"solution_id": solution.id, "solution_version": solution.version}
+        # GAP-15：弃用 AI 草稿方案＝拒绝/放弃信号，事件携带同款 ai_draft 块
+        # （未经 signoff approved 即弃用的 agent 方案在事件序上可辨）。
+        archive_provenance = _ai_draft_provenance(solution)
+        if archive_provenance is not None:
+            archive_changes["ai_draft"] = archive_provenance
+        record_event(session, actor, "project_solution_archived", project, archive_changes)
         session.flush()
         return serialize_solution(solution)
 

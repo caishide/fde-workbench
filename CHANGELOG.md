@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 商业化挂账清偿轮 1：GAP-15 AI 草稿采纳率埋点（方案流系统派生＋诊断流人工申报；零迁移零路由零新表零桌面，2026-11-10）
+
+- **范围**：商业化线开放挂账第一顺位（G0–G6 六阶段遗留问题节全部点名、ADR-007 §2.5 复审触发器前置、gap-register GAP-15）——采纳决定在两条确认流上成为 `operation_events` 可查事件；零新表零迁移零新路由零桌面，`api_catalog` ENTRIES 94 不变。
+- **方案确认流（系统派生）**：`solutions/service.py` NEW `_ai_draft_provenance`——`solution_signoff_resolved`（人工拍板 approved/rejected）与 `project_solution_archived`（弃用＝拒绝/放弃信号）事件在 `generated_by='agent'` 方案上携带 `ai_draft` 块（generated_by/agent_run_id/modified_after_generation）；`update_solution` 对 agent 方案**首改即落** `source_json.ai_draft_modified` 戳（首改即定、幂等不翻回）；人工方案零触碰、事件零新增键（既有形状零漂移）。
+- **诊断确认流（人工申报）**：`complete_diagnosis` 新增可选 `ai_draft_adoption` ∈ accepted/modified/rejected（NEW `AI_DRAFT_ADOPTION_OUTCOMES` 闭集，models.py）——交付咨询环节申报「AI 草稿→人工登记六项」采纳形态，随 `commercial_quota_completed` 事件留痕；缺省不落键（向后兼容）；非法值 400 闭集拒绝零副作用。
+- **测试**：NEW `test_solution_ai_draft_adoption.py` 8 例＋`test_commercial_enterprise_quota.py` +3 例；变异三连全红→还原→绿（摘派生块→4 红／摘首改戳→3 红／摘申报校验与落键→2 红）；全量 `-n 4 --dist loadfile` EXIT=0（**2638 收集 = 2632 passed + 6 skipped**＝G6 后基线 2627 收集＋本轮 +11；rebase 融合上游 #271/#272/#273/#274 四笔〔pytest 增量 #274 评测集 +12〕⇒ 融合树 **2650 收集 = 2644 passed + 6 skipped** 实测）；ruff 触碰文件全过；mypy 279 基线零新增。采纳率聚合不落数——复审轮按 BP §1.3a 证据口径现算（口径引用前现测）。
+- server 变更 ⇒ 合并后 rebuild 三镜像（零迁移，alembic 幂等 no-op）。
+
 ## [未发布] — 获客诊断工具 W1 T-06 轮（评测集 fixtures 固化 + 评测集污染隔离静态钉；测试层新增，零迁移零路由零桌面，2026-11-10）
 
 - **起因**：获客诊断工具实施任务书 T-01~T-05（W0 零代码基座：6 张案例卡 + rubric + 元验证夹具 + 问卷槽位清单 + 指纹登记）落盘后进 T-06——把「评测集污染隔离」从流程纪律变成**机械闸**。红线 R-4：案例卡的标准答案（问题清单 / 方案方向 / 结果口径 / 人机边界）**永不进**生成器提示词、few-shot、知识库与检索索引。
