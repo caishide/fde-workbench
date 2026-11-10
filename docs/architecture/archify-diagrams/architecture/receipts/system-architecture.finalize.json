@@ -5,15 +5,15 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-11-10T09:13:35.887Z",
+  "startedAt": "2026-11-10T13:42:48.473Z",
   "specification": {
-    "path": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-    "sha256": "210966512f259fc123889cf7ee12b1cad8f683272b38bbdbcb26889a1520c427",
+    "path": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "ab3b56876e20de3fa84f7a44aa623cf0ebe15ce2a5618b7ff1eca12f44c679c5",
     "bytes": 15320
   },
   "artifact": {
-    "path": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
-    "sha256": "bc97a7085dffcf59129c59c7771a85185eec465dace6dda0d8a3e5382e6c6537",
+    "path": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "030a877be158aa7616eafbefaccbc78adb73e80eeb85db8bfe0125843fc20eeb",
     "bytes": 845314
   },
   "stages": {
@@ -27,12 +27,12 @@
         "C:\\Users\\P1\\.agents\\skills\\archify\\archify\\bin\\archify.mjs",
         "deliver",
         "architecture",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "--quality",
         "showcase",
         "--repo-root",
-        "D:\\test\\fde-wt-g1",
+        "D:\\test\\fde-wt-f1",
         "--json"
       ],
       "receipt": {
@@ -40,7 +40,7 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "210966512f259fc123889cf7ee12b1cad8f683272b38bbdbcb26889a1520c427",
+          "sha256": "ab3b56876e20de3fa84f7a44aa623cf0ebe15ce2a5618b7ff1eca12f44c679c5",
           "bytes": 15320
         },
         "validation": {
@@ -56,34 +56,34 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 1561,
+      "durationMs": 2216,
       "command": [
         "D:\\software\\nodejs\\node.exe",
         "C:\\Users\\P1\\.agents\\skills\\archify\\archify\\bin\\archify.mjs",
         "deliver",
         "architecture",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "--quality",
         "showcase",
         "--repo-root",
-        "D:\\test\\fde-wt-g1",
+        "D:\\test\\fde-wt-f1",
         "--json"
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "6b34cd94-7623-4b75-ac7e-4eecc79fc5a3",
+        "receiptId": "ecdaa9f8-c12c-4ca3-bebd-464255e2e457",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
-        "input": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-        "output": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "input": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+        "output": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "specification": {
-          "sha256": "210966512f259fc123889cf7ee12b1cad8f683272b38bbdbcb26889a1520c427",
+          "sha256": "ab3b56876e20de3fa84f7a44aa623cf0ebe15ce2a5618b7ff1eca12f44c679c5",
           "bytes": 15320
         },
         "artifact": {
-          "sha256": "bc97a7085dffcf59129c59c7771a85185eec465dace6dda0d8a3e5382e6c6537",
+          "sha256": "030a877be158aa7616eafbefaccbc78adb73e80eeb85db8bfe0125843fc20eeb",
           "bytes": 845314
         },
         "validation": {
@@ -117,19 +117,19 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 426,
+      "durationMs": 278,
       "command": [
         "D:\\software\\nodejs\\node.exe",
         "C:\\Users\\P1\\.agents\\skills\\archify\\archify\\bin\\archify.mjs",
         "check",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "--require-provenance"
       ],
       "receipt": {
         "ok": true,
-        "file": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "file": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "artifact": {
-          "sha256": "bc97a7085dffcf59129c59c7771a85185eec465dace6dda0d8a3e5382e6c6537",
+          "sha256": "030a877be158aa7616eafbefaccbc78adb73e80eeb85db8bfe0125843fc20eeb",
           "bytes": 845314
         },
         "checks": [
@@ -268,22 +268,20 @@
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "6b34cd94-7623-4b75-ac7e-4eecc79fc5a3"
+        "deliveryReceiptId": "ecdaa9f8-c12c-4ca3-bebd-464255e2e457"
       }
     },
     "browser-check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 3567,
+      "durationMs": 3717,
       "command": [
         "D:\\software\\nodejs\\node.exe",
         "C:\\Users\\P1\\.agents\\skills\\archify\\archify\\bin\\archify.mjs",
         "browser-check",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+        "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
         "--json",
-        "--require-provenance",
-        "--out-dir",
-        "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\receipts"
+        "--require-provenance"
       ],
       "execution": "in-process",
       "receipt": {
@@ -294,10 +292,10 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "6b34cd94-7623-4b75-ac7e-4eecc79fc5a3",
+        "deliveryReceiptId": "ecdaa9f8-c12c-4ca3-bebd-464255e2e457",
         "artifact": {
-          "path": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
-          "sha256": "bc97a7085dffcf59129c59c7771a85185eec465dace6dda0d8a3e5382e6c6537",
+          "path": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+          "sha256": "030a877be158aa7616eafbefaccbc78adb73e80eeb85db8bfe0125843fc20eeb",
           "bytes": 845314
         },
         "state": {
@@ -1003,7 +1001,6 @@
           "contactSheet": null
         },
         "sidecars": {
-          "directory": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\receipts",
           "receipt": "system-architecture.browser-check.json",
           "files": []
         }
@@ -1016,13 +1013,13 @@
   },
   "diagnostics": [],
   "evidence": {
-    "receipt": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize.json",
-    "summaryReceipt": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize-summary.json",
-    "browserCheckReceipt": "D:\\test\\fde-wt-g1\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.browser-check.json"
+    "receipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-11-10T09:13:42.250Z",
-  "durationMs": 6363,
+  "finishedAt": "2026-11-10T13:42:55.438Z",
+  "durationMs": 6965,
   "update": {
     "status": "current",
     "installedVersion": "3.2.0",

@@ -1,10 +1,10 @@
 {
  "route_count": 451,
  "blueprint_count": 50,
- "table_count": 146,
- "revision_count": 59,
+ "table_count": 147,
+ "revision_count": 60,
  "heads": [
-  "b7e4d1c9a3f2"
+  "b7e4c1a9f3d5"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -128,6 +128,14 @@
    "create_tables": [
     "workflow_runs",
     "workflow_node_runs"
+   ],
+   "add_column_tables": []
+  },
+  "b7e4c1a9f3d5": {
+   "file": "b7e4c1a9f3d5_five_seat_allocations.py",
+   "down_revision": "b7e4d1c9a3f2",
+   "create_tables": [
+    "dispatch_settlement_allocations"
    ],
    "add_column_tables": []
   },

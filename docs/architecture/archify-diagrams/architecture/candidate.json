@@ -298,7 +298,7 @@
       "id": "db",
       "type": "database",
       "label": "PostgreSQL 16",
-      "sublabel": "twenty-db:5432/fde_workbench · 146 表",
+      "sublabel": "twenty-db:5432/fde_workbench · 147 表",
       "tag": "WSL 既有实例",
       "sources": [
         {
