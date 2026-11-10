@@ -34,7 +34,16 @@
 - **指纹纪律生效实录**：`rubric/裁定单-首批6卡.md` 因预评填入而变更 ⇒ 指纹由 `23fcbd91…` 变为 `8592ae7f…`，仓库侧登记表同步更新（**改答案必留 diff**）；**六张案例卡本体未改**（`card_version` 仍 `card-v1`，`ground_truth` 未动）⇒ 无需升版本、无曲线断点。
 - **口径**：pytest/mypy/vitest 全不动；**零服务端源码改动、零迁移、零路由、零蓝图、零桌面** ⇒ 无需 rebuild 镜像 / alembic / 便携版重打包。
 
-## [未发布] — 商业化挂账清偿轮 2：注册面节流（公开注册入口防滥用闸；来源 IP 限流＋fail-open/fail-closed；零迁移零新路由零新表零桌面，2026-11-10)
+## [未发布] — 商业化挂账清偿轮 3：商业域权益行并发安全（行锁＋刷新；席位激活与首单扣费并发串行化）＋桌面焦点竞态修复（零迁移零新路由零新表，2026-11-10）
+
+- **起因**：外部评审指出「商业域资金敏感面并发覆盖偏薄」——核实为**真缺口且已落成真实缺陷**：`commercial_entitlements`（一人一份，PK=user_id）的席位激活与首单扣费此前是**无行锁读-改-写**（`ensure_entitlement` 只做 `session.get`），并发窗口里两个请求可都读到旧值并各自写入：席位双激活；更严重的是**账本侧无唯一约束兜底**（`commercial_revenue_ledger` 不对 `(subject_type, subject_user_id)` 建唯一键）⇒ 同一交付者可能被记两笔 3980 席位费。
+- **修法**：NEW `commercial/service.py::lock_entitlement`——房内范式（`quota_service._lock_quota` 同款）**行锁＋刷新**：`SELECT ... FOR UPDATE` ＋ `execution_options(populate_existing=True)`（缺刷新＝只锁住行却不刷新内存视图＝等于没锁，CR-021 同款教训）；「行尚不存在」＝并发插入窗口，用 savepoint 兜住唯一约束冲突（IntegrityError）后按已提交行加锁，首次并发不 500 化。
+- **接线**：权益**写**路径一律走行锁原语——`set_commercial_role`／`activate_seat`／`set_certification`／`set_delivery_eligibility`／`charge_first_order_seat_fee`／`record_certification_evaluation`；**读**面 `get_entitlement_for_view` 保持无锁（读面加锁＝把并发读变成串行写）。
+- **测试**：NEW `server/tests/test_commercial_concurrency.py` **8 例**（并发激活串行化／真并发持锁未提交时必须等待并读真值／并发扣费零记账〔断言置于 rollback 之前——rollback 会把未提交写入冲掉＝假绿，本次已实测踩中并修正〕／席位费科目行恒 1 行／并发建行不 500／写路径行锁与读面无锁双静态钉／被拒激活不留事件）；**变异四连全红→还原→绿**（M1 激活退无锁→2 红／M2 扣费退无锁→2 红／M3 摘刷新→3 红／M4 摘行锁→2 红）；邻域商业四文件 85 例全绿；ruff 全过；mypy 279 基线零新增。
+- **桌面焦点竞态修复（纯桌面零服务端）**：评审另指出 `desktop/tests/renderer/users.test.tsx` 焦点断言偶发红——**实测复现 12 轮红 1 轮（≈8%）**，根因是焦点管理挂在 **passive effect**：焦点生效落在 commit 之后的宏任务，而断言/读屏侧常由 DOM 变更的 MutationObserver（微任务）唤醒，两条链先后不定。修法＝焦点管理改挂 **useLayoutEffect**（焦点属布局关注点，commit 内同步生效，早于任何观察者回调）——`users/UsersPage.tsx`（复位对话框两处）＋`common/DangerConfirmDialog.tsx`（危险确认两处）；**不靠放宽断言蒙过去**。验证＝users 连跑 30 轮零红、danger-confirm 连跑 20 轮零红、桌面全量 **84 文件 / 985 例**全绿。
+- 口径：pytest **2699 收集 = 2693 passed + 6 skipped**（融合树本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测，PR CI 复核；**第十度上游插队**：#280 获客诊断 T-10a〔pytest +26〕已并入，融合树基线 2691 收集〔CI 实测 2684+7〕）；vitest **985**（84 文件；AGENTS 旧记「85 文件」本轮校正为现测 84）不变；mypy 279 不变。server 变更 ⇒ 合并后 rebuild 三镜像（零迁移，alembic 幂等 no-op）；桌面组件改动 ⇒ 便携版重打包挂账。
+
+## [未发布] — 商业化挂账清偿轮 2：注册面节流（公开注册入口防滥用闸；来源 IP 限流＋fail-open/fail-closed；零迁移零新路由零新表零桌面，2026-11-10）
 
 - **范围**：商业化线开放挂账第二顺位（G6 遗留问题 #2 ＋ ADR-010 §3-3 ＋ §3-3 消解节）——公开注册入口此前**零节流**（内网部署假设下的登记项）；本轮按 #250 登录限流模式补齐防滥用闸；零新表零迁移零新路由零桌面，`api_catalog` ENTRIES 94 不变。
 - **限流层**：`commercial/routes.py` NEW `REGISTRATION_RATE_MAX_ATTEMPTS=10`／`REGISTRATION_RATE_WINDOW_SECONDS=3600` ＋ `_registration_rate_key`／`_registration_throttle`——Redis INCR+TTL、fail-open 缺省、429 结构化错误 `registration_rate_limited`、ProxyFix 后取真实客户端 IP；接线在**载荷解析与 argon2 计算之前**（被限请求零成本拒绝）。

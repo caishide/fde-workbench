@@ -18,6 +18,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import ROLE_ADMIN, User
@@ -99,6 +100,45 @@ def ensure_entitlement(session: Session, user_id: str) -> CommercialEntitlement:
     return row
 
 
+def lock_entitlement(session: Session, user_id: str) -> CommercialEntitlement:
+    """取权益行并**加行锁**（写路径专用；读面用 :func:`ensure_entitlement`，无锁）。
+
+    「席位不重复激活／首单费不重复收」是本域的硬不变量——无锁时两个并发请求
+    可能都读到 ``seat_status != 'active'`` 并各自写入：席位双激活；更糟的是
+    **同一交付者被记两笔首单席位费**（账本侧无唯一约束兜底，重复收费会真的
+    落两行）。行锁把同一人的写路径串行化：后到者读到已提交真值即被 409 拒。
+
+    ``populate_existing`` 是必需项——本会话的 identity map 里可能还留着并发前
+    的旧实例（``expire_on_commit=False`` 时属性不会自动过期）；缺了它，行锁
+    只锁住行却不刷新内存视图，等于没锁（CR-021 同款教训：「锁在手读必为已
+    提交真值」靠的是行锁＋刷新两者同时成立）。
+
+    「行尚不存在」＝并发插入窗口：两个事务同时 INSERT 同一 PK，后者被
+    PostgreSQL 唯一约束拒（IntegrityError，且只在对方提交后才报错）——用
+    savepoint 兜住并回滚到 savepoint，再按已提交行加锁（首次并发不 500 化）。
+    """
+    statement = (
+        select(CommercialEntitlement)
+        .where(CommercialEntitlement.user_id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    row = session.scalars(statement).first()
+    if row is not None:
+        return row
+    try:
+        with session.begin_nested():
+            session.add(CommercialEntitlement(user_id=user_id))
+            session.flush()
+    except IntegrityError:
+        # 并发插入：另一事务已建行——回滚到 savepoint 后按已提交行加锁
+        pass
+    row = session.scalars(statement).first()
+    if row is None:
+        raise _error("entitlement_not_found", "该用户尚无商业权益记录。", 404)
+    return row
+
+
 def _snapshot(row: CommercialEntitlement) -> dict[str, Any]:
     """变更前快照（事件 changes.before 用；四类字段全量）。"""
     return {
@@ -133,7 +173,7 @@ def set_commercial_role(
             "invalid_commercial_role",
             "角色分层必须是 R1/R2/R3/R4 之一或 null（未分层）。",
         )
-    row = ensure_entitlement(session, user_id)
+    row = lock_entitlement(session, user_id)
     before = _snapshot(row)
     if row.commercial_role == role:
         return {"entitlement": serialize_entitlement(row), "changed": False}
@@ -274,7 +314,7 @@ def activate_seat(
             "invalid_seat_source",
             "seat_source 必须是 first_delivery/bootcamp_practical/bootcamp_mentorship 之一。",
         )
-    row = ensure_entitlement(session, user_id)
+    row = lock_entitlement(session, user_id)
     if row.seat_status == "active":
         raise _error("seat_already_active", "该用户年度席位已激活，不重复激活。", 409)
     before = _snapshot(row)
@@ -327,7 +367,7 @@ def set_certification(
     if source is not None and (not isinstance(source, str) or len(source) > 120):
         raise _error("invalid_request", "source 必须是 ≤120 字符指针字符串或 null。")
     target_status = "certified" if certified else "uncertified"
-    row = ensure_entitlement(session, user_id)
+    row = lock_entitlement(session, user_id)
     before = _snapshot(row)
     if row.certification_status == target_status and row.certification_source == source:
         return {"entitlement": serialize_entitlement(row), "changed": False}
@@ -368,7 +408,7 @@ def set_delivery_eligibility(
         raise _error(
             "invalid_delivery_eligibility", "eligibility 必须是 none/eligible 之一。"
         )
-    row = ensure_entitlement(session, user_id)
+    row = lock_entitlement(session, user_id)
     before = _snapshot(row)
     if row.delivery_eligibility == eligibility:
         return {"entitlement": serialize_entitlement(row), "changed": False}

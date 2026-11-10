@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react"
 
 import { PASSWORD_MAX_LENGTH } from "../../../shared/contracts"
 import { ApiClientError } from "../api/client"
@@ -41,11 +41,14 @@ export function DangerConfirmDialog({
   const inputRef = useRef<HTMLInputElement>(null)
   const locked = busy || verifying
 
-  useEffect(() => {
+  // 焦点管理挂 **layout effect**（同 UsersPage 的复位对话框）：焦点必须在
+  // 本次 commit 内同步生效——挂 passive effect 时焦点生效落在 commit 之后的
+  // 宏任务，与读屏/断言侧的 MutationObserver 微任务先后不定 ⇒ 偶发焦点断言红。
+  useLayoutEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (error && !verifying) inputRef.current?.focus()
   }, [error, verifying])
 
