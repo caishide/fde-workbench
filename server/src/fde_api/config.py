@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     # G7 登录限流：Redis 不可用时的策略。默认 fail-open（本机回环部署，Redis 挂了
     # 不挡业务登录，记 WARNING 可观测）；对外暴露部署设 true 切 fail-closed（一律 429）。
     login_rate_fail_closed: bool = False
+    # G6 注册面节流：Redis 不可用时的策略，语义同登录限流。默认 fail-open
+    # （内网部署假设，Redis 挂了不挡注册，记 WARNING 可观测）；对外暴露部署
+    # 设 true 切 fail-closed（注册一律 429）。
+    registration_rate_fail_closed: bool = False
     # WP-E SES 发信（goal-r3 G9 预建）：默认整体关闭、零行为影响；SES 生产批复
     # 下来只需改配置启用。发信域约束按项目口径：主域（somwyn.com）不发信，
     # 只允许配置的子域（如 mail.somwyn.com）。DKIM/SPF 的 DNS 记录不写死在代码，

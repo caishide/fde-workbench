@@ -10,7 +10,7 @@
 
 2. **企业自助注册＝当事人自证形态**（G5 城市观察伙伴申请同款）：一个事务四件事要么全成要么全败——①账号（`users.role='viewer'` 最低平台权限档；密码当事人自选 ⇒ `must_change_password=False`；`register_self_service_user` 原语，无 admin actor）＋②身份分层（`CommercialEntitlement.commercial_role='R1'`，G1 结构复用，正交于平台权限角色）＋③主体与免费额度（`normalize_subject_key` USCC mod-31 必填校验；`problem_description` 业务问题描述注册必填 ≤2000 字）＋④事件留痕（actor＝当事人本人，无密码落事件）。**同主体幂等**：主体已存在 ⇒ 新账号照常可建（企业其他经办人），额度**绝不新建、绝不重置**（ADR-004 §1.2 硬不变量穿透自助路径；首次登记的 `problem_description` 不被后来者覆盖）。
 
-3. **ADR-004 §1.2「授予=admin+密码」的边界澄清（非推翻）**：该 admin 闸守的是 **staff 发起的授予动作**；自助注册的授予是当事人自证动作，其防滥用不靠 admin 门，靠**结构性保证**——USCC 一主体一份额度（库层主键兜底）＋免费边界七项不免费硬编码＋G3 完成判据六项全真+企业确认。admin 授予路由原样保留（招商先行录入场景）。**自助注册面公开无鉴权**是任务书验收（「企业可独立注册……无需经招商人员」）的直接要求；对外暴露部署的注册面节流（复用 #250 登录限流模式加 fail-open/fail-closed 开关）挂后续轮，本期以内网部署假设交付（ADR-007 高风险写口径不变：升级/开闸/结算类仍双闸）。
+3. **ADR-004 §1.2「授予=admin+密码」的边界澄清（非推翻）**：该 admin 闸守的是 **staff 发起的授予动作**；自助注册的授予是当事人自证动作，其防滥用不靠 admin 门，靠**结构性保证**——USCC 一主体一份额度（库层主键兜底）＋免费边界七项不免费硬编码＋G3 完成判据六项全真+企业确认。admin 授予路由原样保留（招商先行录入场景）。**自助注册面公开无鉴权**是任务书验收（「企业可独立注册……无需经招商人员」）的直接要求；对外暴露部署的注册面节流（复用 #250 登录限流模式加 fail-open/fail-closed 开关）**已随挂账清偿轮 2 落地**（来源 IP 限流＋fail-open/fail-closed 开关），本期仍以内网部署假设交付（ADR-007 高风险写口径不变：升级/开闸/结算类仍双闸）。
 
 4. **「企业客户」与「企业自助用户」＝同一主体（USCC subject_key）两种状态，派生不落列**：企业空间读面输出 `engagement_state`——`self_service`（默认）／`paid_delivery`（存在未被取代的付费选项选择行）。**派生值不是账**：科目层 `commercial_revenue_ledger` 零触碰、不新增任何计费名目或金额结构——「不另立第三套计费口径」的结构性表达；两状态共享同一企业空间（同一 subject_key 的读面），不存在第二套主体模型。
 
@@ -33,6 +33,6 @@
 
 1. `problem_description` 列可空（兼容 G2 admin 授予的存量行）；自助注册必填——admin 授予路径不强制，存量补录走后续轮。
 2. 体验上限（ADR-004 §1.8）的消费接线**本轮不落地**：founder/deliverer 体验的真实消费方在 V3.2 simulation 域（ADR-004 §1.9 已裁「不触碰」），判定原语 `check_experience_limit` 已在位；接线随 simulation 消费面立项（保持显式挂账，不假装接线）。
-3. 注册面节流（#250 登录限流模式复用）挂后续轮；本期注册面仅内网部署假设。
+3. 注册面节流（#250 登录限流模式复用）——**已清偿**（挂账清偿轮 2：`feat/commercial-registration-throttle`——`POST /api/v1/commercial/enterprise-registrations` 按来源 IP 限流（10 次/小时，计数在载荷解析与 argon2 之前），`FDE_REGISTRATION_RATE_FAIL_CLOSED=1` 可切 fail-closed；本期注册面仍仅内网部署假设）。
 4. 企业空间桌面呈现面（自助注册页/空间视图）挂后续桌面轮；本轮为纯服务端。
 5. 多子公司集团归并（母公司 USCC 字段）仍按 ADR-004 §1.4 挂法务。
