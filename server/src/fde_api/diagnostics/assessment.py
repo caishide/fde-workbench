@@ -20,6 +20,8 @@ from typing import Any
 
 from fde_api.diagnostics.policy_data import (
     INTERPRETATION_BY_POLICY_ID,
+    INTERPRETATION_LABEL,
+    ORIGINAL_LABEL,
     POLICY_BY_ID,
     POLICY_CORRECTIONS,
     POLICY_SNAPSHOT_DATE,
@@ -37,8 +39,8 @@ TIERS: tuple[str, ...] = (TIER_READY, TIER_DIRECTION, TIER_NOT_READY, TIER_PREPA
 _DIGITALIZATION_RUNNING = "已有在推进的数字化改造"
 _DIGITALIZATION_STALLED = "做过但停滞"
 
-_INTERPRETATION_LABEL = "我方解读"
-_ORIGINAL_LABEL = "原文口径"
+_INTERPRETATION_LABEL = INTERPRETATION_LABEL
+_ORIGINAL_LABEL = ORIGINAL_LABEL
 
 
 def _text(answers: dict[str, Any], key: str) -> str:

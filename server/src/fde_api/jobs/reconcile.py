@@ -89,6 +89,9 @@ RECOVERABLE_JOB_TYPES = frozenset({
     "translator.translate",
     "project.discovery.extract",
     "workflow.run",
+    # 获客诊断 T-10b：报告生成的 handler 幂等（已有报告就跳过），
+    # 允许在 worker 死后重跑一次。
+    "diagnostics.report",
 })
 
 # Written to `last_error` when a job is given up on, so an operator can tell

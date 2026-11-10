@@ -138,6 +138,35 @@ def capture_lead_route():
     return _data(service.serialize_session(row))
 
 
+@diagnostics_blueprint.post("/session/report")
+def request_report_route():
+    """受理报告生成（**异步**）：立即返回 202，报告就绪后轮询会话。"""
+    service.ensure_enabled()
+    row = service.request_report(_token())
+    return _data(service.serialize_session(row)), 202
+
+
+@diagnostics_blueprint.post("/session/share")
+def create_share_link_route():
+    """生成分享链接（**只读**凭证；明文只此一次，每次调用轮换旧链接）。"""
+    service.ensure_enabled()
+    row, share_token = service.create_share_link(_token())
+    return _data(
+        {
+            **service.serialize_session(row),
+            "share_token": share_token,
+            "share_path": f"/api/v1/diagnostics/share/{share_token}",
+        }
+    )
+
+
+@diagnostics_blueprint.get("/share/<share_token>")
+def read_share_route(share_token: str):
+    """分享页只读视图（**摘要层**；不含企业自填原文与联系方式）。"""
+    service.ensure_enabled()
+    return _data(service.read_share(share_token))
+
+
 @diagnostics_blueprint.app_errorhandler(service.DiagnosticsServiceError)
 def handle_service_error(error: service.DiagnosticsServiceError):
     return error_response(error.code, error.message, error.status, error.detail or None)

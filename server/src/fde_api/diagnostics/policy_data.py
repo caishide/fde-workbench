@@ -21,6 +21,10 @@ from dataclasses import dataclass
 
 POLICY_SNAPSHOT_DATE = "2026-10-19"
 
+# 双层依据的**标签**（单一真身：测算卡与 AI 报告共用，避免两处各写各的）
+ORIGINAL_LABEL = "原文口径"
+INTERPRETATION_LABEL = "我方解读"
+
 # 弹药库「⚠️ 核查中纠正的两处口径」——引用前必读，防再次写错
 POLICY_CORRECTIONS: tuple[str, ...] = (
     "国发11号的 70%：原文是『新一代智能终端、智能体等**应用**普及率超 70%』"
