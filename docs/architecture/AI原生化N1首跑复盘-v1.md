@@ -108,3 +108,31 @@
 **★设计缺口实证（本条链暴露，backlog T-A10 登记）**：桌面 AgentsConsole 产物行**无内容预览/下载**（服务端亦无产物内容读取路由——`server/src/fde_api/agents/routes.py` 仅 PATCH 复核写面），复核人被迫离开应用到文件系统看原件；「看到什么就复核什么」的语义在桌面内不闭合。T-A10＝桌面产物预览面（登记≠排期≠实施授权）。
 
 **下一步（业务里程碑，非本复盘范围）**：①可选——蔡工身份重做腿①（偏差消除）；②G7 重交＝success.md 客户书面确认＋B 试点章程真实材料到齐后 `submit_gate_evidence` 重交（failed→evidence 回环）再拍；③G8/G9＝PoC/生产阶段真实证据齐后提交+拍板（G8 须书面三态 decision）；④全链走完⇒G-01 置 CLOSED。
+
+---
+
+## 10. 人工链收口补记（2026-11-11，台账 v1.9）
+
+**一句话**：蔡工交互拍板三项（试点判定完成／腿①偏差纠正／随轮回写）后执行——**腿① D-1 账号分离偏差已纠正**（7 产物 `reviewed_by` 全部改挂 `pilot.reviewer`），**试点 N1 达成口径裁定**＝完成于「AI 自动化链跑通＋G-07 候选登记＋G7 诚实 fail 拍板＋腿①偏差纠正后账号分离语义闭合」。
+
+### 腿① 偏差纠正（Q2 拍板「改 pilot.reviewer 重审」）
+
+| 项 | v1.8 现状 | v1.9 纠正后 |
+| --- | --- | --- |
+| 7 产物 `reviewed_by_user_id` | `admin`（`8b29bd77…`，蔡工当时 admin 登录桌面） | **`pilot.reviewer`**（`bd78b768…`，蔡工拍板「改 pilot.reviewer 重审」） |
+| `agent_artifact_reviewed` 事件 | ×7 @11:05（actor=admin） | **×14**：admin 撤回 7（清空 stamped）＋pilot.reviewer 重标 7（@13:01） |
+| D-1 账号分离语义 | 未行使（提交人＝审阅人＝admin） | **真正行使**（提交人=admin 发起人／审阅人=`pilot.reviewer` 第二账号，与腿③ G7 拍板人同尺） |
+
+纠正走服务层 `set_artifact_reviewed` 写路径（非直接 UPDATE 库），事件正常落 `operation_events`，不绕过 H1–H13 强制人工节点；留痕可查、可推翻（admin 可再撤回）。
+
+### 试点达成口径裁定（Q1 拍板「试点判定完成」）
+
+**N1 试点判为完成于「AI 自动化链跑通＋G-07 候选登记＋G7 诚实 fail 拍板＋腿①偏差纠正后账号分离语义闭合」**：
+
+- **G-07 维持 CLOSED**：两段判据全行使（completed run 自动登记 7 候选＋人工提交闸采纳 2 条进 G7 清单项）。
+- **G-01 维持 OPEN**：执行面（真实订单 completed run＋候选登记＋人工闸采纳＋门禁拍板留痕）已走完，但**消解判据「首个真实订单至 G9」所依赖的 G8/G9＝真实交付阶段证据（PoC 验收表/business-case/生产环境/Runbook/Go-Live 单/演练记录），属业务里程碑、超试点范围、不可代造**⇒ G8/G9 保持 pending 不代拍，标注「依赖真实交付证据、超试点范围」。
+- **诚实边界**：试点完成 ≠ G-01 判据达成。真实交付期材料到齐后 G8/G9 提交+拍板，届时 G-01 CLOSED（不虚过、不代拍、不造假）。
+
+**★红线守死**：①门禁证据只存指针+sha256、AI 不代拍板/不造假（G8/G9 证据不可代造）；②写外呼/发信/付款永不降级永不自动；③腿①纠正走写路径留痕、不绕过 H1–H13；④①商用条款（外部依赖）/⑦网络限制面（结构缺口）维持未过不声称。
+
+**G8/G9 清单项与证据依赖（gates.json 种子定义）**：G8＝prototype-log／POC 验收表／business-case（PoC→Pilot 子检查五项＋pass/fail 结论＋三态书面拍板）；G9＝生产环境／Runbook／Go-Live 单／演练记录／SOW-C 里程碑（Pilot→Production 子检查五项＋验收线达成＝uplift_bounded≥0.8∧incidents=∅∧三锚四反例全过〔B#21 机器可算化〕＋回滚演练过＋客户侧独立跑通＋成本护栏在位）。**均为真实交付期产物，试点阶段拿不到、不能代造**——维持 pending。
