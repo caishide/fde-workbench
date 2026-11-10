@@ -446,6 +446,98 @@ class DeliverySettlement(Base, TimestampMixin):
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
 
+class DispatchSettlementAllocation(Base, TimestampMixin):
+    """五席位纵向分配明细（ADR-011 §5-A 选型 A，F 线 T1）。
+
+    一结算 × 一席位一行；空缺席位**显式记 0 不省行**（ADR-011 §3.5 四条硬
+    要求），原因码闭集与池内份数的唯一成文处 =
+    ``docs/commercialization/rules/five-seat-split-rules.md`` 机器可读块
+    （代码侧常量在 ``settlements.py``，T2 起 JSON↔常量↔迁移种子三方机器闸）。
+
+    ``delivery_settlements`` 四总额列 = 本表**同一事务内派生的兼容镜像**
+    （平台列 = 残差：平台份额＋拉单席位＋全部空缺吸收＋舍入尾差；region/
+    city/delivery 三列分别镜像 province/county/delivery 席位），服务层
+    ``allocate_five_seats`` 写入并断言 Σ明细 = Σ旧四列 = 基数；绕开本层的
+    直写一律 409（``allocation_mirror_protected``）。
+    """
+
+    __tablename__ = "dispatch_settlement_allocations"
+    __table_args__ = (
+        UniqueConstraint(
+            "settlement_id",
+            "seat_key",
+            name="uq_dispatch_settlement_allocations_settlement_seat",
+        ),
+        CheckConstraint(
+            "seat_key IN ('platform', 'lead', 'delivery', 'county', 'province')",
+            name="ck_dispatch_settlement_allocations_seat_key",
+        ),
+        CheckConstraint(
+            "status IN ('paid', 'vacant')",
+            name="ck_dispatch_settlement_allocations_status",
+        ),
+        # ② vacant ⇒ amount=0 且原因码必填（ADR-011 §3.5-1/§3.5-3）
+        CheckConstraint(
+            "status != 'vacant' OR (amount = 0 AND reason_code IS NOT NULL)",
+            name="ck_dispatch_settlement_allocations_vacant_shape",
+        ),
+        # ③ paid ⇒ 无原因码（paid 行的金额即分成，无沉淀语义）
+        CheckConstraint(
+            "status != 'paid' OR reason_code IS NULL",
+            name="ck_dispatch_settlement_allocations_paid_shape",
+        ),
+        # ④ payee 与 vacant 互斥；paid 行非平台席位必须有收款人（平台席位无 user）
+        CheckConstraint(
+            "status != 'vacant' OR payee_user_id IS NULL",
+            name="ck_dispatch_settlement_allocations_vacant_payee_exclusive",
+        ),
+        CheckConstraint(
+            "status != 'paid' OR payee_user_id IS NOT NULL OR seat_key = 'platform'",
+            name="ck_dispatch_settlement_allocations_paid_payee_shape",
+        ),
+        # 平台席位无 users 收款人（payee 恒 NULL，与列注一致）
+        CheckConstraint(
+            "seat_key != 'platform' OR payee_user_id IS NULL",
+            name="ck_dispatch_settlement_allocations_platform_payee_null",
+        ),
+        # 平台席位无池内份数（份额口径为 T×30%），其余席位必有
+        CheckConstraint(
+            "(seat_key = 'platform' AND shares_in_pool IS NULL)"
+            " OR (seat_key != 'platform' AND shares_in_pool IS NOT NULL)",
+            name="ck_dispatch_settlement_allocations_platform_shares_null",
+        ),
+        CheckConstraint(
+            "shares_in_pool IS NULL OR shares_in_pool BETWEEN 0 AND 100",
+            name="ck_dispatch_settlement_allocations_shares_range",
+        ),
+        CheckConstraint(
+            "amount >= 0",
+            name="ck_dispatch_settlement_allocations_amount_nonneg",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    settlement_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_settlements.id", ondelete="RESTRICT"), nullable=False
+    )
+    seat_key: Mapped[str] = mapped_column(String(12), nullable=False)
+    # 平台席位收款人 = 平台公司本身（非 users 行）⇒ 恒 NULL；其余席位 FK users
+    payee_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # 池内份数（lead/delivery/county/province 各自的百份制份数；平台席位 NULL）
+    shares_in_pool: Mapped[int | None] = mapped_column(Integer)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # paid = 有收款人的分成行；vacant = 空缺沉淀行（金额恒 0 + 原因码）
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    # 仅 vacant 必填（CHECK 联锁）；闭集见 settlements.ALLOCATION_REASON_CODES
+    reason_code: Mapped[str | None] = mapped_column(String(40))
+    # 分配依据的规则版本（比例唯一来源；T2 初始基线起必可溯，RESTRICT 防删）
+    rule_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("dispatch_rule_versions.id", ondelete="RESTRICT")
+    )
+
+
 class Dispute(Base, TimestampMixin):
     """争议单（§6.6 四层仲裁 + §7.5 T+30 对账草稿，§8.1 第 8 张表）。
 
