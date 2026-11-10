@@ -5,7 +5,17 @@ from typing import Any
 from unicodedata import normalize
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, func, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import TypeDecorator
 
@@ -84,6 +94,7 @@ class User(Base):
             "role IN ('admin', 'project_lead', 'fde_engineer', 'viewer')",
             name="ck_users_role",
         ),
+        Index("ix_users_org_id", "org_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -95,6 +106,12 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     auth_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default=text("1")
+    )
+    # 多客户工作平台 M1（ADR-M1/ADR-M2 §4）：可空 = 平台身份不受 org 限制
+    # （admin/交付咨询等；存量用户全部保持 NULL，回归面最小化拍板 §11-8）。
+    # org 只是归属维度，不是第二套权限体系（红线 8）。
+    org_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("orgs.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL

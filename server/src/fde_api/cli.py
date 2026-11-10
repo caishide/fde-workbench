@@ -35,12 +35,16 @@ def register_cli(app: Flask) -> None:
             SYSTEM_USERNAME,
             seed_document_templates,
         )
+        from fde_api.orgs.org_scope import ensure_internal_org
 
         session = db.session()
         try:
             with session.begin():
                 seed_workbench(session)
                 seed_document_templates(session)
+                # 多客户工作平台 M1（任务书 §7 M1「种子与 cli 补 org」）：平台
+                # 内部组织幂等落位（迁移亦播种同一行，同 ID 同名——双保险）。
+                ensure_internal_org(session)
                 # seed_document_templates inserts the `system` seed user first and
                 # that account carries an empty password hash, so it can never log
                 # in. Counting it here would make the initial admin unreachable on
