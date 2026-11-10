@@ -90,13 +90,38 @@ def _rules_url() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _activate_seat(app, admin_user_id: str, user_id: str) -> None:
+    """经服务原语激活席位（admin 动作，bootcamp_practical 源、未设到期）。
+
+    F 线 T3 起报备资格走席位费闸（ADR-011 §5-F），夹具用真实服务路径激活。
+    ``app`` 形参接 AuthorizedClient（其 ``.client`` 才是 Flask test client）。"""
+    from fde_api.auth.models import User as UserModel
+    from fde_api.commercial.service import activate_seat
+    from fde_api.extensions import db
+
+    with app.client.application.app_context():
+        session = db.session()
+        admin = session.get(UserModel, admin_user_id)
+        assert admin is not None
+        activate_seat(
+            session,
+            actor=admin,
+            user_id=user_id,
+            seat_source="bootcamp_practical",
+            confirm_password=INITIAL_PASSWORD,
+        )
+        session.commit()
+
+
 def _layer_as_r2(admin_client, client) -> str:
-    """把用户分层为 R2（创业者）——G1 的角色分层是本域唯一权威。"""
+    """把用户分层为 R2 **并激活席位**——F 线 T3 起报备资格走席位费闸
+    （ADR-011 §5-F 补充拍板 12：资格不限角色，缴 3980 即可）。"""
     response = admin_client.post(
         f"/api/v1/admin/commercial/users/{client.user.id}/role",
         json={"role": "R2", "confirm_password": _pwd()},
     )
     assert response.status_code == 200, response.get_data(as_text=True)
+    _activate_seat(admin_client, admin_client.user.id, client.user.id)
     return client.user.id
 
 
@@ -791,30 +816,53 @@ def test_dispute_freezes_downstream_steps(
 # ---------------------------------------------------------------------------
 
 
-def test_report_requires_r2_role(admin_client, authorized_client_factory) -> None:
-    """只有角色分层 R2（创业者）可报备；他人 403。"""
-    plain = authorized_client_factory("fde_engineer")
-    denied = plain.post(
+def test_report_requires_paid_seat_not_role(admin_client, authorized_client_factory) -> None:
+    """报备资格＝席位费已缴闸（ADR-011 §5-F 补充拍板 12，F 线 T3）。
+
+    资格**不限角色**：R2 角色本身不算资格（角色在、席位缺 ⇒ 仍 403）；
+    未分层用户席位 active ⇒ 放行。"""
+    denied = authorized_client_factory("fde_engineer").post(
         _opp_url(),
         json={
             "enterprise_code": ENTERPRISE_CODE,
-            "title": "非创业者报备",
+            "title": "无角色无席位报备",
             "source_uri": "fdeops://g4/leads/x.md",
             "content_hash": _sha("no-role"),
         },
     )
     assert denied.status_code == 403, denied.get_data(as_text=True)
-    assert denied.json["error"]["code"] == "opportunity_reporter_role_required"
+    assert denied.json["error"]["code"] == "opportunity_reporter_seat_required"
 
-    founder = authorized_client_factory("fde_engineer")
-    _layer_as_r2(admin_client, founder)
-    allowed = founder.post(
+    # 角色在、席位缺：R2 分层不构成报备资格
+    role_only = authorized_client_factory("fde_engineer")
+    role_only_id = role_only.user.id
+    role_only_post = admin_client.post(
+        f"/api/v1/admin/commercial/users/{role_only_id}/role",
+        json={"role": "R2", "confirm_password": _pwd()},
+    )
+    assert role_only_post.status_code == 200, role_only_post.get_data(as_text=True)
+    denied_role_only = role_only.post(
         _opp_url(),
         json={
             "enterprise_code": ENTERPRISE_CODE,
-            "title": "创业者报备",
+            "title": "R2 角色未缴席位",
+            "source_uri": "fdeops://g4/leads/role-only.md",
+            "content_hash": _sha("role-only"),
+        },
+    )
+    assert denied_role_only.status_code == 403
+    assert denied_role_only.json["error"]["code"] == "opportunity_reporter_seat_required"
+
+    # 未分层 + 席位 active ⇒ 资格不限角色，放行
+    deliverer = authorized_client_factory("fde_engineer")
+    _activate_seat(admin_client, admin_client.user.id, deliverer.user.id)
+    allowed = deliverer.post(
+        _opp_url(),
+        json={
+            "enterprise_code": ENTERPRISE_CODE,
+            "title": "缴席位者报备",
             "source_uri": "fdeops://g4/leads/y.md",
-            "content_hash": _sha("r2"),
+            "content_hash": _sha("seat"),
         },
     )
     assert allowed.status_code == 200, allowed.get_data(as_text=True)

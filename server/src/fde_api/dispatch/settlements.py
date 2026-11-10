@@ -29,7 +29,7 @@ from fde_api.dispatch.models import (
     DeliverySettlement,
     DispatchSettlementAllocation,
 )
-from fde_api.dispatch.rules import active_rule_snapshot
+from fde_api.dispatch.rules import active_rule_snapshot, active_rule_version
 from fde_api.projects.events import record_event
 from fde_api.system_configuration import DISPATCH_CONSTANTS
 from fde_api.workbench.models import Payment, Project
@@ -363,6 +363,105 @@ def allocate_five_seats(
             },
         )
     return rows
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# F 线 T3：拉单确权接线（ADR-011 §3.4/§5-F；任务书 §4 T3——接 ADR-009 不造第二套）
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def resolve_lead_seat(
+    session: Session, package: DeliveryPackage
+) -> tuple[str | None, dict[str, str]]:
+    """lead 席位收款人三态解析（归属是**本域事实**，不是最新话语权）。
+
+    - 该企业代号下 **零商机行** ⇒ 企业自来：lead vacant（原因码
+      ``no_sourcer``），平台吸收 lead 席份额——返回 ``(None, {"lead":
+      "no_sourcer"})``；
+    - 商机行在场且**归属三戳成套**（``attribution_owner_user_id`` 非 NULL ⇔
+      ``attribution_confirmed_at`` 非 NULL，模型 CHECK 联锁）⇒ lead 收款人
+      ＝ ``attribution_owner_user_id``。**企业自行注册不转移归属**（ADR-009
+      §7-3 结构性保证）：这里读的是归属事实字段，不是「最新报备人」；
+      同企业多行时取**已确认**那行（确认即不可改写：再确认 409
+      ``attribution_already_confirmed``）；
+    - 商机行在场但**归属未确认** ⇒ 409 ``attribution_not_confirmed``
+      （fail-closed——**不得回落「平台代持」**，也不得猜一个收款人）。
+    """
+    from fde_api.commercial.models import CommercialOpportunity  # 惰性导入避免商业域成环
+
+    project = session.get(Project, package.project_id)
+    code = project.enterprise_code if project else None
+    rows: list[CommercialOpportunity] = []
+    if code:
+        rows = list(
+            session.scalars(
+                select(CommercialOpportunity).where(
+                    CommercialOpportunity.enterprise_code == code
+                )
+            ).all()
+        )
+    confirmed = [row for row in rows if row.attribution_owner_user_id is not None]
+    if confirmed:
+        # 归属三戳成套（CHECK 保证 owner⇔confirmed_at）；多行取最早确认的一行，
+        # 归属一旦确认即稳定（改派须 attribution_criteria 规则位，本期 unset）。
+        confirmed.sort(key=lambda row: row.attribution_confirmed_at or datetime.max.replace(tzinfo=timezone.utc))
+        return confirmed[0].attribution_owner_user_id, {}
+    if rows:
+        raise DispatchServiceError(
+            "attribution_not_confirmed",
+            "该企业已有报备商机但归属未确认：lead 席位不得计提（先由平台确认归属，"
+            "不回落平台代持）。",
+            409,
+        )
+    return None, {"lead": "no_sourcer"}
+
+
+def allocate_five_seats_with_lead_attribution(
+    session: Session,
+    payment: Payment,
+    package: DeliveryPackage,
+    *,
+    actor: User,
+    seat_payees: Mapping[str, str | None] | None = None,
+    vacant_reasons: Mapping[str, str] | None = None,
+) -> list[DispatchSettlementAllocation]:
+    """按归属事实分配五席位（T2 基线 × T3 确权的接线原语）。
+
+    - lead 席位由 :func:`resolve_lead_seat` **独占裁定**（收款人或
+      no_sourcer 空缺）；调用方传入的 ``seat_payees``/``vacant_reasons``
+      只承载**其余池席位**（delivery/county/province，其占用判定归 T4 人工
+      确认）——传 ``lead`` 键一律 400（lead 不归调用方裁量）。
+    - 比例快照取**当前 active 规则版本**（T2 初始基线 v100 使其常驻在场；
+      缺版本 ⇒ :func:`allocate_five_seats` 原生 422
+      ``five_seat_snapshot_required`` fail-closed）；``rule_version_id``
+      记 active 版本 id（版本溯源）。
+    """
+    bad_lead = (seat_payees or {}).get("lead")
+    if bad_lead is not None:
+        raise DispatchServiceError(
+            "invalid_request", "lead 席位由归属事实独占裁定，不接受调用方指定收款人。", 400
+        )
+    lead_payee, lead_vacant = resolve_lead_seat(session, package)
+    payees: dict[str, str | None] = {"platform": None, **(dict(seat_payees) if seat_payees else {})}
+    vacant: dict[str, str] = dict(vacant_reasons or {})
+    if lead_payee is None:
+        vacant.update(lead_vacant)
+        payees["lead"] = None
+    else:
+        vacant.pop("lead", None)  # 归属确认后 lead 不接受空缺记法
+        payees["lead"] = lead_payee
+    snapshot = active_rule_snapshot(session)
+    version = active_rule_version(session)
+    return allocate_five_seats(
+        session,
+        payment,
+        package,
+        actor=actor,
+        rule_snapshot=snapshot,
+        seat_payees=payees,
+        vacant_reasons=vacant,
+        rule_version_id=version.id if version is not None else None,
+    )
 
 
 def assert_allocations_complete(session: Session, settlement_id: str) -> None:
