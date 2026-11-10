@@ -49,7 +49,11 @@ def reconcile():
     try:
         result = reproject_last()
     except BridgeSyncError as exc:
-        return error_response("no_snapshot", str(exc), 409)
+        # CR-069：真无快照 → 409 no_snapshot；投影 DB 故障 → 500 sync_failed
+        # （沿 post_snapshot 同码——此前 DB 故障被误报为「无可重放快照」误导排障方向）。
+        if "no successful snapshot" in str(exc):
+            return error_response("no_snapshot", str(exc), 409)
+        return error_response("sync_failed", str(exc), 500)
     return jsonify({"data": result, "error": None})
 
 

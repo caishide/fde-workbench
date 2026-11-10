@@ -313,9 +313,10 @@ def test_space_view_scopes(client, settings, db_session, admin_client) -> None:
     stranger, _s = _enterprise_client(
         client, settings, db_session, name="测试企业丁"
     )
+    # CR-062：他人一律 404（不透企业空间存在性）
     forbidden = stranger.get(_space_url(uscc))
-    assert forbidden.status_code == 403
-    assert forbidden.json["error"]["code"] == "enterprise_space_forbidden"
+    assert forbidden.status_code == 404
+    assert forbidden.json["error"]["code"] == "enterprise_space_not_found"
 
     anon = client.get(_space_url(uscc))
     assert anon.status_code == 401

@@ -214,7 +214,7 @@ def review_test_plan(*, actor, plan_id: str, payload: dict[str, Any]) -> dict[st
                 ):
                     other.status = "superseded"
             else:
-                plan.status = "superseded"
+                plan.status = "superseded"  # CR-067：否决稿复用 superseded（区分靠 operation_events.decision）
             session.add(OperationEvent(
                 actor_user_id=actor.id,
                 project_id=plan.project_id,

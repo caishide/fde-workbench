@@ -3,8 +3,12 @@
 红线落点（立项文档 §1/§4）：
 - **只收文本不收音频**：录音原件永不进 repo/DB/远端——API 载荷是文本，
   无任何音频字段；引擎字段只是宿主侧来源标注。
-- **T-A2 代号化不豁免**：create/promote 两处 title/content/确认人文本先过
+- **T-A2 代号化不豁免**：create/promote 两处 title/content 先过
   ``redact_text_detailed``（词典不可用 fail-closed 硬阻断，沿 guidance 同码）。
+- **确认人字段豁免（CR-044 拍板留痕，2026-11-10）**：confirmed_by 为本方
+  员工手填的**职务性泛称**（如「客户方负责人」），**不填客户真实姓名**，
+  豁免自动脱敏——词典/正则均不匹配人名，代号化机制另行评测（未立项）；
+  录入指引＝职务泛称或本方代号；真出现姓名走审阅链人工代号化。
 - **物理隔离**：草稿正文落独立文件根 + 独立表；正式库（interview_minutes）
   只持草稿指针（draft_id 无 FK）；「草稿不可被正式库引用」由 models 元数据
   零外键 + 测试钉死。
@@ -339,6 +343,10 @@ def discard_draft(*, actor: User, draft_id: str) -> dict[str, Any]:
     now = datetime.now(UTC)
     with session.begin():
         draft, project = _load_draft_for(session, actor, draft_id, manage=False)
+        if draft.created_by_user_id != actor.id:
+            # CR-066（拍板 2026-11-10）：弃置＝不可逆破坏（含文件根删除）——
+            # 非创建者须 can_manage（沿 promote 同尺），只读成员不可抹除他人草稿。
+            _load_draft_for(session, actor, draft_id, manage=True)
         if draft.status != "draft":
             raise _error("draft_not_active", "只有活动草稿可弃置。", 409)
         draft.status = "discarded"

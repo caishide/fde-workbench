@@ -13,7 +13,7 @@
    （ADR-004 §1.8 占位缺省但结构完整）；
 6. 高风险写双闸（授予/完成=admin+密码确认）+ 事件带 request_id 且无密码
    （ADR-007）；
-7. 读面权限四态（绑定账号/admin/他人 403/未知 404）；
+7. 读面权限四态（绑定账号/admin/他人 404——CR-062 拍板不透存在性/未知 404）；
 8. 免费边界元数据读面（六项/七项不免费/三档无数值/占位上限标注/三入口
    注册表）+ 治理面不进 api_catalog；迁移 additive 往返（downgrade 至**本
    迁移的父版本**显式 revision——``-1`` 会被后续叠在头上的迁移顶掉）。
@@ -425,14 +425,19 @@ def test_experience_limit_exceeded_at_cap() -> None:
 def test_read_permission(admin_client, authorized_client_factory) -> None:
     user = authorized_client_factory("viewer")
     assert _grant(admin_client).status_code == 200
-    # 未绑定前只有 admin 可读
-    assert user.get(_quota_url(VALID_USCC)).status_code == 403
+    # CR-062：他人一律 404 quota_not_found（不透主体存在性；对齐 partner 面）
+    assert user.get(_quota_url(VALID_USCC)).status_code == 404
+    assert user.get(_quota_url(VALID_USCC)).json["error"]["code"] == "quota_not_found"
     assert admin_client.get(_quota_url(VALID_USCC)).status_code == 200
     user.post(f"{_quota_url(VALID_USCC)}/start", json={})
     assert user.get(_quota_url(VALID_USCC)).status_code == 200
     other = authorized_client_factory("viewer")
-    assert other.get(_quota_url(VALID_USCC)).status_code == 403
-    # 合法但未授予的另一主体 → 404
+    assert other.get(_quota_url(VALID_USCC)).status_code == 404
+    # 探测不可分辨：他人访问「存在的主体」与「不存在的主体」同码同文案
+    existent = other.get(_quota_url(VALID_USCC)).json["error"]
+    missing_other = other.get(_quota_url(_another_uscc(VALID_USCC))).json["error"]
+    assert existent == missing_other
+    # 合法但未授予的另一主体（admin 视角）→ 404
     missing = admin_client.get(_quota_url(_another_uscc(VALID_USCC)))
     assert missing.status_code == 404
 

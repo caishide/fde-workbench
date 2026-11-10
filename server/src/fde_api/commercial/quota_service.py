@@ -347,11 +347,11 @@ def check_experience_limit(kind: object, resource: object, used: int) -> None:
 
 
 def get_quota_view(session: Session, *, actor: User, subject_key_raw: object) -> dict[str, Any]:
-    """读面：绑定账号本人或 admin；他人 403。"""
+    """读面：绑定账号本人或 admin；他人一律 404（CR-062 拍板：不透主体存在性，对齐 regional partner 面先例）。"""
     subject_key = normalize_subject_key(subject_key_raw)
     quota = _require_quota(session, subject_key)
     if actor.role != ROLE_ADMIN and quota.bound_user_id != actor.id:
-        raise _error("commercial_entitlement_forbidden", "只能查看本人主体的免费额度。", 403)
+        raise _error("quota_not_found", "该主体尚无免费额度记录。", 404)
     subject = session.get(EnterpriseQuotaSubject, subject_key)
     return {"quota": serialize_quota(quota, subject)}
 
