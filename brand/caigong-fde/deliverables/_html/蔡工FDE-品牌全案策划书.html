@@ -510,7 +510,7 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 <tr>
 <td>合规类</td>
 <td>D6 电子章章样</td>
-<td>❌ 待主体资质与备案，<strong>本次未提供</strong></td>
+<td>❌ 待主体资质、备案章样与用印授权，<strong>本次未提供</strong>；朱红豁免品牌侧已裁决 2026-11-07，不产出章样</td>
 </tr>
 </tbody>
 </table>
@@ -518,11 +518,11 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 <ol>
 <li>~~拍板行业口径~~ → ✅ <strong>2026-11-06 已裁决「全行业企业」</strong>，§〇 定稿介绍与官网 meta/hero 已回写。</li>
 <li>填真实联系方式 → 官网、名片、签名、PPT 封底、展会物料一次同步。</li>
-<li>~~裁决金系按钮白字对比度~~ → ✅ <strong>2026-11-06 已裁决「石墨黑字」</strong>，9 处金底白字规则已落地；hover 深金残留见 <code>BRAND-COLOR-SPEC.md §十-8</code>。</li>
+<li>~~裁决金系按钮白字对比度~~ → ✅ <strong>2026-11-06 已裁决「石墨黑字」</strong>，9 处金底白字规则已落地；2026-11-07 实渲染复核撤销「hover 深金」误判，并在同日<strong>闭环两项 a11y 修复</strong>：AI 胶囊渐变改 <code>var(--brand-gradient)</code>（两端 6.33 / 8.27:1）、9 处 deep 文字色改石墨黑（16.16–17.84:1）。<strong>2026-11-07 #14 分级拍板已闭环</strong>：27 处 CSS + 官网 4 处精确口径（原「53 处」纠偏），文字类改石墨黑全达 AA；非 color 属性 48 处转 <code>§十-11</code>。</li>
 <li>统一 E4「G9 上线门」文案。</li>
 <li>macOS 环境补 <code>icon.icns</code>（C4）。</li>
 <li>补齐字体授权凭证、图标库盘点、图表需求触发判断。</li>
-<li>法务确认 D6 签章主体、备案章样与朱红豁免。</li>
+<li>法务补齐 D6 C 类 5 项真实值（主体资质 / 备案章样 / 平台 CA 与用印授权 / 骑缝时间戳 / 非合同文件适用范围）并书面确认朱红豁免；<strong>品牌侧豁免已于 2026-11-07 裁决</strong>（<code>BRAND-COLOR-SPEC.md §七-3</code>）。</li>
 <li>指定手册发布审批人、资产责任人、季度巡检人（F1/F2/F3）。</li>
 </ol>
 <hr />
@@ -590,10 +590,10 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 </tr>
 <tr>
 <td>2</td>
-<td>~~金系按钮白字实测 2.16–2.82:1，不达 WCAG AA~~</td>
-<td>✅ <strong>已关闭 2026-11-06（主态）</strong></td>
+<td>~~金系按钮白字 / AI 胶囊渐变深端 / deep 文字色~~</td>
+<td>✅ <strong>已关闭 2026-11-07</strong></td>
 <td>桌面端可访问性</td>
-<td>裁决「石墨黑字」，9 处规则落地；hover 深金 4.23:1 残留见 <code>BRAND-COLOR-SPEC.md §十-8</code></td>
+<td>裁决「石墨黑字」9 处规则落地；hover 态白底黑字 17.84:1 本就达标；同日候选 A 与 #13 落地，全部达 AA。<strong>#14 已于 2026-11-07 分级拍板闭环</strong>（27 处 CSS + 官网 4 处）；新项：非 <code>color</code> 属性 48 处属 1.4.11 独立判据，见 <code>§十-11</code></td>
 </tr>
 <tr>
 <td>3</td>
@@ -632,10 +632,10 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 </tr>
 <tr>
 <td>8</td>
-<td>电子章涉及资质、备案与朱红豁免</td>
+<td>电子章涉及资质、备案与用印授权（朱红豁免品牌侧已裁决）</td>
 <td><strong>高（合规）</strong></td>
 <td>合同类文件</td>
-<td>D6</td>
+<td>✅ 2026-11-07 分级拍板：A 类定稿、B 类「有条件豁免」写入 <code>§七-3</code>；C 类 5 项仍待法务真实输入，D6 保持 🟡，见 <code>specs/D</code> D6-4</td>
 </tr>
 <tr>
 <td>9</td>

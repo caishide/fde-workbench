@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 import "./help.css"
 
@@ -8,7 +8,7 @@ import "./help.css"
 // 新用户可只读「操作步骤」独立完成动作，老用户可只查「常见问题」定位卡点。
 //
 // 事实核对基线（2026-11-07，改写时逐条比对代码与种子数据）：
-//   · 项目详情标签页 12 个（ProjectDetailPage.tsx tabs 定义）
+//   · 项目详情标签页 13 个（ProjectDetailPage.tsx tabs 定义：概览/任务/门禁/报价收款/调研/方案设计/工作流/智能体/评审会/术语表/执行事实/文件库/项目管理）
 //   · 门禁状态机 pending → evidence → passed | conditional_pass | failed（gate_service.py:42）
 //   · conditional_pass 仅 G9；G8 过门必须书面拍板 proceed / pivot / stop（gate_service.py:450-470）
 //   · G1–G9 清单项逐项对齐 server/seeds/gates.json
@@ -100,7 +100,7 @@ const SECTIONS: HelpSection[] = [
           ]}
         />
         <p>
-          <strong>预期结果</strong>：生成一个含 12 个标签页的项目详情页。
+          <strong>预期结果</strong>：生成一个含 13 个标签页的项目详情页。
         </p>
         <p className="help-warn">
           <strong>常见问题</strong>：「新建项目」按钮看不见 → 你的角色不是管理员或项目负责人；
@@ -292,7 +292,7 @@ const SECTIONS: HelpSection[] = [
     body: (
       <>
         <p className="help-lead">
-          一个项目 = 一个客户的完整交付过程，从调研到上线。项目详情页用 12 个标签页承载全部环节。
+          一个项目 = 一个客户的完整交付过程，从调研到上线。项目详情页用 13 个标签页承载全部环节。
         </p>
 
         <h3>项目列表</h3>
@@ -306,7 +306,7 @@ const SECTIONS: HelpSection[] = [
           ]}
         />
 
-        <h3>12 个标签页一览</h3>
+        <h3>13 个标签页一览</h3>
         <table className="help-table">
           <thead>
             <tr><th>标签</th><th>用途</th></tr>
@@ -317,8 +317,10 @@ const SECTIONS: HelpSection[] = [
             <tr><td>门禁</td><td>G1–G9 证据提交与人工核验</td></tr>
             <tr><td>报价收款</td><td>报价、收款计划、合同登记</td></tr>
             <tr><td>调研</td><td>调研对象、备忘录、调研表</td></tr>
-            <tr><td>方案设计</td><td>AI 机会、方案撰写、SOW 导出</td></tr>
+            <tr><td>方案设计</td><td>AI 机会、方案撰写、SOW 导出、交接包</td></tr>
             <tr><td>工作流</td><td>工作流定义与运行实例</td></tr>
+            <tr><td>智能体</td><td>智能体运行态监控（运行列表 / 详情 / 工具调用 / 成本汇总，只读）</td></tr>
+            <tr><td>评审会</td><td>评审会列表 / 话轮流 / 纪要（只读，纪要仅收敛后生成）</td></tr>
             <tr><td>术语表</td><td>术语与关系类型（只读）</td></tr>
             <tr><td>执行事实</td><td>证据、审计与调用的只读事实链</td></tr>
             <tr><td>文件库</td><td>上传、下载、版本、弃用</td></tr>
@@ -419,6 +421,10 @@ const SECTIONS: HelpSection[] = [
         <p>
           <strong>预期结果</strong>：SOW 进入文件库，可进入门禁 G3 提交。
         </p>
+        <p className="help-note">
+          同一「方案设计」标签下方还有<strong>交接包面板</strong>，用于结项交付物打包：
+          生命周期 <strong>草稿 → 封存 → 已交付</strong>，封存冻结清单与指纹，交付登记为管理员专属、不可逆。
+        </p>
 
         <h3>文件库</h3>
         <p>
@@ -440,6 +446,55 @@ const SECTIONS: HelpSection[] = [
         />
         <p>
           <strong>预期结果</strong>：文件出现在对应筛选条件下，版本历史可追溯。
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "agents",
+    title: "智能体（运行态监控，只读）",
+    body: (
+      <>
+        <p className="help-lead">
+          这个标签页呈现本项目的智能体运行态，是一个<strong>只读监控台</strong>——
+          handoff / 重试等写操作在服务器侧进行，不在本页。
+        </p>
+        <h3>看什么</h3>
+        <Steps
+          items={[
+            <>运行列表：每次智能体调用一条 run，列 状态 / 所用能力 / 发起账号 / Token 消耗 / 耗时 / 是否降级；列表有界，超出会标 <code>truncated</code>。</>,
+            <>点列表行展开运行详情：节点树、调用过的工具（名称 / 决策 / 能力 / 理由 / 耗时）与产物清单。</>,
+            <>对 run 产物可「标记复核 / 撤回复核」——只给证据打复核标记，不改变产物本体（真相在文件）。</>,
+            <>项目成本汇总：本项目全部 run 的 Token 与耗时汇总，便于看智能体开销。</>,
+          ]}
+        />
+        <p className="help-note">
+          智能体产生的证据 / 审计事实链统一归到「执行事实」标签页，本页只呈现运行态。
+          服务端返回的 403/409 原样呈现，不吞。
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "meetings",
+    title: "评审会（只读呈现）",
+    body: (
+      <>
+        <p className="help-lead">
+          这个标签页呈现本项目的评审会（含门禁强制会），同样是<strong>只读</strong>——
+          召集 / 插话 / 收敛等写操作不在本页。
+        </p>
+        <h3>看什么</h3>
+        <Steps
+          items={[
+            <>会议列表：列 状态（进行中 / 已暂停 / 已收敛）、门禁层级（轻量门 / 标准门 / 完整门）、触发方式（强制门 / 自主召集 / 人工开会）、话轮数与召集缘由。</>,
+            <>点会议行展开看话轮流（按序）。</>,
+            <>纪要：会议<strong>收敛封存后</strong>才生成，含 共识 / 争议 / 待办 与封存指纹 sha256；进行中 / 已暂停的会议尚未归档，不预取纪要。</>,
+          ]}
+        />
+        <p className="help-warn">
+          <strong>常见问题</strong>：live/paused 阶段看到「会议收敛后生成纪要」属正常，不是没数据——
+          纪要只在会议收敛封存后拉取。
         </p>
       </>
     ),
@@ -1229,10 +1284,37 @@ const KNOWN_GAPS: string[] = [
 
 export function HelpPage() {
   // 目录用页内滚动而非 hash 锚点：hash 变更会被路由解析器接管（#help/x
-  // 会被归到项目页），改用 scrollIntoView 直达章节。
+  // 会被归到项目页），改用 scrollIntoView 直达章节；并用 IntersectionObserver
+  // 高亮当前所在章节。
+  const [activeId, setActiveId] = useState<string>(SECTIONS[0]?.id ?? "start")
+
   function jumpTo(sectionId: string): void {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
+
+  useEffect(() => {
+    const sections = Array.from(
+      document.querySelectorAll<HTMLElement>(".help-content > .help-section"),
+    )
+    if (!sections.length) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting)
+        if (!visible.length) return
+        visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        setActiveId(visible[0].target.id)
+      },
+      { rootMargin: "-20% 0px -70% 0px", threshold: 0 },
+    )
+    sections.forEach((s) => observer.observe(s))
+    return () => observer.disconnect()
+  }, [])
+
+  const tocItems = [
+    ...SECTIONS.map((s) => ({ id: s.id, title: s.title })),
+    { id: "known-gaps", title: "已知功能缺口" },
+    { id: "release-notes", title: "发布与升级" },
+  ]
 
   return (
     <section className="page page-stack help-page" aria-label="使用帮助">
@@ -1247,57 +1329,64 @@ export function HelpPage() {
         </p>
       </div>
 
-      <nav className="help-toc" aria-label="目录">
-        {[...SECTIONS.map((section) => section.id), "known-gaps", "release-notes"].map((id) => {
-          const title = SECTIONS.find((section) => section.id === id)?.title
-            ?? (id === "known-gaps" ? "已知功能缺口" : "发布与升级")
-          return (
-            <button key={id} type="button" className="help-toc-link" onClick={() => jumpTo(id)}>
-              {title}
+      <div className="help-layout">
+        <nav className="help-toc" aria-label="目录">
+          {tocItems.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`help-toc-link${activeId === item.id ? " is-active" : ""}`}
+              aria-current={activeId === item.id ? "true" : undefined}
+              onClick={() => jumpTo(item.id)}
+            >
+              <span className="help-toc-index">{String(index + 1).padStart(2, "0")}</span>
+              <span>{item.title}</span>
             </button>
-          )
-        })}
-      </nav>
-
-      {SECTIONS.map((section) => (
-        <section key={section.id} className="help-section" id={section.id}>
-          <h2>{section.title}</h2>
-          {section.body}
-        </section>
-      ))}
-
-      <section className="help-section" id="known-gaps">
-        <h2>已知功能缺口（暂无前端入口，别到处找）</h2>
-        <ul>
-          {KNOWN_GAPS.map((gap) => (
-            <li key={gap}>{gap}</li>
           ))}
-        </ul>
-      </section>
+        </nav>
 
-      <section className="help-section" id="release-notes">
-        <h2>发布与升级</h2>
-        <p>
-          <strong>适用场景</strong>：拿到新版本安装包，或需要升级现有环境。
-        </p>
-        <Steps
-          items={[
-            <>
-              Windows 安装包<strong>未签名</strong>，也未做发行验收——Windows 可能弹安全提示，属正常现象。
-            </>,
-            <>
-              客户端<strong>没有自更新</strong>。升级流程是「重新打包 + 数据库迁移」：
-              重新生成安装包，替换后执行 <code>alembic upgrade head</code>。
-            </>,
-            <>
-              数据库升级前<strong>同时备份 PostgreSQL 和文件存储</strong>——两者缺一不可。
-            </>,
-          ]}
-        />
-        <p>
-          <strong>预期结果</strong>：新版本正常启动，历史数据完整。
-        </p>
-      </section>
+        <div className="help-content">
+          {SECTIONS.map((section) => (
+            <section key={section.id} className="help-section" id={section.id}>
+              <h2>{section.title}</h2>
+              {section.body}
+            </section>
+          ))}
+
+          <section className="help-section" id="known-gaps">
+            <h2>已知功能缺口（暂无前端入口，别到处找）</h2>
+            <ul>
+              {KNOWN_GAPS.map((gap) => (
+                <li key={gap}>{gap}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="help-section" id="release-notes">
+            <h2>发布与升级</h2>
+            <p>
+              <strong>适用场景</strong>：拿到新版本安装包，或需要升级现有环境。
+            </p>
+            <Steps
+              items={[
+                <>
+                  Windows 安装包<strong>未签名</strong>，也未做发行验收——Windows 可能弹安全提示，属正常现象。
+                </>,
+                <>
+                  客户端<strong>没有自更新</strong>。升级流程是「重新打包 + 数据库迁移」：
+                  重新生成安装包，替换后执行 <code>alembic upgrade head</code>。
+                </>,
+                <>
+                  数据库升级前<strong>同时备份 PostgreSQL 和文件存储</strong>——两者缺一不可。
+                </>,
+              ]}
+            />
+            <p>
+              <strong>预期结果</strong>：新版本正常启动，历史数据完整。
+            </p>
+          </section>
+        </div>
+      </div>
     </section>
   )
 }

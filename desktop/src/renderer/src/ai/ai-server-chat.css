@@ -59,6 +59,7 @@
   padding: var(--space-4) var(--space-6);
   border-bottom: 1px solid var(--line);
   background: var(--surface-3);
+  box-shadow: inset 0 3px 0 var(--brand-blue);
 }
 .ai-server-dialog > header strong { font-size: var(--font-section); }
 .ai-server-dialog > header small { display: block; margin-top: 3px; color: var(--muted); font-size: var(--font-caption); }
@@ -109,7 +110,7 @@
   text-overflow: ellipsis;
 }
 .ai-chat-sidebar nav button:hover { background: var(--surface-3); color: var(--text); }
-.ai-chat-sidebar nav button[aria-current] { background: var(--brand-blue-soft); color: var(--brand-blue-deep); }
+.ai-chat-sidebar nav button[aria-current] { background: var(--brand-blue-soft); color: var(--brand-ink); }
 .ai-chat-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 
 .ai-chat-transcript { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5); }
@@ -132,7 +133,7 @@
 .ai-chat-turn { margin-bottom: var(--space-6); }
 .ai-chat-user {
   margin-left: 35px;
-  border-radius: 14px 14px 3px 14px;
+  border-radius: var(--radius) var(--radius) var(--radius-xs) var(--radius);
   background: var(--brand-blue-faint);
   color: var(--blue-ink);
   padding: var(--space-3) 15px;
@@ -288,7 +289,7 @@
 .ai-chat-sidebar::-webkit-scrollbar-track, .ai-chat-transcript::-webkit-scrollbar-track { background: transparent; }
 .ai-chat-sidebar::-webkit-scrollbar-thumb, .ai-chat-transcript::-webkit-scrollbar-thumb {
   background: var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
 }
 .ai-chat-sidebar::-webkit-scrollbar-thumb:hover, .ai-chat-transcript::-webkit-scrollbar-thumb:hover {
   background: var(--muted);

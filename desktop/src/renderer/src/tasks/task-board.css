@@ -45,7 +45,7 @@
   padding: 3px 3px var(--space-3);
 }
 .task-board-lane-heading h3 { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--font-label); }
-.task-board-lane-heading > span { color: var(--muted); font-size: var(--font-caption); font-weight: var(--weight-semibold); }
+.task-board-lane-heading > span { color: var(--muted); font-size: var(--font-caption); font-weight: var(--weight-semibold); padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-3); }
 .task-board-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray-fill); }
 .task-board-dot.in_progress, .task-board-dot.active { background: var(--brand-blue); }
 .task-board-dot.blocked, .task-board-dot.paused { background: var(--warning-border); }
@@ -61,7 +61,7 @@
   box-shadow: var(--shadow-xs);
   transition: box-shadow 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
 }
-.task-board-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+.task-board-card:hover { border-color: var(--line-brand); box-shadow: var(--shadow-sm), inset 0 2px 0 var(--brand-blue); transform: translateY(-2px); }
 .task-board-card[draggable="true"] { cursor: grab; }
 .task-board-card[draggable="true"]:active { cursor: grabbing; }
 .task-board-card.dragging { opacity: .48; }
@@ -141,7 +141,7 @@
   cursor: pointer;
   transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
-.task-card-edit:hover { border-color: var(--brand-blue); color: var(--brand-blue); background: var(--brand-blue-faint); }
+.task-card-edit:hover { border-color: var(--brand-blue); color: var(--brand-ink); background: var(--brand-blue-faint); }
 .task-board-status-select select:focus-visible, .task-board-card-actions button:focus-visible {
   outline: 2px solid var(--brand-blue);
   outline-offset: 2px;
