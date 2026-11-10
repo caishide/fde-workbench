@@ -92,3 +92,19 @@
 | evidence_candidates | **7（首次自动登记）**——G-07「completed run→候选登记」判据前半段活库兑现 |
 
 **剩人工段（AI 不代拍板）**：蔡工经 `pilot.reviewer` 第二账号——①产物人工接受/撤回；②候选采纳走 `submit_gate_evidence` 人工提交闸；③G7/G8/G9 拍板——完成后 G-01/G-07 置 CLOSED。前置⑧（cancel/进程树回收）本 run 自然完成未触达，仍待专项留证；①商用条款（外部依赖）与⑦网络限制面（设计提请=同日 `docs/architecture/宿主通道网络限制面设计提请-v1.md`）维持未过不声称。
+
+---
+
+## 9. 人工链辅助轮补记（2026-11-10，台账 v1.8）
+
+**一句话**：蔡工点名「帮我完成拍板」，经交互问答定三腿处置（①产物接受=蔡工桌面亲做／②证据映射=只提强映射 2 条／③拍板=判据摘要＋选择题、AI 代录留痕可推翻）——**人工段大半行使**：7/7 产物已复核＋2 候选进 G7＋**G7 fail 拍板**；余 G7 重交＋G8/G9 等真实阶段材料。**G-07 判据两段（自动登记＋人工闸采纳）全行使⇒置 CLOSED；G-01「至 G9」未达成⇒维持 OPEN。**
+
+| 腿 | 动作 | 活库留痕 |
+| --- | --- | --- |
+| ① 产物复核 | 蔡工逐件读完 7 件原件（工作区 `output/`，sha256 与库内逐件一致）后桌面「标记复核」7/7 | `agent_artifact_reviewed` ×7 @11:05；`agent_artifacts.reviewed=true` 计数 0→7（全库首 7）；**★偏差在案＝actor=admin 非 `pilot.reviewer`**（蔡工当时 admin 登录桌面，D-1 账号分离语义未行使；修正通道敞开：admin 撤回→换 `pilot.reviewer` 重标，2 分钟） |
+| ② 候选进门禁 | `submit_gate_evidence` 代提交 2 条强映射：presales-solution-draft→G7「options 文档」、demo-and-validation-plan→G7「Eval 计划」（指针+sha256 成对；note 全注蔡工拍板与代录身份） | G7 `pending→evidence`，清单项 `claimed`＋`evidence_id` 挂接；`gate_evidence_submitted` actor=admin @10:10；其余 5 候选留 `project_evidence` 留痕不进门禁（诚实口径） |
+| ③ G7 拍板 | 拍板问询未获答复⇒按「推荐项执行+留痕可推翻」先例代录 **fail**（pilot.reviewer，CAS rev 1→2；note 全注判据：4 项清单仅 2 项 claim、缺 success.md 客户书面确认与 B 试点章程） | G7 `evidence→failed`；`gate_decided` actor=pilot.reviewer @10:17；**拍板人≠提交人硬闸活体验证**（admin 提交⇒pilot.reviewer 拍，同人则 403 `gate_decider_conflict` 代码强制；G8/G9 无证据提交时 `decide_gate` 409 `invalid_gate_state`＝机械不可拍） |
+
+**★设计缺口实证（本条链暴露，backlog T-A10 登记）**：桌面 AgentsConsole 产物行**无内容预览/下载**（服务端亦无产物内容读取路由——`server/src/fde_api/agents/routes.py` 仅 PATCH 复核写面），复核人被迫离开应用到文件系统看原件；「看到什么就复核什么」的语义在桌面内不闭合。T-A10＝桌面产物预览面（登记≠排期≠实施授权）。
+
+**下一步（业务里程碑，非本复盘范围）**：①可选——蔡工身份重做腿①（偏差消除）；②G7 重交＝success.md 客户书面确认＋B 试点章程真实材料到齐后 `submit_gate_evidence` 重交（failed→evidence 回环）再拍；③G8/G9＝PoC/生产阶段真实证据齐后提交+拍板（G8 须书面三态 decision）；④全链走完⇒G-01 置 CLOSED。

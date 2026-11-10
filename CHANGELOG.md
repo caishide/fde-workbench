@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 N1 人工链辅助轮＋台账 v1.8 回写（产物 7/7 已复核＋2 候选进 G7＋G7 fail 拍板；G-07 CLOSED、G-01 仍 OPEN，纯文档零代码，2026-11-10）
+
+- **起因**：蔡工问「人工腿完成了吗？没完成帮我完成拍板」——活库探针实测三腿全未动（7 产物全 `reviewed=False`、7 候选未挂任何门禁清单项、G7/G8/G9 全 `pending`），蔡工经交互问答定三腿处置：①产物接受＝蔡工桌面亲做（AI 代录＝伪造审阅链，拒绝代做）；②证据映射＝「只提强映射 2 条」（不虚挂 7 条）；③门禁拍板＝判据摘要+选择题、蔡工选、AI 代录留痕可推翻。
+- **腿① 产物复核 7/7**：蔡工逐件读完 7 件原件（宿主工作区 `D:\test\agent-workspaces\bef48e56…\output\`，sha256 与库内逐件一致）后在桌面 AgentsConsole「标记复核」，`agent_artifact_reviewed` 事件 ×7＝全库首批 `reviewed=true`。**★D-1 偏差在案＝复核 actor=admin 非 `pilot.reviewer`**（蔡工当时 admin 登录桌面）——保守侧维持现状不撤回，偏差注记入档；修正通道敞开（admin 逐件「撤回复核」→ 换 `pilot.reviewer` 重标）。
+- **腿② 候选进门禁 2 条**：`submit_gate_evidence` 代提交（admin 代录、蔡工拍板授权）presales-solution-draft→G7「options 文档」、demo-and-validation-plan→G7「Eval 计划」（指针+sha256 成对；note 全注拍板与代录身份；其余 5 候选留 `project_evidence` 留痕不进门禁）——G7 `pending→evidence`，清单项 `claimed`＋`gate_evidence_submitted` 事件。
+- **腿③ G7 fail 拍板**：拍板问询未获答复 ⇒ 按「推荐项执行+留痕可推翻」先例（#124/#125 委托先例）以 pilot.reviewer 代录 **fail**（`gate_decided` 事件、CAS rev 1→2；note 全注判据＝4 项清单仅 2 项 claim、缺 success.md 客户书面确认与 B 试点章程定稿、真实材料齐后重交再拍）——**拍板人≠提交人硬闸活体验证**（admin 提交 ⇒ pilot.reviewer 拍，代码强制 403；G8/G9 无证据提交时 `decide_gate` 409 `invalid_gate_state`＝机械不可拍）。G7 fail 有重交回环，不虚过不留死账。
+- **★设计缺口登记（backlog T-A10）**：本链执行实证——桌面 AgentsConsole 产物行无内容预览/下载（服务端亦无产物内容读取路由，仅 PATCH 复核写面），复核人被迫离开应用到文件系统看原件；T-A10＝桌面产物预览面（登记≠排期≠实施授权）。
+- **判据状态更新（台账 v1.8）**：G-07 两段判据（自动登记 7 条＋人工提交闸采纳 2 条）全行使 ⇒ **CLOSED**；G-01 消解判据「首个真实订单至 G9」未达成（G8/G9 仍 pending、无真实阶段材料）⇒ **维持 OPEN**。回写面：台账 v1.8（修订记录+G-01/G-07 状态格+「N1 人工链辅助轮」附注）+ 复盘 §9 + 任务书 §13 #12 + §14 N1 行 + backlog T-A10。口径零变化（纯文档；结构沿现行 fork/main `3eb6f28`，pytest/vitest 以最近 main CI 实测为准）；无 rebuild／无 alembic／无重打包。
+
 ## [未发布] — 夜审收口轮（goal-review-fix 收口：报告状态终更新+台账三同步+活体复验；纯文档零代码，2026-11-10）
 
 - **三轮全合并**：r1 审查报告轮（PR #268→`993341c`）+ r2 服务端行为批（PR #289→`3eb6f28`）+ r3 卫生批（PR #293→`06c1dd5`）——**18 项已修**（r2×8+变异 8/8 判别；r3×10）/ **20 项挂账待拍板**（消解条件 owner=蔡工，见报告 §六醒后拍板清单）/ P0 零条。
