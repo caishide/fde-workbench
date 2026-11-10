@@ -294,18 +294,31 @@ select[multiple] {
     linear-gradient(145deg, #F7F2E7 0%, #FAFAF8 48%, #F1F1EF 100%);
 }
 .auth-card {
+  position: relative;
   width: min(100%, 420px);
   padding: 34px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+/* 卡片顶部品牌渐变装饰条：呼应品牌渐变（金墨 → 琥珀金） */
+.auth-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--brand-gradient);
+  opacity: 0.85;
 }
 /* 登录页品牌区：图形标 + 产品名 + slogan */
 .auth-brand { display: flex; align-items: center; gap: 14px; margin-bottom: var(--space-5); }
-.auth-brand-mark { width: 44px; height: 44px; flex: 0 0 auto; display: block; object-fit: contain; }
-.auth-brand-text { display: grid; gap: 3px; min-width: 0; }
-.auth-brand-text h1 { margin: 0; font-size: var(--font-title); line-height: var(--lh-tight); }
+.auth-brand-mark { width: 48px; height: 48px; flex: 0 0 auto; display: block; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(20, 24, 28, 0.08)); }
+.auth-brand-text { display: grid; gap: 4px; min-width: 0; }
+.auth-brand-text h1 { margin: 0; font-size: var(--font-title); font-weight: var(--weight-semibold); line-height: var(--lh-tight); color: var(--brand-ink); letter-spacing: -0.01em; }
 .auth-brand-slogan {
   margin: 0;
   font-size: var(--font-caption);
@@ -359,6 +372,50 @@ select[multiple] {
   cursor: not-allowed;
 }
 .field select { padding-right: 2.6rem; }
+
+/* ---------- 密码字段（含「显示/隐藏」眼睛图标） ---------- */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-field input {
+  padding-right: 40px;
+}
+.password-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.password-toggle:hover {
+  color: var(--gold-4);
+  background: var(--brand-blue-faint);
+}
+.password-toggle:focus-visible {
+  outline: none;
+  color: var(--gold-4);
+  background: var(--brand-blue-faint);
+  box-shadow: var(--shadow-focus-gold);
+}
+.password-toggle:disabled {
+  color: var(--text-soft);
+  cursor: not-allowed;
+  background: transparent;
+}
 
 /* ---------- 按钮体系：统一高度 / 圆角 / 阴影 / 交互态 ---------- */
 .primary-button, .secondary-button, .danger-button, .text-button, .text-action-button {

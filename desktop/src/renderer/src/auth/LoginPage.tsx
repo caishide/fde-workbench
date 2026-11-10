@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 
 import { PASSWORD_MAX_LENGTH, USERNAME_MAX_LENGTH } from "../../../shared/contracts"
-import { BRAND_SUBTITLE, DEVICE_LABEL, PRODUCT_NAME } from "../../../shared/brand"
+import { DEVICE_LABEL, PRODUCT_NAME } from "../../../shared/brand"
 import { AuthUiError, useAuth } from "./AuthProvider"
 import logoMark from "../assets/logo-caigong-fde-light.svg"
 
@@ -11,6 +11,7 @@ export function LoginPage() {
   const { login } = useAuth()
   const [username, setUsername] = useState(readLastUsername)
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const usernameRef = useRef<HTMLInputElement>(null)
@@ -55,6 +56,7 @@ export function LoginPage() {
       rememberUsername(normalizedUsername)
     } catch (caught) {
       setPassword("")
+      setShowPassword(false)
       setError(loginErrorMessage(caught))
       passwordFocusPending.current = true
     } finally {
@@ -72,7 +74,6 @@ export function LoginPage() {
             <p className="auth-brand-slogan">交付有据，一步到位</p>
           </div>
         </div>
-        <p className="eyebrow">{BRAND_SUBTITLE}</p>
         <p className="supporting-copy">使用管理员分配的企业账号登录。</p>
         <form onSubmit={(event) => void submit(event)} noValidate>
           <div className="field">
@@ -90,17 +91,28 @@ export function LoginPage() {
           </div>
           <div className="field">
             <label htmlFor="login-password">密码</label>
-            <input
-              ref={passwordRef}
-              id="login-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              maxLength={PASSWORD_MAX_LENGTH}
-              value={password}
-              disabled={submitting}
-              onChange={(event) => setPassword(event.target.value)}
-            />
+            <div className="password-field">
+              <input
+                ref={passwordRef}
+                id="login-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={password}
+                disabled={submitting}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                disabled={submitting}
+              >
+                <EyeIcon open={showPassword} />
+              </button>
+            </div>
           </div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           <button className="primary-button full-width" type="submit" disabled={submitting}>
@@ -109,6 +121,27 @@ export function LoginPage() {
         </form>
       </section>
     </main>
+  )
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  const iconProps = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.6,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  }
+  return (
+    <svg {...iconProps}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      {open ? <path d="m3 3 18 18" /> : null}
+    </svg>
   )
 }
 
