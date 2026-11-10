@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fde_api.auth.models import RefreshSession, User
 from fde_api.auth.passwords import hash_password, verify_password
 from fde_api.auth.tokens import issue_access_token
-from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion
+from fde_api.workbench.models import IndustryTemplate, IndustryTemplateVersion, OperationEvent
 from fde_api.workbench.seed import GENERIC_TEMPLATE_KEY, seed_workbench
 
 
@@ -386,7 +386,7 @@ def test_reset_rejects_oversized_password_before_hashing(admin_client, monkeypat
 
 
 def test_reset_password_revokes_active_sessions_and_requires_change(
-    admin_client, client, db_session
+    admin_client, admin_user, client, db_session
 ):
     created = create_user(admin_client).json["data"]
     pre_reset_login = client.post(
@@ -408,6 +408,15 @@ def test_reset_password_revokes_active_sessions_and_requires_change(
     assert response.json["data"]["must_change_password"] is True
     assert RESET_PASSWORD not in response.get_data(as_text=True)
     db_session.expire_all()
+    # CR-042：重置他人密码必须留 actor 归因审计（临时密码本体永不入事件）
+    reset_event = (
+        db_session.query(OperationEvent)
+        .filter_by(event_type="user_password_reset", target_id=created["id"])
+        .one()
+    )
+    assert reset_event.actor_user_id == admin_user.id
+    assert "temporary_password" not in reset_event.changes
+    assert reset_event.changes["must_change"] == {"to": True}
     target = db_session.get(User, created["id"])
     assert target is not None
     assert verify_password(target.password_hash, RESET_PASSWORD)

@@ -150,7 +150,14 @@ def build_report(session: Any, settings: Any, *, now: datetime | None = None) ->
         rows = list(
             session.scalars(
                 select(AgentRun)
-                .where(AgentRun.created_at >= started, AgentRun.created_at < expires)
+                .where(
+                    AgentRun.created_at >= started,
+                    AgentRun.created_at < expires,
+                    # CR-049：六指标与 runs_used/契约面同尺——排除演练 run
+                    # （rehearsal: 前缀，形态 L1 completed+degraded / L2 failed+degraded），
+                    # 否则 degraded_rate 虚高、成本中位数被零费行拉低（CR-031 同型残留）。
+                    AgentRun.idempotency_key.notlike(REHEARSAL_KEY_PREFIX + "%"),
+                )
                 .order_by(AgentRun.created_at)
             )
         )

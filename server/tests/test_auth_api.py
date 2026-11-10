@@ -10,6 +10,7 @@ from sqlalchemy import event, select
 
 from fde_api.auth.models import InvalidRoleError, RefreshSession, User
 from fde_api.auth.passwords import hash_password
+from fde_api.workbench.models import OperationEvent
 
 
 from conftest import INITIAL_PASSWORD
@@ -373,7 +374,7 @@ def test_require_role_uses_current_database_role_not_stale_claim(
 
 
 def test_change_password_revokes_all_prior_sessions_and_issues_permitted_pair(
-    client, active_user
+    client, active_user, db_session
 ):
     first_login = client.post(
         "/api/v1/auth/login",
@@ -405,6 +406,16 @@ def test_change_password_revokes_all_prior_sessions_and_issues_permitted_pair(
         "is_active": True,
     }
     assert CHANGED_PASSWORD not in changed.get_data(as_text=True)
+
+    # CR-042：自助改密落 actor=self 审计事件（新密码本体永不入事件）
+    changed_event = (
+        db_session.query(OperationEvent)
+        .filter_by(event_type="user_password_changed", target_id=active_user.id)
+        .one()
+    )
+    assert changed_event.actor_user_id == active_user.id
+    assert "new_password" not in changed_event.changes
+    assert changed_event.changes["must_change"] == {"to": False}
 
     me = client.get(
         "/api/v1/auth/me",
@@ -732,3 +743,44 @@ def test_concurrent_refresh_rotation_and_password_change_use_same_lock_order(
         "/api/v1/auth/refresh", json={"refresh_token": changed_refresh}
     )
     assert accepted.status_code == 200
+
+
+def test_verify_password_blocks_after_repeated_failures(client, login_tokens):
+    """CR-047：verify-password 失败计数——5 次失败后锁定，正确密码也被拒（先闸后验）。"""
+    headers = auth_header(login_tokens.access)
+    for _ in range(5):
+        denied = client.post(
+            "/api/v1/auth/verify-password",
+            headers=headers,
+            json={"password": "WrongPass!999"},
+        )
+        assert denied.status_code == 400
+        assert denied.json["error"]["code"] == "invalid_password"
+    blocked = client.post(
+        "/api/v1/auth/verify-password",
+        headers=headers,
+        json={"password": "WrongPass!999"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json["error"]["code"] == "too_many_attempts"
+    even_correct = client.post(
+        "/api/v1/auth/verify-password",
+        headers=headers,
+        json={"password": INITIAL_PASSWORD},
+    )
+    assert even_correct.status_code == 429
+    assert even_correct.json["error"]["code"] == "too_many_attempts"
+
+
+def test_verify_password_success_does_not_consume_failure_budget(client, login_tokens):
+    """CR-047：成功确认不计失败——预算不被正确尝试消耗。"""
+    headers = auth_header(login_tokens.access)
+    ok = client.post(
+        "/api/v1/auth/verify-password", headers=headers, json={"password": INITIAL_PASSWORD}
+    )
+    assert ok.status_code == 200
+    denied = client.post(
+        "/api/v1/auth/verify-password", headers=headers, json={"password": "WrongPass!999"}
+    )
+    assert denied.status_code == 400
+    assert denied.json["error"]["code"] == "invalid_password"

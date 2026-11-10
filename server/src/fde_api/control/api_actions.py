@@ -11,6 +11,10 @@ from datetime import UTC, datetime, timedelta
 from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import select
 
+from fde_api.auth.confirm_throttle import (
+    confirm_attempts_blocked,
+    record_confirm_failure,
+)
 from fde_api.auth.decorators import require_auth
 from fde_api.auth.models import User
 from fde_api.auth.passwords import verify_password
@@ -257,13 +261,11 @@ def decide_action(user, identifier, password, approve=True):
             current = session.get(User, user.id)
             if current.auth_version != data["auth_version"]:
                 raise ControlServiceError("action_expired", "账号验证信息已改变，请重新发起操作。", 409)
-            redis = current_app.extensions["fde_api_redis"]
-            key = "fde:ai:confirmation-failures:" + user.id
-            if int(redis.get(key) or 0) >= 5:
+            # CR-047：失败计数原语收口 auth/confirm_throttle 单点（同 key 同阈值同窗口）。
+            if confirm_attempts_blocked(user.id):
                 raise ControlServiceError("too_many_attempts", "密码错误次数过多，请 15 分钟后重试。", 429)
             if not isinstance(password, str) or len(password) > 1024 or not verify_password(current.password_hash, password):
-                redis.incr(key)
-                redis.expire(key, 900)
+                record_confirm_failure(user.id)
                 raise ControlServiceError("invalid_password", "当前账号密码不正确。", 403)
             spec = _spec(data["operation"], data["parameters"], data["body"], data["query"])
             _authorized(current, spec, data["parameters"], data.get("scope"))

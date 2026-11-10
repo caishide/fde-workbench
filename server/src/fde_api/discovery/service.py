@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from fde_api.extensions import db
 from fde_api.projects.permissions import project_access
@@ -112,8 +113,26 @@ def create_extraction(actor, project_id: str, payload: dict[str, Any]) -> dict[s
             source_sha256=source_sha,
             status="queued",
         )
-        session.add(extraction)
-        session.flush()
+        try:
+            session.add(extraction)
+            session.flush()
+        except IntegrityError:
+            # CR-052：并发双击走到唯一约束（READ COMMITTED 下预检查互相看不见未提交行）。
+            # 按本模块幂等契约返回既有行（created=False），而非 500；沿用
+            # guidance/adopt_translator_draft 的「预检查+IntegrityError 兜底」同型纪律。
+            session.rollback()
+            existing = session.scalar(
+                select(DiscoveryExtraction).where(
+                    DiscoveryExtraction.project_id == project_id,
+                    DiscoveryExtraction.source_type == source_type,
+                    DiscoveryExtraction.source_id == source_id,
+                    DiscoveryExtraction.extractor_version == EXTRACTOR_VERSION,
+                    DiscoveryExtraction.prompt_version == PROMPT_VERSION,
+                )
+            )
+            if existing is not None:
+                return {**serialize_extraction(existing), "created": False}
+            raise
         _event(
             session, actor.id, project_id, EXTRACTION_EVENT_TARGET, extraction.id,
             "discovery_extraction_created",
@@ -242,7 +261,9 @@ def list_facts(
 def review_fact(actor, fact_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     session = _session()
     try:
-        fact = session.get(BusinessFact, fact_id)
+        # CR-054：终态检查必须基于行锁后的最新值（沿 guidance confirm_analysis
+        # with_for_update 先例）——否则并发审阅可击穿「accepted/rejected 为终态」。
+        fact = session.get(BusinessFact, fact_id, with_for_update=True)
         if fact is None:
             raise _error("fact_not_found", "事实不存在。", 404)
         _require_project(session, actor, fact.project_id, manage=True)
@@ -299,7 +320,8 @@ def list_requirements(
 def review_requirement(actor, requirement_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     session = _session()
     try:
-        requirement = session.get(Requirement, requirement_id)
+        # CR-054：同 review_fact——终态检查基于行锁后的最新值。
+        requirement = session.get(Requirement, requirement_id, with_for_update=True)
         if requirement is None:
             raise _error("requirement_not_found", "需求不存在。", 404)
         _require_project(session, actor, requirement.project_id, manage=True)

@@ -181,6 +181,10 @@ def handle_presurvey_analysis(job) -> None:
                         _exhausted_message("AI 返回的项目指引格式不正确。", attempts, retryable=True),
                     )
                     return
+                # CR-051：重试前清空复核条目 sink——契约失败重试与 KimiError 分支
+                # 同纪律（sink 已累积上一轮条目，输入替换每轮都是全量重做，
+                # 不清空则复核清单 occurrences 翻倍）。
+                redaction_entries.clear()
                 # 契约失败是概率性问题，立即重试（退避只会白白拉长等待）。
         # T-A2 兜底层：模型输出可能回显企业名（输入替换拦不住输出端）。
         # 只对文本与 JSON 字段值做替换；evidence 结构不动（source_ref 校验

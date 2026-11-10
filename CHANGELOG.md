@@ -2,6 +2,20 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审修复 r2：服务端行为批（goal-review-fix r2；CR-042/047/049/050/051/052/054/060 八项，2026-11-10）
+
+- **形态**：goal-review-fix r2 修复轮（安全批=分级闸放行项），基线 fork/main `dd5bd9c`；八项均「证据确凿+修法唯一+局部补丁」，每项同步新增测试并做变异验证（红→反向替换→绿，8/8 判别）。发现登记与全量证据见 r1 报告 `docs/audit/全面代码审查报告-2026-11-10.md`（其 PR 串行在途）。
+- **CR-042（P1）审计补全**：`users/service.py::reset_password` 补 `actor` 形参（路由透传 `g.current_user`）并在事务内落 `user_password_reset` 事件；`auth/service.py::change_password` 落 `user_password_changed`（actor=self）。事件键名避开 `events._SENSITIVE_KEY` 脱敏正则（`must_change` 而非含 password 键——脱敏墙按设计整键丢弃，测试已钉）。
+- **CR-047（P2）密码确认限流**：NEW `auth/confirm_throttle.py` 单一权威（同 key `fde:ai:confirmation-failures:<user_id>` 同阈值 5 同窗口 15min），接入 `auth/verify-password`（先闸后验）+ `control/api_actions.decide_action`（原语收口）+ commercial 七服务 `_confirm_password`（attribution/billing/enterprise/ledger/quota/regional/service）。测试隔离件：conftest NEW autouse fixture 每测后清计数键（共享 Redis 按用户键会牵连邻域——#279 PerTestIPClient 同型）。
+- **CR-049（P2）演练排除**：`agents/pilot.py::build_report` rows 查询补 `idempotency_key.notlike("rehearsal:%")`——CR-031 同型残留（六指标被演练 run 污染），与 metrics `_REAL_RUNS` 同款。
+- **CR-050（P2）词典故障分类**：`discovery/jobs.py` NEW `except RedactionConfigError` → `pseudonym_dict_unavailable` + 专文案（原落 `discovery_unexpected_error` 误导重跑白烧预算；guidance 同构先例）。
+- **CR-051（P2）重试清 sink**：`guidance/jobs.py` GuidanceContractError 重试分支补 `redaction_entries.clear()`（沿 KimiError 分支同纪律）——复核清单 occurrences 不再翻倍。
+- **CR-052（P2）并发幂等兜底**：`discovery/service.py::create_extraction` flush 包 `except IntegrityError` → 重读既有行返回 `created=False`（幂等契约在并发窗口成立，沿 guidance adopt 同型；端到端竞态测试用真实唯一约束复现）。
+- **CR-054（P2）审阅行锁**：`discovery/service.py::review_fact/review_requirement` 的 `session.get` 补 `with_for_update=True`（沿 guidance confirm_analysis 先例）——并发审阅不再可击穿终态约定。
+- **CR-060（P2）目录 desc 失实**：`control/api_catalog.py` plugins 两行 desc 删「需密码确认」改述实况（payload 闭集结构上不可能收密码）。
+- **测试**：NEW `test_api_catalog_descriptions.py`；`test_users_api` +1 断言组（事件 actor/载荷/脱敏）；`test_auth_api` +2（限流锁定/成功不耗预算）+ change_password 事件断言；`test_commercial_entitlements` +1（commercial 闸共享计数）；`test_agent_pilot` +1（演练排除）；`test_discovery_extraction` +3（词典分类/竞态兜底/行锁 spy）；`test_guidance_retry` +1（sink 不翻倍）。定向全绿后 8 项变异全判别。
+- **口径**：零迁移零新路由零新表；预期 pytest 基线 2618+6s 上方 +9（以 CI 实测为准）；server 变更 ⇒ 合并后 rebuild 三镜像+alembic（幂等 no-op）+活体复验三项。
+
 ## [未发布] — 全仓代码审查报告轮（goal-review-fix r1：七域并行审查+独立复核+E0 升级+38 条登记；纯文档零代码，2026-11-10）
 
 - **形态**：goal-review-fix（审+修循环）r1 审查报告轮——**纯文档**（NEW 报告+台账登记+本节），零代码零迁移零路由；r2/r3 修复轮与收口轮随各自 PR 接续。基线 fork/main `dd5bd9c`（#264），审查取数=独立只读 worktree（主树 38 脏文件未触碰）。

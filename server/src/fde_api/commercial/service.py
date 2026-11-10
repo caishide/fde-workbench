@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import ROLE_ADMIN, User
+from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
 from fde_api.auth.passwords import verify_password
 from fde_api.commercial.ladder import external_ladder_code
 from fde_api.commercial.models import (
@@ -61,8 +62,12 @@ def _confirm_password(session: Session, actor: User, password: object) -> None:
     """单次显式授权：admin 写原语须携带当前账号密码（高风险写默认人工确认）。"""
     if not isinstance(password, str) or not password:
         raise _error("invalid_request", "confirm_password 必填（高风险写人工确认）。")
+    # CR-047：密码确认尝试限流——与 auth verify-password / ai 确认闸同 key 同阈值同窗口。
+    if confirm_attempts_blocked(actor.id):
+        raise _error("too_many_attempts", "密码错误次数过多，请 15 分钟后重试。", 429)
     current = session.get(User, actor.id)
     if current is None or not verify_password(current.password_hash, password):
+        record_confirm_failure(actor.id)
         raise _error("invalid_password", "当前账号密码不正确。", 403)
 
 

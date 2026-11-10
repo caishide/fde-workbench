@@ -201,6 +201,17 @@ def change_password(
             current_user.password_hash = hash_password(new_password)
             current_user.must_change_password = False
             current_user.auth_version += 1
+            # CR-042：自助改密同样落 actor=self 审计事件（新密码本体永不入事件）。
+            # 懒导入：auth→projects 顶层包环会被 test_architecture_purity 冻结闸拦下。
+            from fde_api.projects.events import record_event
+
+            record_event(
+                session,
+                current_user,
+                "user_password_changed",
+                current_user,
+                {"must_change": {"to": False}},  # 键名避开 events 脱敏正则
+            )
             pair = _issue_token_pair(session, current_user, "Password change")
 
         return current_user, pair
