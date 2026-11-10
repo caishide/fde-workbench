@@ -419,29 +419,6 @@ def app(settings):
     return app
 
 
-@pytest.fixture(autouse=True)
-def _reset_password_confirm_throttle(test_settings):
-    """CR-047 测试隔离件：密码确认失败计数落在共享 Redis 且按用户键，
-    模块级共享 admin 的用例会互相牵连（一个用例打满 5 次错密码即锁死
-    后续同 admin 用例——#279 PerTestIPClient 同型问题）。每测后清计数键，
-    生产语义不变（锁窗口仍是 15 分钟，测试间互不继承失败预算）。"""
-    yield
-    try:
-        from redis import Redis as RedisClient
-
-        client = RedisClient.from_url(
-            test_settings.redis_url,
-            socket_connect_timeout=0.5,
-            socket_timeout=0.5,
-        )
-        keys = list(client.scan_iter("fde:ai:confirmation-failures:*"))
-        if keys:
-            client.delete(*keys)
-        client.close()
-    except Exception:
-        pass
-
-
 @pytest.fixture
 def client(app):
     return app.test_client()

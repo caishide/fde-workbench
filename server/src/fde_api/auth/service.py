@@ -18,7 +18,6 @@ from fde_api.auth.limits import (
 from fde_api.auth.passwords import hash_password, verify_password
 from fde_api.auth.tokens import issue_access_token, new_refresh_token
 from fde_api.config import Settings
-from fde_api.projects.events import record_event
 from fde_api.extensions import db
 
 
@@ -203,6 +202,9 @@ def change_password(
             current_user.must_change_password = False
             current_user.auth_version += 1
             # CR-042：自助改密同样落 actor=self 审计事件（新密码本体永不入事件）。
+            # 懒导入：auth→projects 顶层包环会被 test_architecture_purity 冻结闸拦下。
+            from fde_api.projects.events import record_event
+
             record_event(
                 session,
                 current_user,
