@@ -568,14 +568,22 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 <blockquote>
 <p>⚠️ <strong>与既有文档的差异（如实记录，不掩盖）</strong>：<code>BRAND-LOGO-GUIDE.md §三</code> 与清单 B3 记的约数为「琥珀金约 2.2:1 / 金墨约 3.4:1 / 深金约 4.8:1，白字对比达标 WCAG AA」。按 WCAG 公式实测分别为 <strong>2.16 / 2.82 / 4.21</strong>，且<strong>金墨、深金配白字均未达到 AA 正文 4.5:1</strong>（深金达到大字 3:1）。约数偏乐观，本文以实测为准。</p>
 <p><strong>处置（2026-11-06 已裁决并落地）</strong>：用户裁决 <strong>A「金系按钮文字改石墨黑字」</strong>。已把 <code>styles.css</code> / <code>pages.css</code> / <code>ai-server-chat.css</code> / <code>site/index.html</code> 中全部 9 处金底白字规则改为 <code>var(--brand-ink)</code> / <code>var(--ink)</code>，<code>BRAND-LOGO-GUIDE.md §三</code> 的偏乐观约数同步改为实测值；<strong>品牌色值本身零改动</strong>，深底侧边栏白字保持不变。§三 与清单 B3 的旧约数已作废。</p>
-<p>⚠️ <strong>残留风险（不改色值，如实登记）</strong>：hover 深金 <code>#A3721F</code> 上石墨黑字仅 <strong>4.23:1</strong>（白字 4.21:1），仍略低于 AA 正文 4.5:1，但达大字/图标 3:1。若要彻底达标须调整 hover 色值或改换 hover 反馈，属于<strong>色值变更（破坏性变更）</strong>，本次未擅自执行，列入 §十-8。</p>
+<p>⚠️ <strong>残留风险（2026-11-07 实渲染复核后重写，不改色值）</strong>：
+① Chromium 实测 <code>.primary-button</code> 常态与 hover、官网 <code>.btn-gold</code> 常态与 hover 的背景均为 <code>rgb(255,255,255)</code>、文字均为 <code>rgb(20,24,28)</code>（<strong>17.84:1</strong>），<code>#A3721F</code> 只出现在描边与外圈阴影——<strong>hover 态并不存在「深金底＋黑字」</strong>，2026-11-06 登记的「hover 深金 4.23:1」为作用面误判，本轮撤销。
+② 真实出现 4.23:1 的位置是 <strong><code>.ai-execution-pill</code> 固定态渐变</strong> <code>linear-gradient(120deg, #A3721F, #C98F2B)</code>：黑字在深金端 4.23:1、金墨端 6.33:1，渐变中段优于最差值。
+③ <strong>新增发现（上轮漏登记）</strong>：<code>--brand-blue-deep</code> 作<strong>文字色</strong>时（wizard 激活项、任务来源徽标等），对 <code>--brand-blue-soft #FBF3E2</code> 为 3.82:1、对 <code>--brand-blue-faint #FDF9F0</code> 为 4.01:1、对白底 4.21:1，均未达 AA 正文 4.5:1。
+④ <strong>「调亮深金」方向被实测否掉</strong>：如改 <code>#B4822A</code>，胶囊深端黑字升到 5.24:1（达标），但同一色作文字色对浅底反降到 3.08–3.41:1，净收益为负，且 <code>--brand-blue-deep</code> 被 10+ 处复用，属破坏性变更。
+⑤ <strong>2026-11-07 已落地（候选 A）</strong>：AI 执行胶囊的 <code>background</code> 改用既有 <code>var(--brand-gradient)</code>（金墨 <code>#C98F2B</code> → 琥珀金 <code>#E8A33D</code>，120deg），石墨黑字两端 <strong>6.33 / 8.27:1</strong> 全段达 AA；零新色值、零文字色影响，仅一处 CSS 引用。该渐变原本已用于 <code>.dispatch-tab.active</code> 与 AI 聊天圆形按钮（同为石墨黑字），本次是回到既有实践，非破例。②③ 的完整处置见 §十-8 / §十-9。
+⑥ <strong>2026-11-07 #14 分级落地（按「文字 / UI 图形 / 装饰」三级）</strong>：精确口径为 <code>color: var(--brand-blue)</code> <strong>27 处</strong>（桌面端 5 份 CSS）+ 官网 4 处（<code>--gold-ink</code> ×3、<code>--gold-deep</code> ×1）；原登记「53 处」系混入 48 处非 <code>color</code> 属性与 40 处变体引用（总引用 115 处），已纠偏。文字类 30 处统一改 <code>var(--brand-ink)</code> / <code>var(--ink)</code>，对 <code>--card</code> 白 17.84:1 / <code>--paper</code> 16.49:1 / soft 16.16:1 / faint 16.98:1，<strong>全段达 AA 正文</strong>；官网 <code>.sec-list li::before</code> 的装饰「✓」改色阶内已有深金 <code>var(--gold-deep)</code>，对白 <strong>4.21:1</strong> 达 WCAG 1.4.11 非文本 3:1，保留金色识别且零新色值。<strong>候选 B「调深金色」实测否掉</strong>：现有金系最深的 <code>#A3721F</code> 对白仅 4.21:1，要达 AA 正文需引入 <code>#8F641B</code> 或更深的新色值，脱离色阶且破坏金系识别。非 <code>color</code> 属性 48 处保留并转 §十-11。详见 §十-10。
+⑦ <strong>实渲染口径补充（声明数 ≠ 真实渲染命中数）</strong>：Chromium 采样官网真实页面发现 <code>.sec-kicker</code> 的 <code>color</code> / <code>font-size</code> 声明被特异性更高的 <code>.sec-head p{color:var(--ink-4);font-size:15.5px}</code> 覆盖（该元素位于 <code>&lt;div class="sec-head"&gt;</code> 内），真实计算色为 <code>rgb(90,98,109)</code> / <code>rgb(246,246,244)</code>，对比度 <strong>5.70:1 本就达 AA</strong>。因此上轮把 <code>--gold-ink</code> 计作「3 处金墨文字风险」中有 <strong>1 处是虚警（死规则）</strong>；本次把它改为 <code>--ink</code> 属清理死规则中的不合规色值声明，<strong>不改变渲染</strong>。故真实改善为 <strong>29 处文字声明 + 1 处装饰声明</strong>；官网另 2 处（<code>.ability .tagline</code>、<code>.rail-gate.final .rail-name</code>）实采样均为 <code>rgb(20,24,28)</code>，装饰「✓」为 <code>rgb(163,114,31)</code>；桌面端抽样 8 个控件计算色全部为 <code>rgb(20,24,28)</code>。是否修复 <code>.sec-head p</code> 的覆盖关系属<strong>版式变更</strong>，超出本次「文字色」授权范围，未擅自改动，留待拍板。</p>
 </blockquote>
 <hr />
 <h2 id="_6">七、用色纪律（强制）</h2>
 <ol>
 <li>金色只出现在<strong>一个</strong>位置（主标右上分段），是全场唯一暖色；任何画面中不得出现第二处金色强调——UI 交互色除外，它本来就是金色系。</li>
 <li>深色背景时金色必须提亮至 <code>#F5B44A</code>。</li>
-<li><strong>不得引入第三种彩色</strong>（蓝 / 绿 / 青 / 紫等）；所有非品牌色只能是石墨阶、中性灰、纯白。</li>
+<li><strong>不得引入第三种彩色</strong>（蓝 / 绿 / 青 / 紫等）；所有非品牌色只能是石墨阶、中性灰、纯白。
+   - <strong>2026-11-07 书面豁免（仅 D6 签章区）</strong>：电子公章的法定朱红属<strong>功能性 / 法定视觉特征</strong>，非品牌装饰色，允许作为本条的唯一显式例外。严格限定：① 仅签署页签章区；② 仅使用<strong>实际备案章样</strong>（设计侧不得自绘、临摹、描边或「美化」）；③ 不扩散至官网、名片、PPT、邮件签名、现场物料等任何其他载体；④ 不得作为品牌色推广，不写入色板或任何 token；⑤ <strong>不构成用印授权</strong>，法律效力仍以主体资质、CA 证书与平台用印流程为准（<strong>法务书面确认待输入</strong>）。本节不指定具体朱红色值——章色以实际备案章样为准。依据：用户 2026-11-07「14 和 D6 分级拍板按你建议实施」；完整分级见 <code>specs/D-商务载体补齐.md</code> D6-2 / D6-4。</li>
 <li>语义色保持原色相，不参与品牌表达；也不得被改写为金色。</li>
 <li>单色印刷/丝印/合同页眉只用石墨黑或纯白，不保留金段色相（靠 45° 斜切端头与缺口区分）。</li>
 <li>不得给主标或母题加渐变、投影、描边效果；<code>--brand-gradient</code> 仅用于 UI 控件，不用于主标。</li>
@@ -741,9 +749,9 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 </tr>
 <tr>
 <td>6</td>
-<td>公章朱红与「不得引入第三种彩色」的冲突豁免</td>
-<td>D6 电子签章</td>
-<td>品牌责任人 + 法务</td>
+<td>~~公章朱红与「不得引入第三种彩色」的冲突豁免~~</td>
+<td>✅ <strong>品牌侧已裁决 2026-11-07（有条件豁免）</strong>：书面条款写入 §七-3，仅限签章区 / 仅实际备案章样 / 不扩散 / 不自绘 / 不构成用印授权；<strong>法务书面确认与主体资质、备案章样仍待输入，D6 整体保持 🟡</strong></td>
+<td>品牌侧已闭环；法务待补（见 <code>specs/D</code> D6-4 C 类）</td>
 </tr>
 <tr>
 <td>7</td>
@@ -753,12 +761,33 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 </tr>
 <tr>
 <td>8</td>
-<td><strong>hover 深金 <code><span class="chip" style="background:#A3721F"></span><code>#A3721F</code></code> 上石墨黑字 4.23:1 仍略低于 AA 正文 4.5:1</strong>；是否调整 hover 色值或改换 hover 反馈（属色值变更 / 破坏性变更）</td>
-<td>桌面端可访问性</td>
-<td>品牌责任人 + 前端；<strong>本次未擅自改动</strong></td>
+<td>~~hover 深金 / AI 胶囊渐变深端 4.23:1~~</td>
+<td>✅ <strong>已关闭 2026-11-07</strong>：用户「按建议继续推进」，候选 A 落地，胶囊改 <code>var(--brand-gradient)</code>，两端 6.33 / 8.27:1 达 AA</td>
+<td>—</td>
+</tr>
+<tr>
+<td>9</td>
+<td>~~<code>--brand-blue-deep</code> 作文字色 3.82–4.21:1 不达 AA~~</td>
+<td>✅ <strong>已关闭 2026-11-07</strong>：单独评估确认真实作用面为 <strong>9 处</strong>（跨 4 份 CSS，非上轮登记的 2 处），全部位于白 / 极浅金底、无深底副作用；9 处 <code>color</code> 声明统一改 <code>var(--brand-ink)</code>（对 soft 16.16:1 / faint 16.98:1 / 白 17.84:1 全达 AA）；变量定义不动，仍作 <code>.creation-method-icon.manual</code> 渐变深端</td>
+<td>—</td>
+</tr>
+<tr>
+<td>10</td>
+<td>~~<code>--brand-blue</code> 金墨作文字色 2.55–2.82:1 不达 AA~~</td>
+<td>✅ <strong>已关闭 2026-11-07</strong>：用户「分级拍板按你建议实施」。精确口径 <strong>27 处 CSS <code>color</code> + 官网 4 处</strong>（原「53 处」已纠偏）；文字类 30 处改石墨黑（16.16–17.84:1 达 AA 正文）、装饰「✓」1 处改色阶内深金（4.21:1 达 1.4.11）；候选 B 实测需引入 <code><span class="chip" style="background:#8F641B"></span><code>#8F641B</code></code> 类新色值已否掉；品牌色值与 TSX / docx 零改动。⚠️ 声明数 ≠ 真实渲染命中数：官网 <code>.sec-kicker</code> 1 处为死规则清理（被 <code>.sec-head p</code> 覆盖，本就 5.70:1 达标），详见 §六 ⑦</td>
+<td>—</td>
+</tr>
+<tr>
+<td>11</td>
+<td><strong>2026-11-07 新登记</strong>：<code>--brand-blue</code> 用于非 <code>color</code> 属性 <strong>48 处</strong>（border-color 12 / accent-color 13 / outline 5 / background 7 / box-shadow 2 / border 3 / 其他 6），金墨对浅底 2.55–2.82:1 低于 WCAG 1.4.11 非文本 3:1；另有 40 处 soft/faint/deep 变体引用（总引用 115 处）</td>
+<td>桌面端 UI 组件边界 / 纯装饰</td>
+<td>品牌责任人 + 前端；<strong>待拍板</strong>：属非文本对比度独立判据，需按「承载状态的组件边界 / 纯装饰」再分级；本轮按 #14 分级边界保留，未擅自扩大</td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>交叉引用约定：其他文档中的 <code>BRAND-COLOR-SPEC.md §十-8 / §十-9 / §十-10 / §十-11</code> 分别指本表第 8 / 9 / 10 / 11 行；§十-8、§十-9、§十-10 已分别于 2026-11-07 关闭，<strong>§十-11 为当前唯一开放的 a11y 项</strong>（WCAG 1.4.11 非文本对比度，与 1.4.3 文本对比度属不同判据）。</p>
+</blockquote>
 <hr />
 <h2 id="_11">十一、变更与引用</h2>
 <ul>

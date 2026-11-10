@@ -84,8 +84,10 @@ it("jumps to a section from the table of contents without navigating away", asyn
   const toc = screen.getByRole("navigation", { name: "目录" })
 
   // 按名称选目录按钮（不锁死索引——章节增减不应改坏测试）
-  const troubleshootBtn = [...toc.querySelectorAll("button")].find(
-    (button) => button.textContent === "故障排查（照顺序查最快）",
+  // 用 includes 而非 textContent 精确相等：目录按钮带序号徽标（help-toc-index），
+  // textContent 是「13故障排查（照顺序查最快）」，精确相等会随徽标样式变化而误伤。
+  const troubleshootBtn = [...toc.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("故障排查（照顺序查最快）"),
   )
   expect(troubleshootBtn).toBeTruthy()
   await user.click(troubleshootBtn!)
@@ -109,13 +111,13 @@ it("keeps known gaps honest — no invented features", () => {
 // 用户会照着错文案操作并把问题归因到工作台本身。以下断言把文案钉在代码事实上。
 it("keeps the tab count in sync with the real project detail tabs", () => {
   render(<HelpPage />)
-  // ProjectDetailPage.tsx 的 tabs 定义为 12 项（含「执行事实」）
-  // 必须精确等于 12——写成 getAllByText(...).length > 0 时，把「12」改成「11」也能通过，
+  // ProjectDetailPage.tsx 的 tabs 定义为 13 项（含「执行事实」「智能体」「评审会」）
+  // 必须精确等于 13——写成 getAllByText(...).length > 0 时，把「13」改成「12」也能通过，
   // 属守卫形同虚设（变异测试实测）。此处断言具体数值，与 ProjectDetailPage.tsx 的 tabs 长度对齐。
-  expect(screen.getAllByText(/12 个标签页/).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(/13 个标签页/).length).toBeGreaterThan(0)
+  expect(screen.queryByText(/12 个标签页/)).toBeNull()
   expect(screen.queryByText(/11 个标签页/)).toBeNull()
-  expect(screen.queryByText(/10 个标签页/)).toBeNull()
-  // 全部 12 个标签名都在册（表格首列为行头，用 getByRole("cell") 逐个定位）
+  // 全部 13 个标签名都在册（表格首列为行头，用 getByRole("cell") 逐个定位）
   const { container } = render(<HelpPage />)
   const tabTable = [...container.querySelectorAll("table")].find((t) =>
     t.textContent?.includes("执行事实"),
@@ -129,6 +131,8 @@ it("keeps the tab count in sync with the real project detail tabs", () => {
     "调研",
     "方案设计",
     "工作流",
+    "智能体",
+    "评审会",
     "术语表",
     "执行事实",
     "文件库",

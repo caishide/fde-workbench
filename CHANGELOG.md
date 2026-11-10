@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 前端 CSS 品牌对齐 + 帮助文档对齐 13 标签页（border-radius 令牌化 + 高频页视觉打磨 + 滚动高亮降级；服务端无变更零迁移零路由零蓝图，2026-11-10）
+
+- **帮助文档对齐新代码**：项目详情页实为 **13 个标签页**（`ProjectDetailPage.tsx` tabs：概览/任务/门禁/报价收款/调研/方案设计/工作流/**智能体**/**评审会**/术语表/执行事实/文件库/项目管理）——服务端 bundled 手册 `help_manual.md` 与桌面端 `HelpPage.tsx` 同步补齐 13 标签页 + 智能体/评审会两节 + 交接包面板说明，`docs/工作台操作使用手册.md` 孪生副本字节一致（`test_help_fetch_tool.py::test_docs_copy_of_manual_stays_identical_to_bundled` 钉住）；**口径同步落在 server 侧断言**（`("项目详情标签页数", "13 个标签页")`），桌面侧断言本轮补齐（此前仍钉 12，属滞后缺口）。
+- **前端 CSS 品牌对齐（蔡工品牌规范）**：①**border-radius 全量令牌化**——`desktop/src/renderer/src/` 下 ~105 处裸 `Npx` 收敛为 `--radius-xs/sm/md/lg/xl/pill`（999px→pill、20/24/18/17/16px→xl、14px→lg、12px→md、10/9/8px→sm、7/6/5/4/3px→xs；两处非对称按令牌展开），**不写裸 hex** 纪律延续；②**离板色收口**——`--warning-border` 由 `#F79009` 校正为品牌规范严格值 `#B45309`；③**零位移状态顶栏**——`.gate-card` 按门禁状态（通过=绿/失败=红/待证据=警告色）走 `inset 0 3px 0` 顶栏，**挤布局为零**；④**hover 上浮统一语言**——`.card:hover` 描边改 `--line-brand`（金线），`.project-card` / `.task-board-card` 走「金线 + 金系顶栏 + `translateY(-2px)` + `--shadow-sm`」。
+- **高频页排版与视觉打磨**（按预计流量与使用频率取样）：**门禁板 GateBoard**（状态顶栏 + 清单项内边距/圆角/悬停）、**项目概览**（`.overview-three-column` 间距 + `.detail-definition-grid` 悬停高亮 + 空态 `.empty-state` 3px 金顶线与极浅金晕染）、**项目卡**（金系顶栏 + 上浮）、**任务板**（卡片金线顶栏 + 泳道计数改胶囊）、**AI 对话**（对话框头部金系顶栏）；`.workspace` 子树补 9px 圆角细滚动条；`.help-table` 补表头底色/分隔线/斑马纹/圆角。
+- **滚动高亮降级修复（本轮实测回归，已修）**：帮助页目录「滚动高亮当前章节」用 `IntersectionObserver`，**jsdom 测试环境无此 API ⇒ `ReferenceError: IntersectionObserver is not defined` ⇒ help-page 7 例全红**。改为**渐进增强**——`typeof IntersectionObserver === "undefined"` 时直接跳过高亮（目录点击跳照常），`scrollIntoView` 同样加存在性防护（jsdom 亦缺）；**不可因增强功能缺失而整页崩溃**。
+- **目录按钮文本匹配加固**：TOC 按钮新增序号徽标（`help-toc-index`）后 `textContent` 变为「13故障排查（照顺序查最快）」，测试用**精确相等**匹配即失效——改为 `includes` 语义匹配（贴合「不锁死索引」原意，不随徽标样式变化而误伤）。
+- **变基冲突裁决（3 处，均取上游）**：①`.nav-item.active` 背景——上游内联金晕渐变（含横向淡出 + `.nav-item.active:hover` 配套）较本轮 `--on-dark-active` 纯色令牌更精细，取上游并**删除已成孤儿的 `--on-dark-active` 令牌**（零引用即零定义）；②`.overview-three-column` gap——保留上游 r28 实测值 `18px`（本轮曾改 `--space-6`=24px，属无依据的行为变更，撤回）；③`.presurvey-gate-hint-link` 颜色——回退本轮 `--brand-ink`（石墨黑 `#14181C`）改**上游 `--brand-blue`（金墨 `#C98F2B`）**：石墨黑链接在浅底上失去可点击辨识，属回退非改进。
+- **口径**：vitest +985 全绿（84 文件；本轮修复前 help-page 7 例红，修复后全绿）＋ `tsc --noEmit` **0 错误** ＋ 桌面端设计令牌测试 35/35 通过；服务端 **pytest 本地未实跑**（沙箱无 `fde_workbench_test` 库与 Redis，且 `SKIP=pytest-server` 跳过本地钩子）——**以 CI server-tests job 全量兜底为准**；mypy 基线 279 不变、ruff 触碰文件零告警（均经 pre-commit 钩子实跑通过）。**结构口径沿用**（145 表／58 迁移／447 路由／50 蓝图／api_catalog ENTRIES 94／pytest 基线 2665 收集）——本轮**服务端无变更零迁移零路由零蓝图**，故结构清单与 archify 图**无需刷新**。**桌面变更 ⇒ 合并后须重打包便携版并做 asar 中文 marker 字节验证**（本轮未打包，交付物待补）。
+- **未决**：①文档中心（`D:/test/FDE/蔡工FDE工作台_文档中心/`）8 份源已删副本已归档历史目录、13 副本与 4 份本地编纂文档已刷新、导航 HTML 已重跑（19 分类/582 文件、零死链）——**该目录独立于本仓，本 PR 不含其内容**；②`scripts/audit/extract_workbench_inventory.py` 仍硬编码旧 sha（代码库侧脚本，不在本轮范围）；③「30 天试点」重启属业务拍板。
+
 ## [未发布] — 获客诊断工具 W2 T-10a 轮：diagnostics/ 规则层（匿名会话 + 首屏政策测算卡 + 闭集问卷；NEW 蓝图+表+迁移 `f3a9c7e1d5b2`，2026-11-11）
 
 - **范围与拆分**：T-10 拆两半实施（蔡工拍板「按建议走」——T-07/T-08 评测器需要先有一个生成器才可评测，故 MVP 域先行）：**T-10a＝纯规则层**（匿名会话生命周期 + 首屏政策补贴测算卡 + 闭集诊断问卷，**零 AI 零 token**）；T-10b（AI 报告生成 + purpose 登记 + share token 页）另轮。D-1＝企业免注册自诊为主、D-2＝摘要免费+全文留资 按默认推荐执行（留痕可推翻）。

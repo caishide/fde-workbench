@@ -183,7 +183,7 @@ def test_manual_and_ui_page_agree_on_key_facts():
     manual_text = _BUNDLED.read_text("utf-8")
     # 关键事实：(说明, 必须同时出现在 UI 页与手册)
     facts = [
-        ("项目详情标签页数", "12 个标签页"),
+        ("项目详情标签页数", "13 个标签页"),
         ("执行事实面板存在", "执行事实"),
         ("有条件通过仅 G9", "conditional_pass"),
         ("G8 书面拍板三态", "proceed"),

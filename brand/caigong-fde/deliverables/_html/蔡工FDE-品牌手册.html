@@ -252,11 +252,11 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 <p><strong>完整规范见独立文档 <code>BRAND-COLOR-SPEC.md</code></strong>，本章只给使用要点：</p>
 <ol>
 <li>主色石墨黑 <code>#14181C</code>（80–85%）+ 辅色琥珀金 <code>#E8A33D</code>（10–15%）+ 中性灰，其余不引入第三种彩色。</li>
-<li>深底金色提亮 <code>#F5B44A</code>；UI 交互用金墨 <code>#C98F2B</code>、hover 深金 <code>#A3721F</code>。</li>
+<li>深底金色提亮 <code>#F5B44A</code>；UI 交互用金墨 <code>#C98F2B</code>；<strong>hover 深金 <code>#A3721F</code> 仅作描边／外圈加重，不改背景</strong>（2026-11-07 实渲染确认）；「金墨 → 琥珀金」主渐变（120deg，两端对黑字 6.33 / 8.27:1）<strong>可用于「文字为石墨黑且两端实测达 AA」的展示面与状态控件</strong>——文字渐变／装饰条／进度条／甘特条／<code>.dispatch-tab.active</code>／AI 聊天圆形按钮／<code>.ai-execution-pill</code>；其余按钮、tab、激活态仍禁用（2026-11-07 按代码实况纠偏）。</li>
 <li>金色全场只出现一处；语义色（success/warning/danger）保持原色相，不参与品牌表达。</li>
 <li>单色印刷只用石墨黑或纯白，不保留金段色相。</li>
 <li>数据可视化色板<strong>未发布</strong>（保留「留待图表需求出现时补」注记），图表页不得自行造色。</li>
-<li>✅ <strong>金系按钮 / 激活态 / 金底图标一律配石墨黑字 <code>#14181C</code></strong>（2026-11-06 裁决）：白字实测 2.16–2.82:1 不达 AA，已全面替换；石墨黑字主态 6.33–8.27:1 达标。⚠️ hover 深金 4.23:1 残留见 <code>BRAND-COLOR-SPEC.md §十-8</code>。</li>
+<li>✅ <strong>金系按钮 / 激活态 / 金底图标一律配石墨黑字 <code>#14181C</code></strong>（2026-11-06 裁决）：白字实测 2.16–2.82:1 不达 AA，已全面替换；石墨黑字主态 6.33–8.27:1 达标。⚠️ <strong>2026-11-07 实渲染复核纠偏</strong>：hover 态真实为「白底＋金描边＋石墨黑字」（17.84:1，Chromium 计算色实测），<strong>不存在深金底黑字</strong>；原登记的「hover 深金 4.23:1」系作用面误判，已撤销。<strong>2026-11-07 已闭环</strong>：AI 执行胶囊渐变改 <code>var(--brand-gradient)</code>（两端 6.33 / 8.27:1 达 AA）；<code>--brand-blue-deep</code> 作文字色的 9 处（跨 4 份 CSS，非初判 2 处）统一改 <code>var(--brand-ink)</code>（16.16–17.84:1 达 AA）。品牌色值零改动。✅ <strong>2026-11-07 #14 分级拍板闭环</strong>：精确口径 27 处 CSS + 官网 4 处（原「53 处」已纠偏），文字类 30 处改石墨黑（16.16–17.84:1 达 AA 正文）、官网装饰「✓」改色阶内深金（4.21:1 达 1.4.11）；候选 B「调深金色」实测需引入 <code>#8F641B</code> 类新色值，已否掉。新项：非 <code>color</code> 属性 48 处属 WCAG 1.4.11 独立判据（<code>§十-11</code>）。</li>
 </ol>
 <hr />
 <h2 id="04">04 · 字体与字号层级</h2>
@@ -416,8 +416,8 @@ mark, .warn { background:#FBEECC; padding:0 1mm; }
 </tr>
 <tr>
 <td>电子签章</td>
-<td>只定位置与留白；章样以实际备案为准；<strong>本节不提供章样</strong></td>
-<td>设计侧自绘公章、主标当印章</td>
+<td>只定位置与留白；章样以实际备案为准；<strong>本节不提供章样</strong>；2026-11-07 品牌侧朱红「有条件豁免」已写入 <code>BRAND-COLOR-SPEC.md §七-3</code>（仅限签章区 / 不扩散 / 不自绘 / 不构成用印授权；法务书面确认待输入）</td>
+<td>设计侧自绘公章、主标当印章、把豁免扩散到其他物料</td>
 </tr>
 <tr>
 <td>工装 / 安全帽</td>
