@@ -22,7 +22,7 @@
 | r3 | 夜审修复·卫生批（CR-058/063/068/070/073/075/076/077/078/079） | **已完成 2026-11-10**（PR #293 合并 `06c1dd5`；CI 双红两修：热点行数预算压单行＋TS2722 可选调用；CR-075 勘误＝第二处 E0 实测不存在） | CHANGELOG「夜审修复 r3」节 |
 | r4 | 夜审修复·拍板批（20 条挂账经蔡工三批交互问答裁决：10 项落地 CR-043/044/046/062/064/065/066/067/069/072；4 项定向 r5 迁移窗口 CR-045/048/053/059；6 项结构化维持挂账 CR-055/056/057/061/071/074） | **已完成 2026-11-10**（变异 5/5 判别；PR #300 合并 `cf0dd1c`；CI 双红两修＝mypy validation_alias 形参合成 type:ignore＋CI 无 .env 补显式必填面；CI 实测 2748 收集 = 2741 passed + 7 skipped；桌面 auth-store readFile 空 mock 假绿修复＝load 回读接线 save 实际字节） | CHANGELOG「夜审修复 r4」节 |
 
-| r5 | 夜审修复·迁移窗口批（CR-045/048/053/059 一个 additive 迁移窗口：五索引＋服务层两兜底＋热点拆分 host_receipt） | **已完成 2026-11-10**（变异 4/4 判别；迁移 `a9c5e2d7b3f1` 十五/十六度插队连改挂现 M1 之后 60→62 单头；活库现测四唯一面零重复先测后建；quality approve 退位循环前移修 autoflush 中间态撞索引；submit_host_receipt 拆 `agents/host_receipt.py`＝1886→1719 行预算内；audit 三件套重生成） | CHANGELOG「夜审修复 r5」节 |
+| r5 | 夜审修复·迁移窗口批（CR-045/048/053/059 一个 additive 迁移窗口：五索引＋服务层两兜底＋热点拆分 host_receipt） | **已完成 2026-11-10**（变异 4/4 判别；PR #304 合并 `833ccbc`；迁移 `a9c5e2d7b3f1` 十五/十六度插队连改挂现 M1 之后 60→62 单头；活库现测四唯一面零重复先测后建；CI 双红两修＝quality approve UPDATE 发库顺序不确定〔uuid 主键字典序〕⇒ 退位循环后显式 flush 落库＋CI 无 .env 显式必填面；submit_host_receipt 拆 `agents/host_receipt.py`＝1886→1719 行预算内；audit 三件套重生成；CI 实测 2794 passed + 7 skipped） | CHANGELOG「夜审修复 r5」节 |
 
 ## 发现总表
 
