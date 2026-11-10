@@ -17,6 +17,7 @@
 | c6 | 派单/桥/工作台/指标/模块（dispatch/bridge/workbench/metrics/modules） | **已完成 2026-11-05**（纯登记轮：冻结区零命中；CR-027/028 P2 + CR-029/030/031/033/034 P3 登记不修；C6-06 convene-billing 候选驳回） | docs/goal-c6-代码审查.md |
 | c7 | 桌面端（desktop/main/renderer/tests/gui-harness） | **已完成 2026-11-05**（纯登记轮：T-O2b 桌面五类滞后升 P2（CR-032）；CR-035~040 P3 登记；CR-001 复测 5 处全在补记；新-project 同型 sync-hash P3） | docs/goal-c7-代码审查.md |
 | c8 | 基建/脚本/GUI 回归/收口 | **已完成 2026-11-05**（收口轮：CR-001 产品名双侧单点+静态闸 当轮修、CR-002 conftest 外来戳自愈 根除当轮修、CR-006 DSH 记账面 needs-decision 销号、CR-016 outbox 死信箱 裁决登记；gitleaks 全仓 + 口径回填） | docs/goal-c8-代码审查.md |
+| r1 | 全仓夜审 goal-review-fix（七域 A–G fan-out，dynamic-workflows） | **已完成 2026-11-10**（40 候选→去重 38 登记 CR-042..079；P1×5/P2×13/P3×20；18 条独立复核 verified；P1/P2 全部 E0 升级；r2 服务端批 8 项+r3 卫生批 10 项按分级闸当轮修，20 条挂账待拍板） | docs/audit/全面代码审查报告-2026-11-10.md |
 
 ## 发现总表
 
@@ -62,6 +63,44 @@
 | CR-039 | P3 | open（登记） | `gui-harness/shots.mjs` 13 页走查未含 T-W6 三面（WorkflowConsole/GlossaryPage 为项目详情子 tab 需真实 fixture、SkillVersionsPage 为 #extensions 内展开子视图，默认截图态不展开）——功能面已有三 vitest 兜住，纯视觉走查缺口 | desktop/gui-harness/shots.mjs:19-34 | c7 |
 | CR-040 | P3 | **fixed（CR-040 轮）** | GlossaryPage `TERM_STATUS_LABEL` 值域漂移 → 对齐服务端 `TERM_STATUSES=(draft,confirmed,superseded,merged)`（删 candidate/retired，补 draft→草稿 / superseded→已取代），状态列不再回显英文原值 | desktop/…/ontology/GlossaryPage.tsx | c7 |
 | CR-041 | P3 | **fixed（CR-041 轮）** | alembic `env.py` `fileConfig` 默认 `disable_existing_loggers=True` 把导入期创建的模块级 logger 全量置 disabled → caplog 永远空捕 → env.py 显式 `disable_existing_loggers=False`（一行；生产不受影响＝迁移独立进程）+ NEW 专项测试钉住 | server/migrations/env.py:31 | c13 |
+| CR-042 | P1 | **r2 修（夜间安全批）** | 管理员 reset_password 全链零审计事件（同管理面 create/update 均落事件）——补 user_password_reset+自助 change_password 事件 | users/service.py:233 | 夜审r1 |
+| CR-043 | P1 | needs-decision（待拍板） | host_poll 开启后 workflow agent 节点确定性 failed+逐代计费孤儿 run（分派侧要 completed×受理侧返 202 queued，无来源区分）——跨域异步语义设计轮 | workflows/dispatch.py:388 × agents/service.py:612 | 夜审r1 |
+| CR-044 | P1 | needs-decision（待拍板） | transcripts 晋升确认人文本未过 T-A2 脱敏闸（docstring 声称过闸实现只覆盖 title/content；正则机制层也拦不住人名）——豁免留痕 vs 人名代号化机制 | transcripts/service.py:6-7/372 | 夜审r1 |
+| CR-045 | P1 | needs-decision（待拍板） | agent start_run 幂等只靠先查后插无唯一兜底，并发同键双执行双计费（活库现测仅普通索引）——部分唯一索引涉迁移 | agents/models.py:90 + service.py:984 | 夜审r1 |
+| CR-046 | P1 | needs-decision（待拍板） | FDE_PRODUCT_NAME 是死键（env_prefix 推出实际生效键 FDE_FDE_PRODUCT_NAME 全树零记载，pydantic-settings 三态实验决定性复现）——validation_alias vs 字段改名二选一 | server/src/fde_api/config.py:27 | 夜审r1 |
+| CR-047 | P2 | **r2 修（夜间安全批）** | 密码确认面无尝试限流（decide_action 有 5 次/15min 计数，verify-password+commercial 七处 _confirm_password 无）——计数原语提公共函数接入 | auth/routes.py:143 | 夜审r1 |
+| CR-048 | P2 | needs-decision（待拍板） | 宿主回执幂等三重缺口（docstring 承诺 409 无实现一律 duplicate+读闸写事务分离 TOCTOU+artifacts 无唯一约束）——拍板+涉迁移；吸收 A3 | agents/service.py:1648-1765 | 夜审r1 |
+| CR-049 | P2 | **r2 修（夜间安全批）** | pilot build_report 六指标未排除演练 run（CR-031 同型残留，rows 无 notlike） | agents/pilot.py:150-156 | 夜审r1 |
+| CR-050 | P2 | **r2 修（夜间安全批）** | discovery 输出端词典故障落 unexpected_error 而非词典失败码（死分支捕获+兜底误分类，重跑白烧预算） | discovery/jobs.py:313/411 | 夜审r1 |
+| CR-051 | P2 | **r2 修（夜间安全批）** | guidance 契约重试未清复核条目 sink（KimiError 分支有 clear 契约分支无）occurrences 翻倍 | guidance/jobs.py:173-184 | 夜审r1 |
+| CR-052 | P2 | **r2 修（夜间安全批）** | discovery create_extraction 并发双击撞唯一约束 500（幂等契约「返回既有行」无 IntegrityError 兜底） | discovery/service.py:96-116 | 夜审r1 |
+| CR-053 | P2 | needs-decision（待拍板） | delivery_plans/test_plans 单点 approved/published 无部分唯一索引并发可双点永久共存（应用层退位 READ COMMITTED 互不可见） | plans/service.py:231 + quality/service.py:207 | 夜审r1 |
+| CR-054 | P2 | **r2 修（夜间安全批）** | discovery 审阅无行锁无 CAS 并发可击穿终态约定（guidance confirm_analysis 先例未沿用） | discovery/service.py:245/302 | 夜审r1 |
+| CR-055 | P3 | 观察挂账（原判 P1 被复核三重合取反证驳回） | quality 覆盖闸并集×双点退位——单调性为四重机制合取的隐式不变量；用例编辑/需求撤销通道立项时须补护栏钉 | quality/service.py:176-215 | 夜审r1 |
+| CR-056 | P2 | needs-decision（待拍板） | close-guard 在途写计数不覆盖 renderer 直连 fetch 分片 PUT（4 处上传面，100MB 级中途关窗零拦截）——多方案 | desktop/src/main/index.ts:184 | 夜审r1 |
+| CR-057 | P2 | needs-decision（待拍板） | 打包态 meta CSP connect-src 写死回环（远程 https API/OSS 一等形态下文件二进制面静默阻断，半坏隐蔽态）——多方案 | desktop/src/renderer/index.html:7 | 夜审r1 |
+| CR-058 | P2 | **r3 修（卫生批）** | web 桥版本 "0.3.0-web" 硬编码第三版本源（测试钉钉字面量自身，列车推进必然漂移） | fde-web-bridge.ts:286 | 夜审r1 |
+| CR-059 | P2 | needs-decision（待拍板） | agent_artifacts/agent_tool_calls 的 run_id FK 无索引（详情页必经查询，活库现测仅 pkey）——涉迁移可合并窗口 | agents/service.py:357/1103 | 夜审r1 |
+| CR-060 | P2 | **r2 修（夜间安全批）** | api_catalog plugins desc 声称「需密码确认」实现全链无（高估安全失实，payload 闭集结构上不可能收密码） | control/api_catalog.py:29-30 | 夜审r1 |
+| CR-061 | P3 | needs-decision（待拍板） | host claim 带 run_id 分支无行锁（FIFO 有 skip_locked）+单全局令牌下 403 防护稳态不可达——与 docstring 不符（合并原 A4+B4） | agents/service.py:1583-1587 | 夜审r1 |
+| CR-062 | P3 | needs-decision（待拍板） | 存在性泄露口径分裂：quota/企业空间 404-先-403-后可探测企业接入，partner 面 404 隐藏 | commercial/quota_service.py:327 | 夜审r1 |
+| CR-063 | P3 | **r3 修（卫生批）** | SQL 可见性预过滤是 project_access 第二副本（写路径不变量维持重合无结构保证）——补对账测试 | projects/service.py:244 + control/service.py:921 | 夜审r1 |
+| CR-064 | P3 | needs-decision（待拍板） | 高风险写密码确认适用面双轨无成文裁决（users.role/派单规则发布无第二因子） | users/routes.py:74 | 夜审r1 |
+| CR-065 | P3 | needs-decision（待拍板） | test_first_pass_rate 首条 tie-break 用 uuid4 id（同 created_at 批量写抽签，家族性同型） | metrics/service.py:319-326 | 夜审r1 |
+| CR-066 | P3 | needs-decision（待拍板） | 草稿 discard（不可逆+删文件根）挂 can_view 与 promote=can_manage 不对称 | transcripts/routes.py:100 | 夜审r1 |
+| CR-067 | P3 | needs-decision（待拍板） | 审阅 rejected 落 superseded「否决」与「退位」共用状态值（事件留痕可辨） | plans/service.py:204 | 夜审r1 |
+| CR-068 | P3 | **r3 修（卫生批）** | confirm_term 缺 _link_subjects_to_term（当前零生产调用方，接线将漏链）——docstring 声明接线前须补链接 | ontology/service.py:296-316 | 夜审r1 |
+| CR-069 | P3 | needs-decision（待拍板） | bridge reconcile 把投影失败误报 409 no_snapshot | bridge/routes.py:45-52 | 夜审r1 |
+| CR-070 | P3 | **r3 修（卫生批）** | web 桥 openLcscBrowser 无域白名单（桌面三域闸 web host 缺失；AIServerChat 有同款先例） | fde-web-bridge.ts:288 | 夜审r1 |
+| CR-071 | P3 | needs-decision（待拍板） | web 桥 apiRequest 校验族系统性弱于桌面 IPC 面（method 白名单/auth 排除/编码逃逸/multipart 静默降级） | fde-web-bridge.ts:217-224 | 夜审r1 |
+| CR-072 | P3 | needs-decision（待拍板） | safeStorage 不可用时 refresh token 静默明文落盘无告警面 | auth-store.ts:60-71 | 夜审r1 |
+| CR-073 | P3 | **r3 修（卫生批）** | LCSC 桌面执行业务错误被吞成 internal_error（「已有立创查询正在执行」不可达 renderer） | api-ipc.ts:349 | 夜审r1 |
+| CR-074 | P3 | needs-decision（待拍板） | c4f7a2d9e1b6 downgrade 按值还原 purpose 范围大于 Backup hint（触发近乎不可能；涉迁移文件=修复禁区） | migrations/versions/c4f7a2d9e1b6:67 | 夜审r1 |
+| CR-075 | P3 | **r3 修（卫生批）** | 两处防御性冗余断言恒真（主断言有判别力兜底非假绿） | test_ai_call_audit_attribution.py:153 | 夜审r1 |
+| CR-076 | P3 | **r3 修（卫生批）** | 「不可取消」源码钉存在 sa.delete 表达式级绕过（防回归闸强度缺口非现行缺陷） | test_commercial_enterprise_space.py:578 | 夜审r1 |
+| CR-077 | P3 | **r3 修（卫生批）** | 服务端包 docstring 硬编码产品全名=红线①第三处源码点（E0 全扫证实仅此一处+brand.ts 单点） | server/src/fde_api/__init__.py:1 | 夜审r1 |
+| CR-078 | P3 | **r3 修（卫生批）** | AGENTS 口径配方「awk 数 (" 行」多计 2（AST 真值 94=口径行正确，配方自身漂移点） | AGENTS 口径配方行 × api_catalog.py:39 | 夜审r1 |
+| CR-079 | P3 | **r3 修（卫生批）** | .env.example 缺宿主轮询 TOKEN/LOST_MARK_MINUTES 注释态登记行 | server/.env.example:112 | 夜审r1 |
 
 ---
 
@@ -541,6 +580,29 @@
 - **修复 PR**：本轮 PR。
 - **核销复核（CR-041 核销轮，2026-11-05，独立会话零代码）**：融合树（#121 = fork/main `7dc620e`）全量实测——服务端 pytest **1943 收集 = 1937 passed + 6 skipped**（本地 Windows 24:32 与 CI PR-head 双面一致）、专项 2 例绿、mypy 基线 279 全绿、桌面 vitest 774/774 + typecheck 零错。**融合口径偏 1 已校正**：AGENTS 前值「1942 收集 = 1936 passed」为算术推导（承自 #120 时的 1940/1934 旧口径，同样少 1），CI 实测 #120 = 1935+6s、#121 = 1937+6s，本轮按实测改写口径行。**「负向日志断言空转绿」担忧实测排除**：`not in caplog.text` 形态断言全仓 10 处（2 文件，含 `test_auth_api.py:481` 密钥不入日志安全断言）——此前 logger 被禁时为空转绿（caplog 恒空），env.py 解禁后本轮全量真判零红；上节「不受 logger 恢复影响」按实测语义精确化为「解禁后才真判，真判下全绿」。部署活体核验：api 镜像含 env.py 修、300 业务路由、双 admin 路由在位、`/ready` 200、alembic `d9f4a7c2e6b1`。
 - **桌面便携包 r16 补齐（同轮交付）**：r15（2026-11-05 11:18）早于 #113 与 #121——marker 字节验证「已取代」「source_kind」双 0 命中，即缺 T-UI1 徽标 + CR-035/040 两轮桌面修复。从干净树 `7dc620e` 重打包 **蔡工FDE-0.2.0-便携版-r16**：asar sha256 `c62e184b131db53386eb83897c80ca447a57a81b952d6e992cea1bcbcb75027d`，marker「已取代」×2 /「source_kind」×3 命中；r15 旧目录未覆盖。
+
+## 夜审 r1 详情索引（CR-042..CR-079，2026-11-10，goal-review-fix）
+
+> 全量证据（锚点/取证路径/影响面/复核记录/消解条件）的唯一权威=**docs/audit/全面代码审查报告-2026-11-10.md §四**；本节只做台账内检索索引。审查形态：七域并行 fan-out（dynamic-workflows run dwfrun-c0445a91）+P0/P1/P2 逐条独立复核+E0 主会话亲测升级。复核层战果：原判 P1 的 quality 覆盖闸条目被三重合取反证驳回（→CR-055 P3 观察挂账）；宿主回执条目 P1→P2（触发面三要件当前全零）。
+
+- **CR-042 [P1→r2 修]**：reset_password/change_password 零审计事件——补 user_password_reset/user_password_changed 事件（路由传 actor）+测试。E0：函数体亲读零 record_event+活库 45 类事件无 password 族。
+- **CR-043 [P1→挂账]**：host_poll×workflow agent 断链+计费孤儿——跨域异步语义设计轮拍板，与生产启用闸三条件合并裁决。owner=蔡工。
+- **CR-044 [P1→挂账]**：transcripts 确认人脱敏声明与实现不符——豁免留痕 vs 人名代号化机制拍板（正则机制层拦不住人名=非一行补丁）。owner=蔡工。
+- **CR-045 [P1→挂账]**：agent_runs 幂等无唯一兜底——部分唯一索引 WHERE in-flight（与 retry 链兼容有证）涉迁移；models.py 注释「唯一约束封死重试链」对该形状不成立须一并改写。可与 CR-048/053/059 合并迁移窗口。
+- **CR-046 [P1→挂账]**：FDE_PRODUCT_NAME 死键（生效键 FDE_FDE_PRODUCT_NAME 全树零记载）——validation_alias vs 字段改名拍板+env 链路测试钉。
+- **CR-047 [P2→r2 修]**：密码确认面限流——decide_action 计数原语提公共函数接入 verify-password+七处 _confirm_password（同 key 同阈值），核对既有失败路径测试不触闸。
+- **CR-048 [P2→挂账]**：宿主回执幂等三重缺口（吸收原 A3）——拍板（兑现 docstring 指纹 vs 诚实化+status 重校验）+唯一约束涉迁移；生产启用闸解除前修齐。
+- **CR-049 [P2→r2 修]**：pilot build_report 演练 run 未排除——rows 补 notlike+测试钉（沿 _REAL_RUNS）。
+- **CR-050 [P2→r2 修]**：discovery 词典故障误分类——输出端脱敏段捕 RedactionConfigError→词典失败码+同构文案。
+- **CR-051 [P2→r2 修]**：guidance 契约重试未清 sink——一行 clear（沿 KimiError 分支）+测试。
+- **CR-052 [P2→r2 修]**：discovery create_extraction 并发 500——except IntegrityError 返回既有行 created=False（按 discovery 自身 docstring 语义）+测试。
+- **CR-053 [P2→挂账]**：plans/quality 部分唯一索引缺失——涉迁移（delivery_plans 按 `WHERE status='published'`，复核员校正原建议）；合并迁移窗口。
+- **CR-054 [P2→r2 修]**：discovery 审阅无行锁——两处 get 加 with_for_update（沿 guidance confirm_analysis 先例）+测试。
+- **CR-055 [P3 观察挂账]**：quality 覆盖闸隐式不变量——原判 P1 驳回记录完整在报告 §四；消解条件=用例编辑/需求撤销通道立项时补护栏钉。
+- **CR-056/057 [P2→挂账]**：桌面多方案组（直传计数/CSP 动态化）拍板。
+- **CR-058/063/068/070/073/075/076/077/078/079 [→r3 修]**：卫生批——web 桥版本单源化/可见性对账测试/confirm_term docstring/web 桥 lcsc 白名单/LCSC 业务错误透传/恒真断言清理/不可取消钉加宽/__init__ docstring 去产品名/口径配方 AST 化/.env.example 补两行注释键。
+- **CR-059 [P2→挂账]**：两 FK 索引——涉迁移合并窗口。
+- **CR-061..CR-074 [P3→挂账]**：疑点组——逐条消解条件见报告 §四/§六（host-poll 族 061 与 CR-048 同批；064/066/067/072 权限语义拍板；069 bridge 错误映射；071 web 桥校验族设计轮；074 涉迁移文件禁区）。
 
 ## 驳回/观察记录（不占编号）
 
