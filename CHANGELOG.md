@@ -28,7 +28,7 @@
 - **与登录限流的三点刻意差异**：①键＝来源 IP 单键（注册无既有用户名可入键）；②**成功不清零**（注册成功同样创建账号，成功清零会让「注册→清零→再注册」绕过配额——这是容量上限不是失败锁定）；③阈值属技术防滥用闸，非任务书 §17 商业数值红线（本轮不落任何商业数值）。
 - **配置面**：NEW `Settings.registration_rate_fail_closed`（缺省 false＝fail-open）＋ `server/.env.example` 登记 `FDE_REGISTRATION_RATE_FAIL_CLOSED`（对外暴露部署从严切 fail-closed）。
 - **测试隔离件（关键）**：限流键含来源 IP、计数落在**共享 Redis**（测试库）上——共用回环地址会让用例互相牵连（实测摘掉隔离件 ⇒ 邻域 14 红）。`server/tests/conftest.py` NEW `PerTestIPClient`：按 app 实例（＝用例）分配独立来源 IP（xdist worker 编号分段避免并行撞键）——**生产语义不变**。
-- **测试**：NEW `server/tests/test_commercial_registration_throttle.py` **11 例**；**变异五连全红→还原→绿**（M1 摘节流接线→10 红／M2 阈值差一→5 红／M3 注册成功后清零→1 红／M4 忽略 fail-closed 配置→1 红／M0 摘测试隔离件→邻域 14 红）；全量 `-n 4 --dist loadfile` EXIT=0（**2661 收集 = 2655 passed + 6 skipped**＝融合树基线 2650 收集＋本轮 +11）；ruff 触碰文件全过；mypy 279 基线零新增。
+- **测试**：NEW `server/tests/test_commercial_registration_throttle.py` **11 例**；**变异五连全红→还原→绿**（M1 摘节流接线→10 红／M2 阈值差一→5 红／M3 注册成功后清零→1 红／M4 忽略 fail-closed 配置→1 红／M0 摘测试隔离件→邻域 14 红）；全量 `-n 4 --dist loadfile` EXIT=0（**2665 收集 = 2659 passed + 6 skipped**＝融合树基线 2654 收集〔含上游 #277 纯文档零增量／#278 评测集 +4〕＋本轮 +11）；ruff 触碰文件全过；mypy 279 基线零新增。
 - server 变更 ⇒ 合并后 rebuild 三镜像（零迁移，alembic 幂等 no-op）；零桌面改动 ⇒ 便携版不重打包。
 
 ## [未发布] — 商业化挂账清偿轮 1：GAP-15 AI 草稿采纳率埋点（方案流系统派生＋诊断流人工申报；零迁移零路由零新表零桌面，2026-11-10）

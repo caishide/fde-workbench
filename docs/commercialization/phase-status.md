@@ -697,7 +697,7 @@ docs/commercialization/
 ## 挂账清偿轮 2：注册面节流（公开注册入口防滥用闸）— 已完成
 
 - 分支：`feat/commercial-registration-throttle`（工作树 `D:\test\fde-wt-g1`）
-- 基线 SHA：fork/main `3eb0740`（挂账清偿轮 1 合并＋合并证据回填之后）
+- 基线 SHA：fork/main `ac83a81`（挂账清偿轮 1 合并＋合并证据回填之后；**第九度上游插队**：合并前上游推进两笔——#277〔纯文档，pytest 零增量〕／#278〔AI 输出格式归一，评测集 +4〕，rebase 融合后基线 **2654 收集**）
 - 状态：**completed**（实现＋文档同 PR；PR/main run ID 与合并 SHA 以合并记录为准——本节测试数为本地 CI 同命令 `-n 4 --dist loadfile` 实测，PR CI 复核）
 - 落点（零新表零迁移零新路由零桌面；`api_catalog` ENTRIES 94 不变）：
   1. **限流层**：`commercial/routes.py` NEW `REGISTRATION_RATE_MAX_ATTEMPTS=10`／`REGISTRATION_RATE_WINDOW_SECONDS=3600` ＋ `_registration_rate_key`／`_registration_throttle`——复用 #250 登录限流模式（Redis INCR+TTL、fail-open 缺省可切 fail-closed、429 结构化错误 `registration_rate_limited`、ProxyFix 后取真实客户端 IP）。
@@ -705,5 +705,5 @@ docs/commercialization/
   3. **配置面**：NEW `Settings.registration_rate_fail_closed`（缺省 false＝fail-open）＋ `server/.env.example` 登记 `FDE_REGISTRATION_RATE_FAIL_CLOSED`（对外暴露部署从严切 fail-closed）。
 - 语义三条（与登录限流的刻意差异）：①键＝**来源 IP 单键**（注册时没有既有用户名可入键，攻击者可随意换名）；②**成功不清零**（注册成功同样创建账号，成功清零会让「注册→清零→再注册」绕过配额——这是容量上限不是失败锁定）；③阈值为**技术防滥用闸**（公开入口洪泛／批量建号），非任务书 §17 商业数值红线（保护期长度／续期条件／归属判定／分成比例／认证费金额／试运营升级指标与首期金额一概不落数）。
 - **测试隔离件（关键，非装饰）**：限流键含来源 IP、计数落在**共享 Redis**（测试库 DB 2）上——若所有用例共用 127.0.0.1，前一个用例留下的计数会把后一个用例挡在 429 上。`server/tests/conftest.py` NEW `PerTestIPClient`（按 app 实例＝用例分配独立来源 IP，第三段按 xdist worker 编号分段避免并行撞键）＋ `app` 夹具挂 `app.test_client_class`——**生产语义不变**（限流键始终是来源 IP）。实测证据：摘掉隔离件 ⇒ `test_commercial_enterprise_space.py` **14 failed / 13 passed**（429），还原 ⇒ 27 passed。
-- 测试：NEW `server/tests/test_commercial_registration_throttle.py` **11 例**（阈值 429／换 IP 不牵连／计数在载荷解析之前／被限零副作用〔账号·主体·事件三查〕／成功不清零／窗口 TTL／Redis 挂 fail-open＋WARNING／fail-closed＋WARNING／XFF 真实 IP／无 XFF 回落／隔离件钉）；**变异五连全红→还原→绿**（M1 摘节流接线→10 红；M2 阈值差一→5 红；M3 注册成功后清零→1 红；M4 忽略 fail-closed 配置→1 红；M0 摘测试隔离件→邻域 14 红）；全量套件本地 `-n 4 --dist loadfile` EXIT=0（**2661 收集 = 2655 passed + 6 skipped**＝融合树基线 2650 收集＋本轮 +11）；ruff 触碰文件全过；mypy 279 基线零新增。
+- 测试：NEW `server/tests/test_commercial_registration_throttle.py` **11 例**（阈值 429／换 IP 不牵连／计数在载荷解析之前／被限零副作用〔账号·主体·事件三查〕／成功不清零／窗口 TTL／Redis 挂 fail-open＋WARNING／fail-closed＋WARNING／XFF 真实 IP／无 XFF 回落／隔离件钉）；**变异五连全红→还原→绿**（M1 摘节流接线→10 红；M2 阈值差一→5 红；M3 注册成功后清零→1 红；M4 忽略 fail-closed 配置→1 红；M0 摘测试隔离件→邻域 14 红）；全量套件本地 `-n 4 --dist loadfile` EXIT=0（**2665 收集 = 2659 passed + 6 skipped**＝融合树基线 2654 收集〔2650＋上游 #278 评测集 +4〕＋本轮 +11；第九度上游插队（#277 纯文档／#278 评测集 +4）rebase 融合后本地实测）；ruff 触碰文件全过；mypy 279 基线零新增。
 - 遗留（显式维持挂账，不假装完成）：①**企业空间桌面呈现面**（自助注册页／空间视图）仍挂后续桌面轮（ADR-010 §3-4）；②ADR-004 §1.8 体验上限消费接线（真实消费方在 V3.2 simulation 域）；③ADR-004 §1.4 多子公司集团归并（法务）；④任务书 §17 商业数值拍板（保护期长度／续期条件／归属判定／分成比例／认证费金额／试运营升级指标与首期金额）——本轮不落数。
