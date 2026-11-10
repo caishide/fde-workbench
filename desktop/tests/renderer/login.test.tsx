@@ -106,6 +106,9 @@ describe("desktop authentication experience", () => {
     await user.tab()
     expect(screen.getByLabelText("密码")).toHaveFocus()
     await user.tab()
+    // 密码字段内嵌「显示/隐藏」眼睛图标按钮（aria-label「显示密码」）
+    expect(screen.getByRole("button", { name: "显示密码" })).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole("button", { name: "登录" })).toHaveFocus()
   })
 

@@ -107,20 +107,53 @@ function PasswordField(props: {
   disabled: boolean
   onChange(value: string): void
 }) {
+  const [showPassword, setShowPassword] = useState(false)
   return (
     <div className="field">
       <label htmlFor={props.id}>{props.label}</label>
-      <input
-        ref={props.inputRef}
-        id={props.id}
-        type="password"
-        autoComplete={props.autoComplete}
-        maxLength={PASSWORD_MAX_LENGTH}
-        value={props.value}
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
+      <div className="password-field">
+        <input
+          ref={props.inputRef}
+          id={props.id}
+          type={showPassword ? "text" : "password"}
+          autoComplete={props.autoComplete}
+          maxLength={PASSWORD_MAX_LENGTH}
+          value={props.value}
+          disabled={props.disabled}
+          onChange={(event) => props.onChange(event.target.value)}
+        />
+        <button
+          type="button"
+          className="password-toggle"
+          onClick={() => setShowPassword((v) => !v)}
+          aria-label={showPassword ? "隐藏密码" : "显示密码"}
+          disabled={props.disabled}
+        >
+          <EyeIcon open={showPassword} />
+        </button>
+      </div>
     </div>
+  )
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  const iconProps = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.6,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  }
+  return (
+    <svg {...iconProps}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      {open ? <path d="m3 3 18 18" /> : null}
+    </svg>
   )
 }
 
