@@ -1289,10 +1289,17 @@ export function HelpPage() {
   const [activeId, setActiveId] = useState<string>(SECTIONS[0]?.id ?? "start")
 
   function jumpTo(sectionId: string): void {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    const el = document.getElementById(sectionId)
+    // jsdom 与部分旧环境无 scrollIntoView——缺省时不跳转（目录仍可点击，滚动高亮照常降级）
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
   }
 
   useEffect(() => {
+    // 滚动高亮是**渐进增强**：无 IntersectionObserver（jsdom 测试环境 / 旧浏览器）
+    // 时直接跳过，目录点击跳仍照常工作——不可因增强功能缺失而整页崩溃。
+    if (typeof IntersectionObserver === "undefined") return
     const sections = Array.from(
       document.querySelectorAll<HTMLElement>(".help-content > .help-section"),
     )
