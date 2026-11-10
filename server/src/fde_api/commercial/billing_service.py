@@ -43,7 +43,7 @@ from fde_api.commercial.models import (
 from fde_api.commercial.service import (
     CommercialServiceError,
     activate_seat,
-    ensure_entitlement,
+    lock_entitlement,
 )
 from fde_api.dispatch.models import DeliveryPackage, DeliverySettlement
 from fde_api.projects.events import record_event
@@ -306,7 +306,7 @@ def charge_first_order_seat_fee(
             "已购含席位套餐（含首年席位费），不再重复收取。",
             409,
         )
-    entitlement = ensure_entitlement(session, user.id)
+    entitlement = lock_entitlement(session, user.id)
     if entitlement.seat_status == "active":
         raise _error("seat_already_active", "该交付者年度席位已激活，不重复扣费。", 409)
     charged = session.scalar(
@@ -467,7 +467,7 @@ def record_certification_evaluation(
     row.decided_at = datetime.now(timezone.utc)
     session.flush()
 
-    entitlement = ensure_entitlement(session, user.id)
+    entitlement = lock_entitlement(session, user.id)
     if status == "certified":
         entitlement.certification_status = "certified"
         entitlement.certification_source = f"simulation_evaluation:{evaluation.id}"

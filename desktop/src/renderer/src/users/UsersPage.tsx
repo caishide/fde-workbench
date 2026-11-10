@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react"
 
 import { PASSWORD_MAX_LENGTH, USERNAME_MAX_LENGTH } from "../../../shared/contracts"
 import { ApiClientError } from "../api/client"
@@ -57,7 +64,11 @@ export function UsersPage() {
   const resetConfirmRef = useRef<HTMLButtonElement>(null)
   const resetInvokerRef = useRef<HTMLButtonElement | null>(null)
 
-  useEffect(() => {
+  // 焦点管理挂 **layout effect**（不是 passive effect）：焦点必须在本次
+  // commit 内同步生效——挂 passive effect 时焦点生效落在 commit 之后的宏任务，
+  // 而断言/读屏常由 DOM 变更的 MutationObserver（微任务）唤醒，两条链先后
+  // 不定 ⇒ 「失败后焦点回到输入框」偶发断言红（实测 12 轮红 1 轮）。
+  useLayoutEffect(() => {
     if (resetTarget) {
       resetInputRef.current?.focus()
     } else if (resetInvokerRef.current) {
@@ -67,13 +78,14 @@ export function UsersPage() {
   }, [resetTarget])
 
   // 提交失败后把焦点交回输入框，让用户直接改密码重试。
-  // 竞态来源：输入框带 autoFocus，而提交失败时 setResetError 与 finally 里的
-  // setResetSubmitting(false)/setResetPassword("") 会同批渲染——
-  // autoFocus 只在挂载时生效一次，但 disabled 切换与清空会触发重渲染，
-  // 浏览器可能把焦点留在「确认重置」按钮上（实测 desktop CI 偶发红：
-  // users.test.tsx 期望 input 聚焦、实得按钮聚焦）。
-  // 修法：焦点统一由本 effect 管理，输入框不再声明 autoFocus（避免两个来源竞争）。
-  useEffect(() => {
+  // 竞态来源：提交失败时 setResetError 与 finally 里的 setResetSubmitting(false)
+  // /setResetPassword("") 同批渲染；disabled 切换与清空触发重渲染，浏览器可能把
+  // 焦点留在「确认重置」按钮上（实测 desktop CI 偶发红：users.test.tsx 期望
+  // input 聚焦、实得按钮聚焦）。
+  // 修法：焦点统一由本 effect 管理（输入框不声明 autoFocus，避免两个来源竞争），
+  // 且挂 **layout effect** ——焦点在 commit 内同步生效，早于任何读屏/断言侧的
+  // MutationObserver 唤醒，竞态结构性消除。
+  useLayoutEffect(() => {
     if (!resetError || resetSubmitting) return
     resetInputRef.current?.focus()
   }, [resetError, resetSubmitting])
