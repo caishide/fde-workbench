@@ -7,7 +7,8 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
+from redis.exceptions import RedisError
 
 from fde_api.auth.decorators import require_auth
 from fde_api.commercial.attribution_service import (
@@ -50,6 +51,7 @@ from fde_api.commercial.enterprise_service import (
     register_enterprise,
 )
 from fde_api.commercial.service import CommercialServiceError, get_entitlement_for_view
+from fde_api.errors import error_response
 from fde_api.extensions import db
 
 commercial_blueprint = Blueprint(
@@ -319,6 +321,58 @@ def list_regional_tiers_route():
         )
 
 
+# ── 注册面节流（G6 遗留挂账清偿：复用 #250 登录限流模式）──
+# Redis INCR+TTL、fail-open 缺省可切 fail-closed、429 结构化错误、
+# ProxyFix 之后 remote_addr 取真实客户端 IP。
+# 阈值为**技术防滥用闸**（公开入口洪泛／批量注册建号），不是任务书 §17 那类
+# 商业数值红线（保护期长度/续期条件/分成比例/认证费金额等一概不落数）。
+# 与登录限流的三点刻意差异：
+#   ①按来源 IP 单键——注册时没有既有用户名可入键，攻击者可随意换名，
+#     键必须落在 IP 上；
+#   ②**成功不清零**——注册成功同样创建账号，若成功清零则「注册→清零→再注册」
+#     即可绕过配额；这是容量上限，不是失败锁定；
+#   ③计数发生在任何解析与 argon2 计算之前——被限的请求零成本拒绝。
+REGISTRATION_RATE_MAX_ATTEMPTS = 10
+REGISTRATION_RATE_WINDOW_SECONDS = 3600
+
+
+def _registration_rate_key(remote_addr: str | None) -> str:
+    ip = remote_addr or "unknown"
+    return f"commercial:register:{ip}"
+
+
+def _registration_throttle(remote_addr: str | None) -> int | None:
+    """记一次注册尝试；超限返回应等待秒数（未超限返回 None）。
+
+    Redis 不可用时行为可配置（#250 同款，不得静默）：
+      fail-open（缺省）→ 记 WARNING 后放行（内网部署假设，Redis 挂不挡注册）；
+      fail-closed（FDE_REGISTRATION_RATE_FAIL_CLOSED=1，对外暴露部署从严）
+        → 记 WARNING 后一律按超限处理（429）。
+    """
+    try:
+        redis = current_app.extensions["fde_api_redis"]
+    except KeyError:
+        return None
+    settings = current_app.config["SETTINGS"]
+    key = _registration_rate_key(remote_addr)
+    try:
+        attempts = redis.incr(key)
+        if attempts == 1:
+            redis.expire(key, REGISTRATION_RATE_WINDOW_SECONDS)
+        if attempts > REGISTRATION_RATE_MAX_ATTEMPTS:
+            return max(int(redis.ttl(key) or REGISTRATION_RATE_WINDOW_SECONDS), 1)
+    except RedisError:
+        current_app.logger.warning(
+            "registration rate limiter unavailable (ip=%s); failing %s",
+            remote_addr,
+            "closed" if settings.registration_rate_fail_closed else "open",
+        )
+        if settings.registration_rate_fail_closed:
+            return REGISTRATION_RATE_WINDOW_SECONDS
+        return None
+    return None
+
+
 # ── 商业化 G6：企业空间与企业自助交付（读/自证面；ADR-010）──
 
 
@@ -326,6 +380,13 @@ def list_regional_tiers_route():
 def register_enterprise_route():
     """企业自助注册（R1；**当事人自证，公开入口无鉴权**——免费额度的结构性
     防滥用＝USCC 一主体一份额度；治理面不进 api_catalog）。"""
+    retry_after = _registration_throttle(request.remote_addr)
+    if retry_after is not None:
+        return error_response(
+            "registration_rate_limited",
+            f"注册尝试过于频繁，请约 {retry_after // 60 + 1} 分钟后再试。",
+            429,
+        )
     payload = request.get_json(silent=True)
     payload = payload if isinstance(payload, dict) else {}
     with db.session() as session, session.begin():

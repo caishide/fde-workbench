@@ -1,3 +1,4 @@
+import itertools
 import os
 import re
 import sys
@@ -7,6 +8,7 @@ from urllib.parse import quote_plus
 import pytest
 from alembic import command
 from alembic.config import Config
+from flask.testing import FlaskClient
 from sqlalchemy import create_engine, delete, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -30,6 +32,40 @@ _FORBIDDEN_DATABASE_NAMES = {
     "template0",
     "template1",
 }
+
+
+# ── 限流键的测试隔离：每个用例一个独立来源 IP ──
+# 登录限流与注册面节流的计数都按**来源 IP** 落在共享 Redis（测试库）上——
+# 若所有用例共用 127.0.0.1，前一个用例留下的计数会把后一个用例挡在限流上
+# （用例之间互相牵连，典型症状：某个用例忽然 429）。
+# 按 app 实例（＝用例）分配独立来源 IP，等价于「每台来源主机独立计数」，
+# 生产语义不变（限流键始终是来源 IP）。显式传 environ_base 的用例
+# （限流专项用例）自带 IP，不受此件影响。
+_IP_SEQ = itertools.count(1)
+
+
+def _worker_octet() -> int:
+    """xdist worker 编号（gw0..gw3）→ IP 的一段，避免并行 worker 之间撞键。"""
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    digits = "".join(ch for ch in worker if ch.isdigit())
+    return int(digits) % 254 if digits else 0
+
+
+class PerTestIPClient(FlaskClient):
+    """每个客户端实例一个固定来源 IP 的测试客户端。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        seq = next(_IP_SEQ)
+        self._source_ip = (
+            f"203.{(seq // 254) % 254}.{_worker_octet()}.{(seq % 254) + 1}"
+        )
+
+    def open(self, *args, **kwargs):
+        environ_base = dict(kwargs.pop("environ_base", None) or {})
+        environ_base.setdefault("REMOTE_ADDR", self._source_ip)
+        return super().open(*args, environ_base=environ_base, **kwargs)
+
 
 
 def _read_local_db_password() -> str:
@@ -377,6 +413,9 @@ def seed_reference_data(database_url: str) -> None:
 def app(settings):
     app = create_app(settings)
     app.config.update(TESTING=True)
+    # 限流键含来源 IP——每个用例一个独立来源 IP（计数落在共享 Redis 上，
+    # 共用回环地址会让用例互相牵连）。见 PerTestIPClient。
+    app.test_client_class = PerTestIPClient
     return app
 
 
