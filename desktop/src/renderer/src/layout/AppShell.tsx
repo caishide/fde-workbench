@@ -92,6 +92,7 @@ export function AppShell({
               <NavLink route={route} target={{ kind: "modules" }} label="模块管理" icon={<BoxesIcon />} />
               <NavLink route={route} target={{ kind: "users" }} label="用户管理" icon={<PeopleIcon />} />
               <NavLink route={route} target={{ kind: "system-configuration" }} label="系统配置" icon={<SettingsIcon />} />
+              <NavLink route={route} target={{ kind: "commercial-ops" }} label="商业化运维" icon={<GaugeIcon />} />
             </div>
           ) : null}
         </nav>
@@ -268,6 +269,17 @@ function ExtensionIcon() {
       <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
       <circle cx="12" cy="12" r="5" />
       <path d="m5.6 5.6 2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" />
+    </svg>
+  )
+}
+
+
+function GaugeIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+      <path d="m13.4 10.6 3.2-3.2" />
+      <path d="M4.2 18a9 9 0 1 1 15.6 0" />
     </svg>
   )
 }

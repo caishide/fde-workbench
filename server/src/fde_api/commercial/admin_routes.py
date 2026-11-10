@@ -63,6 +63,7 @@ from fde_api.commercial.service import (
     set_commercial_role,
     set_delivery_eligibility,
 )
+from fde_api.commercial.readiness_service import commercial_readiness
 from fde_api.extensions import db
 
 admin_commercial_blueprint = Blueprint(
@@ -568,6 +569,20 @@ def mark_disputed_route(opportunity_id: str):
             dispute_hash=payload.get("dispute_hash"),
             confirm_password=payload.get("confirm_password"),
         )
+        return jsonify({"data": data, "error": None})
+
+
+
+@admin_commercial_blueprint.get("/readiness")
+@require_auth
+def commercial_readiness_route():
+    """商业化就绪度汇总读面（admin，只读）——配置缺口 ＋ 售卖闸条件登记态。
+
+    **不落任何数值**：只报状态（unset/configured）与键名；证据只出指针。
+    治理面不进 api_catalog（与既有 commercial admin 面同款）。
+    """
+    with db.session() as session:
+        data = commercial_readiness(session, actor=g.current_user)
         return jsonify({"data": data, "error": None})
 
 

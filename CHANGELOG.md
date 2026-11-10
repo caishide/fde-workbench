@@ -34,6 +34,15 @@
 - **指纹纪律生效实录**：`rubric/裁定单-首批6卡.md` 因预评填入而变更 ⇒ 指纹由 `23fcbd91…` 变为 `8592ae7f…`，仓库侧登记表同步更新（**改答案必留 diff**）；**六张案例卡本体未改**（`card_version` 仍 `card-v1`，`ground_truth` 未动）⇒ 无需升版本、无曲线断点。
 - **口径**：pytest/mypy/vitest 全不动；**零服务端源码改动、零迁移、零路由、零蓝图、零桌面** ⇒ 无需 rebuild 镜像 / alembic / 便携版重打包。
 
+## [未发布] — 商业化挂账清偿轮 4：商业化运维就绪度可见面（服务端汇总读面 ＋ 桌面运维面板；配置缺口与法务闸状态一眼可见；零迁移零新表，2026-11-11)
+
+- **起因**：外部评审列出「未配置槽位无管理员可见面」与「法务审查未完成只活在文档里」两项——核实**确无**：服务端有分散的配置位读面（fee-configs／split-rules／opportunity-rules）与售卖闸读面，但**没有汇总面**，桌面端对 26 条 commercial admin 路由**零消费**——「缺什么、缺到哪一步」只能翻文档，管理员在系统里看不到。
+- **服务端**：NEW `commercial/readiness_service.py` ＋ `GET /api/v1/admin/commercial/readiness`（admin 只读，治理面不进 api_catalog）。汇总三类配置槽位＋售卖闸四项合规条件：①**按权威键集枚举**槽位（`FEE_CONFIG_KEYS`／`OPPORTUNITY_RULE_KEYS`），行只提供状态——槽位永不缺项（缺行即少报＝「缺什么」漏报）；②**只报状态不落数值**（`unset`/`configured`、`registered`/`unregistered`），**绝不补默认值**——缺省即「不可收款／不可触限」的 fail-closed 方向不变；③每个未就绪项带**「等谁拍板」**指针（§17 商业数值／分成比例／法务合规输入），话术的单一权威在服务端（桌面端只渲染，不自带口径）。
+- **桌面**：NEW `commercial/CommercialOpsPage.tsx` ＋ 路由 `#commercial-ops`（admin 专属）＋ 侧栏「商业化运维」入口——未就绪横幅（含等待来源）＋ 配置槽位表（状态/值型/可直接收款）＋ 售卖闸逐项登记态。**只呈现状态，不呈现也不推导任何商业数值**（用例钉「槽位表内不得出现金额形态数字」）。
+- **测试**：NEW `server/tests/test_commercial_readiness.py` **7 例**（槽位清单按权威键集逐位一致且全 unset／只报状态不落数值〔并钉死 3980／59800 等金额不得出现在响应里〕／售卖闸四项逐项可见且 `ready_to_open=False`／阻塞清单覆盖四类来源／admin 专属〔非 admin 403、未认证 401〕／不进 api_catalog 静态钉／配好槽位后汇总面如实改口）；NEW `desktop/tests/renderer/commercial-ops.test.tsx` **5 例**（未就绪横幅与等待来源／槽位状态表且无金额形态数字／售卖闸状态与登记态／只读——仅一次 GET 且无写请求／读面失败如实呈现不伪造就绪）；**变异三连全红→还原→绿**（M1 摘 admin 闸→1 红／M2 摘闸条件呈现→1 红／M3 槽位改按行枚举→1 红）。
+- 口径：pytest **2706 收集 = 2700 passed + 6 skipped**（本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测，PR CI 复核）；vitest **990**（85 文件；+5＝本轮 NEW 商业化运维面板用例）〔前值 985／84 文件〕；mypy 279 基线零新增；ruff 全过；路由 **447 → 448**（NEW 1 条只读汇总面，审计清单已重生成：CSV 恰 +1 行 ＋ 1 处证据引用更新）；零迁移零新表（迁移头仍 `f3a9c7e1d5b2`）。
+- server 变更 ⇒ 合并后 rebuild 三镜像（零迁移，alembic 幂等 no-op）；桌面变更 ⇒ 便携版重打包挂账。
+
 ## [未发布] — 商业化挂账清偿轮 3：商业域权益行并发安全（行锁＋刷新；席位激活与首单扣费并发串行化）＋桌面焦点竞态修复（零迁移零新路由零新表，2026-11-10）
 
 - **起因**：外部评审指出「商业域资金敏感面并发覆盖偏薄」——核实为**真缺口且已落成真实缺陷**：`commercial_entitlements`（一人一份，PK=user_id）的席位激活与首单扣费此前是**无行锁读-改-写**（`ensure_entitlement` 只做 `session.get`），并发窗口里两个请求可都读到旧值并各自写入：席位双激活；更严重的是**账本侧无唯一约束兜底**（`commercial_revenue_ledger` 不对 `(subject_type, subject_user_id)` 建唯一键）⇒ 同一交付者可能被记两笔 3980 席位费。

@@ -31,6 +31,7 @@ import { ExtensionsPage } from "./extensions/ExtensionsPage"
 import { LcscToolPage } from "./extensions/LcscToolPage"
 import { LcscComparePage } from "./extensions/LcscComparePage"
 import { SystemConfigurationPage } from "./system/SystemConfigurationPage"
+import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
 import { TranslatorPortalPage } from "./translator/TranslatorPortalPage"
 import { MetricsReportPage } from "./metrics/MetricsReportPage"
 import { PilotReportPage } from "./pilot/PilotReportPage"
@@ -93,6 +94,7 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "extensions") return route.tool === 'lcsc-compare' ? <LcscComparePage /> : route.tool ? <LcscToolPage key={route.tool} variant={route.tool} /> : <ExtensionsPage initialTab={route.tab} />
   if (route.kind === "users") return <UsersPage />
   if (route.kind === "system-configuration") return <SystemConfigurationPage />
+  if (route.kind === "commercial-ops") return <CommercialOpsPage />
   if (route.kind === "modules") return <ModulesPage />
   if (route.kind === "templates") return <TemplatesPage />
   if (route.kind === "document-templates") return <DocumentTemplatesPage />
