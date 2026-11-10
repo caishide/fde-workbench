@@ -18,6 +18,8 @@
 | c7 | 桌面端（desktop/main/renderer/tests/gui-harness） | **已完成 2026-11-05**（纯登记轮：T-O2b 桌面五类滞后升 P2（CR-032）；CR-035~040 P3 登记；CR-001 复测 5 处全在补记；新-project 同型 sync-hash P3） | docs/goal-c7-代码审查.md |
 | c8 | 基建/脚本/GUI 回归/收口 | **已完成 2026-11-05**（收口轮：CR-001 产品名双侧单点+静态闸 当轮修、CR-002 conftest 外来戳自愈 根除当轮修、CR-006 DSH 记账面 needs-decision 销号、CR-016 outbox 死信箱 裁决登记；gitleaks 全仓 + 口径回填） | docs/goal-c8-代码审查.md |
 | r1 | 全仓夜审 goal-review-fix（七域 A–G fan-out，dynamic-workflows） | **已完成 2026-11-10**（40 候选→去重 38 登记 CR-042..079；P1×5/P2×13/P3×20；18 条独立复核 verified；P1/P2 全部 E0 升级；r2 服务端批 8 项+r3 卫生批 10 项按分级闸当轮修，20 条挂账待拍板） | docs/audit/全面代码审查报告-2026-11-10.md |
+| r2 | 夜审修复·服务端行为批（CR-042/047/049/050/051/052/054/060） | **已完成 2026-11-10**（8/8 变异判别；PR #289 合并 `3eb6f28`；CI 双红两修：xdist 共享 Redis autouse 清理夹具删除＋auth→projects 包环懒导入） | CHANGELOG「夜审修复 r2」节 |
+| r3 | 夜审修复·卫生批（CR-058/063/068/070/073/075/076/077/078/079） | **已完成 2026-11-10**（PR #293 合并 `06c1dd5`；CI 双红两修：热点行数预算压单行＋TS2722 可选调用；CR-075 勘误＝第二处 E0 实测不存在） | CHANGELOG「夜审修复 r3」节 |
 
 ## 发现总表
 
@@ -583,7 +585,7 @@
 
 ## 夜审 r1 详情索引（CR-042..CR-079，2026-11-10，goal-review-fix）
 
-> 全量证据（锚点/取证路径/影响面/复核记录/消解条件）的唯一权威=**docs/audit/全面代码审查报告-2026-11-10.md §四**；本节只做台账内检索索引。审查形态：七域并行 fan-out（dynamic-workflows run dwfrun-c0445a91）+P0/P1/P2 逐条独立复核+E0 主会话亲测升级。复核层战果：原判 P1 的 quality 覆盖闸条目被三重合取反证驳回（→CR-055 P3 观察挂账）；宿主回执条目 P1→P2（触发面三要件当前全零）。
+> 全量证据（锚点/取证路径/影响面/复核记录/消解条件）的唯一权威=**docs/audit/全面代码审查报告-2026-11-10.md §四**；本节只做台账内检索索引。 **状态终态（收口回填）**：行内「r2 修/r3 修」均已落地——r2=PR #289 合并 `3eb6f28`，r3=PR #293 合并 `06c1dd5`；「needs-decision（待拍板）」20 条维持挂账。审查形态：七域并行 fan-out（dynamic-workflows run dwfrun-c0445a91）+P0/P1/P2 逐条独立复核+E0 主会话亲测升级。复核层战果：原判 P1 的 quality 覆盖闸条目被三重合取反证驳回（→CR-055 P3 观察挂账）；宿主回执条目 P1→P2（触发面三要件当前全零）。
 
 - **CR-042 [P1→r2 修]**：reset_password/change_password 零审计事件——补 user_password_reset/user_password_changed 事件（路由传 actor）+测试。E0：函数体亲读零 record_event+活库 45 类事件无 password 族。
 - **CR-043 [P1→挂账]**：host_poll×workflow agent 断链+计费孤儿——跨域异步语义设计轮拍板，与生产启用闸三条件合并裁决。owner=蔡工。
