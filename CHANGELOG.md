@@ -24,7 +24,8 @@
 - **CR-077（P3）产品名第三处清除**：`server/src/fde_api/__init__.py` docstring 改「FDE workbench API package.」（E0 全扫证实仅此一处 + brand.ts/config.py 两单点）。
 - **CR-078（P3）口径配方修正**：AGENTS.md 口径行「api_catalog ENTRIES=awk 数 (" 行」改「AST 数 ENTRIES 赋值元素」（grep 会多计 `_catalog_row` 函数体两处——本轮实测 96 vs AST 真值 94）。
 - **CR-079（P3）ENV 登记补齐**：`server/.env.example` 补 `FDE_AGENT_HOST_POLL_TOKEN`/`FDE_AGENT_HOST_LOST_MARK_MINUTES` 注释态两行（照 FDE_BRIDGE_TOKEN 先例注明白文令牌不入 git）。
-- **口径**：零迁移零路由零新表；桌面改动 ⇒ vitest 绿即可（CI desktop job 实测为准），便携版重打包挂账（夜间不打包）；server 侧仅测试与 docstring/`__init__` 一行 ⇒ 合并后 rebuild 三镜像挂账（alembic no-op）。
+- **口径**：零迁移零路由零新表；桌面改动 ⇒ vitest 绿即可（CI desktop job 实测为准）；server 侧仅测试与 docstring/`__init__` 一行 ⇒ 合并后 rebuild 三镜像挂账（alembic no-op）。
+- **便携版 r32 交付补记（挂账清偿，2026-11-10 夜）**：从 `10838b9` 干净主树打包（desktop 面零脏文件核对）。asar sha256 `cf0d438f382891159e27a46702367acbd66f6fb5ad87cd262b4ff93a8b97a490`（r31=`113289d4…` 未覆盖）。**字节验证**：`lcsc_execute_failed`（CR-073 main 进程错误码）新包命中 1／r31 对照 **0**（非旧包实证）；`szlcsc` 白名单正则（CR-070）命中 19。**无中文 marker 说明**：r3 桌面改动均为英文错误码/正则/静态测试（无新增中文 UI 文案），沿 r31 轮 3 先例以英文 marker+新旧 asar 对照替代。
 
 ## [未发布] — 夜审修复 r2：服务端行为批（goal-review-fix r2；CR-042/047/049/050/051/052/054/060 八项，2026-11-10）
 
