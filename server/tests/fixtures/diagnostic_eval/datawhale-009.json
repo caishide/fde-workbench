@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "datawhale-009",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "MIT",
+    "license_holder": "Copyright (c) 2026 guminghao-avi contributors",
+    "attribution_line": "示例案例 · 据公开案例整理｜来源：FDE-case-library（MIT License, © 2026 guminghao-avi contributors），原始出处 Datawhale《FDE案例100》NO.09｜本卡为独立重写",
+    "original_url": "https://assets.datawhale.cn/Datawhale%20FDE%E6%A1%88%E4%BE%8B100.pdf#page=87",
+    "case_page_url": "https://fde100.datawhale.cn/cases/cases-018",
+    "snapshot": {
+      "library_commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+      "library_commit_date": "2026-09-23",
+      "source_accessed_at": "2026-09-19",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/datawhale-009.json",
+    "sha256": "288b2e2e37556da9f8555f52386e233ef5dee853f718b0f55d1d5e608308bd9d",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "央国企下属公司",
+      "org.scale": "（未填写）",
+      "org.main_business": "（未填写）",
+      "org.delivery_mode": "（未填写）",
+      "biz.current_process": "报销建单审核全靠人，表哥表姐传帮带",
+      "biz.pain_stage": "报销 / 建单 / 审核",
+      "biz.decision_maker": "财务部",
+      "biz.cycle_time": "（未填写）",
+      "biz.volume": "单量大但说不清多少（未填写）",
+      "sys.systems": "OA 和 ERP 都上有",
+      "sys.data_assets": "票据、申请表、单据",
+      "sys.integration_status": "两个系统各干各的，对不上",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "集团提过数字化，但没定到我们这儿"
+    },
+    "free_text_pain": "我们是国企，财务这块报销建单都是人来做，新来的不会做就问老财务，表格还得一遍遍填错返工。OA跟ERP各干各的，金额材料对不上就得人核，出错责任担着所以谁也不敢快。集团提过数字化，但没落到我们头上。",
+    "imperfection_notes": [
+      "刻意缺失：月单量、审批层级、平均处理时长、责任风险事件数（案例未披露量化数值）",
+      "口语化且带情绪：『谁也不敢快』『没落到我们头上』",
+      "含政策依赖线索（『集团提过数字化』）——须引政策原文口径且标注我方解读"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "medium",
+    "contamination_class": "public_mit",
+    "meta_role": "eval_case",
+    "eval_eligible": true
+  }
+}

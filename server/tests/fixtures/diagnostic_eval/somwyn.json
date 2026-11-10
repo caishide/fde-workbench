@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "somwyn",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "内部真相层（代号化交付物）",
+    "license_holder": "我方自有交付物",
+    "attribution_line": "脱敏真实交付 · 代号化（来源：fdeops/somwyn/.fde/gates/G3-诊断报告.md，本地真相层，原件不外发）",
+    "original_url": null,
+    "case_page_url": null,
+    "snapshot": {
+      "library_commit": null,
+      "library_commit_date": null,
+      "source_accessed_at": "2026-10-28",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/somwyn.json",
+    "sha256": "c704ea1185be99675703299109bfd465e6404ae86fa8af8380f71bcc79f52f69",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "外贸，做工业品",
+      "org.scale": "小工厂",
+      "org.main_business": "外贸出口，客户主要靠海外买家询盘",
+      "org.delivery_mode": "接单生产 + 出口",
+      "biz.current_process": "被动等询盘，偶尔人工搜索开发客户",
+      "biz.pain_stage": "获客",
+      "biz.decision_maker": "老板",
+      "biz.cycle_time": "（未填写）",
+      "biz.volume": "（未填写）",
+      "sys.systems": "没用过获客工具，官网用 WordPress",
+      "sys.data_assets": "没有自己的客户数据资产",
+      "sys.integration_status": "没有系统，WordPress 有个表单",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "在看 SaaS（Clay / Apollo 高级版）这类，也想过自己写 CRM"
+    },
+    "free_text_pain": "我们做外贸的，客户都是被动等询盘，官网挂个WordPress表单，偶尔自己去搜一搜。想买Clay或者Apollo这种，但订阅费挺贵的，而且听说按坐席按额度算，人一多就顶不住。也想过自己写个CRM吧，老板觉得太重了搞不定。",
+    "imperfection_notes": [
+      "刻意缺失：每月询盘量、人工找客户耗时、月获客成本（真实件中标为『待甲方提供』，案例内不得编造）",
+      "口语化且带未验证判断（『听说按坐席按额度算』）",
+      "输入呈现为『在选型』而非『已实施』——报告须按选型期语境给建议，不得把建议写成实施完成"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "hard",
+    "contamination_class": "internal_pseudonymized",
+    "meta_role": "eval_case_and_meta_anchor",
+    "eval_eligible": true
+  }
+}

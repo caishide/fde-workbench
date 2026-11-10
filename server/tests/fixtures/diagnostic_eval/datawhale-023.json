@@ -1,0 +1,54 @@
+{
+  "fixture_version": "diag-eval-v0",
+  "case_id": "datawhale-023",
+  "card_version": "card-v1",
+  "attribution": {
+    "license": "MIT",
+    "license_holder": "Copyright (c) 2026 guminghao-avi contributors",
+    "attribution_line": "示例案例 · 据公开案例整理｜来源：FDE-case-library（MIT License, © 2026 guminghao-avi contributors），原始出处 Datawhale《FDE案例100》NO.20｜本卡为独立重写",
+    "original_url": "https://assets.datawhale.cn/Datawhale%20FDE%E6%A1%88%E4%BE%8B100.pdf#page=197",
+    "case_page_url": "https://fde100.datawhale.cn/cases/cases-022",
+    "snapshot": {
+      "library_commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+      "library_commit_date": "2026-09-23",
+      "source_accessed_at": "2026-09-19",
+      "card_snapshot_date": "2026-11-10"
+    }
+  },
+  "answer_key_ref": {
+    "relative_path": "cards/datawhale-023.json",
+    "sha256": "bdd366875f1d7ff141e37f4f5a6eb5e0e806f526ad57de46cde6f16ff097071a",
+    "pointer_note": "标准答案只存本地真相层；仓库内零答案内容"
+  },
+  "sim_input": {
+    "questionnaire_slots": {
+      "org.industry": "汽车零部件，做配套件",
+      "org.scale": "（未填写）",
+      "org.main_business": "按主机厂订单排产供货",
+      "org.delivery_mode": "订单驱动排产 + 交付",
+      "biz.current_process": "ERP 里啥都有，就是没人说得清这单卡在哪",
+      "biz.pain_stage": "经营异常发现与追溯",
+      "biz.decision_maker": "老板每天问一圈才心里有数",
+      "biz.cycle_time": "（未填写）",
+      "biz.volume": "（未填写）",
+      "sys.systems": "管家婆 ERP",
+      "sys.data_assets": "订单、采购、库存、发货、回款数据都在 ERP 里",
+      "sys.integration_status": "ERP 没人动过，也不敢动",
+      "pol.qualification": "（未填写）",
+      "pol.declaration_history": "（未填写）",
+      "pol.digitalization_project": "之前上过一版看板，没人看"
+    },
+    "free_text_pain": "我们做汽车零部件配套的，订单、采购、库存、发货、钱回来的数据其实都在管家婆里，但没人串起来看。想知道这个月哪几个单子卡住了、哪个客户拖了款，只能一个部门一个部门问，老板天天问一圈。ERP是十几年前上的，换它不敢想。",
+    "imperfection_notes": [
+      "刻意缺失：月订单量、在手订单额、呆滞库存金额、异常发现耗时（案例未披露量化收益）",
+      "口语化：『没人串起来看』『不敢想』",
+      "含一条误导线索：『之前上过一版看板，没人看』——正确答案须指出问题不在看板而在异常未主动上浮"
+    ]
+  },
+  "eval_meta": {
+    "difficulty": "hard",
+    "contamination_class": "public_mit",
+    "meta_role": "eval_case",
+    "eval_eligible": true
+  }
+}
