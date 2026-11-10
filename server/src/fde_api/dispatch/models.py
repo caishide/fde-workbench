@@ -374,7 +374,8 @@ class DispatchRuleVersion(Base, TimestampMixin):
         String(12), nullable=False, default="draft", server_default="draft"
     )
     # 快照内容：stage_b_weights / level_score_map / seat_shares /
-    # cold_start_overrides / top_n / tie_break 规则引用（§4.3/§6.2）
+    # top_n / tie_break 规则引用（§4.3/§6.2）；F 线 T2 起新层基线另含
+    # five_seat 块（平台份额＋池内百份制）——冷启动档已废止（ADR-011 §3.9）
     rule_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     # 生效日 ≥ 公示日 + 30 天（§6.2 重大调整公示；服务层发布/生效校验强制）

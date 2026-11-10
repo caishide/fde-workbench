@@ -1,9 +1,12 @@
 import itertools
+import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus
+from uuid import uuid4
 
 import pytest
 from alembic import command
@@ -773,6 +776,36 @@ def db_session(app) -> Session:
                     "ON CONFLICT (id) DO NOTHING"
                 ),
                 {"org_id": INTERNAL_ORG_ID, "name": INTERNAL_ORG_NAME},
+            )
+
+            # F 线 T2：逐测清行会把迁移种入的「上线前初始基线」一并抹掉
+            # （G4 ensure_rule / G5 ensure_tier_catalog 同款家族）。与迁移种子
+            # 同源（fde_api.dispatch.baseline 常量）就地补建：每个用例起跑时
+            # 基线在场＝生产形态；需要 §11.1 降级态的用例显式退役（见
+            # test_dispatch_p1_r5.retire_active_rule_versions）。幂等
+            # （ON CONFLICT），事件不在此补建——initial_baseline 痕迹是
+            # 迁移时刻工件，由专项用例自行驱动。
+            from fde_api.dispatch.baseline import (
+                FIVE_SEAT_BASELINE_SNAPSHOT,
+                FIVE_SEAT_BASELINE_VERSION_NO,
+            )
+
+            moment = datetime.now(timezone.utc)
+            connection.execute(
+                text(
+                    "INSERT INTO dispatch_rule_versions"
+                    " (id, version_no, status, rule_snapshot, published_at,"
+                    "  effective_at, created_at, updated_at)"
+                    " VALUES (:id, :version_no, 'active', CAST(:snapshot AS json),"
+                    "         :moment, :moment, :moment, :moment)"
+                    " ON CONFLICT (version_no) DO NOTHING"
+                ),
+                {
+                    "id": str(uuid4()),
+                    "version_no": FIVE_SEAT_BASELINE_VERSION_NO,
+                    "snapshot": json.dumps(FIVE_SEAT_BASELINE_SNAPSHOT),
+                    "moment": moment,
+                },
             )
 
     with app.app_context():

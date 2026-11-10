@@ -36,13 +36,12 @@ def _require_actor_admin(actor: User) -> None:
 
 def default_rule_snapshot() -> dict[str, Any]:
     """首版快照 = DISPATCH_CONSTANTS 的规则节投影（发布时显式落库，此后
-    常量与版本解耦：版本表才是 active 口径的唯一来源）。"""
+    常量与版本解耦：版本表才是 active 口径的唯一来源）。
+    冷启动档已废止（ADR-011 §3.9 补充拍板 11；F 线 T2）——两键不再投影。"""
     return {
         "stage_b_weights": dict(DISPATCH_CONSTANTS["stage_b_weights"]),
         "level_score_map": dict(DISPATCH_CONSTANTS["level_score_map"]),
         "seat_shares": dict(DISPATCH_CONSTANTS["seat_shares"]),
-        "cold_start_seat_shares": dict(DISPATCH_CONSTANTS["cold_start_seat_shares"]),
-        "cold_start_first_orders": DISPATCH_CONSTANTS["cold_start_first_orders"],
         "top_n": DISPATCH_CONSTANTS["top_n"],
     }
 

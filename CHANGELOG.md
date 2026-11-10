@@ -2,6 +2,24 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — F 线 T2 轮：五席位分账上线前初始基线版本＋冷启动档废止（迁移 `c8d2f6a4e9b1`，2026-11-11）
+
+- **形态**：分账口径改造（F 线）goal 循环 T2。ADR-011 §5-C/§3.9：比例数值＝业务方交付 §17 数值类外部输入，落库载体＝**上线前初始基线版本**（16:57 拍板「不用公示，本项目还没上线呢」——豁免边界＝仅此一行，见规则文件 five-seat-split-rules.md §10）。
+- **NEW 迁移 `c8d2f6a4e9b1`（62→63 rev 单头，改挂夜审 r5 `a9c5e2d7b3f1` 之后保单头）**：种入 `dispatch_rule_versions` 一行 `version_no=100`（保留段，1–99 留给上线后人工版本序列）`status='active'`，`published_at`＝`effective_at`＝**真实迁移执行时刻**（不倒填），`published_by_user_id`＝NULL（平台侧行为不伪装成人工动作）；`operation_events` 留 `initial_baseline` 痕迹（actor 取最早 user；迁移时刻无 user 则**诚实跳过**——NOT NULL FK 不允许伪造 actor，全新库干净通过）；幂等（ON CONFLICT，重放不产生第二份）。零 DDL 纯数据种子。
+- **快照形状（两把尺各自成键）**：`five_seat` 块＝平台 30%＋池内 30/50/10/10（`platform_share_percent` + `pool_shares`，字段名与 `allocate_five_seats::_five_seat_shares` 读法一致——平台份额与池内份数是两个 100，不能摊平进一个键）＋Stage B 权重/等级映射分（与常量同值，基线 active 后撮合按快照打分不落空权重）；**不含**旧四席位 `seat_shares`（35/5/20/40 待迁移旧口径不进新层）。NEW `dispatch/baseline.py` 常量＝快照唯一权威形状；迁移**内联冻结字面量**与常量逐位一致（三方闸钉死：规则文件 JSON 块 ↔ 常量 ↔ 迁移种子；改任一侧必红）。
+- **冷启动档废止（ADR-011 §3.9 补充拍板 11，不留两条口径）**：`DISPATCH_CONSTANTS` 摘 `cold_start_seat_shares`/`cold_start_first_orders` 两键；`seat_shares_for` 冷启动分支与 `_city_order_rank`（唯一消费者）一并摘除；`default_rule_snapshot` 两键不再投影；`test_dispatch_p0_r2.py` 冷启动用例改写为废止形态钉（`test_cold_start_tier_abolished`）＋只读节断言两键不得回流。报价域 `anchor_mode='cold_start'` 是报价锚点模式，同名不同义不受影响。
+- **豁免边界验证**：基线在场时 `create_rule_version` 的 30 天公示闸照常咬合——NEW 反例「基线存在后再发第二版且零公示 ⇒ 422 `notice_window_required`」（闸序证明：公示窗校验先于版本号冲突校验）；合规第二版照常发布，到点激活后基线退役、同刻至多一个 active。**既有四处公示反例用例一字未改全绿**（`test_dispatch_p0_r2.py:798,850-860`、`test_dispatch_admin_rules.py:64-71`、`admin_routes.py` 闸零改动）。
+- **测试与配套**：NEW `test_dispatch_five_seat_baseline.py` 9 例（三方闸/快照形状/常量同值/基线行形状/旧口径零渗漏/公示反例/激活退役/事件幂等/迁移往返）；conftest 逐测清行后与迁移种子**同源惰性补建**基线行（G4 ensure_rule/G5 ensure_tier_catalog 同款家族——每用例起跑时基线在场＝生产形态）；受「无 active 版本 ⇒ 422 降级态」影响的既有用例改**显式构造降级态**（NEW 共享 `retire_active_rule_versions`：p1_r5 降级用例＋CR-027 激活闭环＋b3ops 回放两例）——T2 起降级态从「空表默认态」变为「显式可重建态」。`test_migrations` HEAD 同步 63（融合 M1＋r5 插队）；往返清理序补删 initial_baseline 事件（迁移事件 FK 咬 user 的合法适配）。变异 M5/M6/M6b 全红→字节级还原 sha256 终验→绿。
+- **口径（融合树现测）**：mypy **279 基线不变**/ruff 绿；pytest 终值以本 PR CI 为准（融合树本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 现测 **2869 收集**＝M1 基线 2793 + r5 +8 + #307 评测自动化 +59 + 本轮 +9 逐位吻合）；路由 **451 不变**/蓝图 **50**/表 **148**/**63 rev 单头 `c8d2f6a4e9b1`**/api_catalog 94 不变；零新路由零新表。`commercial_split_rules` 填实**挂账不落**：R1–R4×ratio 映射在五席位口径下无自然对应（两把尺不同，不得自行发明）且 L-4（v4.0 BP 原件未核验）未清——按最高规则 2 上报 OWNER。server 变更 ⇒ 合并后 rebuild 三镜像＋`alembic upgrade head`（种子行随迁移落活库）。
+
+## [未发布] — F 线 T1 轮：五席位纵向分配明细层（NEW `dispatch_settlement_allocations`；迁移 `b7e4c1a9f3d5`，2026-11-10）（补账节——M1 轮口径债登记「F 线 T1 未写 CHANGELOG 节」，按 DoD 补账并入本随轮 PR）
+
+- **形态**：分账口径改造（F 线）goal 循环 T1。ADR-011 §5-A 选型 A（OWNER 书面签字 29/29 随 PR #302 入库，签字页逐字节保留含 T-6 笔误 `tOWNER`）。
+- **NEW 迁移 `b7e4c1a9f3d5`（59→60 rev 单头，经 #301/#300 两度插队 rebase 改挂 T-10b 之后）**＋表 `dispatch_settlement_allocations`（11 列）：一结算 × 一席位一行；空缺席位**显式记 0 不省行**（ADR-011 §3.5）＋原因码闭集（`no_province_partner`/`self_sourced_self_delivered`/`no_sourcer`）＋10 条 CHECK 联锁＋`(settlement_id, seat_key)` 唯一；零播种零预写数值；`delivery_settlements` **恒 20 列零加列**（结构钉）。
+- **`allocate_five_seats`**：比例唯一来源＝规则版本快照 `five_seat` 块（H3 不硬编码；缺块 fail-closed 422 `five_seat_snapshot_required`；池内百份制 Σ=100 校验）；平台行＝残差；兼容镜像同事务派生——**平台行残差与平台镜像列残差是两个残差**（镜像列＝基数−三镜像列＝平台份额＋拉单＋空缺吸收＋尾差；region/city/delivery 1:1 镜像 province/county/delivery）；守卫接线：`mark_payable` 缺分配行 409 `allocation_incomplete`；`record_receipt_settlements` 明细在场时直写镜像 409 `allocation_mirror_protected`。
+- **测试**：NEW `test_five_seat_allocations.py` **31 例**（ADR §3.4 六情形逐分＋Σ恒等＋四态闸＋CHECK 直插 8＋唯一索引＋结构钉＋迁移往返）；变异 M1–M4 全红→字节级还原 sha256 终验→绿。**CI：PR run 42835490008 四绿／main run 42838319007 四绿（server-tests 2772 passed + 7 skipped = 2779 收集）＝fork/main `f71364c`；活体部署三复验绿**（三镜像 api `c0fc47566f10`/worker `f6657e5605d5`/scheduler `46d38f4925c6`；alembic `b7e4d1c9a3f2 → b7e4c1a9f3d5` 真实升级；url_map 452 total/451 non-static；活库新表 11 列/0 行/唯一约束 1/CHECK 10）。
+- 口径（当时点）：路由 **451**/蓝图 **50**/表 **147**/60 rev 单头 `b7e4c1a9f3d5`/api_catalog 94 不变/mypy 279 不变；审计三件套再生＋archify 闸复绿（147 表重渲染＋preview 整页实拍）。
+
 ## [未发布] — 夜审修复 r5：迁移窗口批（goal-review-fix r5：CR-045/048/053/059 一个 additive 迁移窗口＋服务层两兜底＋热点拆分，2026-11-10）
 
 - **形态**：goal-review-fix r5 修复轮（迁移窗口）。r4 拍板（PR #300 合并 `cf0dd1c`）定向的四项「涉迁移」发现合并一个 additive 迁移窗口一次做（用户授权突破迁移禁区并留痕可推翻）。NEW 迁移 `a9c5e2d7b3f1`（十五/十六度插队连改挂现 M1 `a5e9c3f1b7d4` 之后 60→62 单头；#302/#303 并入 +2 表 +2 迁移）：`uq_agent_runs_idempotency_active`（CR-045 部分唯一＝同键 in-flight 至多一行，终态行不进谓词 ⇒ 重试链零影响）／`uq_agent_artifacts_run_storage_ref`（CR-048 产物唯一，前导 run_id 兼作 CR-059 详情页索引）／`uq_delivery_plans_project_published`＋`uq_test_plans_project_approved`（CR-053 单项目现行至多一份）／`ix_agent_tool_calls_run`（CR-059）。**零数据手术**＝活库现测四唯一面零重复先测后建（教训 63）。
@@ -95,7 +113,7 @@
 - **CR-070（P3）web 桥域白名单**：`fde-web-bridge.ts::openLcscBrowser` 补三域 https 白名单（与桌面 allowsLcscUrl 同尺；AIServerChat 先例）；`fde-web-bridge.test.ts` +2 例（三域放行/钓鱼与跨域后缀拦截）。
 - **CR-073（P3）LCSC 业务错误透传**：`desktop/src/main/index.ts` 的 desktop-execute 分发把非 ApiIpcError 包装为 `lcsc_execute_failed`（原 message 透传，「已有立创查询正在执行」不再被吞成通用 internal_error）；`api-ipc.ts` 导出 ApiIpcError（唯一改动=加 export）。
 - **CR-075（P3）恒真断言改写**：`test_ai_call_audit_attribution.py:153` 恒真负向断言改为有判别力形态（64 位 hex 字符集断言）；**登记勘误**——CR-075 原登记的第二处（test_agent_run_evidence_candidate.py:126）E0 实测不存在（E1 误报，`grep` 无该断言；P3 未复核的代价实证），台账已注记。
-- **CR-076（P3）防回归钉加宽**：`test_commercial_enterprise_space.py` 源码钉由 `.delete(` 单形态扩为 `re.search(r"\.delete\(|delete\s*\(")`（封 SQLAlchemy 表达式删除绕过；live 源零命中验证不误伤）。
+- **CR-076（P3）防回归钉加宽**：`test_commercial_enterprise_space.py` 源码钉由 `.delete(` 单形态扩为 `re.search(r"\.delete\(|\bdelete\s*\(")`（封 SQLAlchemy 表达式删除绕过；live 源零命中验证不误伤）。
 - **CR-077（P3）产品名第三处清除**：`server/src/fde_api/__init__.py` docstring 改「FDE workbench API package.」（E0 全扫证实仅此一处 + brand.ts/config.py 两单点）。
 - **CR-078（P3）口径配方修正**：AGENTS.md 口径行「api_catalog ENTRIES=awk 数 (" 行」改「AST 数 ENTRIES 赋值元素」（grep 会多计 `_catalog_row` 函数体两处——本轮实测 96 vs AST 真值 94）。
 - **CR-079（P3）ENV 登记补齐**：`server/.env.example` 补 `FDE_AGENT_HOST_POLL_TOKEN`/`FDE_AGENT_HOST_LOST_MARK_MINUTES` 注释态两行（照 FDE_BRIDGE_TOKEN 先例注明白文令牌不入 git）。

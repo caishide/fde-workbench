@@ -68,7 +68,8 @@ from conftest import INITIAL_PASSWORD
 
 SHA256 = hashlib.sha256(b"goal-r2-evidence").hexdigest()
 BASE_SHARES = {"platform": 35, "region": 5, "city": 20, "delivery": 40}
-COLD_SHARES = {"platform": 40, "region": 5, "city": 15, "delivery": 40}
+# 冷启动档已废止（ADR-011 §3.9 补充拍板 11；F 线 T2）——COLD_SHARES 常量
+# 与冷启动用例随之摘除，废止形态由 test_cold_start_tier_abolished 钉住。
 
 
 @dataclass(frozen=True)
@@ -521,11 +522,14 @@ def test_seven_milestones_four_seats_and_cumulative_withholding(db_session):
     assert by_key["D"].acceptance_passed_at is not None
 
 
-def test_cold_start_shares_first_three_city_orders(db_session):
-    """§7.1 冷启动：同城（包侧客户城，留注⑤ 终版口径）前 3 单 40/5/15/40
-    （上浮自城市合伙人扣），第 4 单回基准。档案 home_city（深圳）≠包侧城（杭州）
-    ——判定只认包侧，home_city 代理已退役。"""
+def test_cold_start_tier_abolished(db_session):
+    """ADR-011 §3.9 补充拍板 11（F 线 T2）：冷启动档废止，不留两条口径。
+
+    常量两键摘除；``seat_shares_for`` 只剩基准一路——同城多单
+    （原前 3 单冷启动 40/5/15/40 触发面）不再改变份额。"""
     admin, fde, context = _settlement_context(db_session, with_profile_city=True)
+    assert "cold_start_seat_shares" not in DISPATCH_CONSTANTS
+    assert "cold_start_first_orders" not in DISPATCH_CONSTANTS
     now = datetime.now(timezone.utc)
     packages = db_session.scalars(
         select(DeliveryPackage).order_by(DeliveryPackage.created_at)
@@ -536,20 +540,8 @@ def test_cold_start_shares_first_three_city_orders(db_session):
     db_session.flush()
 
     shares = [seat_shares_for(db_session, package) for package in packages]
-    assert shares[0] == COLD_SHARES
-    assert shares[1] == COLD_SHARES
-    assert shares[2] == COLD_SHARES
-    assert shares[3] == BASE_SHARES
-
-    split = split_four_seats(Decimal("10000"), COLD_SHARES)
-    assert split == {
-        "platform": Decimal("4000"),
-        "region": Decimal("500"),
-        "city": Decimal("1500"),
-        "delivery": Decimal("4000"),
-    }
-    assert sum(split.values(), Decimal(0)) == Decimal("10000")
-    assert admin.id  # 上下文保活
+    assert all(s == BASE_SHARES for s in shares)
+    assert admin.id and fde.id  # 上下文保活
 
 
 def test_settlement_state_machine_invoice_proof_dispute(db_session):
@@ -791,13 +783,14 @@ def test_dispatch_constants_readonly_via_configuration_api(client, db_session, s
     assert current.status_code == 200
     payload = current.json["data"]
 
-    # 只读节暴露 §6.2/§7.1 全部常数
+    # 只读节暴露 §6.2/§7.1 全部常数（冷启动档已废止——两键不得回流）
     constants = payload["dispatch_constants"]
     assert constants["response_window_hours"] == 24
     assert constants["appeal_sla_hours"] == 48
     assert constants["weight_public_notice_days"] == 30
     assert constants["seat_shares"] == BASE_SHARES
-    assert constants["cold_start_seat_shares"] == COLD_SHARES
+    assert "cold_start_seat_shares" not in constants
+    assert "cold_start_first_orders" not in constants
     assert constants["stage_b_weights"] == {
         "level": 40,
         "industry": 30,

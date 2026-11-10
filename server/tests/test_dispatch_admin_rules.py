@@ -93,9 +93,16 @@ def test_activate_unblocks_matching_and_is_idempotent(admin_client, db_session) 
     """激活闭环：到点版本经 admin 激活 → 撮合不再 422 rule_version_required。
 
     这是 CR-027 的解冻证明——此前撮合路径永远停在 §11.1 降级态。"""
-    from test_dispatch_p1_r5 import _onsite_package, _profile, _user
+    from test_dispatch_p1_r5 import (
+        _onsite_package,
+        _profile,
+        _user,
+        retire_active_rule_versions,
+    )
     from fde_api.dispatch.packages import publish_package
 
+    # F 线 T2 起基线行常驻 active ⇒ 降级态先显式退役（§11.1 状态可重建）
+    retire_active_rule_versions(db_session)
     admin, package = _onsite_package(db_session)
     publish_package(db_session, actor=admin, package_id=package.id)
     good = _user("cr27.noversion", role="fde_engineer")
