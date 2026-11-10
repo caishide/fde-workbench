@@ -2,6 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 生成提示词「禁行业黑话」条款轮（A端事件根治；服务端提示词+测试钉，零迁移零路由，2026-11-10）
+
+- **起因（somwyn A端事件根治项，蔡工拍板「都做」）**：AI 生成的调研表出现「A端目标客户」——源文档（落地方案书）的行业黑话被 AI 原样学舌进客户可见产物。项目背景文案已代改（v18），本轮回根治生成侧：给生成提示词加「用语纪律」条款。
+- **三面接线**：①调研表生成 `ai/research_form_prompt.SYSTEM_PROMPT`（A端出现的主面）；②预调研分析 `guidance/ai_prompt.build_presurvey_analysis_messages`；③DOCX 分析 `build_kimi_presurvey_analysis_messages`。条款统一：「所有面向读者的表述使用平实中文，不得使用行业黑话或缩略行话（如「A端/B端/C端」「赋能」「抓手」「闭环」「颗粒度」等）；确需使用专业术语时，在该词后用括号补一句平实中文解释。」
+- **诚实边界**：行业模板面（industry_template_prompt）未接——治理面 admin 人工维护文本，与 A 端事件链路无关。J-1 白名单不受影响（research_form 为白名单模块常量、ai_prompt 为内联字面量；test_prompt_hygiene_jseries 静态闸复跑绿）。
+- **测试**：NEW `test_prompt_plain_language.py` 3 钉（三生成面逐面断言条款锚「行业黑话/括号补一句平实中文解释/A端,B端,C端」）；prompt 卫生双闸（jseries 5+entrypoint 3）复跑绿；guidance/research_form 邻域定向 137 passed。**口径**：pytest +3；零迁移零路由零桌面；server 变更 ⇒ 合并后 rebuild 三镜像（alembic 幂等 no-op）＋便携版不重打包（提示词在服务端）。
+
 ## [未发布] — 桌面写操作 body 双重编码修复轮（单条/批量审阅「仍无反应」真根因；纯桌面零服务端，2026-11-10）
 
 - **起因（蔡工实测 r29）**：重新登录 r29 后「点击接受没有任何反应，批量更不行了」——r29 已修布局（按钮在屏内可点），仍无反应 ⇒ 另有真根因。
