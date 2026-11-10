@@ -25,6 +25,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,9 +88,16 @@ class AgentRun(Base, TimestampMixin):
         Index("ix_agent_runs_project_status", "project_id", "status"),
         # P2′① 宿主领取面：按 provider+status 定位待领取 run
         Index("ix_agent_runs_provider_status", "execution_provider", "status"),
-        # 幂等键只建索引不设唯一：重试行与原 run 共享同一 key，幂等去重语义
-        # 在服务层（d4）按 retry_of 链收敛，唯一约束会封死重试链。
+        # 幂等键：普通索引供幂等查询；部分唯一索引（CR-045，r5 迁移窗口
+        # a9c5e2d7b3f1）只锁 in-flight 三态——并发同键双执行双计费结构不可能，
+        # 重试行与原 run 共享键的语义不受影响（终态行不进谓词）。
         Index("ix_agent_runs_idempotency", "idempotency_key"),
+        Index(
+            "uq_agent_runs_idempotency_active",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running', 'host_running')"),
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
@@ -155,6 +163,14 @@ class AgentArtifact(Base, TimestampMixin):
         CheckConstraint("kind IN ('code', 'doc', 'diff', 'config', 'test_results')", name="ck_agent_artifacts_kind"),
         # 红线列完整性：指纹必须是完整 64hex，短指纹/占位符一律拒绝
         CheckConstraint("char_length(sha256) = 64", name="ck_agent_artifacts_sha256_len"),
+        # CR-048（r5 迁移窗口）：产物 (run, storage_ref) 唯一——宿主回执并发
+        # 窗口重复产物行结构不可能；前导 run_id 兼作 CR-059 详情页 FK 查询。
+        Index(
+            "uq_agent_artifacts_run_storage_ref",
+            "run_id",
+            "storage_ref",
+            unique=True,
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="RESTRICT"), nullable=False)
@@ -189,6 +205,8 @@ class AgentToolCall(Base, TimestampMixin):
     __tablename__ = "agent_tool_calls"
     __table_args__ = (
         CheckConstraint("decision IN ('allowed', 'denied')", name="ck_agent_tool_calls_decision"),
+        # CR-059（r5 迁移窗口）：run 详情页必经查询的 FK 索引（此前仅 pkey）。
+        Index("ix_agent_tool_calls_run", "run_id"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="RESTRICT"), nullable=False)

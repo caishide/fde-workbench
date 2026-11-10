@@ -43,10 +43,10 @@ from typing import Any
 from cryptography.fernet import Fernet, InvalidToken
 from flask import current_app
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from fde_api.agents.adapter import (
     ADAPTER_KINDS,
-    AgentRunResult,
     AgentRunContext,
     ArtifactFile,
     OutputScanner,
@@ -542,6 +542,21 @@ def _finalize(
         return _serialize_run(session, run, detail=True), validation_failures, gate_open
 
 
+def _is_idempotency_active_violation(exc: IntegrityError) -> bool:
+    """CR-045：判定是否幂等唯一窗口（uq_agent_runs_idempotency_active）冲突。
+
+    psycopg 经 sqlalchemy 的 IntegrityError.orig 带 diag.constraint_name；
+    取不到时退回错误文本匹配（SQLite 测试垫等无 diag 的形态），都不命中
+    ⇒ 非本约束（列约束等其他 IntegrityError 原样上抛，不吞）。
+    """
+    orig = getattr(exc, "orig", None)
+    diag = getattr(orig, "diag", None)
+    name = getattr(diag, "constraint_name", None) or getattr(orig, "constraint_name", None)
+    if name is not None:
+        return name == "uq_agent_runs_idempotency_active"
+    return "uq_agent_runs_idempotency_active" in str(exc)
+
+
 def _execute_run(
     *,
     actor: User,
@@ -567,40 +582,58 @@ def _execute_run(
     workspace = workspace_root / run_id
     context_ref = f"{workspace_root.as_posix().strip('/')}/{run_id}/{_CONTEXT_FILE}"
 
-    with db.session() as session, session.begin():
-        run = AgentRun(
-            id=run_id,
-            project_id=project.id,
-            agent_id=agent.id,
-            initiated_by_user_id=actor.id,
-            capability_used=agent.capability_tier,
-            status="queued",
-            context_ref=context_ref[:255],
-            idempotency_key=idempotency_key,
-            cost_owner_type="project",
-            cost_owner_id=project.id,
-            retry_of=retry_of,
-            difficulty=difficulty,
-        )
-        session.add(run)
-        # O-3（goal-d7）：一次方案生成 run = 一次「工作台动作」，发起时刻
-        # 计（seat 归集 = 发起人；超额只标注不拦截——绝不断供；演练 run
-        # 不经本函数，天然零计量）
-        seat_quota.record_action(
-            session,
-            project_id=project.id,
-            user_id=actor.id,
-            action_type="agent_run",
-            ref_id=run_id,
-            quota_monthly=int(settings.seat_action_quota_monthly or 0),
-        )
-        record_event(
-            session,
-            actor,
-            "agent_run_created",
-            project,
-            {"run_id": run_id, "agent_id": agent.id, "capability": agent.capability_tier, "retry_of": retry_of},
-        )
+    try:
+        with db.session() as session, session.begin():
+            run = AgentRun(
+                id=run_id,
+                project_id=project.id,
+                agent_id=agent.id,
+                initiated_by_user_id=actor.id,
+                capability_used=agent.capability_tier,
+                status="queued",
+                context_ref=context_ref[:255],
+                idempotency_key=idempotency_key,
+                cost_owner_type="project",
+                cost_owner_id=project.id,
+                retry_of=retry_of,
+                difficulty=difficulty,
+            )
+            session.add(run)
+            # O-3（goal-d7）：一次方案生成 run = 一次「工作台动作」，发起时刻
+            # 计（seat 归集 = 发起人；超额只标注不拦截——绝不断供；演练 run
+            # 不经本函数，天然零计量）
+            seat_quota.record_action(
+                session,
+                project_id=project.id,
+                user_id=actor.id,
+                action_type="agent_run",
+                ref_id=run_id,
+                quota_monthly=int(settings.seat_action_quota_monthly or 0),
+            )
+            record_event(
+                session,
+                actor,
+                "agent_run_created",
+                project,
+                {"run_id": run_id, "agent_id": agent.id, "capability": agent.capability_tier, "retry_of": retry_of},
+            )
+    except IntegrityError as exc:
+        # CR-045（r5 迁移窗口 a9c5e2d7b3f1）：入口先查只防时序内并发，真实
+        # 竞态窗口（预检查后、提交前对方先行提交）由部分唯一索引
+        # uq_agent_runs_idempotency_active 结构性兜底——败者重读在途行按幂
+        # 等语义返回（与入口先查分支同口径），双执行双计费结构不可能。
+        if not _is_idempotency_active_violation(exc):
+            raise
+        with db.session() as session:
+            existing = session.scalar(
+                select(AgentRun)
+                .where(AgentRun.idempotency_key == idempotency_key)
+                .where(AgentRun.status.in_(sorted(IN_FLIGHT_STATUSES)))
+                .order_by(AgentRun.created_at.asc(), AgentRun.id.asc())
+            )
+            if existing is None:
+                raise
+            return _serialize_run(session, existing, detail=True), 200
 
     _write_workspace(workspace, context_text=context_text, project_code=project.project_code, capability=agent.capability_tier)
 
@@ -1632,160 +1665,10 @@ def claim_host_run(*, presented_token: str, run_id: str | None = None) -> dict[s
 
 
 
-def submit_host_receipt(*, presented_token: str, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """宿主代理回执落账（P2′① 约束 2/5/6；幂等；H4 不自动重试）。
-
-    与容器路径的关键差异：**产物原件在宿主磁盘**（红线：宿主工作区不入
-    服务端），服务端不读文件算指纹——登记「宿主侧 sha256 + 路径」指针
-    （约束 6 与红线同源）。终态语义与容器对齐：
-
-    - ``exit_code == 0`` → completed（或零产物时如实 completed——宿主任务
-      书是否要求 manifest 由宿主侧保证，``receipt_state`` 随载荷）；
-    - ``exit_code != 0`` → failed；宿主报 timeout/budget_exceeded → 同名终态；
-    - T2 评审门：solution 绑定场景当前不在宿主轮询载荷内（run 建时已无
-      solution 上下文透传——首版宿主通道不接 solution 终审链，留 P1-1 后续），
-      ``linked_solution_id=None``。
-    - 幂等：终态后重复回执且载荷指纹一致 → ``duplicate=True``；指纹不同 →
-      409 ``host_receipt_conflict``（人工介入，不自动仲裁）。
-    - 宿主回执校验失败（invalid kind/unsafe path 等）不向宿主抛 422：
-      状态机如实落 ``failed``（C-1 合同的可重试族不含外副作用），宿主侧
-      收到 200 + ``failures`` 明细，重试/接管由人（H4）。
-    """
-    settings = _settings()
-    _require_host_poll_enabled(settings)
-    token_hash = _verify_host_poll_token(settings, presented_token)
-
-    allowed_keys = {"exit_code", "status", "summary", "artifacts", "token_cost", "duration_ms", "degraded", "degraded_reason"}
-    if set(payload) - allowed_keys:
-        raise _error("invalid_request", "回执字段无效。")
-    raw_summary = payload.get("summary")
-    if not isinstance(raw_summary, dict):
-        raise _error("invalid_request", "summary 必填且为 --json 汇总对象。")
-
-    from fde_api.agents.zcode_contract import parse_json_summary
-
-    with db.session() as session:
-        run = session.get(AgentRun, run_id)
-        if run is None:
-            raise _error("agent_run_not_found", "run 不存在。", 404, detail={"run_id": run_id})
-        if run.execution_provider != "host_poll":
-            raise _error("host_receipt_rejected", "该 run 不属于宿主轮询通道。", 409, detail={"run_id": run_id})
-        if run.host_token_hash is None:
-            # 从未被领取：状态闸优先于令牌比对（信息最小暴露——不向未领取 run
-            # 的提交方确认/否认任何令牌值）。
-            raise _error(
-                "host_receipt_invalid_state",
-                "该 run 未被领取或不在执行态。",
-                409,
-                detail={"run_id": run_id, "status": run.status},
-            )
-        if run.host_token_hash != token_hash:
-            raise _error("host_poll_forbidden", "回执令牌与领取不一致。", 403, detail={"run_id": run_id})
-        if run.status in FAILED_STATUSES or run.status in ("completed", "succeeded_but_receipt_invalid"):
-            if run.host_receipt_at is not None:
-                return {"run_id": run_id, "status": run.status, "duplicate": True}
-            raise _error("host_receipt_conflict", "该 run 已终态且回执冲突，请人工介入。", 409, detail={"run_id": run_id})
-        if run.status != "host_running":
-            raise _error(
-                "host_receipt_invalid_state",
-                "该 run 未被领取或不在执行态。",
-                409,
-                detail={"run_id": run_id, "status": run.status},
-            )
-
-    parsed = parse_json_summary(raw_summary)
-    exit_code = payload.get("exit_code") if isinstance(payload.get("exit_code"), int) else 0
-    host_status = payload.get("status")
-    if host_status not in ("completed", "timeout", "budget_exceeded", "failed"):
-        host_status = "completed" if exit_code == 0 else "failed"
-
-    artifacts: list[ArtifactFile] = []
-    host_digests: dict[str, str] = {}
-    for item in payload.get("artifacts", []) or []:
-        if not isinstance(item, dict):
-            continue
-        path = item.get("path")
-        kind = item.get("kind")
-        refs = item.get("source_refs")
-        digest = item.get("sha256")
-        if not isinstance(path, str) or not path or kind not in ARTIFACT_KINDS:
-            continue
-        if isinstance(digest, str) and len(digest) == 64:
-            host_digests[path] = digest
-        artifacts.append(
-            ArtifactFile(
-                path=path,
-                kind=kind,
-                source_refs=tuple(r for r in refs if isinstance(r, str)) if isinstance(refs, list) else (),
-            )
-        )
-
-    token_cost = int(payload["token_cost"]) if isinstance(payload.get("token_cost"), int) and payload["token_cost"] >= 0 else parsed.billable_units
-    result = AgentRunResult(
-        status=host_status,
-        exit_code=exit_code,
-        token_cost=token_cost,
-        duration_ms=int(payload["duration_ms"]) if isinstance(payload.get("duration_ms"), int) and payload["duration_ms"] >= 0 else 0,
-        artifacts=tuple(artifacts),
-        tool_calls=(),  # --json 无逐事件流（诚实缺失，与 dev 直连同口径）
-        degraded=bool(payload.get("degraded")),
-        degraded_reason=payload.get("degraded_reason") if isinstance(payload.get("degraded_reason"), str) else None,
-    )
-
-    # 回执时刻（幂等锚）+ 终态落账单事务；产物走宿主侧指纹直录（不读文件）
-    now = _utcnow()
-    with db.session() as session, session.begin():
-        run_row = session.get(AgentRun, run_id)
-        if run_row is None:
-            raise _error("agent_run_not_found", "run 不存在。", 404, detail={"run_id": run_id})
-        run_row.host_receipt_at = now
-        if result.status == "completed":
-            run_row.status = "completed"
-            run_row.exit_code = result.exit_code
-            run_row.token_cost = result.token_cost
-            run_row.duration_ms = result.duration_ms
-            for artifact in result.artifacts:
-                digest = host_digests.get(artifact.path)
-                if not digest:
-                    # 指纹缺失/非法（非 64hex）：不落 AgentArtifact（红线：指纹
-                    # 必须完整成对）——该校验失败已记入 failures 供人工处置。
-                    continue
-                session.add(
-                    AgentArtifact(
-                        run_id=run_id,
-                        kind=artifact.kind,
-                        # 指针带 host: 前缀——与容器 storage_ref 语义区分
-                        # （原件在宿主磁盘，服务端永不回读）。
-                        storage_ref=f"host:{run_id}/output/{artifact.path}"[:255],
-                        sha256=digest,
-                        reviewed=False,
-                        linked_solution_id=None,
-                        derived_summary=None,  # 服务端无原件，可重建派生摘要不可算——诚实置空
-                    )
-                )
-        elif result.status in FAILED_STATUSES:
-            run_row.status = result.status
-            run_row.exit_code = result.exit_code
-            run_row.token_cost = result.token_cost
-            run_row.duration_ms = result.duration_ms
-        # 宿主侧产物校验（仓库内 C-1 同款规则，不读文件）：invalid kind/
-        # unsafe path/缺 source_refs 只记 failures 不改终态——状态机诚实，
-        # 人工按 failures 明细处置（H4）。
-        failures: list[dict[str, Any]] = []
-        for artifact in result.artifacts:
-            problems: list[str] = []
-            if artifact.kind not in ARTIFACT_KINDS:
-                problems.append("invalid_kind")
-            if not artifact.source_refs:
-                problems.append("missing_source_refs")
-            if artifact.path.startswith("/") or ".." in Path(artifact.path).parts:
-                problems.append("unsafe_path")
-            if artifact.path not in host_digests:
-                problems.append("sha256_missing_in_receipt")
-            if problems:
-                failures.append({"path": artifact.path, "reasons": problems})
-
-    return {"run_id": run_id, "status": result.status, "duplicate": False, "failures": failures}
+# CR-048/r5 迁移窗口：宿主回执落账拆至 agents/host_receipt.py（热点行数预算；
+# 对外名经此处再导出——routes/tests 的 svc.submit_host_receipt 路径不变；
+# 模块惰性引用 service 侧帮助函数，monkeypatch svc._settings 语义不变）。
+from fde_api.agents.host_receipt import submit_host_receipt  # noqa: F401  (re-export)
 
 
 def mark_host_lost(*, stale_minutes: int | None = None, now: Any = None) -> dict[str, Any]:

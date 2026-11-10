@@ -20,7 +20,9 @@
 | r1 | 全仓夜审 goal-review-fix（七域 A–G fan-out，dynamic-workflows） | **已完成 2026-11-10**（40 候选→去重 38 登记 CR-042..079；P1×5/P2×13/P3×20；18 条独立复核 verified；P1/P2 全部 E0 升级；r2 服务端批 8 项+r3 卫生批 10 项按分级闸当轮修，20 条挂账待拍板） | docs/audit/全面代码审查报告-2026-11-10.md |
 | r2 | 夜审修复·服务端行为批（CR-042/047/049/050/051/052/054/060） | **已完成 2026-11-10**（8/8 变异判别；PR #289 合并 `3eb6f28`；CI 双红两修：xdist 共享 Redis autouse 清理夹具删除＋auth→projects 包环懒导入） | CHANGELOG「夜审修复 r2」节 |
 | r3 | 夜审修复·卫生批（CR-058/063/068/070/073/075/076/077/078/079） | **已完成 2026-11-10**（PR #293 合并 `06c1dd5`；CI 双红两修：热点行数预算压单行＋TS2722 可选调用；CR-075 勘误＝第二处 E0 实测不存在） | CHANGELOG「夜审修复 r3」节 |
-| r4 | 夜审修复·拍板批（20 条挂账经蔡工三批交互问答裁决：10 项落地 CR-043/044/046/062/064/065/066/067/069/072；4 项定向 r5 迁移窗口 CR-045/048/053/059；6 项结构化维持挂账 CR-055/056/057/061/071/074） | **已完成 2026-11-10**（变异 5/5 判别——CR-065 行为断言对 uuid 抽签仅 1/3 概率判别力，补静态源码钉后必然红；桌面 auth-store 测试 readFile 空 mock 假绿修复＝load 回读接线 save 实际写出字节） | CHANGELOG「夜审修复 r4」节 |
+| r4 | 夜审修复·拍板批（20 条挂账经蔡工三批交互问答裁决：10 项落地 CR-043/044/046/062/064/065/066/067/069/072；4 项定向 r5 迁移窗口 CR-045/048/053/059；6 项结构化维持挂账 CR-055/056/057/061/071/074） | **已完成 2026-11-10**（变异 5/5 判别；PR #300 合并 `cf0dd1c`；CI 双红两修＝mypy validation_alias 形参合成 type:ignore＋CI 无 .env 补显式必填面；CI 实测 2748 收集 = 2741 passed + 7 skipped；桌面 auth-store readFile 空 mock 假绿修复＝load 回读接线 save 实际字节） | CHANGELOG「夜审修复 r4」节 |
+
+| r5 | 夜审修复·迁移窗口批（CR-045/048/053/059 一个 additive 迁移窗口：五索引＋服务层两兜底＋热点拆分 host_receipt） | **已完成 2026-11-10**（变异 4/4 判别；迁移 `a9c5e2d7b3f1` 十五/十六度插队连改挂现 M1 之后 60→62 单头；活库现测四唯一面零重复先测后建；quality approve 退位循环前移修 autoflush 中间态撞索引；submit_host_receipt 拆 `agents/host_receipt.py`＝1886→1719 行预算内；audit 三件套重生成） | CHANGELOG「夜审修复 r5」节 |
 
 ## 发现总表
 
@@ -69,21 +71,21 @@
 | CR-042 | P1 | **fixed（夜审 r2，PR #289）** | 管理员 reset_password 全链零审计事件（同管理面 create/update 均落事件）——补 user_password_reset+自助 change_password 事件 | users/service.py:233 | 夜审r1 |
 | CR-043 | P1 | **fixed（夜审 r4：拍板＝并入 host_poll 生产启用闸第四前置，.env.example 注记落地；生产开启前四前置全清）** | host_poll 开启后 workflow agent 节点确定性 failed+逐代计费孤儿 run（分派侧要 completed×受理侧返 202 queued，无来源区分）——跨域异步语义设计轮 | workflows/dispatch.py:388 × agents/service.py:612 | 夜审r1 |
 | CR-044 | P1 | **fixed（夜审 r4：拍板＝显式豁免留痕——确认人＝职务泛称不填真名，docstring+列注释落地）** | transcripts 晋升确认人文本未过 T-A2 脱敏闸（docstring 声称过闸实现只覆盖 title/content；正则机制层也拦不住人名）——豁免留痕 vs 人名代号化机制 | transcripts/service.py:6-7/372 | 夜审r1 |
-| CR-045 | P1 | 已拍板（2026-11-10）：并入 r5 迁移窗口——idempotency_key 部分唯一索引（queued/running/host_running） | agent start_run 幂等只靠先查后插无唯一兜底，并发同键双执行双计费（活库现测仅普通索引）——部分唯一索引涉迁移 | agents/models.py:90 + service.py:984 | 夜审r1 |
+| CR-045 | P1 | **fixed（夜审 r5：uq_agent_runs_idempotency_active 部分唯一索引＋start_run 败者兜底重读 200 返回，竞态测试真实唯一约束复现）** | agent start_run 幂等只靠先查后插无唯一兜底，并发同键双执行双计费（活库现测仅普通索引）——部分唯一索引涉迁移 | agents/models.py:90 + service.py:984 | 夜审r1 |
 | CR-046 | P1 | **fixed（夜审 r4：拍板＝validation_alias=FDE_PRODUCT_NAME，死键 FDE_FDE_PRODUCT_NAME 测试钉死）** | FDE_PRODUCT_NAME 是死键（env_prefix 推出实际生效键 FDE_FDE_PRODUCT_NAME 全树零记载，pydantic-settings 三态实验决定性复现）——validation_alias vs 字段改名二选一 | server/src/fde_api/config.py:27 | 夜审r1 |
 | CR-047 | P2 | **fixed（夜审 r2，PR #289）** | 密码确认面无尝试限流（decide_action 有 5 次/15min 计数，verify-password+commercial 七处 _confirm_password 无）——计数原语提公共函数接入 | auth/routes.py:143 | 夜审r1 |
-| CR-048 | P2 | 已拍板（2026-11-10）：b 方案——诚实化 docstring+写事务 status 重校验+AgentArtifact (run_id,storage_ref) 唯一约束（并入 r5 迁移窗口） | 宿主回执幂等三重缺口（docstring 承诺 409 无实现一律 duplicate+读闸写事务分离 TOCTOU+artifacts 无唯一约束）——拍板+涉迁移；吸收 A3 | agents/service.py:1648-1765 | 夜审r1 |
+| CR-048 | P2 | **fixed（夜审 r5：b 方案落地——docstring 诚实化〔指纹比对未实现如实注记〕＋写事务 with_for_update 行锁重校验 TOCTOU 收口＋uq_agent_artifacts_run_storage_ref 唯一；submit_host_receipt 拆 host_receipt.py）** | 宿主回执幂等三重缺口（docstring 承诺 409 无实现一律 duplicate+读闸写事务分离 TOCTOU+artifacts 无唯一约束）——拍板+涉迁移；吸收 A3 | agents/service.py:1648-1765 | 夜审r1 |
 | CR-049 | P2 | **fixed（夜审 r2，PR #289）** | pilot build_report 六指标未排除演练 run（CR-031 同型残留，rows 无 notlike） | agents/pilot.py:150-156 | 夜审r1 |
 | CR-050 | P2 | **fixed（夜审 r2，PR #289）** | discovery 输出端词典故障落 unexpected_error 而非词典失败码（死分支捕获+兜底误分类，重跑白烧预算） | discovery/jobs.py:313/411 | 夜审r1 |
 | CR-051 | P2 | **fixed（夜审 r2，PR #289）** | guidance 契约重试未清复核条目 sink（KimiError 分支有 clear 契约分支无）occurrences 翻倍 | guidance/jobs.py:173-184 | 夜审r1 |
 | CR-052 | P2 | **fixed（夜审 r2，PR #289）** | discovery create_extraction 并发双击撞唯一约束 500（幂等契约「返回既有行」无 IntegrityError 兜底） | discovery/service.py:96-116 | 夜审r1 |
-| CR-053 | P2 | 已拍板（2026-11-10）：r5 迁移窗口——delivery_plans WHERE status='published'＋test_plans WHERE status='approved' 部分唯一索引（复核员校正口径） | delivery_plans/test_plans 单点 approved/published 无部分唯一索引并发可双点永久共存（应用层退位 READ COMMITTED 互不可见） | plans/service.py:231 + quality/service.py:207 | 夜审r1 |
+| CR-053 | P2 | **fixed（夜审 r5：两表部分唯一索引落地；实施期修正＝quality approve 退位循环前移〔autoflush 中间态撞索引实测 500〕；delivery publish 本就 supersede-先行）** | delivery_plans/test_plans 单点 approved/published 无部分唯一索引并发可双点永久共存（应用层退位 READ COMMITTED 互不可见） | plans/service.py:231 + quality/service.py:207 | 夜审r1 |
 | CR-054 | P2 | **fixed（夜审 r2，PR #289）** | discovery 审阅无行锁无 CAS 并发可击穿终态约定（guidance confirm_analysis 先例未沿用） | discovery/service.py:245/302 | 夜审r1 |
 | CR-055 | P3 | 观察挂账（原判 P1 被复核三重合取反证驳回；拍板 2026-11-10 维持＋挂触发条件） | quality 覆盖闸并集×双点退位——单调性为四重机制合取的隐式不变量；用例编辑/需求撤销通道立项时须补护栏钉 | quality/service.py:176-215 | 夜审r1 |
 | CR-056 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——renderer 直连分片上传真实场景出现时选型） | close-guard 在途写计数不覆盖 renderer 直连 fetch 分片 PUT（4 处上传面，100MB 级中途关窗零拦截）——多方案 | desktop/src/main/index.ts:184 | 夜审r1 |
 | CR-057 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——远程 https API/OSS 一等形态立项时一并裁决 CSP） | 打包态 meta CSP connect-src 写死回环（远程 https API/OSS 一等形态下文件二进制面静默阻断，半坏隐蔽态）——多方案 | desktop/src/renderer/index.html:7 | 夜审r1 |
 | CR-058 | P2 | **fixed（夜审 r3）** | web 桥版本 "0.3.0-web" 硬编码第三版本源（测试钉钉字面量自身，列车推进必然漂移） | fde-web-bridge.ts:286 | 夜审r1 |
-| CR-059 | P2 | 已拍板（2026-11-10）：r5 迁移窗口——ix_agent_artifacts_run/ix_agent_tool_calls_run | agent_artifacts/agent_tool_calls 的 run_id FK 无索引（详情页必经查询，活库现测仅 pkey）——涉迁移可合并窗口 | agents/service.py:357/1103 | 夜审r1 |
+| CR-059 | P2 | **fixed（夜审 r5：ix_agent_tool_calls_run 落地；产物侧由 uq_agent_artifacts_run_storage_ref 前导列覆盖，独立 ix 冗余不另建）** | agent_artifacts/agent_tool_calls 的 run_id FK 无索引（详情页必经查询，活库现测仅 pkey）——涉迁移可合并窗口 | agents/service.py:357/1103 | 夜审r1 |
 | CR-060 | P2 | **fixed（夜审 r2，PR #289）** | api_catalog plugins desc 声称「需密码确认」实现全链无（高估安全失实，payload 闭集结构上不可能收密码） | control/api_catalog.py:29-30 | 夜审r1 |
 | CR-061 | P3 | 维持挂账（拍板 2026-11-10：结构化挂账——host_claim 并发真实化或令牌改多实例时补行锁） | host claim 带 run_id 分支无行锁（FIFO 有 skip_locked）+单全局令牌下 403 防护稳态不可达——与 docstring 不符（合并原 A4+B4） | agents/service.py:1583-1587 | 夜审r1 |
 | CR-062 | P3 | **fixed（夜审 r4：拍板＝他人一律 404——quota_not_found/enterprise_space_not_found，存在/不存在错误载荷逐位一致）** | 存在性泄露口径分裂：quota/企业空间 404-先-403-后可探测企业接入，partner 面 404 隐藏 | commercial/quota_service.py:327 | 夜审r1 |
