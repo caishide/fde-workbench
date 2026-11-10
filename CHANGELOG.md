@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审修复 r5：迁移窗口批（goal-review-fix r5：CR-045/048/053/059 一个 additive 迁移窗口＋服务层两兜底＋热点拆分，2026-11-10）
+
+- **形态**：goal-review-fix r5 修复轮（迁移窗口）。r4 拍板（PR #300 合并 `cf0dd1c`）定向的四项「涉迁移」发现合并一个 additive 迁移窗口一次做（用户授权突破迁移禁区并留痕可推翻）。NEW 迁移 `a9c5e2d7b3f1`（十五/十六度插队连改挂现 M1 `a5e9c3f1b7d4` 之后 60→62 单头；#302/#303 并入 +2 表 +2 迁移）：`uq_agent_runs_idempotency_active`（CR-045 部分唯一＝同键 in-flight 至多一行，终态行不进谓词 ⇒ 重试链零影响）／`uq_agent_artifacts_run_storage_ref`（CR-048 产物唯一，前导 run_id 兼作 CR-059 详情页索引）／`uq_delivery_plans_project_published`＋`uq_test_plans_project_approved`（CR-053 单项目现行至多一份）／`ix_agent_tool_calls_run`（CR-059）。**零数据手术**＝活库现测四唯一面零重复先测后建（教训 63）。
+- **CR-045（P1）幂等唯一窗口**：start_run 入口先查只防时序内并发；真实竞态窗口（预检查后、提交前对方先行提交）由部分唯一索引结构性兜底——`_execute_run` 落行撞 `uq_agent_runs_idempotency_active` 时败者重读在途行按幂等语义 200 返回（`_is_idempotency_active_violation` 约束名分类器：psycopg diag 命中精确匹配，无 diag 形态退回文本匹配，非目标约束原样上抛不吞）。
+- **CR-048（P2）宿主回执幂等三缺口收口**：①docstring **诚实化**——「终态后重复回执且载荷指纹一致 → duplicate；指纹不同 → 409」的旧承诺由如实注记取代（指纹比对未实现、自动仲裁不做）；②**写事务 TOCTOU 收口**＝`with_for_update` 行锁重读后重校验状态（并发回执胜者已落终态 ⇒ 败者如实 duplicate=True、不再二次落产物）；③产物 `(run_id, storage_ref)` 唯一索引兜底。
+- **CR-053（P2）单点现行唯一**：`delivery_plans` WHERE status='published'＋`test_plans` WHERE status='approved' 部分唯一索引（复核员校正口径：现行至多一份，历史 superseded 行不受限）。**实施期自查修正＝quality approve 退位循环前移**——原序「先置 approved 再退位循环」被循环查询的 autoflush 把「新 approved＋旧 approved 仍在」的中间态提前 flush 撞索引（实测 500）⇒ 退位先行（此时 plan 未脏、autoflush 无害）；delivery publish 本就 supersede-先行，无需动。
+- **CR-059（P2）FK 索引**：`ix_agent_tool_calls_run` 落地；产物侧由 `uq_agent_artifacts_run_storage_ref` 前导列覆盖（独立 ix 冗余故不另建——迁移 docstring 注记）。
+- **热点拆分＝`submit_host_receipt` 移至 NEW `agents/host_receipt.py`**（r5 加码撞 `test_source_size_budgets` 1836：1886→**1719**；N1 补码轮先例）——顶层单向依赖 adapter/models/extensions/zcode_contract；service 侧 `_settings`/`_error`/`_verify_host_poll_token`/`ARTIFACT_KINDS`/`FAILED_STATUSES` 函数内惰性引用（不造顶层环〔purity 闸〕＋保 monkeypatch `svc._settings` 语义）；对外名经 service 再导出，routes/tests 的 `svc.submit_host_receipt` 路径不变。
+- **测试**：NEW `test_idempotency_uniqueness_window.py` 8 例（五索引形状 pg_indexes 现测含部分谓词／约束名分类器四态／CR-052 同款真实唯一约束竞态复现＝rival 连接抢插同键 in-flight run→败者 200 复用且同键恰一行／产物双插拒绝／回执行锁 spy＝读闸无锁·写事务行锁／TOCTOU 重校验＝并发胜者先行终态→败者 duplicate 且零二次产物／delivery/test 双现行拒绝）；`test_migrations` HEAD_REVISION→`a9c5e2d7b3f1`＋迁移计数 60。**变异四连全红→还原→绿**（M1 摘兜底返回→竞态用例红；M2 摘 with_for_update→行锁 spy 红；M3 摘写事务重校验→TOCTOU 用例红；M4 五索引 no-op→形状钉＋竞态用例红）。
+- **口径**：迁移 60→**62** 单头 `a9c5e2d7b3f1`（改挂后）；表 148〔#302/#303 并入 +2〕／路由 451／蓝图 50／mypy 279 不变；pytest 本轮 +8，终值以本 PR CI 为准；audit 三件套重生成（DB CSV +3 索引行、JSON 60 rev）。**部署侧（合并后执行）**：rebuild 三镜像＋`alembic upgrade head`（`b7e4d1c9a3f2` → `a9c5e2d7b3f1`）＋活体三项复验；便携版 **r33** 重打包（r4 桌面 CR-072 明文前缀 `fde-session-plain-v1` marker 字节验证）。
+
 ## [未发布] — 多客户工作平台 M1 主体与组织底座轮（NEW orgs 表＋三列归属＋存量回填＋审计维度；迁移 `a5e9c3f1b7d4` 59→61 rev（十二度插队改挂 F 线 T1 `b7e4c1a9f3d5` 之后保单头），零路由零蓝图，2026-11-10）
 
 - **任务书 §7 M1（ADR-M1 §3 甲路线落地）**：NEW `orgs` 表（`org_type ∈ {enterprise, internal}` CHECK 闭集 ＋ name 唯一（企业代号化名，红线 2）＋ `subject_key` 可空唯一挂 G6 企业主体键（String(18) 对齐 `enterprise_quota_subjects`）＋ `created_by_user_id` 纯指针无 FK）＋ 三列归属 `users.org_id` / `projects.org_id` / `operation_events.org_id`（均可空、FK RESTRICT、各带索引；`ix_operation_events_org_occurred` 复合索引对齐既有 project_occurred 房法）。迁移 additive 单迁移（`b7e4d1c9a3f2` 之后单头）：**播种平台内部组织**（稳定 ID `00000000-0000-0000-0000-0000000fde01` 与 `orgs.models.INTERNAL_ORG_ID` 单一权威同源，测试文本钉逐位一致）＋ **存量项目回填 internal org**（`UPDATE … WHERE org_id IS NULL` 幂等守卫）；**存量用户不回填**——`org_id=NULL`＝平台身份不受 org 限制（拍板 §11-8，存量回归面最小化）。
@@ -27,7 +38,7 @@
 - **CR-072（P3）明文降级可观测**：desktop auth-store safeStorage 不可用分支带显式前缀 `fde-session-plain-v1:` ＋ console.warn PLAINTEXT 告警（不再静默）；load 侧识别剥前缀，旧版无前缀明文继续兼容；测试改写真回环（load 读 save 实际写出字节——修掉 readFile 空 mock 的假绿）。
 - **测试**：NEW `test_config_product_name.py` 4 例＋`test_bridge_reconcile_errors.py` 1 例；`test_transcript_drafts` +1（discard 三态）；`test_metrics_v31` +1（tie-break 双钉）；`test_commercial_enterprise_quota/space` 他人 404 适配；desktop `auth-store.test.ts` 前缀/告警/剥前缀改写（8 例全绿）。受影响域 62 例本地绿＋桌面 typecheck 绿。
 - **拍板留痕（4＋6 条不落地项）**：CR-045/048/053/059 拍板定向 **r5 迁移窗口一次做**（部分唯一索引×2＋AgentArtifact 唯一约束＋FK 索引＋宿主回执写事务重校验，用户授权突破迁移禁区并留痕）；CR-055 维持观察（用例编辑/需求撤销通道立项时补护栏钉）；CR-056 挂触发条件（renderer 直连分片上传真实场景出现时选型）；CR-057 挂触发条件（远程 https API/OSS 一等形态立项时裁决 CSP）；CR-061 结构化挂账（host_claim 并发真实化或令牌改多实例时补行锁）；CR-071 结构化挂账（web 桥暴露面扩大/公网部署前系统性补齐校验族）；CR-074 迁移禁区（下次触碰该迁移文件的轮次顺带修正）。
-- **口径**：零迁移零路由零新表（结构口径沿 448 路由/50 蓝图/146 表/58 rev 单头 `f3a9c7e1d5b2`，r5 迁移窗口另行推进）；pytest 本轮 +7，终值以本 PR CI 为准；server 变更 ⇒ rebuild 三镜像挂账（随 r5 一并）；桌面变更 ⇒ 便携版 r33 重打包挂账（随 r5 部署轮一并交付）。
+- **口径**：零迁移零路由零新表（结构口径沿 448 路由/50 蓝图/146 表/58 rev 单头 `f3a9c7e1d5b2`，r5 迁移窗口另行推进）；pytest **CI 实测 2748 收集 = 2741 passed + 7 skipped**（run 42829286169 server-tests 11m31s；基线 2741 收集〔2734+7s〕+ 本轮 +7 逐位吻合；历经 mypy 闸两修＝validation_alias 形参合成误报 type:ignore＋CI 无 .env 补显式必填面、CHANGELOG 插队冲突两度两侧全留）；**PR #300 squash 合并 `cf0dd1c`＝fork/main 顶**；server 变更 rebuild 三镜像＋桌面便携版 r33 随 r5 部署轮一并交付。
 
 
 ## [未发布] — 获客诊断工具 W2 T-10b 轮：diagnostics/ AI 报告层（异步生成 + R-1~R-7 契约闸 + 分享只读页；扩列 + 迁移 `b7e4d1c9a3f2`，2026-11-11）

@@ -197,14 +197,14 @@ def review_test_plan(*, actor, plan_id: str, payload: dict[str, Any]) -> dict[st
                         409,
                         {"missing_requirement_keys": missing},
                     )
-            # 审核戳两分支同打（驳回也是一次审阅）；须在退位循环前落——该查询
-            # autoflush 会提前 flush 本行，approved+无戳撞 ck_test_plans_review_stamp
-            plan.reviewed_by_user_id = actor.id
-            plan.reviewed_at = datetime.now(UTC)
-            plan.review_comment = (comment or "").strip() or None
             if decision == "approved":
-                plan.status = "approved"
-                # 双点退位：新 approved 使旧 approved 退位 superseded（历史行不覆盖）
+                # 双点退位必须先行且**显式 flush 落库**（CR-053 部分唯一索引：
+                # 单项目现行 approved 至多一份）。仅置内存状态不够——unit of
+                # work 对多条 UPDATE 的发库顺序不保证（uuid 主键字典序），
+                # 新 approved 的 UPDATE 可能先于旧行 superseded 执行而撞索引
+                # （本地绿/CI 红同构差异的根源）；显式 flush 后旧行已先行
+                # 退位，新 approved 落库时窗口必空。delivery 侧 publish 用
+                # session.execute(update(...)) 语句即时发库，天然不受此坑。
                 for other in session.scalars(
                     select(TestPlan).where(
                         TestPlan.project_id == plan.project_id,
@@ -213,6 +213,14 @@ def review_test_plan(*, actor, plan_id: str, payload: dict[str, Any]) -> dict[st
                     )
                 ):
                     other.status = "superseded"
+                session.flush()
+            # 审核戳两分支同打（驳回也是一次审阅）；落戳与状态同批——
+            # 提交时旧 approved 已先行退位，唯一窗口不拦。
+            plan.reviewed_by_user_id = actor.id
+            plan.reviewed_at = datetime.now(UTC)
+            plan.review_comment = (comment or "").strip() or None
+            if decision == "approved":
+                plan.status = "approved"
             else:
                 plan.status = "superseded"  # CR-067：否决稿复用 superseded（区分靠 operation_events.decision）
             session.add(OperationEvent(

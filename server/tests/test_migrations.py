@@ -84,7 +84,10 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 #            additive）
 # F 线 T1：dispatch_settlement_allocations 单表（五席位纵向分配明细，additive）
 # 多客户 M1：orgs 表＋users/projects/operation_events.org_id 归属列（组织底座，additive）
-HEAD_REVISION = "a5e9c3f1b7d4"
+# 夜审修复 r5：幂等唯一窗口＋单点现行唯一＋run_id FK 索引
+#            （CR-045/048/053/059，additive 五索引；十五/十六度插队连改挂——
+#            现 a5e9c3f1b7d4〔M1〕之后，保单头）
+HEAD_REVISION = "a9c5e2d7b3f1"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1126,7 +1129,7 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + F 线 T1 分账口径改造 b7e4c1a9f3d5（改挂 T-10b 之后保单头）
     # + 多客户 M1 组织底座 a5e9c3f1b7d4（改挂 T1 之后保单头）之后 = 61）；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 61
+    assert len(known) == 62
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical

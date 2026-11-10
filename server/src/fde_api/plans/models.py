@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +47,15 @@ class DeliveryPlan(Base, TimestampMixin, VersionedMixin):
             name="ck_delivery_plans_published_complete",
         ),
         Index("ix_delivery_plans_project_status", "project_id", "status"),
+        # CR-053（r5 迁移窗口，复核员校正口径）：单项目现行发布方案至多一份
+        # ——并发双点永久共存封死（时序正确性仍由 publish 的 supersede-先行
+        # 保证，索引只兜并发窗口）。
+        Index(
+            "uq_delivery_plans_project_published",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status = 'published'"),
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)

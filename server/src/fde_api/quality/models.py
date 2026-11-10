@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +50,14 @@ class TestPlan(Base, TimestampMixin):
             name="ck_test_plans_review_stamp",
         ),
         Index("ix_test_plans_project_status", "project_id", "status"),
+        # CR-053（r5 迁移窗口）：单项目现行批准测试计划至多一份——并发双批准
+        # 永久共存封死（时序正确性仍由 approve 的退位循环先行保证）。
+        Index(
+            "uq_test_plans_project_approved",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status = 'approved'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
