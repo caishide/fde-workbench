@@ -86,11 +86,12 @@ const SECTIONS: HelpSection[] = [
               <strong>手动向导</strong>（基础信息 → 负责人 → 首期模块 → 确认创建）。
             </>,
             <>
-              填写<strong>必填</strong>三项：项目名称、客户代号、计划开始日期。
+              填写<strong>必填</strong>三项：项目名称、客户名称、计划开始日期。
             </>,
             <>
-              客户代号格式为「客户A·行业·城市」，例如 <code>甲客户·制造·苏州</code>。
-              <strong>这里只能填代号</strong>，不要写真实公司名——真实资料只留在 fdeops/openfde 文件目录，
+              客户名称填称呼即可；<strong>所属行业</strong>可从下拉里选，也可跳过。
+              系统会自动拼出内部代号，<strong>不用手写格式</strong>。
+              联系人/电话/地址等实名资料不要填在这里——真实资料只留在 fdeops/openfde 文件目录，
               永远不进数据库和 Git。
             </>,
             <>

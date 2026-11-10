@@ -201,7 +201,7 @@ export function ProjectOverview({ project, canManage, onProjectChange, onRefresh
                 <input id="overview-edit-name" type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
               </Field>
               <Field label="客户代号" id="overview-edit-enterprise">
-                <input id="overview-edit-enterprise" type="text" maxLength={80} placeholder="客户A·行业·城市" value={draft.enterprise_code} onChange={(event) => setDraft({ ...draft, enterprise_code: event.target.value })} />
+                <input id="overview-edit-enterprise" type="text" maxLength={80} placeholder="如：星河制造 或 星河制造·制造业" value={draft.enterprise_code} onChange={(event) => setDraft({ ...draft, enterprise_code: event.target.value })} />
               </Field>
               <Field label="SOP 节点" id="overview-edit-sop-phase">
                 <input id="overview-edit-sop-phase" type="text" maxLength={20} placeholder="S3–S13（留空不改）" value={draft.sopPhase} onChange={(event) => setDraft({ ...draft, sopPhase: event.target.value })} />
