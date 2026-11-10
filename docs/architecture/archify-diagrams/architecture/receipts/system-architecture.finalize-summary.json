@@ -6,13 +6,13 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "D:\\test\\fde-wt-arch-fix\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-    "sha256": "bd2ba1f780335efe6a9d5688e7327223ed17eb7fe870949e6dc2c969ccd6d0b1",
+    "path": "D:\\test\\fde-wt-diag-3\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "41b2cc78cf46abba58c44a68df1423cef43f1242e09fcb81bc6277524dcf5521",
     "bytes": 15320
   },
   "artifact": {
-    "path": "D:\\test\\fde-wt-arch-fix\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
-    "sha256": "fc9c3d6af5842d39bcf46609048f015a4d585c94bdb7f84835597c5456180f16",
+    "path": "D:\\test\\fde-wt-diag-3\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "f83548c87af8c9337ea1d7498ab12af8cd7a7440b1645e86ac538ffca67c22d5",
     "bytes": 845314
   },
   "gates": {
@@ -28,22 +28,22 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "D:\\test\\fde-wt-arch-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize.json",
-    "summaryReceipt": "D:\\test\\fde-wt-arch-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize-summary.json",
-    "browserCheckReceipt": "D:\\test\\fde-wt-arch-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.browser-check.json"
+    "receipt": "D:\\test\\fde-wt-diag-3\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-diag-3\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-diag-3\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.browser-check.json"
   },
   "update": {
     "status": "current",
     "installedVersion": "3.2.0",
     "availableVersion": "3.2.0",
     "releaseNotes": null,
-    "checkedAt": "2026-11-08T11:17:58.598Z",
+    "checkedAt": "2026-11-10T05:14:42.005Z",
     "source": "cache",
     "noticeRequired": false,
     "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 11284,
+  "durationMs": 14477,
   "browserCheck": {
     "requested": true,
     "ran": true

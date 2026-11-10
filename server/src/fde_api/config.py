@@ -208,6 +208,18 @@ class Settings(BaseSettings):
     # （SOP :109/:111 红线）；引擎不进平台依赖，engine 字段纯来源标注。
     transcript_draft_root: Path = Path(".fde-transcript-drafts")
     transcript_draft_retention_days: int = Field(default=7, ge=1)
+    # ── 获客诊断工具（T-10a）：匿名免注册诊断面 ─────────────────────────
+    # 本仓第一个公网免注册写面 ⇒ **默认关闭**：主部署不暴露匿名写面。
+    # D-3 独立轻部署：诊断面单独 compose / 单独库 / 单独域名，与工作台真相层
+    # 物理隔离；关闭时路由一律 404（不确认面存在）。
+    diagnostics_enabled: bool = False
+    # 公开写面的限流故障策略：**默认 fail-closed**（与登录面默认 fail-open 相反
+    # ——匿名面被刷的代价高得多；Redis 挂了宁可拒绝新会话，不可放开）。
+    diagnostics_rate_fail_closed: bool = True
+    # 每 IP 每日动作上限（创建会话 / 测算 / 答题 / 留资 共用一个计数）
+    diagnostics_daily_ip_limit: int = Field(default=20, ge=1)
+    # 每匿名令牌的当日动作配额
+    diagnostics_session_quota: int = Field(default=3, ge=1)
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

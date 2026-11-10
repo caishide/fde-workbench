@@ -1,10 +1,10 @@
 {
- "route_count": 441,
- "blueprint_count": 49,
- "table_count": 145,
- "revision_count": 57,
+ "route_count": 447,
+ "blueprint_count": 50,
+ "table_count": 146,
+ "revision_count": 58,
  "heads": [
-  "e8b3f7c2d9a5"
+  "f3a9c7e1d5b2"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -539,6 +539,14 @@
    "create_tables": [
     "workflow_definitions",
     "workflow_definition_versions"
+   ],
+   "add_column_tables": []
+  },
+  "f3a9c7e1d5b2": {
+   "file": "f3a9c7e1d5b2_lead_diagnostic_sessions.py",
+   "down_revision": "e8b3f7c2d9a5",
+   "create_tables": [
+    "lead_diagnostic_sessions"
    ],
    "add_column_tables": []
   },
