@@ -18,6 +18,7 @@ sections 必须包含 2 至 4 个章节，每个章节包含 3 至 5 个问题�
 type 只能是 short_text,long_text,rich_text,integer,decimal,date,single_choice,multi_choice,table,file_reference。
 single_choice 和 multi_choice 的 options 必须包含非空且不重复的 choices；file_reference 必须包含正整数 max_files；table 的 options 必须包含 columns。其他类型不需要配置时 options 使用空对象。
 问题要服务于 FDE 识别客户目标、业务流程、数据现状、AI 机会、约束与验收标准，避免无用的通用问题堆砌。
+用语纪律：所有面向读者的表述使用平实中文，不得使用行业黑话或缩略行话（如「A端/B端/C端」「赋能」「抓手」「闭环」「颗粒度」等）；确需使用专业术语时，在该词后用括号补一句平实中文解释。
 不要在最终答案中解释设计过程，立即输出完整 JSON，并在输出前确认 JSON 已正常闭合。"""
 
 

@@ -21,6 +21,9 @@ def build_presurvey_analysis_messages(presurvey: ExtractedPresurvey) -> list[dic
             "priority_departments、priority_roles、priority_processes、success_criteria、out_of_scope、"
             "data_security_redlines、systems_and_deployment_constraints、assumptions、open_questions、"
             "next_actions、executive_summary、evidence。"
+            "用语纪律：所有面向读者的表述使用平实中文，不得使用行业黑话或缩略行话"
+            "（如「A端/B端/C端」「赋能」「抓手」「闭环」「颗粒度」等）；"
+            "确需使用专业术语时，在该词后用括号补一句平实中文解释。"
         )},
         {"role": "user", "content": json.dumps({"source_blocks": source}, ensure_ascii=False)},
     ]
@@ -47,6 +50,9 @@ def build_kimi_presurvey_analysis_messages(file_content: str, source_ref: str) -
             "priority_processes、success_criteria、out_of_scope、data_security_redlines、"
             "systems_and_deployment_constraints、assumptions、open_questions、next_actions、"
             "executive_summary、evidence。"
+            "用语纪律：所有面向读者的表述使用平实中文，不得使用行业黑话或缩略行话"
+            "（如「A端/B端/C端」「赋能」「抓手」「闭环」「颗粒度」等）；"
+            "确需使用专业术语时，在该词后用括号补一句平实中文解释。"
         )},
         {"role": "system", "content": file_content},
         {"role": "user", "content": "请完整分析该预调研表，并按约定结构返回可供 FDE 工程师审核的项目指引 JSON。"},
