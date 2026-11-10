@@ -34,6 +34,8 @@ from datetime import datetime as _dt
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from sqlalchemy import select
 
 from fde_api.auth.models import User
@@ -93,6 +95,39 @@ def _advisor_url(uscc: str, choice_id: str) -> str:
     )
 
 
+class _FakeSes:
+    """注册面开闸后的假 SES（M2 收拢：G6 路由走统一注册面，注册事务提交后
+    会真实触发验证邮件发送——测试绝不发真邮件）。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def send_text(self, *, sender: str, recipient: str, subject: str, body: str) -> str:
+        self.calls.append(
+            {"sender": sender, "recipient": recipient, "subject": subject, "body": body}
+        )
+        return f"ses-msg-{len(self.calls)}"
+
+
+@pytest.fixture(autouse=True)
+def _open_registration_gate(app, monkeypatch):
+    """多客户 M2 收拢语义：G6 路由委托统一注册面（同一部署闸/状态机/邮箱
+    验证/角色矩阵）。本文件测的是 G6 主体/额度/空间语义 ⇒ 用例前提＝注册面开
+    （部署闸关闭时公开注册 404）。"""
+    fake = _FakeSes()
+    monkeypatch.setattr("fde_api.mailing.service.create_ses_client", lambda settings: fake)
+    app.extensions["registration_fake_ses"] = fake
+    app.config["SETTINGS"] = app.config["SETTINGS"].model_copy(
+        update={
+            "registration_enabled": True,
+            "ses_enabled": True,
+            "public_base_url": "https://fde.example.com",
+            "ses_send_subdomain": "mail.somwyn.com",
+            "ses_from_address": "no-reply@mail.somwyn.com",
+        }
+    )
+
+
 def _register(
     client,
     uscc: str = VALID_USCC,
@@ -107,6 +142,7 @@ def _register(
             "username": username or f"ent.{uuid4().hex[:10]}",
             "display_name": name,
             "password": password,
+            "email": f"{uuid4().hex[:12]}@example.com",
             "subject_key": uscc,
             "problem_description": problem,
         },
@@ -174,7 +210,8 @@ def test_self_registration_creates_account_identity_subject_quota(
 
     user = db_session.scalar(select(User).where(User.id == data["user_id"]))
     assert user is not None
-    assert user.role == "viewer"
+    # ADR-M2 §2 初始角色矩阵：企业客户 → project_lead（org 内，M2 起）
+    assert user.role == "project_lead"
     assert user.must_change_password is False  # 自选密码非临时密码
 
     entitlement = db_session.scalar(
@@ -253,9 +290,29 @@ def test_second_account_cannot_restart_bound_quota(
     assert blocked.json["error"]["code"] == "quota_bound_to_other_account"
 
 
-def test_self_registered_user_can_login_with_chosen_password(client) -> None:
+def test_self_registered_user_can_login_after_email_verification(client) -> None:
+    """M2 收拢语义：注册 → pending_email（登录被状态闸拦）→ 邮箱验证 → 登录成功。"""
+    import re as _re
+
     username = "ent.login"
     assert _register(client, username=username).status_code == 200
+
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": SELF_PASSWORD, "device_label": "self-test"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json["error"]["code"] == "email_not_verified"
+
+    fake = client.application.extensions["registration_fake_ses"]
+    body = fake.calls[-1]["body"]
+    match = _re.search(r"^([A-Za-z0-9_\-]{40,})$", body, flags=_re.MULTILINE)
+    assert match is not None, body
+    verified = client.post(
+        "/api/v1/auth/registrations/verify", json={"token": match.group(1)}
+    )
+    assert verified.status_code == 200, verified.get_json()
+
     login = client.post(
         "/api/v1/auth/login",
         json={"username": username, "password": SELF_PASSWORD, "device_label": "self-test"},
@@ -263,6 +320,7 @@ def test_self_registered_user_can_login_with_chosen_password(client) -> None:
     assert login.status_code == 200, login.get_data(as_text=True)
     assert login.json["data"]["access_token"]
     assert login.json["data"]["user"]["must_change_password"] is False
+    assert login.json["data"]["user"]["registration_state"] == "active"
 
 
 def test_registration_entries_cover_all_four_identities(

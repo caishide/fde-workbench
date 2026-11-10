@@ -19,6 +19,7 @@ interface RegistrationResult {
   subject_key: string
   quota_created: boolean
   quota_state: string | null
+  registration_state: string
 }
 
 const REGISTRATION_URL = "/api/v1/commercial/enterprise-registrations"
@@ -27,6 +28,7 @@ export function EnterpriseRegisterPage() {
   const [displayName, setDisplayName] = useState("")
   const [subjectKey, setSubjectKey] = useState("")
   const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [problemDescription, setProblemDescription] = useState("")
   const [busy, setBusy] = useState(false)
@@ -47,6 +49,8 @@ export function EnterpriseRegisterPage() {
           username,
           display_name: displayName,
           password,
+          // 多客户 M2 收拢：注册面邮箱必填（邮箱验证通道，验证前账号不可登录）
+          email,
           subject_key: subjectKey,
           problem_description: problemDescription,
         },
@@ -62,7 +66,7 @@ export function EnterpriseRegisterPage() {
       }
       setNotice(
         `注册成功：账号 ${payload.data.username}，主体 ${payload.data.subject_key}。` +
-          "请用该账号登录后进入企业空间查看额度与分流。",
+          "验证邮件已发送到登记邮箱，完成邮箱验证前该账号不可登录。",
       )
       setPassword("")
     } catch (caught) {
@@ -95,6 +99,17 @@ export function EnterpriseRegisterPage() {
         <label className="field">
           <span>账号</span>
           <input value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" />
+        </label>
+        <label className="field">
+          <span>邮箱</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            autoComplete="email"
+            placeholder="用于接收邮箱验证邮件"
+          />
         </label>
         <label className="field">
           <span>密码</span>

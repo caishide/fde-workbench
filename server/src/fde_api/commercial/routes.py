@@ -48,7 +48,6 @@ from fde_api.commercial.regional_service import (
 from fde_api.commercial.enterprise_service import (
     get_enterprise_space_view,
     record_paid_option_choice,
-    register_enterprise,
 )
 from fde_api.commercial.service import CommercialServiceError, get_entitlement_for_view
 from fde_api.errors import error_response
@@ -381,7 +380,13 @@ def _registration_throttle(remote_addr: str | None) -> int | None:
 @commercial_blueprint.post("/enterprise-registrations")
 def register_enterprise_route():
     """企业自助注册（R1；**当事人自证，公开入口无鉴权**——免费额度的结构性
-    防滥用＝USCC 一主体一份额度；治理面不进 api_catalog）。"""
+    防滥用＝USCC 一主体一份额度；治理面不进 api_catalog）。
+
+    多客户 M2 起**委托统一注册面**（``fde_api/registration``，ADR-M4「收拢」
+    处置）：同一部署闸（fail-closed）、同一邮箱验证状态机、建号即建 org、
+    初始角色按 ADR-M2 §2 矩阵（viewer→project_lead）；URL 与 K8 IP 限流保持
+    不变（存量公开契约不破坏，语义单一化）。载荷新增必填 ``email``。
+    """
     retry_after = _registration_throttle(request.remote_addr)
     if retry_after is not None:
         return error_response(
@@ -389,19 +394,49 @@ def register_enterprise_route():
             f"注册尝试过于频繁，请约 {retry_after // 60 + 1} 分钟后再试。",
             429,
         )
+    # 多客户 M2：统一注册限流（auth:register:{ip}）与既有 K8（commercial:register:{ip}）
+    # 并行生效——legacy URL 与统一四入口共用同一桶，不因收拢出现限流旁路。
+    # （注册面模块函数内导入：commercial.routes 顶层导入 registration 会与
+    # registration.service→commercial.enterprise_service 构成包环，purity 冻结闸。）
+    from fde_api.registration.routes import _register_throttle as _unified_register_throttle
+
+    unified_retry_after = _unified_register_throttle(request.remote_addr)
+    if unified_retry_after is not None:
+        return error_response(
+            "registration_rate_limited",
+            "注册尝试过于频繁，请明日再试（每 IP 每日上限见部署配置）。",
+            429,
+        )
+    from fde_api.registration.models import ENTRY_ENTERPRISE
+    from fde_api.registration.service import (
+        RegistrationError,
+        dispatch_verification_email,
+        register_account,
+    )
+
     payload = request.get_json(silent=True)
     payload = payload if isinstance(payload, dict) else {}
-    with db.session() as session, session.begin():
-        data = register_enterprise(
-            session,
-            username=payload.get("username"),
-            display_name=payload.get("display_name"),
-            password=payload.get("password"),
-            subject_key_raw=payload.get("subject_key"),
-            problem_description=payload.get("problem_description"),
-            request_id=payload.get("request_id"),
-        )
-        return jsonify({"data": data, "error": None})
+    settings = current_app.config["SETTINGS"]
+    try:
+        with db.session() as session, session.begin():
+            data, raw_token = register_account(
+                session,
+                settings=settings,
+                entry=ENTRY_ENTERPRISE,
+                username=payload.get("username"),
+                display_name=payload.get("display_name"),
+                password=payload.get("password"),
+                email=payload.get("email"),
+                subject_key_raw=payload.get("subject_key"),
+                problem_description=payload.get("problem_description"),
+                request_id=payload.get("request_id"),
+            )
+    except (RegistrationError, CommercialServiceError) as error:
+        return error_response(error.code, error.message, error.status)
+    data["verification_email"] = dispatch_verification_email(
+        settings, recipient=str(data["email"]), raw_token=raw_token
+    )
+    return jsonify({"data": data, "error": None})
 
 
 @commercial_blueprint.get("/enterprise-spaces/<subject_key>")

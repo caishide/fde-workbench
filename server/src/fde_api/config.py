@@ -121,6 +121,26 @@ class Settings(BaseSettings):
     # （内网部署假设，Redis 挂了不挡注册，记 WARNING 可观测）；对外暴露部署
     # 设 true 切 fail-closed（注册一律 429）。
     registration_rate_fail_closed: bool = False
+    # 多客户 M2 四入口注册面（ADR-M4）：**部署闸默认关**——关闭时注册面一律 404
+    # （不确认面存在，诊断线同款 fail-closed）。开闸前提 = 本开关与 SES 发信同时
+    # 启用且公网根地址已配置：**不允许「无邮箱验证的静默放行」**（OWNER 拍板
+    # 2026-11-11，SES 生产批复前注册面整体关闭）。
+    registration_enabled: bool = False
+    # 验证链接的公网根地址（SES 批复前的过渡形态=部署闸整体关闭，OWNER 拍板）；
+    # 未配置时注册面视为关闭（fail-closed，不 crash）。
+    public_base_url: str = ""
+    # 注册面同 IP 每日上限（四入口统一限流，键族 auth:register:{ip}）。**保守占位
+    # 缺省，试点前须填实数**（ADR-M4 §3-2；不定数纪律，禁止无上限）。
+    registration_ip_daily_limit: int = Field(default=20, ge=1)
+    # 邮箱验证令牌有效期（小时）；令牌一次性，明文只出现在邮件里，库中只有
+    # sha256 指纹（诊断匿名令牌同形态）。
+    registration_token_hours: int = Field(default=72, ge=1)
+    # 同账号重发验证的最小间隔（秒）；叠加同 IP 每日上限构成重发双闸。
+    registration_resend_min_seconds: int = Field(default=60, ge=1)
+    # 审核制开关（任务书 §11-3 拍板值）：逗号分隔的需要人工审核的注册入口集。
+    # 缺省 = 拍板值「交付者与区域审核、企业与创业者自助激活」；改此值即切换
+    # 审核制（验收「审核制开关生效」）。
+    registration_review_entries: str = "deliverer,partner"
     # WP-E SES 发信（goal-r3 G9 预建）：默认整体关闭、零行为影响；SES 生产批复
     # 下来只需改配置启用。发信域约束按项目口径：主域（somwyn.com）不发信，
     # 只允许配置的子域（如 mail.somwyn.com）。DKIM/SPF 的 DNS 记录不写死在代码，

@@ -31,6 +31,7 @@ from fde_api.quality import models as quality_models  # noqa: F401  (V3.1 P1-2)
 from fde_api.commercial import models as commercial_models  # noqa: F401  (商业化 G1)
 from fde_api.diagnostics import models as diagnostics_models  # noqa: F401  (获客诊断 T-10a)
 from fde_api.orgs import models as org_models  # noqa: F401  (多客户 M1)
+from fde_api.registration import models as registration_models  # noqa: F401  (多客户 M2)
 from fde_api.control import model_preferences, weixin_models, chat, lcsc_skills  # noqa: F401
 
 

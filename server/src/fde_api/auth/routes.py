@@ -17,6 +17,7 @@ from fde_api.auth.service import (
     TokenPair,
     change_password as change_user_password,
     login as login_user,
+    record_state_blocked_login,
     revoke_refresh_token,
     rotate_refresh_token,
     verify_current_password,
@@ -102,6 +103,8 @@ def login_route():
     try:
         user, pair = login_user(*values)
     except AuthServiceError as error:
+        # 多客户 M2（ADR-M4 §5）：注册状态拦截的登录 4xx 且留痕（尽力而为）。
+        record_state_blocked_login(values[0], error.code)
         return _service_error(error)
     _login_clear(values[0], request.remote_addr)
     return jsonify(
@@ -211,6 +214,9 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
+        # 多客户 M2：注册生命周期字段（email 可空＝存量/admin 建号用户）。
+        "email": user.email,
+        "registration_state": user.registration_state,
         "must_change_password": user.must_change_password,
         "is_active": user.is_active,
     }

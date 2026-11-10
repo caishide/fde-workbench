@@ -26,6 +26,7 @@ async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>): Promise<
   await user.type(screen.getByLabelText("企业名称（代号）"), "示例企业甲")
   await user.type(screen.getByLabelText("统一社会信用代码"), "91110000TEST0000XX")
   await user.type(screen.getByLabelText("账号"), "ent.a")
+  await user.type(screen.getByLabelText("邮箱"), "ent.a@example.com")
   await user.type(screen.getByLabelText("密码"), "entropy-1")
   await user.type(screen.getByLabelText("要解决的业务问题"), "固件交付周期长，需要自动化流水线。")
   await user.click(screen.getByRole("button", { name: "提交注册" }))
@@ -88,11 +89,50 @@ describe("企业自助注册页（公开面）", () => {
       username: "ent.a",
       display_name: "示例企业甲",
       password: "entropy-1",
+      email: "ent.a@example.com",
       subject_key: "91110000TEST0000XX",
       problem_description: "固件交付周期长，需要自动化流水线。",
     })
     expect(screen.getByRole("status")).toHaveTextContent("ent.a")
     expect(screen.getByRole("status")).toHaveTextContent("91110000TEST0000XX")
+  })
+
+  it("M2 收拢语义：email 必填字段在场，成功提示告知需邮箱验证后才可登录", async () => {
+    const apiRequest = vi.fn().mockResolvedValue(
+      ok({
+        status: 200,
+        data: {
+          user_id: "u-2",
+          username: "ent.b",
+          subject_key: "91110000TEST0000XX",
+          quota_created: true,
+          quota_state: "available",
+          registration_state: "pending_email",
+        },
+        error: null,
+      }),
+    )
+    mockBridge(apiRequest)
+    const { renderApp } = await import("./test-utils")
+    renderApp(<App />)
+    const user = userEvent.setup()
+
+    await screen.findByRole("heading", { name: "企业注册" })
+    // 邮箱字段必填（M2 邮箱验证通道）
+    const emailInput = screen.getByLabelText("邮箱")
+    expect(emailInput).toHaveAttribute("type", "email")
+    expect(emailInput).toHaveAttribute("required")
+    await user.type(screen.getByLabelText("企业名称（代号）"), "示例企业甲")
+    await user.type(screen.getByLabelText("统一社会信用代码"), "91110000TEST0000XX")
+    await user.type(screen.getByLabelText("账号"), "ent.b")
+    await user.type(screen.getByLabelText("邮箱"), "ent.b@example.com")
+    await user.type(screen.getByLabelText("密码"), "entropy-1")
+    await user.type(screen.getByLabelText("要解决的业务问题"), "固件交付周期长。")
+    await user.click(screen.getByRole("button", { name: "提交注册" }))
+
+    const notice = await screen.findByRole("status")
+    expect(notice).toHaveTextContent("验证邮件")
+    expect(notice).toHaveTextContent("不可登录")
   })
 
   it("服务端拒绝（限流 429）如实呈现，不伪造成功", async () => {
