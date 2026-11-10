@@ -2,18 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
-## [未发布] — 获客诊断工具 W2 T-10b 轮：diagnostics/ AI 报告层（异步生成 + R-1~R-7 契约闸 + 分享只读页；扩列 + 迁移 `b7e4d1c9a3f2`，2026-11-11）
+## [未发布] — AI 原生化 N1 人工链辅助轮＋台账 v1.8 判定（产物 7/7 已复核＋2 候选进 G7＋G7 fail 拍板；G-07 CLOSED、G-01 仍 OPEN，零代码拍板落盘，2026-11-10）
 
-- **范围与拆分**：T-10 剩余的 AI 报告半（**T-10b**）——T-10a 已落规则层（匿名会话 + 首屏政策补贴测算卡 + 闭集问卷），本轮补齐**AI 报告生成 + 只读分享页**。报告走本仓既有 outbox → background job → worker 三段（**异步**：公网免注册面不能同步等模型）。D-1/D-2 沿用 T-10a 默认；★**完整报告要留资**（D-2 的全文留资闸，同时是**成本闸**——免注册白烧 AI token 的代价远高于留资转化）。
-- **R-1~R-7 逐条落成机械闸**（来源：任务书 §3 T-10 需求清单，来自 rubric v0.1 的 AI 预评归因）：**R-1** 报告结构无分数字段（多一个键即拒收）＋数字闸只认**问卷/测算卡里出现过的数字**；**R-2** **政策原文口径由服务端注入**——模型只输出 `policy_ids`，原文口径/我方解读/官方出处/快照日期全部由 `policy_data` 装配，**模型没有原文可抄也就无从编造**（fail-closed by construction）；**R-3** `first_step` 三要素齐全且 `when` 闭集＝「本周」；**R-4** 未溯源数字 fail-closed（数字须在问卷/测算卡里出现过，否则该句写「待澄清」；数字识别含**中文数字＋量词**形态，「三个月」也算数）；**R-5** `actions` 必须覆盖 `findings` 每个 id 且无悬空引用；**R-6** 建议段禁用词闸（「已完成改造」等）——**只扫建议段**（现状段是客户原话，不在此闸拦）；**R-7** `closing_loop` 四段键齐全非空。
-- **AI 调用主体＝平台服务账号**（新增配置 `FDE_DIAGNOSTICS_AI_ACTOR_USERNAME`）：匿名访客没有账号，而 `execute_ai_prompt` 要求真实 `users` 行（预算闸与 G-16 归因台账都要有主体）⇒ 报告生成记在**平台服务账号**头上，用量与审计如实归集；未配置/账号停用 ⇒ **fail-closed 503**（不静默降级成「没有报告」）。生成走 `execute_ai_prompt` **单一入口**（`purpose="diagnostic_report"`、`prompt_version="diagnostic-report-prompt-v1"`、`use_tools=False`），AST 提示词白名单**扩登记** `DIAGNOSTIC_REPORT_SYSTEM_PROMPT`。
-- **异步生成**：`POST /api/v1/diagnostics/session/report` 受理即 **202**（只入队，不阻塞）；worker handler 幂等（已有报告不重复调 AI），契约违规重试一次仍不过 ⇒ 落 `failure_code`（访客看得到，可重试），**不吞错、不把会话卡在生成中**；瞬时 AI 故障交给 worker 退避重投。
-- **分享只读页**：`POST /session/share` 发放只读分享令牌（**明文只此一次，每次轮换旧链接**；指纹独立域分隔，与会话令牌权限域分开）；`GET /share/<token>` 只给**摘要层**（结论一句话 + 第一步三要素 + 政策机会 + 问题标题 + 闭环四段存在性）——**不含企业自填原文与联系方式**，留资闸不被分享链接绕过。
-- **数据模型**：扩两列（迁移 `b7e4d1c9a3f2` 挂 T-10a `f3a9c7e1d5b2` 之后 58→59 单头）：`report_requested_at`（受理 ≠ 就绪，区分「未请求」与「生成中」）＋ `share_token_sha256`（可空、非空唯一、64 位 CHECK）。**零外键变化**（仍零外键指向 projects）。
-- **★口径校准**：每匿名令牌当日动作配额 **3 → 6**——访客走完主流程要 5 个动作（测算/续填/留资/报告/分享）＋1 次重试余量，配额 3 会把**正常访客**挡在门外（实测：生成报告与分享链接撞 429）。IP 每日 20 仍是更宽的那道闸。
-- **测试**：NEW `test_diagnostics_report.py` **25 例**（契约七条逐条 + 异步受理/幂等 + 分享只读/轮换 + worker 成功/契约失败/AI 失败/幂等跳过 + 服务账号 fail-closed）；**变异八连全红→还原→绿**（摘数字闸/摘一一映射闸/摘第一步闸/摘未知政策闸/摘禁用词闸/摘闭环闸/摘留资可见闸/分享视图给全文；还原后 sha256 逐位一致）。★**rebase 融合实测补一刀**：report 文件 `diag_app` 夹具补注 `_FakeRedis`（与 mvp 同款）——共享开发 Redis 的 IP 日配额键按日期累积 × `PerTestIPClient` 序号源每 run 从 1 复位 ⇒ 低位 IP 计数器跨 run 推过 20 ⇒ 本地多轮必撞 429（CI 全新 Redis 免疫）；测试隔离缺陷在本 PR 修死，不靠「清 Redis」续命。pytest **+25** ⇒ 第十度插队融合树曾实测 2724 收集（本地 2718+6s／PR CI 2717+7s，run 42799850276）——**属第十一度插队前基线·已作废**；两度融合实测 2731 收集（第十一度本地 2725+6s／PR CI 2724+7s run 42807041956）——**属第十二度插队前基线·已作废**；第十二度融合实测 2740 收集（本地 2734+6s／PR CI 2733+7s run 42813266948）——**属第十三度插队前基线·已作废**；再融合 #293（r3 卫生批 +1）/#294/#296 后**融合树本地 CI 同命令 `-n 4 --dist loadfile` EXIT=0 实测 2741 收集 = 2735 passed + 6 skipped**（12m52s）＋**PR CI 实测 2741 收集 = 2734 passed + 7 skipped**（run 42819084677＝2706+9+1+25 逐位吻合；CI skip 7／本地 6 差 1＝污染钉 N6 设计行为）。
-- **结构口径现测**：路由 447→**451**（＝447+本轮 3+第十一度插队 #286 运维就绪度读面 2；extractor 融合树现测）／蓝图 **50**（不变）／业务表 **146**（不变）／迁移 58→**59** 单头 `b7e4d1c9a3f2`；审计清单三件套重生成（route CSV 本轮 +3 行 / DB CSV 增两列）；**archify 图纸口径同步**（`architecture/candidate.json`＋`system-architecture.html` sublabel＋四处 →「451 路由」，图纸防陈旧闸复跑绿）＋**整页实拍 preview.png**；mypy 官方闸 **279 基线不变**（零新增）；ruff 触碰文件零告警。
-- **本轮零桌面改动** ⇒ 便携版不重打包；**server 变更 ⇒ 合并后 rebuild 三镜像 + `alembic upgrade head`（新迁移）**。
+- **起因**：蔡工问「人工腿完成了吗？没完成帮我完成拍板」——活库探针实测三腿全未动（7 产物全 `reviewed=False`、7 候选未挂任何门禁清单项、G7/G8/G9 全 `pending`），蔡工经交互问答定三腿处置：①产物接受＝蔡工桌面亲做（AI 代录＝伪造审阅链，拒绝代做）；②证据映射＝「只提强映射 2 条」（不虚挂 7 条）；③门禁拍板＝判据摘要+选择题、蔡工选、AI 代录留痕可推翻。
+- **腿① 产物复核 7/7**：蔡工逐件读完 7 件原件（宿主工作区 `D:\test\agent-workspaces\bef48e56…\output\`，sha256 与库内逐件一致）后在桌面 AgentsConsole「标记复核」，`agent_artifact_reviewed` 事件 ×7＝全库首批 `reviewed=true`。**★D-1 偏差在案＝复核 actor=admin 非 `pilot.reviewer`**（蔡工当时 admin 登录桌面）——保守侧维持现状不撤回，偏差注记入档；修正通道敞开（admin 逐件「撤回复核」→ 换 `pilot.reviewer` 重标）。
+- **腿② 候选进门禁 2 条**：`submit_gate_evidence` 代提交（admin 代录、蔡工拍板授权）presales-solution-draft→G7「options 文档」、demo-and-validation-plan→G7「Eval 计划」（指针+sha256 成对；note 全注拍板与代录身份；其余 5 候选留 `project_evidence` 留痕不进门禁）——G7 `pending→evidence`，清单项 `claimed`＋`gate_evidence_submitted` 事件。
+- **腿③ G7 fail 拍板**：拍板问询未获答复 ⇒ 按「推荐项执行+留痕可推翻」先例（#124/#125 委托先例）以 pilot.reviewer 代录 **fail**（`gate_decided` 事件、CAS rev 1→2；note 全注判据＝4 项清单仅 2 项 claim、缺 success.md 客户书面确认与 B 试点章程定稿、真实材料齐后重交再拍）——**拍板人≠提交人硬闸活体验证**（admin 提交 ⇒ pilot.reviewer 拍，代码强制 403；G8/G9 无证据提交时 `decide_gate` 409 `invalid_gate_state`＝机械不可拍）。G7 fail 有重交回环，不虚过不留死账。
+- **★设计缺口登记（backlog T-A10）**：本链执行实证——桌面 AgentsConsole 产物行无内容预览/下载（服务端亦无产物内容读取路由，仅 PATCH 复核写面），复核人被迫离开应用到文件系统看原件；T-A10＝桌面产物预览面（登记≠排期≠实施授权）。
+- **判据状态更新（台账 v1.8）**：G-07 两段判据（自动登记 7 条＋人工提交闸采纳 2 条）全行使 ⇒ **CLOSED**；G-01 消解判据「首个真实订单至 G9」未达成（G8/G9 仍 pending、无真实阶段材料）⇒ **维持 OPEN**。回写面：台账 v1.8（修订记录+G-01/G-07 状态格+「N1 人工链辅助轮」附注）+ 复盘 §9 + 任务书 §13 #12 + §14 N1 行 + backlog T-A10。结构口径沿用 fork/main `3eb6f28`（无代码变更，pytest/vitest 以最近 main CI 实测为准）；无 rebuild／无 alembic／无重打包。
+
 ## [未发布] — 夜审收口轮（goal-review-fix 收口：报告状态终更新+台账三同步+活体复验；纯文档零代码，2026-11-10）
 
 - **三轮全合并**：r1 审查报告轮（PR #268→`993341c`）+ r2 服务端行为批（PR #289→`3eb6f28`）+ r3 卫生批（PR #293→`06c1dd5`）——**18 项已修**（r2×8+变异 8/8 判别；r3×10）/ **20 项挂账待拍板**（消解条件 owner=蔡工，见报告 §六醒后拍板清单）/ P0 零条。
@@ -22,6 +19,12 @@
 - **部署活体复验三项全绿**（收口时点现测）：①口径 06c1dd5 现测=448 路由/50 蓝图/146 表/58 rev 单头 `f3a9c7e1d5b2`，活体 url_map 449 total/448 non-static ≡ 口径（本轮零新路由；较开工快照 441 多 7 条系上游 #280/#283 插队增量）；②容器内 alembic current=`f3a9c7e1d5b2`（本轮零迁移，活库已在 head）；③三容器镜像 ID（api `8ef9e2174e18`/worker `a1113fd15e63`/scheduler `917a57e5a709`）与 06c1dd5 干净树 rebuild 产物逐位一致。
 - **方法论教训（已入 AGENTS bullet 与记忆）**：①xdist 4 worker 共享 Redis 下 autouse「清计数键」夹具是跨 worker 干扰源（本地单进程测不出——CI 才暴露）；②跨服务顶层 import 会触发 architecture_purity 包环冻结闸（懒导入解）；③热点行数预算文件加行必先查 `test_source_size_budgets`；④块级文本补丁的缩进 hazard（`replace(old, "")` 空串路径会把块前插文件头）——补丁脚本必须行为断言+编译自检。
 - **口径零变化**：纯文档轮；448 路由/50 蓝图/146 表/58 rev/ENTRIES AST 94/mypy 279 维持（部署活体已验）。
+## [未发布] — 多客户工作平台 M0 决策与盘点轮（4 ADR＋全局面盘点表＋容量实测＋口径现测；纯文档零代码，2026-11-10）
+
+- **形态**：M 线（多租户工程）Goal 循环首轮 M0——**零业务代码改动**（不改模型/路由/迁移/前端/compose），基线 fork/main `06c1dd5`（工作区切出基线 `144024e` 后 ff 对齐 9 个上游合并提交；开工时在途 PR 仅 #287 诊断 T-10b 零交集）。NEW `docs/commercialization/multi-tenant/` 八件产物：ADR-M1 租户模型（甲路线落成书面裁决＋乙路线演进触发条件）、ADR-M2 主体角色映射（四主体×`users.role`×商业分层三层正交＋`org_id=NULL` 平台身份语义）、ADR-M3 全局面判定规则（R1/R2/R3/R4 判定规则＋M3a 规格前置/M3c 先红/M3b 批批同 PR 纪律）、ADR-M4 注册审核策略（四入口映射既有 G2/G5/G6 面＋审核状态机＋邀请令牌一次性语义）、《全局面盘点表》（**8 维度**：63 全局表逐表三类处置 17+14+32 脚本断言／236 涉全局写端点逐个［write-level 79＋read-only 157，AST 调用图穷举］／13 Redis 键族安全攸关 vs 纯计量分开／3 存储根＋队列／非 JWT 认证面 26 路由 10 机制／project_id 弱引用 6 张 nullable 表／消费方维度 5 域精确＋38 文件／dispatch·simulation 单列）、容量实测报告（三项全实测）、GM 线联合排期草案、口径现测记录。
+- **口径现测（先验→现测，全部偏差登记）**：表 130→**146**（grep＝SQLAlchemy metadata 双源互证）／全局表 63→**63 精确复现**／蓝图 49→**50**／路由 391→**448**／写端点 241→**277**／迁移 51→**58 rev 单头 `f3a9c7e1d5b2`**／pytest 2056→**2716 collected**（本地；CI 终值以本 PR 为准）／mypy 279 不变／装饰器 378→**428**（require_auth 384/require_role 31/require_minimum_role 13）／JWT 7 claim 无租户维度确认／gunicorn worker 4→**2**（Dockerfile:43）／Redis 键族 12→**13+队列**／存储根 2→**3**（T-A9 转写草稿区根）／非 JWT 面 17 处→**26 路由 10 机制**；五处重大偏差（D-1 存量用例 2333→2716／**D-2 G 线 G1–G6 已全部收口，「G2–G5 无排期承诺」风险过时**／D-3 第三存储根／D-4 2 workers／D-5 无 FK 的 project_id 零命中——弱引用真形态=6 张 nullable project_id 表）。
+- **容量三项实测（活体开发栈 127.0.0.1:8010，零业务数据写入）**：①并发 P95——10/50/100 VU 三档 **1027 整环零错误**（整环=登录→/account→/projects→登出），整环 P95 0.93s/9.65s/19.77s，瓶颈=2-worker argon2 CPU 非 PG/Redis，过载优雅降级不崩溃；②队列——原语层 lpop 认领 **1714/s**（1.83ms/往返）远非瓶颈，活库历史 AI 任务 P50 136s~33min，单 worker 顺序消费=吞吐边界，「多企业并发真实吞吐留 M8 试点实测」诚实声明（本轮不代发起 AI 计费任务）；③PG——max_connections **100**（可用 97）vs fde 栈理论池顶 60，负载中仅 13 连接，**关键发现：PG 实例与同宿主 twenty/mautic 等栈共享**（部署拓扑决策列 M8 前置）。容量测试一次性账号 `captest` 已停用退役（空 hash 永不可登录）、会话清除、事件留痕 1 条如实保留。
+- **验收**：任务书 §7-M0 四项——4 ADR+盘点表+实测报告入库 ✅；OWNER §11 八拍板点签署（v1.2 已完成）✅；无代码/迁移/路由改动 ✅。**M0 完结待 OWNER 审阅，不自行进 M1**（提示词规则 19；是否放行 M1 由 OWNER 判定）。
 
 ## [未发布] — 夜审修复 r3：卫生批（goal-review-fix r3；CR-058/063/068/070/073/075/076/077/078/079 十项，2026-11-10）
 
@@ -36,7 +39,8 @@
 - **CR-077（P3）产品名第三处清除**：`server/src/fde_api/__init__.py` docstring 改「FDE workbench API package.」（E0 全扫证实仅此一处 + brand.ts/config.py 两单点）。
 - **CR-078（P3）口径配方修正**：AGENTS.md 口径行「api_catalog ENTRIES=awk 数 (" 行」改「AST 数 ENTRIES 赋值元素」（grep 会多计 `_catalog_row` 函数体两处——本轮实测 96 vs AST 真值 94）。
 - **CR-079（P3）ENV 登记补齐**：`server/.env.example` 补 `FDE_AGENT_HOST_POLL_TOKEN`/`FDE_AGENT_HOST_LOST_MARK_MINUTES` 注释态两行（照 FDE_BRIDGE_TOKEN 先例注明白文令牌不入 git）。
-- **口径**：零迁移零路由零新表；桌面改动 ⇒ vitest 绿即可（CI desktop job 实测为准），便携版重打包挂账（夜间不打包）；server 侧仅测试与 docstring/`__init__` 一行 ⇒ 合并后 rebuild 三镜像挂账（alembic no-op）。
+- **口径**：零迁移零路由零新表；桌面改动 ⇒ vitest 绿即可（CI desktop job 实测为准）；server 侧仅测试与 docstring/`__init__` 一行 ⇒ 合并后 rebuild 三镜像挂账（alembic no-op）。
+- **便携版 r32 交付补记（挂账清偿，2026-11-10 夜）**：从 `10838b9` 干净主树打包（desktop 面零脏文件核对）。asar sha256 `cf0d438f382891159e27a46702367acbd66f6fb5ad87cd262b4ff93a8b97a490`（r31=`113289d4…` 未覆盖）。**字节验证**：`lcsc_execute_failed`（CR-073 main 进程错误码）新包命中 1／r31 对照 **0**（非旧包实证）；`szlcsc` 白名单正则（CR-070）命中 19。**无中文 marker 说明**：r3 桌面改动均为英文错误码/正则/静态测试（无新增中文 UI 文案），沿 r31 轮 3 先例以英文 marker+新旧 asar 对照替代。
 
 ## [未发布] — 夜审修复 r2：服务端行为批（goal-review-fix r2；CR-042/047/049/050/051/052/054/060 八项，2026-11-10）
 
