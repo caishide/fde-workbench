@@ -380,6 +380,7 @@ def _normalize_generated_form(
                 options = {}
             if field_type == "file_reference" and not isinstance(options.get("max_files"), int):
                 options = {"max_files": 5}
+            options = _normalize_field_options(field_type, options)
             required = field.get("is_required", False)
             if isinstance(required, str) and required.lower() in {"true", "false"}:
                 required = required.lower() == "true"
@@ -414,6 +415,68 @@ def _stable_key(value: object, fallback: str) -> str:
     if not key or not key[0].isalpha():
         key = f"item_{key}" if key else fallback
     return key[:100]
+
+
+def _normalize_field_options(field_type: str, options: dict[str, Any]) -> dict[str, Any]:
+    """Repair model drift in field options so the shape matches the definition schema.
+
+    Two drifts are observed in practice (r31):
+    - ``table`` columns come back as ``{column_key, name, required}`` while the
+      definition schema requires named objects keyed by ``key``;
+    - ``single_choice``/``multi_choice`` choices come back as
+      ``{value, label}`` objects while the schema requires plain strings.
+    """
+    if field_type == "table":
+        columns = options.get("columns")
+        if isinstance(columns, list):
+            normalized_columns: list[dict[str, Any]] = []
+            for index, column in enumerate(columns):
+                if not isinstance(column, dict):
+                    continue
+                key = column.get("key")
+                if not isinstance(key, str) or not key.strip():
+                    key = column.get("column_key")
+                if not isinstance(key, str) or not key.strip():
+                    key = f"column_{index + 1}"
+                name = column.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    name = key
+                normalized_columns.append({
+                    "key": _stable_key(key, f"column_{index + 1}"),
+                    "name": name,
+                    "type": column.get("type") if isinstance(column.get("type"), str) else "short_text",
+                })
+            options = {**options, "columns": normalized_columns}
+    elif field_type in {"single_choice", "multi_choice"}:
+        choices = options.get("choices")
+        if isinstance(choices, list):
+            normalized_choices: list[str] = []
+            for choice in choices:
+                value: object
+                if isinstance(choice, str):
+                    value = choice
+                elif isinstance(choice, dict):
+                    value = choice.get("value")
+                    if not isinstance(value, str) or not value.strip():
+                        value = choice.get("label")
+                else:
+                    value = None
+                if isinstance(value, str) and value.strip():
+                    normalized_choices.append(value.strip())
+            # 定义要求 choices 唯一且非空；去重后空列表由 validate 拦下。
+            deduplicated = list(dict.fromkeys(normalized_choices))
+            options = {**options, "choices": deduplicated}
+            default_value = options.get("default_value")
+            if field_type == "single_choice" and isinstance(default_value, str):
+                if default_value not in deduplicated:
+                    options.pop("default_value", None)
+            elif field_type == "multi_choice" and isinstance(default_value, list):
+                kept = [item for item in default_value if item in deduplicated]
+                if kept:
+                    options["default_value"] = kept
+                else:
+                    options.pop("default_value", None)
+    return options
 
 
 def _retry_messages(
