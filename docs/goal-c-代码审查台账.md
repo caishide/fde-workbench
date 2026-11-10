@@ -79,28 +79,28 @@
 | CR-055 | P3 | 观察挂账（原判 P1 被复核三重合取反证驳回） | quality 覆盖闸并集×双点退位——单调性为四重机制合取的隐式不变量；用例编辑/需求撤销通道立项时须补护栏钉 | quality/service.py:176-215 | 夜审r1 |
 | CR-056 | P2 | needs-decision（待拍板） | close-guard 在途写计数不覆盖 renderer 直连 fetch 分片 PUT（4 处上传面，100MB 级中途关窗零拦截）——多方案 | desktop/src/main/index.ts:184 | 夜审r1 |
 | CR-057 | P2 | needs-decision（待拍板） | 打包态 meta CSP connect-src 写死回环（远程 https API/OSS 一等形态下文件二进制面静默阻断，半坏隐蔽态）——多方案 | desktop/src/renderer/index.html:7 | 夜审r1 |
-| CR-058 | P2 | **r3 修（卫生批）** | web 桥版本 "0.3.0-web" 硬编码第三版本源（测试钉钉字面量自身，列车推进必然漂移） | fde-web-bridge.ts:286 | 夜审r1 |
+| CR-058 | P2 | **fixed（夜审 r3）** | web 桥版本 "0.3.0-web" 硬编码第三版本源（测试钉钉字面量自身，列车推进必然漂移） | fde-web-bridge.ts:286 | 夜审r1 |
 | CR-059 | P2 | needs-decision（待拍板） | agent_artifacts/agent_tool_calls 的 run_id FK 无索引（详情页必经查询，活库现测仅 pkey）——涉迁移可合并窗口 | agents/service.py:357/1103 | 夜审r1 |
 | CR-060 | P2 | **fixed（夜审 r2，PR #289）** | api_catalog plugins desc 声称「需密码确认」实现全链无（高估安全失实，payload 闭集结构上不可能收密码） | control/api_catalog.py:29-30 | 夜审r1 |
 | CR-061 | P3 | needs-decision（待拍板） | host claim 带 run_id 分支无行锁（FIFO 有 skip_locked）+单全局令牌下 403 防护稳态不可达——与 docstring 不符（合并原 A4+B4） | agents/service.py:1583-1587 | 夜审r1 |
 | CR-062 | P3 | needs-decision（待拍板） | 存在性泄露口径分裂：quota/企业空间 404-先-403-后可探测企业接入，partner 面 404 隐藏 | commercial/quota_service.py:327 | 夜审r1 |
-| CR-063 | P3 | **r3 修（卫生批）** | SQL 可见性预过滤是 project_access 第二副本（写路径不变量维持重合无结构保证）——补对账测试 | projects/service.py:244 + control/service.py:921 | 夜审r1 |
+| CR-063 | P3 | **fixed（夜审 r3）** | SQL 可见性预过滤是 project_access 第二副本（写路径不变量维持重合无结构保证）——补对账测试 | projects/service.py:244 + control/service.py:921 | 夜审r1 |
 | CR-064 | P3 | needs-decision（待拍板） | 高风险写密码确认适用面双轨无成文裁决（users.role/派单规则发布无第二因子） | users/routes.py:74 | 夜审r1 |
 | CR-065 | P3 | needs-decision（待拍板） | test_first_pass_rate 首条 tie-break 用 uuid4 id（同 created_at 批量写抽签，家族性同型） | metrics/service.py:319-326 | 夜审r1 |
 | CR-066 | P3 | needs-decision（待拍板） | 草稿 discard（不可逆+删文件根）挂 can_view 与 promote=can_manage 不对称 | transcripts/routes.py:100 | 夜审r1 |
 | CR-067 | P3 | needs-decision（待拍板） | 审阅 rejected 落 superseded「否决」与「退位」共用状态值（事件留痕可辨） | plans/service.py:204 | 夜审r1 |
-| CR-068 | P3 | **r3 修（卫生批）** | confirm_term 缺 _link_subjects_to_term（当前零生产调用方，接线将漏链）——docstring 声明接线前须补链接 | ontology/service.py:296-316 | 夜审r1 |
+| CR-068 | P3 | **fixed（夜审 r3）** | confirm_term 缺 _link_subjects_to_term（当前零生产调用方，接线将漏链）——docstring 声明接线前须补链接 | ontology/service.py:296-316 | 夜审r1 |
 | CR-069 | P3 | needs-decision（待拍板） | bridge reconcile 把投影失败误报 409 no_snapshot | bridge/routes.py:45-52 | 夜审r1 |
-| CR-070 | P3 | **r3 修（卫生批）** | web 桥 openLcscBrowser 无域白名单（桌面三域闸 web host 缺失；AIServerChat 有同款先例） | fde-web-bridge.ts:288 | 夜审r1 |
+| CR-070 | P3 | **fixed（夜审 r3）** | web 桥 openLcscBrowser 无域白名单（桌面三域闸 web host 缺失；AIServerChat 有同款先例） | fde-web-bridge.ts:288 | 夜审r1 |
 | CR-071 | P3 | needs-decision（待拍板） | web 桥 apiRequest 校验族系统性弱于桌面 IPC 面（method 白名单/auth 排除/编码逃逸/multipart 静默降级） | fde-web-bridge.ts:217-224 | 夜审r1 |
 | CR-072 | P3 | needs-decision（待拍板） | safeStorage 不可用时 refresh token 静默明文落盘无告警面 | auth-store.ts:60-71 | 夜审r1 |
-| CR-073 | P3 | **r3 修（卫生批）** | LCSC 桌面执行业务错误被吞成 internal_error（「已有立创查询正在执行」不可达 renderer） | api-ipc.ts:349 | 夜审r1 |
+| CR-073 | P3 | **fixed（夜审 r3）** | LCSC 桌面执行业务错误被吞成 internal_error（「已有立创查询正在执行」不可达 renderer） | api-ipc.ts:349 | 夜审r1 |
 | CR-074 | P3 | needs-decision（待拍板） | c4f7a2d9e1b6 downgrade 按值还原 purpose 范围大于 Backup hint（触发近乎不可能；涉迁移文件=修复禁区） | migrations/versions/c4f7a2d9e1b6:67 | 夜审r1 |
-| CR-075 | P3 | **r3 修（卫生批）** | 两处防御性冗余断言恒真（主断言有判别力兜底非假绿） | test_ai_call_audit_attribution.py:153 | 夜审r1 |
-| CR-076 | P3 | **r3 修（卫生批）** | 「不可取消」源码钉存在 sa.delete 表达式级绕过（防回归闸强度缺口非现行缺陷） | test_commercial_enterprise_space.py:578 | 夜审r1 |
-| CR-077 | P3 | **r3 修（卫生批）** | 服务端包 docstring 硬编码产品全名=红线①第三处源码点（E0 全扫证实仅此一处+brand.ts 单点） | server/src/fde_api/__init__.py:1 | 夜审r1 |
-| CR-078 | P3 | **r3 修（卫生批）** | AGENTS 口径配方「awk 数 (" 行」多计 2（AST 真值 94=口径行正确，配方自身漂移点） | AGENTS 口径配方行 × api_catalog.py:39 | 夜审r1 |
-| CR-079 | P3 | **r3 修（卫生批）** | .env.example 缺宿主轮询 TOKEN/LOST_MARK_MINUTES 注释态登记行 | server/.env.example:112 | 夜审r1 |
+| CR-075 | P3 | **fixed（夜审 r3）** | 防御性冗余断言恒真（主断言有判别力兜底非假绿；勘误：原登记第二处 E0 实测不存在＝E1 误报，仅 :153 一处） | test_ai_call_audit_attribution.py:153 | 夜审r1 |
+| CR-076 | P3 | **fixed（夜审 r3）** | 「不可取消」源码钉存在 sa.delete 表达式级绕过（防回归闸强度缺口非现行缺陷） | test_commercial_enterprise_space.py:578 | 夜审r1 |
+| CR-077 | P3 | **fixed（夜审 r3）** | 服务端包 docstring 硬编码产品全名=红线①第三处源码点（E0 全扫证实仅此一处+brand.ts 单点） | server/src/fde_api/__init__.py:1 | 夜审r1 |
+| CR-078 | P3 | **fixed（夜审 r3）** | AGENTS 口径配方「awk 数 (" 行」多计 2（AST 真值 94=口径行正确，配方自身漂移点） | AGENTS 口径配方行 × api_catalog.py:39 | 夜审r1 |
+| CR-079 | P3 | **fixed（夜审 r3）** | .env.example 缺宿主轮询 TOKEN/LOST_MARK_MINUTES 注释态登记行 | server/.env.example:112 | 夜审r1 |
 
 ---
 

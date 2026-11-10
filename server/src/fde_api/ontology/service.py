@@ -294,7 +294,12 @@ def create_term(
 
 
 def confirm_term(session: Session, *, term_id: str, actor: User) -> OntologyTerm:
-    """draft → confirmed（拍板）；confirmed 不可重复确认/原地改（409 term_immutable）。"""
+    """draft → confirmed（拍板）；confirmed 不可重复确认/原地改（409 term_immutable）。
+
+    CR-068：当前零生产调用方（仅测试直接调用）——若未来接线为路由，
+    必须在置 confirmed 后补 ``_link_subjects_to_term``（与 create_term 的
+    confirmed 分支同尺），否则同名调研主体将漏链 term_id。
+    """
     row = session.get(OntologyTerm, term_id)
     if row is None:
         raise OntologyServiceError("term_not_found", "术语不存在。", 404)

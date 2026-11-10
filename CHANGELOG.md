@@ -2,6 +2,21 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审修复 r3：卫生批（goal-review-fix r3；CR-058/063/068/070/073/075/076/077/078/079 十项，2026-11-10）
+
+- **形态**：goal-review-fix r3 修复轮（卫生批=口径漂移/文档对齐/测试质量/桌面收窄），基线 fork/main `993341c`（r1 报告轮合并后）。服务端定向测试绿；桌面侧 vitest/typecheck 由 CI desktop job 为闸（worktree 无 node_modules，本地静态自检补证）。
+- **CR-058（P2）web 版本单源化**：NEW `desktop/tests/main/web-bridge-version-parity.test.ts` 静态闸——`fde-web-bridge.ts` 的 version 字面量必须 === `desktop/package.json version + "-web"`，列车推进漏改即红（对账测试钉字面量与列车源，替代构建注入的多方案取舍）。
+- **CR-063（P3）可见性对账钉**：NEW `server/tests/test_visibility_parity.py`——四类 actor（leader/member/stranger/admin）断言 `list_projects` 结果集 ⊆ `visible_project_ids`（「第二副本规则」的隐式重合变成测试事实，写路径放宽即红）。
+- **CR-068（P3）接线警示**：`ontology/service.py::confirm_term` docstring 补「零生产调用方；接线前须补 _link_subjects_to_term」（防未来路由化漏链）。
+- **CR-070（P3）web 桥域白名单**：`fde-web-bridge.ts::openLcscBrowser` 补三域 https 白名单（与桌面 allowsLcscUrl 同尺；AIServerChat 先例）；`fde-web-bridge.test.ts` +2 例（三域放行/钓鱼与跨域后缀拦截）。
+- **CR-073（P3）LCSC 业务错误透传**：`desktop/src/main/index.ts` 的 desktop-execute 分发把非 ApiIpcError 包装为 `lcsc_execute_failed`（原 message 透传，「已有立创查询正在执行」不再被吞成通用 internal_error）；`api-ipc.ts` 导出 ApiIpcError（唯一改动=加 export）。
+- **CR-075（P3）恒真断言改写**：`test_ai_call_audit_attribution.py:153` 恒真负向断言改为有判别力形态（64 位 hex 字符集断言）；**登记勘误**——CR-075 原登记的第二处（test_agent_run_evidence_candidate.py:126）E0 实测不存在（E1 误报，`grep` 无该断言；P3 未复核的代价实证），台账已注记。
+- **CR-076（P3）防回归钉加宽**：`test_commercial_enterprise_space.py` 源码钉由 `.delete(` 单形态扩为 `re.search(r"\.delete\(|delete\s*\(")`（封 SQLAlchemy 表达式删除绕过；live 源零命中验证不误伤）。
+- **CR-077（P3）产品名第三处清除**：`server/src/fde_api/__init__.py` docstring 改「FDE workbench API package.」（E0 全扫证实仅此一处 + brand.ts/config.py 两单点）。
+- **CR-078（P3）口径配方修正**：AGENTS.md 口径行「api_catalog ENTRIES=awk 数 (" 行」改「AST 数 ENTRIES 赋值元素」（grep 会多计 `_catalog_row` 函数体两处——本轮实测 96 vs AST 真值 94）。
+- **CR-079（P3）ENV 登记补齐**：`server/.env.example` 补 `FDE_AGENT_HOST_POLL_TOKEN`/`FDE_AGENT_HOST_LOST_MARK_MINUTES` 注释态两行（照 FDE_BRIDGE_TOKEN 先例注明白文令牌不入 git）。
+- **口径**：零迁移零路由零新表；桌面改动 ⇒ vitest 绿即可（CI desktop job 实测为准），便携版重打包挂账（夜间不打包）；server 侧仅测试与 docstring/`__init__` 一行 ⇒ 合并后 rebuild 三镜像挂账（alembic no-op）。
+
 ## [未发布] — 夜审修复 r2：服务端行为批（goal-review-fix r2；CR-042/047/049/050/051/052/054/060 八项，2026-11-10）
 
 - **形态**：goal-review-fix r2 修复轮（安全批=分级闸放行项），基线 fork/main `dd5bd9c`；八项均「证据确凿+修法唯一+局部补丁」，每项同步新增测试并做变异验证（红→反向替换→绿，8/8 判别）。发现登记与全量证据见 r1 报告 `docs/audit/全面代码审查报告-2026-11-10.md`（其 PR 串行在途）。

@@ -20,7 +20,7 @@ import {
 
 import { IPC_CHANNELS } from "../shared/contracts"
 import { PRODUCT_NAME } from "../shared/brand"
-import { createApiRequestHandler, registerApiIpc } from "./api-ipc"
+import { ApiIpcError, createApiRequestHandler, registerApiIpc } from "./api-ipc"
 import { createAuthHandlers, registerAuthIpc } from "./auth-ipc"
 import { createAuthStore } from "./auth-store"
 import { createBridgeCaptureHandler, registerBridgeIpc } from "./bridge-capture"
@@ -188,7 +188,13 @@ async function start(): Promise<void> {
       try {
         const candidate = input as { path?: string; method?: string; accessToken?: string; body?: unknown }
         result = candidate.path === '/api/v1/ai/lcsc-runs/desktop-execute' && candidate.method === 'POST' && typeof candidate.accessToken === 'string'
-          ? await executeDesktopLcsc({ accessToken: candidate.accessToken, body: candidate.body }, requestApi, lcscSession!)
+          ? await executeDesktopLcsc({ accessToken: candidate.accessToken, body: candidate.body }, requestApi, lcscSession!).catch((error: unknown) => {
+              // CR-073：确定性业务态（如「已有立创查询正在执行」）不再被桥层
+              // 吞成通用 internal_error——包装为 ApiIpcError 透传原 message。
+              throw error instanceof ApiIpcError
+                ? error
+                : new ApiIpcError('lcsc_execute_failed', error instanceof Error ? error.message : '立创桌面执行失败。')
+            })
           : await requestApi(input)
       } finally { if (mutating) activeMutations-- }
       return result
