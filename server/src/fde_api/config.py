@@ -218,8 +218,17 @@ class Settings(BaseSettings):
     diagnostics_rate_fail_closed: bool = True
     # 每 IP 每日动作上限（创建会话 / 测算 / 答题 / 留资 共用一个计数）
     diagnostics_daily_ip_limit: int = Field(default=20, ge=1)
-    # 每匿名令牌的当日动作配额
-    diagnostics_session_quota: int = Field(default=3, ge=1)
+    # 每匿名令牌的当日动作配额。
+    # ★T-10b 校准：访客走完主流程要 5 个动作（首屏测算 / 续填 / 留资 / 报告受理
+    # / 生成分享链接）＋1 次重试余量 ⇒ 配额 3 会把**正常访客**挡在门外（实测：
+    # 生成报告与分享链接撞 429）。IP 每日上限仍是更宽的那道闸。
+    diagnostics_session_quota: int = Field(default=6, ge=1)
+    # ── 获客诊断工具（T-10b）：AI 报告的服务账号 ───────────────────────
+    # 匿名访客没有账号，而 execute_ai_prompt 要求真实 users 行（预算闸与归因
+    # 台账都要有主体）⇒ 报告生成走**平台服务账号**：此处填一个既有用户名，
+    # AI 用量与审计如实记在它头上。**留空 = 报告功能不可用**（受理时 503
+    # fail-closed，不静默降级成「没有报告」）。
+    diagnostics_ai_actor_username: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",

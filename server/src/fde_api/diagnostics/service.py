@@ -95,6 +95,48 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(f"fde-diagnostics-token-v1:{token}".encode("utf-8")).hexdigest()
 
 
+def hash_share_token(token: str) -> str:
+    """分享令牌指纹（**独立域分隔**）。
+
+    分享令牌与匿名会话令牌**权限域不同**：会话令牌是写权限凭证（只走请求头，
+    URL 会进访问日志）；分享令牌是**只读**凭证（可入 URL，因为它就是要被分享
+    的链接）。两者指纹域也分开——任一泄漏都不越界。
+    """
+    return hashlib.sha256(f"fde-diagnostics-share-v1:{token}".encode("utf-8")).hexdigest()
+
+
+def resolve_ai_actor(session: Any) -> Any:
+    """解析 AI 调用主体（平台服务账号）。
+
+    ``execute_ai_prompt`` 要求真实 ``users`` 行（active + AI 权限）——预算闸与
+    归因台账都要有主体。匿名访客没有账号，故用**服务账号**：配置项指向一个
+    既有用户名，AI 用量与审计**如实记在它头上**（不伪造匿名用户，也不让预算
+    无主地飘）。未配置 / 账号不存在 / 已停用 ⇒ **fail-closed**（503），不静默
+    降级成「没有报告」。
+    """
+    from unicodedata import normalize
+
+    from fde_api.auth.models import User
+
+    settings = current_app.config["SETTINGS"]
+    raw = str(getattr(settings, "diagnostics_ai_actor_username", "") or "").strip()
+    if not raw:
+        raise _error(
+            "diagnostic_ai_unavailable",
+            "报告生成服务暂不可用，请稍后再试。",
+            503,
+        )
+    username = normalize("NFKC", raw).strip().lower()
+    user = session.scalar(select(User).where(User.username == username))
+    if user is None or not user.is_active:
+        raise _error(
+            "diagnostic_ai_unavailable",
+            "报告生成服务暂不可用，请稍后再试。",
+            503,
+        )
+    return user
+
+
 # ── 配额闸 ───────────────────────────────────────────────────────────
 
 
@@ -411,6 +453,113 @@ def get_session(token: str) -> LeadDiagnosticSession:
         return _load_by_token(session, token)
 
 
+# ── 报告受理（异步，T-10b） ───────────────────────────────────────────
+
+
+def request_report(token: str) -> LeadDiagnosticSession:
+    """受理报告生成请求（**异步**）：只入队，不同步调 AI。
+
+    **留资闸**：完整报告要联系方式 + 隐私政策同意 + 用途明示（D-2）——既是商业
+    闸也是**成本闸**（免注册白烧 AI token 的代价远高于留资转化）。
+    """
+    from fde_api.diagnostics.jobs import DIAGNOSTIC_REPORT_JOB_TYPE
+    from fde_api.jobs.outbox import enqueue_outbox
+
+    token_sha = hash_token(token)
+    enforce_session_quota(token_sha)
+    with db.session() as session:
+        row = _load_by_token(session, token)
+        if row.status in {"claimed", "expired"}:
+            raise _error("session_closed", "该会话已结束。", 409)
+        if not row.assessment:
+            raise _error("first_screen_required", "请先完成首屏测算。", 409)
+        if not row.lead_contact:
+            raise _error(
+                "lead_required",
+                "请先留下联系方式并同意隐私政策，再获取完整报告。",
+                409,
+            )
+        if row.report:
+            raise _error("report_already_ready", "报告已生成。", 409)
+        if row.report_requested_at is not None and not row.failure_code:
+            # 已在生成中 ⇒ 幂等返回（不重复入队，不重复计费）
+            return row
+        enforce_ip_daily_limit(row.created_ip_hash)
+        row.report_requested_at = datetime.now(UTC)
+        row.failure_code = None
+        row.failure_message = None
+        # 入队与业务写**同事务**（outbox 纪律）：业务回滚则不入队。
+        enqueue_outbox(
+            session,
+            topic=DIAGNOSTIC_REPORT_JOB_TYPE,
+            aggregate_id=row.id,
+            payload={},
+        )
+        session.commit()
+        return row
+
+
+def report_state(row: LeadDiagnosticSession) -> str:
+    """报告状态（对外）：none / requested / ready / failed。"""
+    if row.report:
+        return "ready"
+    if row.failure_code:
+        return "failed"
+    if row.report_requested_at is not None:
+        return "requested"
+    return "none"
+
+
+# ── 分享链接（只读，T-10b） ───────────────────────────────────────────
+
+
+def create_share_link(token: str) -> tuple[LeadDiagnosticSession, str]:
+    """生成分享链接（**只读**凭证，明文只此一次）。
+
+    每次调用**轮换**分享令牌（旧链接立即失效）——明文只在库里存指纹，返回一次
+    就再也拿不回来；不轮换就没法重发链接。
+    """
+    token_sha = hash_token(token)
+    enforce_session_quota(token_sha)
+    with db.session() as session:
+        row = _load_by_token(session, token)
+        if row.status in {"claimed", "expired"}:
+            raise _error("session_closed", "该会话已结束。", 409)
+        if not row.lead_contact:
+            raise _error(
+                "lead_required",
+                "请先留下联系方式并同意隐私政策，再获取报告。",
+                409,
+            )
+        if not row.report:
+            raise _error("report_not_ready", "报告还没生成好，请稍后再试。", 409)
+        enforce_ip_daily_limit(row.created_ip_hash)
+        share_token = secrets.token_urlsafe(24)
+        row.share_token_sha256 = hash_share_token(share_token)
+        session.commit()
+        return row, share_token
+
+
+def read_share(share_token: str) -> dict[str, Any]:
+    """读分享视图（**摘要层**：不含企业自填原文与联系方式）。"""
+    from fde_api.diagnostics.report_contract import report_share_view
+
+    if not share_token or not share_token.strip():
+        raise _error("share_not_found", "链接不存在或已失效。", 404)
+    with db.session() as session:
+        row = session.scalars(
+            select(LeadDiagnosticSession).where(
+                LeadDiagnosticSession.share_token_sha256 == hash_share_token(share_token)
+            )
+        ).first()
+        if row is None:
+            raise _error("share_not_found", "链接不存在或已失效。", 404)
+        view = report_share_view(row.report)
+        if view is None:
+            raise _error("share_not_found", "链接不存在或已失效。", 404)
+        return view
+
+
 def serialize_session(row: LeadDiagnosticSession, *, include_report: bool | None = None) -> dict[str, Any]:
     """序列化（对外形态）。报告只在**已留资**时可见（留资闸）。"""
     captured = bool(row.lead_contact)
@@ -424,9 +573,20 @@ def serialize_session(row: LeadDiagnosticSession, *, include_report: bool | None
         "answered_slots": sorted(answers.keys()),
         "lead_captured": captured,
         "report": row.report if include_report else None,
+        "report_state": report_state(row),
+        "report_requested_at": (
+            row.report_requested_at.isoformat() if row.report_requested_at else None
+        ),
+        "report_failure": (
+            {"code": row.failure_code, "message": row.failure_message}
+            if row.failure_code
+            else None
+        ),
+        "share_available": bool(row.share_token_sha256),
         "source_type": row.source_type,
         "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "claim_window_expires_at": (
             row.claim_window_expires_at.isoformat() if row.claim_window_expires_at else None
         ),
     }
+

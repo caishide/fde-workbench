@@ -84,6 +84,16 @@ class LeadDiagnosticSession(Base, TimestampMixin):
         ),
         # 指纹唯一：同一个匿名令牌只对应一行（令牌碰撞或重放都归一行）
         Index("ux_lead_diagnostic_sessions_token", "token_sha256", unique=True),
+        # 分享指纹：可空（未生成分享链接时无值），非空时唯一 + 64 位
+        Index(
+            "ux_lead_diagnostic_sessions_share_token",
+            "share_token_sha256",
+            unique=True,
+        ),
+        CheckConstraint(
+            "share_token_sha256 IS NULL OR char_length(share_token_sha256) = 64",
+            name="ck_lead_diagnostic_sessions_share_token_len",
+        ),
         # 认领窗口的到期日必填（认领时限是机制的一部分，不能留空）
         CheckConstraint(
             "claim_window_expires_at IS NOT NULL",
@@ -101,8 +111,14 @@ class LeadDiagnosticSession(Base, TimestampMixin):
     answers: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     # 首屏测算卡结果（纯规则；R-1：定性档位，无分数）
     assessment: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    # AI 报告（T-10b；三层 + 政策层；本轮恒为 NULL）
+    # AI 报告（T-10b；三层 + 政策层；生成完成前恒为 NULL）
     report: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # 报告生成请求时刻（异步：受理 ≠ 就绪；用于区分「未请求」与「生成中」）
+    report_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 分享令牌**只存指纹**（明文只在生成响应里返回一次）
+    # ——分享页是**只读**面（无写权限），故令牌可入 URL；会话令牌是写权限凭证，
+    # 只走请求头。两者权限域不同，指纹域也分开（不同域分隔前缀）。
+    share_token_sha256: Mapped[str | None] = mapped_column(String(64))
     # 留资信息（可空——摘要免注册即时可见）
     lead_contact: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     # 三档归因结构（P-2：比例不落数）

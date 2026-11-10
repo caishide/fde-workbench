@@ -1,10 +1,10 @@
 {
- "route_count": 448,
+ "route_count": 451,
  "blueprint_count": 50,
  "table_count": 146,
- "revision_count": 58,
+ "revision_count": 59,
  "heads": [
-  "f3a9c7e1d5b2"
+  "b7e4d1c9a3f2"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -130,6 +130,14 @@
     "workflow_node_runs"
    ],
    "add_column_tables": []
+  },
+  "b7e4d1c9a3f2": {
+   "file": "b7e4d1c9a3f2_diagnostic_report_share_token.py",
+   "down_revision": "f3a9c7e1d5b2",
+   "create_tables": [],
+   "add_column_tables": [
+    "lead_diagnostic_sessions"
+   ]
   },
   "b8c2d6f0a4e7": {
    "file": "b8c2d6f0a4e7_o8_agent_assisted.py",

@@ -87,6 +87,12 @@ def ensure_default_handlers() -> None:
         from fde_api.discovery.jobs import register_discovery_extraction_handler
 
         register_discovery_extraction_handler()
+    # 获客诊断 T-10b：匿名诊断报告生成（outbox → worker；handler 幂等，
+    # 已就绪的报告不会被重复投递覆盖）
+    if get_handler("diagnostics.report") is None:
+        from fde_api.diagnostics.jobs import register_diagnostic_report_handler
+
+        register_diagnostic_report_handler()
 
     # V3 T-W3：workflow 执行器（call/skill 节点；agent/human_approval 随 T-W4）。
     # handler 内部同时注册 worker-loss 收尾钩子（run/悬挂节点推终态）。
