@@ -231,6 +231,7 @@ def complete_quota_route(subject_key: str):
             subject_key_raw=subject_key,
             deliverables=payload.get("deliverables"),
             confirm_password=payload.get("confirm_password"),
+            ai_draft_adoption=payload.get("ai_draft_adoption"),
         )
         return jsonify({"data": data, "error": None})
 

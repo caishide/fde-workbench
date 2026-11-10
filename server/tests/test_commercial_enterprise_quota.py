@@ -525,3 +525,97 @@ def test_quota_migration_roundtrip(engine, alembic_config) -> None:
     inspector = sql_inspect(engine)
     assert "enterprise_free_quota" in set(inspector.get_table_names())
     assert "enterprise_quota_subjects" in set(inspector.get_table_names())
+
+
+# ---------------------------------------------------------------------------
+# 10. GAP-15：AI 草稿采纳申报（完成动作可选申报 → 事件承载，ADR-007 §2.5）
+# ---------------------------------------------------------------------------
+
+
+def _latest_completed_event(db_session) -> OperationEvent:
+    return db_session.scalars(
+        select(OperationEvent)
+        .where(OperationEvent.event_type == "commercial_quota_completed")
+        .order_by(OperationEvent.occurred_at.desc())
+    ).first()
+
+
+def test_completion_ai_draft_adoption_declared_and_recorded(
+    admin_client, authorized_client_factory, db_session
+) -> None:
+    """申报三值逐一落 ``commercial_quota_completed`` 事件；非法值 400 闭集拒绝；
+    省略申报 → 事件不带该键（向后兼容钉）。变异面：摘掉申报校验/落键即转红。"""
+    uscc_a = _another_uscc(VALID_USCC)
+    assert _grant(admin_client, uscc=uscc_a, name="采纳申报企业甲").status_code == 200
+    assert admin_client.post(f"{_quota_url(uscc_a)}/start", json={}).status_code == 200
+    assert admin_client.post(
+        _complete_url(uscc_a),
+        json={
+            "deliverables": _all_deliverables(),
+            "confirm_password": _pwd(),
+            "ai_draft_adoption": "modified",
+        },
+    ).status_code == 200
+    event = _latest_completed_event(db_session)
+    assert event is not None
+    assert event.changes["subject_key"] == uscc_a
+    assert event.changes["ai_draft_adoption"] == "modified"
+
+    uscc_b = _another_uscc(uscc_a)
+    assert _grant(admin_client, uscc=uscc_b, name="采纳申报企业乙").status_code == 200
+    assert admin_client.post(f"{_quota_url(uscc_b)}/start", json={}).status_code == 200
+    assert admin_client.post(
+        _complete_url(uscc_b),
+        json={
+            "deliverables": _all_deliverables(),
+            "confirm_password": _pwd(),
+            "ai_draft_adoption": "rejected",
+        },
+    ).status_code == 200
+    assert (
+        db_session.scalars(
+            select(OperationEvent)
+            .where(OperationEvent.event_type == "commercial_quota_completed")
+            .order_by(OperationEvent.occurred_at.desc())
+        ).first()
+        .changes["ai_draft_adoption"]
+        == "rejected"
+    )
+
+
+def test_completion_ai_draft_adoption_invalid_value_rejected(admin_client) -> None:
+    uscc = _another_uscc(VALID_USCC)
+    assert _grant(admin_client, uscc=uscc, name="采纳申报企业丙").status_code == 200
+    assert admin_client.post(f"{_quota_url(uscc)}/start", json={}).status_code == 200
+    bad = admin_client.post(
+        _complete_url(uscc),
+        json={
+            "deliverables": _all_deliverables(),
+            "confirm_password": _pwd(),
+            "ai_draft_adoption": "auto_accepted",
+        },
+    )
+    assert bad.status_code == 400
+    assert bad.json["error"]["code"] == "invalid_request"
+    # 闭集拒绝零副作用：申报值被拒后诊断仍可按原样完成
+    ok = admin_client.post(
+        _complete_url(uscc),
+        json={"deliverables": _all_deliverables(), "confirm_password": _pwd()},
+    )
+    assert ok.status_code == 200
+    assert ok.json["data"]["quota"]["state"] == "completed"
+
+
+def test_completion_without_declaration_omits_event_key(
+    admin_client, authorized_client_factory, db_session
+) -> None:
+    """省略申报（未带 ai_draft_adoption）→ 事件零新增键——既有调用方契约零漂移。"""
+    uscc = _another_uscc(VALID_USCC)
+    assert _grant(admin_client, uscc=uscc, name="采纳申报企业丁").status_code == 200
+    assert admin_client.post(f"{_quota_url(uscc)}/start", json={}).status_code == 200
+    assert admin_client.post(
+        _complete_url(uscc), json={"deliverables": _all_deliverables(), "confirm_password": _pwd()}
+    ).status_code == 200
+    event = _latest_completed_event(db_session)
+    assert event.changes["subject_key"] == uscc
+    assert "ai_draft_adoption" not in event.changes

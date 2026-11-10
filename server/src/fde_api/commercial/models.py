@@ -175,6 +175,10 @@ FREE_DIAGNOSIS_DELIVERABLES = (
     "next_steps",  # 下一步实施建议
 )
 
+# AI 草稿采纳申报闭集（GAP-15 采纳率埋点，ADR-007 §2.5 复审触发器的前置承载；
+# 申报值域封闭枚举——完成诊断时由交付咨询环节人工申报，缺省=未申报）
+AI_DRAFT_ADOPTION_OUTCOMES = ("accepted", "modified", "rejected")
+
 # 不免费范围（免费边界即产品边界，ADR-004 §1.6——代码层权威清单）
 FREE_EXCLUSIONS = (
     "full_implementation",  # 完整实施
