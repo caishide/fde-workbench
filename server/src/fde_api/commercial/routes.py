@@ -219,9 +219,11 @@ def certification_records_route(user_id: str):
 @commercial_blueprint.post("/opportunities")
 @require_auth
 def submit_opportunity_route():
-    """① 报备（**当事人自证动作**：R2 创业者提交自己的企业线索）。
+    """① 报备（**当事人自证动作**：缴 3980 席位订阅费者提交自己的企业线索）。
 
-    非 admin 治理写（报备不是关键流转）；证据只存指针 + sha256 指纹。
+    拉单资格**不限角色**（ADR-011 §5-F 补充拍板 12；席位费已缴闸，见
+    attribution_service._require_sourcer_seat）。非 admin 治理写（报备不是
+    关键流转）；证据只存指针 + sha256 指纹。
     """
     payload = request.get_json(silent=True)
     payload = payload if isinstance(payload, dict) else {}

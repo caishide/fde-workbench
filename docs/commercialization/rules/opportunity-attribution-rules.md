@@ -13,7 +13,7 @@
 | 术语 | 含义 | 代码落点 |
 |---|---|---|
 | **商机** | 一个企业代号下的商业机会及其归属过程 | `commercial_opportunities` |
-| **报备人** | 提交企业线索的创业者（R2） | `commercial_opportunities.reported_by_user_id` |
+| **报备人** | 提交企业线索的缴 3980 席位订阅费者（资格**不限角色**，ADR-011 §5-F 补充拍板 12） | `commercial_opportunities.reported_by_user_id` |
 | **归属人** | 平台确认后负责该商机的创业者 | `commercial_opportunities.attribution_owner_user_id` |
 | **企业代号** | 三段式代号（客户·行业·城市），**不是真实企业名** | `commercial_opportunities.enterprise_code`（与 `projects.enterprise_code` 同口径） |
 | **保护期** | 归属确认后的**有界**时段，其间该企业的直签立项被封堵 | `commercial_opportunities.protection_*` ＋ 规则位 `protection_period_days` |
@@ -24,7 +24,7 @@
 
 | 步 | 名称 | 触发方 | 状态迁移 | 人工确认 | 落库 |
 |---|---|---|---|---|---|
-| 1 | **报备**（创业者提交企业线索） | 报备人本人（R2） | → `submitted` | 当事人自证（事件留痕） | `reported_by_user_id` |
+| 1 | **报备**（缴席位费者提交企业线索） | 报备人本人（席位费已缴闸） | → `submitted` | 当事人自证（事件留痕） | `reported_by_user_id` |
 | 2 | **企业确认有真实需求** | 平台代录企业书面答复 | `submitted` → `enterprise_confirmed` | **admin＋密码确认**，须附书面依据指针＋指纹 | `enterprise_confirmed_*` |
 | 3 | **平台确认商机归属** | 平台 | `enterprise_confirmed` → `attribution_confirmed` | **admin＋密码确认**（关键流转，ADR-007），须附书面依据 | `attribution_owner_user_id` / `attribution_confirmed_at` |
 | 4 | **设定保护期** | 平台 | 保护期状态 → `active`（**须规则位已配置**） | **admin＋密码确认** | `protection_started_at` / `protection_expires_at` |
@@ -33,6 +33,13 @@
 | 7 | **按既定分成规则结算** | 平台 | `matched` → `settled` | **admin＋密码确认** | `settled_ledger_entry_id`（**引用 G3 科目层 project_share 行**） |
 
 **辅助动作**：撤回（报备人自证，→ `withdrawn`）、争议（平台，规则位 `dispute_handling` 未配置则不可用，→ `disputed`）、客户自主选择（规则位 `customer_choice` 未配置则不可用）、归属改派（规则位 `attribution_criteria` 未配置则不可用）。
+
+## 2.1 拉单资格（ADR-011 §5-F 补充拍板 12，2026-11-10）
+
+1. 拉单资格**不限角色**——原 G4 闸「报备人必须 R2 创业者」由 **席位费已缴闸** 替代（关键流转口径变更，书面依据＝ADR-011 v1.3 §5-F＋OWNER 书面签字页 A-7 行，随 PR #302 入库；非静默放宽）。
+2. 两条独立路径任一成立即放行：① `commercial_entitlements.seat_status='active'` 且未过期（`seat_expires_at` NULL 视为未设到期）；② G3 科目层存在本人义务人的有效 `seat_fee` 行（`recorded`/`reconciled`，voided 不算）。
+3. 都不成立 ⇒ 403 `opportunity_reporter_seat_required`（fail-closed）。3980 本身仍是 ADR-008 科目层独立年费（验收后触发、幂等一年一次、**不进分账池**）。
+4. **lead 席位计提**（F 线 T3 接线）：`lead` 收款人＝已确认归属的 `attribution_owner_user_id`；归属未确认 ⇒ 409 `attribution_not_confirmed`（**不得回落平台代持**）；企业代号下零商机行 ⇒ 企业自来，lead `vacant`＋`no_sourcer`，平台吸收 lead 席份额（平台实得 51%）。归属是本域事实：企业自行注册**不转移**、多行取已确认行、确认后 lead 不接受空缺记法。
 
 ## 3. 保护期规则（成文，数值未设）
 

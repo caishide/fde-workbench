@@ -436,6 +436,49 @@ def get_opportunity(
     return {"opportunity": serialize_opportunity(session, row)}
 
 
+def _require_sourcer_seat(session: Session, actor: User) -> None:
+    """拉单资格闸（**关键流转口径变更**：ADR-011 §5-F 补充拍板 12）。
+
+    原 G4 闸＝「角色分层必须 R2 创业者」；ADR-011 v1.3 §5-F（2026-11-10
+    15:30 拍板，OWNER 书面签字页 A-7 行随 PR #302 入库）改为**缴 3980 席位
+    订阅费即可、资格不限角色**。两条独立路径任一成立即放行（对应规则文件
+    「存在有效席位费科目行／席位 active」）：
+
+    - ① ``commercial_entitlements``：``seat_status='active'`` 且未过期
+      （``seat_expires_at`` 为 NULL 视为未设到期，不算过期）；
+    - ② G3 科目层：存在本人义务人的 ``seat_fee`` 有效行
+      （``status IN ('recorded','reconciled')``，voided 不算）。
+
+    都不成立 ⇒ 403 ``opportunity_reporter_seat_required``（fail-closed，
+    不得静默放宽）。
+    """
+    entitlement = session.get(CommercialEntitlement, actor.id)
+    if (
+        entitlement is not None
+        and entitlement.seat_status == "active"
+        and (
+            entitlement.seat_expires_at is None
+            or entitlement.seat_expires_at >= datetime.now(timezone.utc)
+        )
+    ):
+        return
+    ledger_row = session.scalar(
+        select(CommercialRevenueLedger.id).where(
+            CommercialRevenueLedger.subject_type == "seat_fee",
+            CommercialRevenueLedger.subject_user_id == actor.id,
+            CommercialRevenueLedger.status.in_(("recorded", "reconciled")),
+        )
+    )
+    if ledger_row is not None:
+        return
+    raise _error(
+        "opportunity_reporter_seat_required",
+        "报备企业线索须缴 3980 席位订阅费（席位 active 或科目层存在有效 seat_fee "
+        "行）；拉单资格不限角色（ADR-011 §5-F）。",
+        403,
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 七步链路写原语
 # ══════════════════════════════════════════════════════════════════════════
@@ -451,18 +494,14 @@ def submit_opportunity(
     source_uri: object,
     content_hash: object,
 ) -> dict[str, Any]:
-    """① 报备（**当事人自证动作**：创业者提交自己的企业线索）。
+    """① 报备（**当事人自证动作**：提交自己的企业线索）。
 
-    报备人必须是角色分层 **R2 创业者**（G1 的角色分层是唯一权威）；证据只存
+    拉单资格**不限角色**，缴 3980 席位订阅费即可（ADR-011 §5-F 补充拍板 12，
+    2026-11-10 15:30 拍板；书面依据＝ADR-011 v1.3 §5-F＋书面签字页 A-7 行——
+    角色闸替换是关键流转口径变更，见 ``_require_sourcer_seat``）。证据只存
     指针 + sha256 指纹。
     """
-    entitlement = session.get(CommercialEntitlement, actor.id)
-    if entitlement is None or entitlement.commercial_role != "R2":
-        raise _error(
-            "opportunity_reporter_role_required",
-            "只有角色分层为 R2（创业者）可报备企业线索。",
-            403,
-        )
+    _require_sourcer_seat(session, actor)
     if not isinstance(enterprise_code, str) or not enterprise_code.strip():
         raise _error("invalid_request", "enterprise_code 必填（企业代号，非真实企业名）。")
     if len(enterprise_code.strip()) > 80:
