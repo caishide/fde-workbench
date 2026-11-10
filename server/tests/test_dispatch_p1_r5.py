@@ -13,7 +13,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from fde_api.auth.models import User
 from fde_api.dispatch import scoring
@@ -82,7 +82,23 @@ def _profile(
     return row
 
 
+def retire_active_rule_versions(db_session) -> None:
+    """F 线 T2 起测试库常驻「上线前初始基线」active 行（迁移种子 v100）。
+
+    需要 §11.1 降级态、或要求**本测自植版本是唯一 active** 的用例，先显式
+    退役在场 active 行（语义与 activate_due_versions 的退役一致）。直接种
+    行会绕过服务层退役逻辑，不先退役就是两个 active 行——active_rule_version
+    取 scalar 无排序、任取一行 ⇒ 断言随库态漂移。"""
+    db_session.execute(
+        update(DispatchRuleVersion)
+        .where(DispatchRuleVersion.status == "active")
+        .values(status="retired")
+    )
+    db_session.flush()
+
+
 def _active_rule(db_session, **overrides) -> DispatchRuleVersion:
+    retire_active_rule_versions(db_session)
     row = DispatchRuleVersion(
         version_no=overrides.pop("version_no", 1),
         status=overrides.pop("status", "active"),
@@ -505,7 +521,10 @@ def test_scenario_c_no_auto_dispatch_and_event(db_session):
 
 
 def test_match_requires_published_rule_version(db_session):
-    """留注⑬：无公示规则版本 → 422 rule_version_required（§11.1 降级态）。"""
+    """留注⑬：无公示规则版本 → 422 rule_version_required（§11.1 降级态）。
+
+    F 线 T2 起基线行常驻 active ⇒ 降级态改为显式构造（先退役在场 active）。"""
+    retire_active_rule_versions(db_session)
     admin, package = _onsite_package(db_session)
     publish_package(db_session, actor=admin, package_id=package.id)
     good = _user("r5.noversion", role="fde_engineer")

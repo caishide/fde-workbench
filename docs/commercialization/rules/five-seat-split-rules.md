@@ -110,7 +110,7 @@ T       = 该项目里程碑实收回款（payments.received_amount，不重算�
 
 - **上线后任何改值**＝`dispatch_rule_versions` 新版本 ＋ **公示 ≥30 天**（`weight_public_notice_days=30`，`create_rule_version` 闸零改动——422 `notice_window_required`）。四处既有反例钉死「公示不绕过」，一字不改：`dispatch/rules.py`（`create_rule_version` 判定段）、`dispatch/admin_routes.py:13-15` 与 `:149`、`server/tests/test_dispatch_p0_r2.py:798`（常量断言）、`server/tests/test_dispatch_p0_r2.py:850-860`（29 天→422）、`server/tests/test_dispatch_admin_rules.py:64-71`（HTTP 10 天→422）。
 - **本期（上线前）初始基线豁免**（2026-11-10 16:57 拍板「不用公示，本项目还没上线呢」）：
-  - **适用边界：仅上线前首版（初始基线）一次**。T2 由**迁移**种入 `dispatch_rule_versions` 一行 `status='active'`，`rule_snapshot.seat_shares` 表达「平台份额 30% ＋ 池内 lead 30／delivery 50／county 10／province 10」（**不得沿用旧四席位 35/5/20/40 语义**），`published_at`＝`effective_at`＝**真实迁移执行时刻**，`operation_events` 留 `initial_baseline` 痕迹。
+  - **适用边界：仅上线前首版（初始基线）一次**。T2 由**迁移**种入 `dispatch_rule_versions` 一行 `status='active'`，`rule_snapshot` 以 **`five_seat` 块**（`platform_share_percent` + `pool_shares`——平台份额与池内份数是**两个 100**，不能摊平进一个键）表达「平台份额 30% ＋ 池内 lead 30／delivery 50／county 10／province 10」（**不得沿用旧四席位 35/5/20/40 语义**：基线快照**不含** `seat_shares`/冷启动键，`seat_shares_for` 对缺键回退常量、旧路径行为逐位不变；`stage_b_weights`/`level_score_map` 与常量同值随行，基线 active 后撮合按快照打分不落空权重），`published_at`＝`effective_at`＝**真实迁移执行时刻**，`version_no=100`（保留段；1–99 留给上线后人工版本序列），`operation_events` 留 `initial_baseline` 痕迹（迁移时刻无 user 则诚实跳过事件——`actor_user_id` NOT NULL FK 不允许伪造 actor）。
   - **豁免依据**：无存量用户、无存量派单规则受影响 ⇒「初始基线」不是「对存量规则的变更」，§6.2 公示窗不适用。**不是永久豁免，也没有豁免分支**——上线后第一次改比例即自动恢复完整公示。
 - **五条禁止（违者即破坏治理闸）**：
   1. 把 `weight_public_notice_days` 改 0；
@@ -181,6 +181,7 @@ T       = 该项目里程碑实收回款（payments.received_amount，不重算�
       "exemption_scope": "pre_launch_first_version_only",
       "not_a_permittable_branch": true,
       "seeded_by": "migration",
+      "version_no": 100,
       "status_seeded": "active",
       "published_at_equals_effective_at": true,
       "timestamps": "real_execution_time_no_backfill",

@@ -312,8 +312,13 @@ def test_resolve_dispute_then_409_on_second_resolve(console_context):
 # ---------------------------------------------------------------------------
 
 
-def test_replay_without_rule_version_marks_skipped(console_context):
+def test_replay_without_rule_version_marks_skipped(console_context, db_session):
+    """§11.1 降级态：F 线 T2 起基线行常驻 active ⇒ 先显式退役再回放。"""
+    from test_dispatch_p1_r5 import retire_active_rule_versions
+
     ctx = console_context
+    retire_active_rule_versions(db_session)
+    db_session.commit()
     response = ctx["admin_client"].post("/api/v1/dispatch/simulator/replay")
     assert response.status_code == 200
     data = response.json["data"]
@@ -324,7 +329,13 @@ def test_replay_without_rule_version_marks_skipped(console_context):
 
 
 def test_replay_with_active_rule_version_scenarios(console_context, db_session):
+    from test_dispatch_p1_r5 import retire_active_rule_versions
+
     ctx = console_context
+    # F 线 T2 起基线行常驻 active ⇒ 先退役，保证本测自植 v1 是唯一 active
+    # （active_rule_version 取 scalar 无排序，双 active 时断言漂移）
+    retire_active_rule_versions(db_session)
+    db_session.commit()
     db_session.add(
         DispatchRuleVersion(
             version_no=1,

@@ -79,9 +79,11 @@ DISPATCH_CONSTANTS: MappingProxyType[str, Any] = MappingProxyType({
     "level_score_map": {"L1": 40, "L2": 60, "L3": 80, "L4": 100},
     # §7.1 席位分配（口径一：分母=一次成交额；对外严禁写成「抽佣率」）
     "seat_shares": {"platform": 35, "region": 5, "city": 20, "delivery": 40},
-    # 冷启动：该城前 3 单平台 40%，上浮 5 个百分点自城市合伙人扣除（§7.1 建议，需确认）
-    "cold_start_first_orders": 3,
-    "cold_start_seat_shares": {"platform": 40, "region": 5, "city": 15, "delivery": 40},
+    # 冷启动档已废止（ADR-011 §3.9 补充拍板 11；F 线 T2 落地）：
+    # cold_start_seat_shares（40/5/15/40）与 cold_start_first_orders（前 3 单）
+    # 两键摘除，seat_shares_for 冷启动分支与 _city_order_rank 一并清理，
+    # 不留两条口径。报价域 anchor_mode='cold_start' 是报价锚点模式，同名
+    # 不同义，不受影响。
     # §6.5 新人保护期
     "newcomer_protection_orders": 5,
     # §6.7 拒单权

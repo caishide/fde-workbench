@@ -23,7 +23,6 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
-from fde_api.dispatch.cities import city_from_enterprise_code, package_client_city
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import (
     DeliveryPackage,
@@ -81,42 +80,13 @@ def _money(value: Decimal) -> Decimal:
 
 def seat_shares_for(session: Session, package: DeliveryPackage) -> dict[str, int]:
     """席位份额 %：active 版本快照优先（§7.3-3），回退 DISPATCH_CONSTANTS。
-    冷启动判定 = 该城（包侧客户城，留注⑤ 终版口径）已接单序号 ≤ 前 N 单（§7.1）。"""
+
+    冷启动档已废止（ADR-011 §3.9 补充拍板 11：40/5/15/40 与「前 3 单」一并
+    废止，F 线 T2 落地，不留两条口径）——本函数只剩基准份额一条路；
+    ``_city_order_rank`` 随之摘除（其唯一消费者就是冷启动判定）。"""
     snapshot = active_rule_snapshot(session)
     base_shares = (snapshot or {}).get("seat_shares") or DISPATCH_CONSTANTS["seat_shares"]
-    cold_shares = (snapshot or {}).get("cold_start_seat_shares") or (
-        DISPATCH_CONSTANTS["cold_start_seat_shares"]
-    )
-    cold_orders = (snapshot or {}).get("cold_start_first_orders") or (
-        DISPATCH_CONSTANTS["cold_start_first_orders"]
-    )
-    if _city_order_rank(session, package) <= cold_orders:
-        return {key: int(cold_shares[key]) for key in SEAT_KEYS}
     return {key: int(base_shares[key]) for key in SEAT_KEYS}
-
-
-def _city_order_rank(session: Session, package: DeliveryPackage) -> int:
-    """该包在同城的接单序号（1 起）。城 = **包侧客户城**（企业代号第三段，
-    §3.1 三段式——留注⑤ 终版切换：home_city 代理随 B-④ 城市拍板退役，
-    与 cities.package_client_city 同口径）。无城可判 → 返回大数（不触发冷启动）。"""
-    city = package_client_city(session, package)
-    if not city:
-        return 1 << 30
-    earlier_rows = session.execute(
-        select(DeliveryPackage.id, Project.enterprise_code)
-        .join(Project, Project.id == DeliveryPackage.project_id)
-        .where(
-            DeliveryPackage.id != package.id,
-            DeliveryPackage.dispatch_status == "accepted",
-            DeliveryPackage.accepted_at.is_not(None),
-            DeliveryPackage.accepted_at
-            < (package.accepted_at or datetime.now(timezone.utc)),
-        )
-    ).all()
-    earlier = sum(
-        1 for _row_id, code in earlier_rows if city_from_enterprise_code(code) == city
-    )
-    return earlier + 1
 
 
 def split_four_seats(
