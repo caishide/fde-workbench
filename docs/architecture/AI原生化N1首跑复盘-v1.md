@@ -75,3 +75,20 @@
 | evidence_candidates | 0（仅 completed 登记，failed 语义二次成立） |
 
 **修复（随轮 PR）**：`_finalize` C-1 校验改 `if not artifact.source_refs and known_refs`（known_refs=∅ 时空引用放行；自创引用仍拦；有确认问题时追溯义务零松动）＋任务书模板补空态指引（「暂无已确认业务问题时 source_refs 写空数组 []」）；NEW 回归钉 1 例＋既有 `extra.bin` 断言按新语义收窄；`service.py` 1833→1835（预算 1836 内）。**G-01/G-07 维持 OPEN**——判据「completed run→候选登记→人工接受→至 G9」待**重跑三**（决策＝蔡工，H4 不代发起）；重跑二 5 产物与 run 行留痕保留（`pilot.reviewer` 可随时人工盘点留痕，不依赖重跑三）。
+
+---
+
+## 8. 重跑三补记（2026-11-10，台账 v1.7）
+
+**一句话**：蔡工拍板「都做」授权后重跑三执行（幂等键 `n1-somwyn-host-003`）——**全链走通**：zcode exit 0／292.2s／`token_cost=890595` 真实计费、**前置③票据三度行使**；**C-1 空引用集修复活体验证通过**（somwyn 无 confirmed 问题 ⇒ 空引用放行 ⇒ run **completed** 零降级）；**7 产物落库＋7 条证据候选自动登记＝G-07 判据「completed run→候选登记」首次活库兑现**。
+
+| 项 | 重跑三值 |
+| --- | --- |
+| run_id | `bef48e56-a83a-43f1-b158-f01b278ca722` |
+| 幂等键 | `n1-somwyn-host-003`（非 `sim:`/`rehearsal:` 前缀 ✓） |
+| 终态 | **`completed`**（零降级），`exit_code=0`，`duration_ms=292249`，`token_cost=890595`（真实计费） |
+| 通道 | `execution_provider=host_channel`；前置③票据三度行使（新指纹落库） |
+| 产物 | 7 行落库（presales-solution-draft／discovery-questionnaire／assumptions-and-risks／demo-and-validation-plan／open-questions.json 5 doc ＋ README doc ＋ manifest config；sha256+size+mime 逐行），`reviewed=False` 全部 |
+| evidence_candidates | **7（首次自动登记）**——G-07「completed run→候选登记」判据前半段活库兑现 |
+
+**剩人工段（AI 不代拍板）**：蔡工经 `pilot.reviewer` 第二账号——①产物人工接受/撤回；②候选采纳走 `submit_gate_evidence` 人工提交闸；③G7/G8/G9 拍板——完成后 G-01/G-07 置 CLOSED。前置⑧（cancel/进程树回收）本 run 自然完成未触达，仍待专项留证；①商用条款（外部依赖）与⑦网络限制面（设计提请=同日 `docs/architecture/宿主通道网络限制面设计提请-v1.md`）维持未过不声称。
