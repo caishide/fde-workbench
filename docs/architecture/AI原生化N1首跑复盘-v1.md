@@ -136,3 +136,33 @@
 **★红线守死**：①门禁证据只存指针+sha256、AI 不代拍板/不造假（G8/G9 证据不可代造）；②写外呼/发信/付款永不降级永不自动；③腿①纠正走写路径留痕、不绕过 H1–H13；④①商用条款（外部依赖）/⑦网络限制面（结构缺口）维持未过不声称。
 
 **G8/G9 清单项与证据依赖（gates.json 种子定义）**：G8＝prototype-log／POC 验收表／business-case（PoC→Pilot 子检查五项＋pass/fail 结论＋三态书面拍板）；G9＝生产环境／Runbook／Go-Live 单／演练记录／SOW-C 里程碑（Pilot→Production 子检查五项＋验收线达成＝uplift_bounded≥0.8∧incidents=∅∧三锚四反例全过〔B#21 机器可算化〕＋回滚演练过＋客户侧独立跑通＋成本护栏在位）。**均为真实交付期产物，试点阶段拿不到、不能代造**——维持 pending。
+
+## 11. 挂账销项轮补记（2026-11-11，台账 v1.10）
+
+**一句话**：蔡工交互拍板四项（T-A10 排期/容器栈 rebuild/G7-G9 清单/材料收集）后执行——**G7 重交回环推进**（success.md 定稿真实件 claim，G7 `failed→evidence` 3/4），**G7/G8/G9 材料收集清单落仓**，**T-A10 排期销项**，**容器栈 rebuild 维持挂账归部署归属方**。
+
+### G7 重交回环（不重开 v1.9 收口结论）
+
+| 项 | v1.9 终态 | v1.10 现状 |
+| --- | --- | --- |
+| G7 状态 | failed rev2（2/4 claimed） | **evidence rev2（3/4 claimed）** |
+| success.md 定稿 | 缺项 | **claimed**（`fdeops://engagements/somwyn/.fde/success.md`，宿主真实件，S1/S2 切片已签收口径，self-acceptance 声明原样保留；提交=admin 代录指针+sha256） |
+| B 试点章程定稿 | 缺项 | **框架草稿已出**（宿主 `gates/G7-B试点章程-框架草稿-待定稿.md`，【待补】＝蔡工定稿＋客户书面确认；**不提交门禁**——无真实材料不 claim，不虚挂） |
+| 拍板 | 未再拍 | **仍归 `pilot.reviewer`**——B 章程到齐后 4/4 claimed ⇒ 重拍 pass/fail（AI 不代拍不造假；`gate_decider_conflict` 硬闸：提交人 admin≠拍板人） |
+
+重交回环合法路径＝`gate_service` failed 可再 `submit_gate_evidence`（G4 fail_exit「可随时重启」出处同族）；本轮不重开 G-07 CLOSED（判据两段已行使）与 G-01 OPEN（试点收口口径不变）。
+
+### G7/G8/G9 材料收集清单（NEW 仓内 doc）
+
+NEW [AI原生化N1门禁材料收集清单-v1.md](./AI原生化N1门禁材料收集清单-v1.md)——G7×4＋G8×3＋G9×5 逐项「要什么/谁出/放哪/指纹纪律/提交＋拍板通道」；推进顺序 **G7 pass → G8 三态（proceed/pivot/stop）→ G9 拍 ⇒ G-01 CLOSED**。红线前置逐条：原件永不入库（只 source_uri 指针+sha256）、AI 代提交不代拍不代造、写外呼/发信/付款永不降级永不自动。
+
+### 挂账销项对照（四项拍板）
+
+| 挂账 | 拍板 | 处置 |
+| --- | --- | --- |
+| T-A10 桌面产物预览面 | 排期到下一实施轮 | backlog 行 PROPOSED→「✅ 排期已拍板（下一实施轮）」；**排期销项≠实施授权**（进程空间＝宿主裸跑全量＋容器态降级裁决随实施轮拍板，不预设） |
+| 容器栈 rebuild（fde-wt-v31p2） | 维持挂账归部署归属方 | 本会话**不越权执行**；部署归属方按 README「rebuild 三镜像＋alembic upgrade head＋活体核验」三步合同处置（本轮活体核对见 CHANGELOG 同名节） |
+| G7 重交 | 出材料清单供收集 | 上节＋清单 doc；真实件（success.md）已先行 claim，B 章程待蔡工定稿 |
+| G8/G9 | 出材料准备清单 | 清单 doc §二/§三；维持 pending 不代拍（`decide_gate` 无证据 409 `invalid_gate_state` 机械封死） |
+
+**★红线守死**：①门禁证据只存指针+sha256、原件留宿主（success.md 指纹 `01622423…` 现测）；②AI 代提交留痕（`gate_evidence_submitted` @11-11）不代拍（拍板仍 `pilot.reviewer`）；③容器栈 rebuild 未执行＝不越部署归属；④①商用条款/⑦网络限制面维持未过不声称。
