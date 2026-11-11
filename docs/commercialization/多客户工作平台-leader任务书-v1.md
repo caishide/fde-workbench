@@ -318,7 +318,7 @@ orgs（新表，主体承载）
     - [x] 批次 ③（97 条 项目服务域）✅（PR #335 squash 合并；CI 四绿实测 **3052 收集 = 3045 passed + 7 skipped**；实改＝**成员面跨 org 留痕接线**（规格 §3.4「成员跨企业授予」——共享记录器把项目成员行目标解析为其账号，跨企业授予 ⇒ `cross_org_project_member_added`＋org 维度取被作用账号归属）；**可见性单一权威机械闸**（全仓禁自建 `ProjectMember` 可见性谓词＋白名单 4 处逐条人工复核＋白名单防腐化）；域级代表性核验八个项目读面；NEW `test_m3b_batch3_project_service.py` 13 例；变异两轴（摘成员面判定 ⇒ 1 红／自建谓词 ⇒ 机械闸红）；邻域回归 186 例全绿；2026-11-11）
     - [x] 批次 ④（57 条 特殊域与平台事实）✅（PR #336 squash 合并 `405c541`＝fork/main 顶；CI 四绿实测 **3058 收集 = 3051 passed + 7 skipped**〔run 42989050456〕；实改＝**dispatch package_access 授予留痕**（ADR-M3 §5「谁授权给谁」——跨企业授权 ⇒ `cross_org_package_access_granted`＋org 维度取被授权账号归属）；dispatch 访问面核验（第三语义：无授权 ⇒ 404 不泄露存在性／admin 平台全局放行／授予后可读）；users 域跨 org 留痕（`cross_org_user_updated`）；★人工复核纠正（simulation＝平台级演练域／internal＝服务间认证／agents·ai·bridge 由既有套件覆盖）；NEW `test_m3b_batch4_special_domains.py` 6 例；变异摘 `_record_grant_event` ⇒ 3 红→还原→6 绿；dispatch 十八套件 161 例全绿；2026-11-11）
 - [ ] M4：Redis/存储/队列/预算按主体隔离；主体级 `budget_blocked` 留痕
-- [ ] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过
+- [x] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过 ✅（M5-3 验收轮：端到端 test_m5_s1_e2e_from_registration_to_paid_option＋对照表 docs/commercialization/multi-tenant/M5-验收对照-v1.md；PR #361）
 - [ ] M6：G3 验收清单过；计费名目有归属、无硬编码数值；席位反例用例过
 - [ ] M7：G4/G5 验收清单过；售卖开关关闭态验证
 - [ ] M8：安全专项零高危；全量回归绿；2–3 家试点完成；MT-C 签核
