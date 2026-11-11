@@ -576,3 +576,59 @@
     top: 0;
   }
 }
+
+/* ── 线索池（获客诊断 T-12） ─────────────────────────────────────────── */
+
+.lead-pool-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.lead-pool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-caption);
+  color: var(--muted);
+}
+.lead-pool-field > select,
+.lead-pool-field > input {
+  min-width: 220px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.lead-pool-submitted {
+  margin-left: auto;
+  color: var(--brand-ink);
+  font-weight: var(--weight-semibold);
+}
+.lead-pool-status-ok { margin-left: auto; color: var(--brand-ink); font-weight: var(--weight-semibold); }
+.lead-pool-decision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.lead-pool-decision > input {
+  flex: 1 1 260px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.lead-pool-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.lead-pool-dialog-body > p.muted { margin: 0; }

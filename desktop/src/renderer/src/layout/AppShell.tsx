@@ -67,6 +67,7 @@ export function AppShell({
           <div className="nav-group">
             <p className="nav-group-title">交付与商业</p>
             <NavLink route={route} target={{ kind: "dispatch" }} label="派单池" icon={<GridIcon />} />
+            <NavLink route={route} target={{ kind: "leads" }} label="线索池" icon={<FunnelIcon />} />
             <NavLink route={route} target={{ kind: "enterprise-space" }} label="企业空间" icon={<GaugeIcon />} />
             {isDeliverySide ? (
               <NavLink route={route} target={{ kind: "simulation" }} label="模拟训练场" icon={<BoxesIcon />} />
@@ -260,6 +261,14 @@ function TaskIcon() {
     <svg {...iconProps}>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="m7 9 2 2 4-4M14 10h4M7 15h11" />
+    </svg>
+  )
+}
+
+function FunnelIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
     </svg>
   )
 }

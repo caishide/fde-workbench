@@ -18,6 +18,7 @@ export type AppRoute =
   | { kind: "enterprise-space" }
   | { kind: "task-center" }
   | { kind: "translator" }
+  | { kind: "leads" }
   | { kind: "metrics" }
   | { kind: "pilot" }
   | {
@@ -70,6 +71,7 @@ export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#enterprise-space") return { kind: "enterprise-space" }
   if (hash === "#task-center") return { kind: "task-center" }
   if (hash === "#translator") return { kind: "translator" }
+  if (hash === "#leads") return { kind: "leads" }
   if (hash === "#metrics") return { kind: "metrics" }
   if (hash === "#pilot") return { kind: "pilot" }
   if (hash === "#dispatch") return { kind: "dispatch" }
@@ -156,6 +158,7 @@ export function routeHash(route: AppRoute): string {
     case "enterprise-space": return "#enterprise-space"
     case "task-center": return "#task-center"
     case "translator": return "#translator"
+    case "leads": return "#leads"
     case "metrics": return "#metrics"
     case "pilot": return "#pilot"
     case "dispatch":

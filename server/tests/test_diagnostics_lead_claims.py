@@ -553,6 +553,87 @@ def test_pool_hides_claimed_leads(diag_client, db_session, settings):
     assert all(item["id"] != lead["id"] for item in items)
 
 
+# ── 认领单列表（裁定队列 ＋ 我的申请） ─────────────────────────────────
+
+
+def test_claims_list_admin_sees_pending_queue_with_lead_summary(
+    diag_client, db_session, settings
+):
+    """admin 拿到全量裁定队列：投影带认领人账号名与线索摘要（代号化）。"""
+    _, admin_headers = _make_user(db_session, settings, role="admin", email="admin@x.test")
+    member, member_headers = _make_user(db_session, settings, role="fde_engineer")
+    lead = _lead(diag_client, region="浙江省")
+    claim = _claim(diag_client, member_headers, lead["id"]).get_json()["data"]
+
+    items = diag_client.get(
+        f"{LEADS_PREFIX}/claims?status=pending", headers=admin_headers
+    ).get_json()["data"]
+    assert len(items) == 1
+    row = items[0]
+    assert row["id"] == claim["id"]
+    assert row["status"] == "pending"
+    assert row["claimant_username"] == member.username
+    assert row["lead"] is not None
+    assert row["lead"]["id"] == lead["id"]
+    assert row["lead"]["region_name"] == "浙江省"
+    # 代号化纪律：摘要里看不到联系方式明文
+    assert "contact" not in json.dumps(row, ensure_ascii=False)
+
+
+def test_claims_list_non_admin_sees_only_own(diag_client, db_session, settings):
+    """非 admin 只看**自己的**申请（别人的认领单不可枚举）。"""
+    _, admin_headers = _make_user(db_session, settings, role="admin", email="admin@x.test")
+    first, first_headers = _make_user(db_session, settings, role="fde_engineer")
+    second, second_headers = _make_user(db_session, settings, role="project_lead")
+    lead_a = _lead(diag_client)
+    lead_b = _lead(diag_client)
+    mine = _claim(diag_client, first_headers, lead_a["id"]).get_json()["data"]
+    theirs = _claim(diag_client, second_headers, lead_b["id"]).get_json()["data"]
+
+    items = diag_client.get(f"{LEADS_PREFIX}/claims", headers=first_headers).get_json()["data"]
+    ids = {row["id"] for row in items}
+    assert ids == {mine["id"]}
+    assert theirs["id"] not in ids
+
+    # admin 缺省（status=all）能看到两条
+    everything = diag_client.get(
+        f"{LEADS_PREFIX}/claims", headers=admin_headers
+    ).get_json()["data"]
+    assert {row["id"] for row in everything} == {mine["id"], theirs["id"]}
+
+
+def test_claims_list_status_filter_is_closed_set(diag_client, db_session, settings):
+    """status 过滤器闭集：非法值 400；rejected 要用显式 status 才看得到。"""
+    _, admin_headers = _make_user(db_session, settings, role="admin", email="admin@x.test")
+    _, member_headers = _make_user(db_session, settings, role="fde_engineer")
+    lead = _lead(diag_client)
+    claim = _claim(diag_client, member_headers, lead["id"]).get_json()["data"]
+    _reject(diag_client, admin_headers, claim["id"], {"decision_note": "驳回"})
+
+    bad = diag_client.get(
+        f"{LEADS_PREFIX}/claims?status=whatever", headers=admin_headers
+    )
+    assert bad.status_code == 400
+    assert bad.get_json()["error"]["code"] == "invalid_status"
+
+    pending = diag_client.get(
+        f"{LEADS_PREFIX}/claims?status=pending", headers=admin_headers
+    ).get_json()["data"]
+    assert all(row["status"] == "pending" for row in pending)
+    rejected = diag_client.get(
+        f"{LEADS_PREFIX}/claims?status=rejected", headers=admin_headers
+    ).get_json()["data"]
+    assert len(rejected) == 1
+    assert rejected[0]["decision_note"] == "驳回"
+
+
+def test_claims_list_gate_hides_before_auth(client):
+    """**闸门先于鉴权**：诊断面未启用 ⇒ 404（与线索池同尺）。"""
+    response = client.get(f"{LEADS_PREFIX}/claims")
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "not_found"
+
+
 # ── 结构纪律 ───────────────────────────────────────────────────────────
 
 

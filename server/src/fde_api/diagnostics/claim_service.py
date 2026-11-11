@@ -533,6 +533,73 @@ def serialize_claim(row: LeadDiagnosticClaim) -> dict[str, Any]:
     }
 
 
+# ── 认领单列表（平台裁定队列 ＋ 我的申请） ─────────────────────────────
+
+CLAIM_STATUS_FILTERS = ("pending", "accepted", "rejected", "all")
+
+
+def serialize_claim_entry(
+    row: LeadDiagnosticClaim,
+    lead: LeadDiagnosticSession | None,
+    claimant: Any = None,
+) -> dict[str, Any]:
+    """裁定队列投影＝认领单 ＋ 线索摘要 ＋ 认领人账号名。
+
+    认领人只落**账号名**（username 是账号体系字段，不是真实姓名）；线索摘要
+    复用线索池投影（同样**不含**联系方式与姓名——代号化纪律）。
+    """
+    data = serialize_claim(row)
+    data["claimant_username"] = getattr(claimant, "username", None) if claimant else None
+    data["lead"] = serialize_lead(lead) if lead is not None else None
+    return data
+
+
+def list_claims(
+    *,
+    actor: Any,
+    status: str = "all",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """认领单列表（**两段可见性，同一路由**）：admin＝全量（裁定队列）；
+    非 admin＝**只看自己的申请**（``claimant_user_id == actor.id``）。
+
+    ``status`` 是闭集过滤器（pending/accepted/rejected/all，缺省 all）——
+    桌面裁定面传 ``pending`` 拿待裁定队列；「我的申请」缺省拿全部状态。
+    """
+    ensure_enabled()
+    key = (status or "all").strip()
+    if key not in CLAIM_STATUS_FILTERS:
+        raise _error("invalid_status", "状态过滤器非法。", 400)
+    capped = max(1, min(int(limit or 50), 200))
+    is_platform = getattr(actor, "role", "") == "admin"
+    with db.session() as session:
+        stmt = select(LeadDiagnosticClaim).order_by(LeadDiagnosticClaim.created_at.desc())
+        if key != "all":
+            stmt = stmt.where(LeadDiagnosticClaim.status == key)
+        if not is_platform:
+            stmt = stmt.where(LeadDiagnosticClaim.claimant_user_id == actor.id)
+        rows = list(session.scalars(stmt.limit(capped)))
+        lead_ids = {row.session_id for row in rows}
+        user_ids = {row.claimant_user_id for row in rows if row.claimant_user_id}
+        leads: dict[str, LeadDiagnosticSession] = {}
+        if lead_ids:
+            for lead in session.scalars(
+                select(LeadDiagnosticSession).where(LeadDiagnosticSession.id.in_(lead_ids))
+            ):
+                leads[lead.id] = lead
+        claimants: dict[str, Any] = {}
+        if user_ids:
+            # 跨域复用 auth 模型：函数内懒导入（包环冻结闸纪律）
+            from fde_api.auth.models import User
+
+            for user in session.scalars(select(User).where(User.id.in_(user_ids))):
+                claimants[user.id] = user
+        return [
+            serialize_claim_entry(row, leads.get(row.session_id), claimants.get(row.claimant_user_id))
+            for row in rows
+        ]
+
+
 def get_claim(claim_id: str) -> LeadDiagnosticClaim:
     """读认领单（不存在 ⇒ 404）。"""
     with db.session() as session:
@@ -543,15 +610,18 @@ def get_claim(claim_id: str) -> LeadDiagnosticClaim:
 
 
 __all__ = [
+    "CLAIM_STATUS_FILTERS",
     "DiagnosticsServiceError",
     "LEDGER_COLUMNS",
     "accept_claim",
     "build_ledger_row",
     "create_claim",
     "get_claim",
+    "list_claims",
     "list_leads",
     "reject_claim",
     "serialize_claim",
+    "serialize_claim_entry",
     "serialize_lead",
     "subject_fingerprint",
 ]
