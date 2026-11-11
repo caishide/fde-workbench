@@ -764,3 +764,18 @@ docs/commercialization/
 - **部署**：确定版 rebuild 从合并态 `8c0b113` 干净 server 树——三镜像 api `f863fe65…`／worker `a0d9fe40…`／scheduler `749c618a…`（容器 `.Image` ≡ 构建产物且 healthy）；alembic 幂等 no-op（`f3a9c7e1d5b2 (head)`）；活体 url_map non-static **448** ≡ 口径；ready **200**。部署即覆盖轮 3（权益行锁）＋轮 4（就绪度汇总面）全部 server 变更；轮 5 纯桌面不需重建。main run 轮 4 `42797107137`／轮 5 `42800276475` 双四绿收口。
 - **便携版 r31**：从合并态 `b39ca9b` 打包；asar sha256 `113289d4…24cb`；中文 marker ×3 全命中（商业化运维／读取企业空间／企业自助）；交付目录 `release/蔡工FDE-0.3.0-便携版-r31`（旧目录零覆盖）。**轮 3/4/5 累计便携版重打包挂账就此清偿**。
 - 剩余开放挂账（全部带外部闸，非本轮可实施）：①GAP-15 首批真实 run 复审（触发器已登记，样本=0）；②ADR-004 §1.8 体验上限消费接线（消费方在 V3.2 simulation 域）；③ADR-004 §1.4 多子公司集团归并（法务）；④任务书 §17 商业数值拍板（数值位 unset 为有意 fail-closed，运维面板已呈现缺口）。
+---
+
+## 挂账清偿轮 6：GAP-15 数据化复审中间态 — 已完成（纯文档零代码零迁移零路由零桌面）
+
+- 分支：`docs/commercial-parked-triage`（工作树 `D:\test\fde-wt-g1`，基线 fork/main `a0b9ec3`）
+- 状态：**completed**（现测＋登记；剩余外部闸维持挂账，未假装完成）
+- **起因**：用户要求「用交互式问题选择方式解决遗留挂账」——四项挂账逐项核实可实施性后，**唯一真正可推进**的是 GAP-15 复审（`agent_runs` 已非零）；§1.8 体验上限消费接线归 V3.2 simulation 域 Goal 线（跨域不越线）；§1.4 集团归并（法务）＋§17 数值拍板（业务）为外部闸无代码落点（运维面板已呈现缺口，催办靠外部）。
+- **GAP-15 触发器现测（活库 @ 部署镜像 `f863fe65…`，`fork/main` `a0b9ec3`）**：
+  1. 前半 `agent_runs 非零` ✅＝实 run **12**（`idempotency_key not like 'rehearsal:%'`；completed 6／failed 3／timeout 2／succeeded_but_receipt_invalid 1；`fallback_level` L2×3、None×9；落库 2026-11-09）。
+  2. 后半 `采纳率埋点有数` ❌＝0（`solution_signoff_resolved` 带 `ai_draft` 派生块 0／`commercial_quota_completed` 带 `ai_draft_adoption` 0／`guidance.draft_*` ∅）——12 条实 run 无一在方案确认流上产生采纳留痕，缺**首条采纳样本**而非样本量。
+  3. 判定＝触发器**半激活**，ADR-007「默认人工确认」不放松（§0.5 红线）；对照信号＝人工拍板 `gates` passed 6／failed 1／pending 11、`automation_approvals` approved 2。
+  4. **销号条件**：任一真实采纳/否决样本落 `operation_events` 即具备完整复审证据，按 BP §1.3a 复核智能化评级与确认点密度；数据到位即销号，无需再开轮。
+- 00-gap-register GAP-15 条目追加「复审中间态」条（现测数字＋判定＋销号条件）。
+- 口径：纯文档，pytest/vitest/mypy 全不变（2706 收集/999/279）；零代码 ⇒ 无需 rebuild/alembic/重打包。
+- 剩余开放挂账（本轮裁决，全部带外部闸）：①**§1.8 体验上限消费接线**＝消费方在 V3.2 simulation 域，归 V3.2 线开工同线实施（跨域不越线）；②**§1.4 集团归并**＝法务口径（`normalize_subject_key` 单点待法务确认后改）；③**§17 数值拍板**＝业务红线，数值位 unset 为有意 fail-closed（运维面板已呈现缺口与等待来源）；④**GAP-15**＝半激活待首条采纳样本（销号条件已登记）。
