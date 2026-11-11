@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from fde_api.auth.models import User
 from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
 from fde_api.files.models import ProjectFile, ProjectFileVersion
+from fde_api.orgs.isolation import is_cross_org_action
 from fde_api.research.models import ProjectResearchForm, ProjectResearchSubject
 from fde_api.workbench.models import (
     Contract,
@@ -117,13 +118,25 @@ def record_event(
     target: EventTarget,
     changes: Mapping[str, Any],
 ) -> OperationEvent:
-    """Append one safely redacted event to the caller's active transaction."""
+    """Append one safely redacted event to the caller's active transaction.
+
+    M3b 批次②（M3a 规格 §3.4，拍板口径＝企业 org 之间）：目标为**用户**且
+    actor 作用于**别家企业**账号（``is_cross_org_action``）⇒ 事件名自动带
+    ``cross_org_`` 前缀且 ``org_id`` 取被作用账号归属——共享 recorder 单点
+    收口，商业域 admin 代操作面（角色分层/席位/认证/培训/交付资格）零调用点
+    改动即接线；平台身份目标判定恒 False ⇒ 存量事件名逐字节不变（零回归）。
+    """
     target_type = _TARGET_TYPES.get(type(target))
     if target_type is None:
         raise TypeError("Unsupported operation-event target")
+    event_org_id: str | None = None
+    if isinstance(target, User) and is_cross_org_action(actor.org_id, target.org_id):
+        event_type = f"cross_org_{event_type}"
+        event_org_id = target.org_id
     event = OperationEvent(
         actor_user_id=actor.id,
         project_id=_project_id_for_target(session, target),
+        org_id=event_org_id,
         target_type=target_type,
         target_id=target.id,
         event_type=event_type,
