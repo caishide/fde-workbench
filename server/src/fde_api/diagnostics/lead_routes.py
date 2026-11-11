@@ -93,6 +93,26 @@ def create_claim_route(session_id: str):
     return _data(claim_service.serialize_claim(claim)), 201
 
 
+@diagnostics_leads_blueprint.get("/claims")
+@_gate_first
+@require_auth
+def list_claims_route():
+    """认领单列表（**两段可见性**：admin＝全量裁定队列；非 admin＝只看自己的申请）。
+
+    ``status`` 闭集过滤（pending/accepted/rejected/all，缺省 all）；桌面裁定面
+    传 ``pending`` 拿待裁定队列。投影＝认领单 ＋ 线索摘要（**代号化**，不含
+    联系方式与姓名）＋ 认领人账号名。
+    """
+    status = (request.args.get("status") or "all").strip()
+    raw_limit = request.args.get("limit") or "50"
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 50
+    items = claim_service.list_claims(actor=_actor(), status=status, limit=limit)
+    return _data(items)
+
+
 @diagnostics_leads_blueprint.get("/claims/<claim_id>")
 @_gate_first
 @require_auth

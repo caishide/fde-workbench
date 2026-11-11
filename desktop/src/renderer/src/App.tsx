@@ -35,6 +35,7 @@ import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
 import { EnterpriseRegisterPage } from "./commercial/EnterpriseRegisterPage"
 import { EnterpriseSpacePage } from "./commercial/EnterpriseSpacePage"
 import { TranslatorPortalPage } from "./translator/TranslatorPortalPage"
+import { LeadPoolPage } from "./leads/LeadPoolPage"
 import { MetricsReportPage } from "./metrics/MetricsReportPage"
 import { PilotReportPage } from "./pilot/PilotReportPage"
 import { SimulationLabPage } from "./SimulationLab/SimulationLabPage"
@@ -94,6 +95,7 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "help") return <HelpPage />
   if (route.kind === "simulation") return <SimulationLabPage />
   if (route.kind === "translator") return <TranslatorPortalPage />
+  if (route.kind === "leads") return <LeadPoolPage />
   if (route.kind === "metrics") return <MetricsReportPage />
   if (route.kind === "pilot") return <PilotReportPage />
   if (route.kind === "extensions") return route.tool === 'lcsc-compare' ? <LcscComparePage /> : route.tool ? <LcscToolPage key={route.tool} variant={route.tool} /> : <ExtensionsPage initialTab={route.tab} />
