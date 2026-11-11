@@ -107,7 +107,7 @@ def cmd_bootstrap(_args: argparse.Namespace) -> int:
     print(f"fixtures={len(fixtures)}: {', '.join(sorted(fixtures))}")
     for card_id in sorted(fixtures):
         eval_lib.load_card(root, card_id)  # 缺卡即 fail-closed
-    meta_path = root / "meta" / "元验证夹具-v0.json"
+    meta_path = root / "meta" / META_FIXTURE_FILENAME
     if not meta_path.is_file():
         raise SystemExit(f"元验证夹具缺失：{meta_path}")
     print(f"truth_root={root}")
@@ -226,9 +226,13 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 # ── judge（T-08：元验证先行 + 逐卡评分） ─────────────────────────────
 
+# 元验证夹具文件名（真相层 meta/ 目录）。v0.2＝curve 1 元验证 fail 的版本
+# 断点修订（A1 期望带 78–100 ＋ rubric-v0.2 同源豁免）；v0.1 原件留存不覆写。
+META_FIXTURE_FILENAME = "元验证夹具-v0.2.json"
+
 
 def _build_anchors(root: Path) -> list[dict[str, Any]]:
-    meta = eval_lib.load_json(root / "meta" / "元验证夹具-v0.json")
+    meta = eval_lib.load_json(root / "meta" / META_FIXTURE_FILENAME)
     anchors: list[dict[str, Any]] = []
     missing: list[str] = []
     for anchor in meta.get("anchors") or []:
@@ -309,7 +313,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         )
 
         anchors = _build_anchors(root)
-        meta_fixture = eval_lib.load_json(root / "meta" / "元验证夹具-v0.json")
+        meta_fixture = eval_lib.load_json(root / "meta" / META_FIXTURE_FILENAME)
         counterexamples = [
             {
                 "case_id": str(item.get("case_id") or ""),
@@ -320,6 +324,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
         ]
         print(f"meta_validation: anchors={len(anchors)} counterexamples={len(counterexamples)}", flush=True)
         meta_gate = run_meta_validation(client, anchors=anchors, counterexamples=counterexamples)
+        meta_gate["meta_fixture_version"] = str(meta_fixture.get("fixture_version") or "")
         print(f"meta_gate={meta_gate['verdict']}", flush=True)
 
         scored: dict[str, Any] = {}

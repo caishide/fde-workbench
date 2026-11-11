@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # 诊断报告科目评分模型（T-08）：空 = 沿用训练场评估模型槽位；评分模型
     # 与生成模型分档是常态，独立槽位便于单独校准。
     diagnostic_judge_model: str = ""
+    # 诊断报告**生成**模型的显式槽位（curve 1 修复轮）：空 = 不接管，沿用
+    # execute_ai_prompt 既有解析链（服务账号偏好行 → system-default〔借行业
+    # 模板槽位〕——curve 1 真机归因确认该链工作正常）。设值即整体接管：
+    # 单模型端点必须填端点实际在售的模型名（默认族值 deepseek-v4-pro 在不售
+    # 它的端点上会 400）。
+    deepseek_diagnostic_report_model: str = ""
     # goal-d9：翻译器管道（文本 JSON 提炼）。goal-d13 拍板：provider 切 kimi
     # 槽位（kimi-k3，Moonshot OpenAI 兼容端点），客户端仍走通用文本 JSON 栈。
     # T6 高成本 run 前评审（goal-d11，总纲 §2.2 T6）：拟用 agent 的

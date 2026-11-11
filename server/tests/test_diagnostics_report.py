@@ -518,3 +518,128 @@ def test_ai_actor_missing_fails_closed(diag_app, db_session) -> None:
             resolve_ai_actor(db_session)
         assert caught.value.status == 503
         assert caught.value.code == "diagnostic_ai_unavailable"
+
+
+# ── curve 1 修复轮（2026-11-11）：预算标定钉 + 诊断模型槽位显式化 ──────
+
+
+def test_report_budget_calibrated_for_thinking_models() -> None:
+    """真机归因钉（curve 1，2026-11-11）：6000 预算下推理模型思考吃穿预算
+    ⇒ ai_output_truncated ×3 + 截断残 JSON 契约违规 ×3（6 卡全灭）。同端点
+    同模型的 judge 通道实测 16000 双连过（输出 7.1k/8.2k）；MiniMax-M3.1-Flash
+    硬顶 16384（V31-P1 实测）——16000 贴顶而不过。静默回退旧值必须转红。"""
+    assert diag_jobs.REPORT_MAX_TOKENS >= 16000
+
+
+def test_model_slot_default_off_keeps_preference_chain(diag_app) -> None:
+    """槽位缺省空 ⇒ 不接管（零行为变更）：既有解析链（服务账号偏好行 →
+    system-default）在 curve 1 真机归因中工作正常——接管必须显式 opt-in。"""
+    with diag_app.app_context():
+        assert diag_jobs._diagnostic_model_override() is None
+
+
+def test_model_slot_set_takes_over_model_selection(diag_app) -> None:
+    """设槽位 ⇒ 整体接管：模型名/端点/密钥齐备，provider 由 base_url 单点
+    命名（MiniMax 端点不得标成 deepseek——model_preferences 同一把尺）。"""
+    from pydantic import SecretStr
+
+    diag_app.config["SETTINGS"] = diag_app.config["SETTINGS"].model_copy(
+        update={
+            "deepseek_diagnostic_report_model": "MiniMax-M3.1-Flash",
+            "deepseek_base_url": "https://api.minimaxi.com/v1",
+            "deepseek_api_key": SecretStr("k" * 40),
+        }
+    )
+    with diag_app.app_context():
+        override = diag_jobs._diagnostic_model_override()
+    assert override is not None
+    assert override["model"] == "MiniMax-M3.1-Flash"
+    assert override["base_url"] == "https://api.minimaxi.com/v1"
+    assert override["provider"] == "minimax"
+    assert override["api_key"] == "k" * 40
+
+
+def test_model_slot_set_without_credentials_fails_closed(diag_app) -> None:
+    """显式接管却缺端点/密钥 ⇒ fail-closed：静默回落偏好链会把「设了槽位却
+    没生效」掩盖掉（CR-046 家族：配置面沉默失效应显式暴露）。"""
+    diag_app.config["SETTINGS"] = diag_app.config["SETTINGS"].model_copy(
+        update={
+            "deepseek_diagnostic_report_model": "MiniMax-M3.1-Flash",
+            "deepseek_base_url": "https://api.minimaxi.com/v1",
+            "deepseek_api_key": None,
+        }
+    )
+    with diag_app.app_context():
+        with pytest.raises(diag_jobs.ReportGenerationError) as caught:
+            diag_jobs._diagnostic_model_override()
+    assert caught.value.code == "report_model_slot_incomplete"
+
+
+def test_worker_passes_budget_and_slot_to_execute(diag_app, diag_client, db_session) -> None:
+    """端到端接线钉：handler 把 16000 预算与槽位解析结果传给 execute_ai_prompt
+    （缺省槽位 ⇒ model_override=None，不绕开偏好解析链）。"""
+    captured: dict[str, Any] = {}
+
+    def _fake_execute(**kwargs):
+        captured.update(kwargs)
+        return {
+            "text": json.dumps(_good_payload(), ensure_ascii=False),
+            "model": {"provider": "test", "name": "test-model"},
+            "provider_usage": {},
+        }
+
+    _actor_user(db_session)
+    token, session_id = _prepare_session(diag_client)
+    diag_client.post(
+        "/api/v1/diagnostics/session/report", json={}, headers={TOKEN_HEADER: token}
+    )
+    original = diag_jobs.execute_ai_prompt
+    diag_jobs.execute_ai_prompt = _fake_execute
+    job = SimpleNamespace(target_id=session_id)
+    try:
+        with diag_app.app_context():
+            diag_jobs.handle_diagnostic_report(job)
+    finally:
+        diag_jobs.execute_ai_prompt = original
+    assert captured["max_tokens"] == diag_jobs.REPORT_MAX_TOKENS
+    assert captured["model_override"] is None
+
+
+def test_worker_passes_slot_override_to_execute_when_set(diag_app, diag_client, db_session) -> None:
+    """端到端接线钉（设值态）：槽位非空 ⇒ handler 必须把接管 dict 原样传给
+    execute_ai_prompt——摘掉 _call_model 的 model_override 接线时本钉转红
+    （缺省态两路同为 None，无判别力）。"""
+    from pydantic import SecretStr
+
+    captured: dict[str, Any] = {}
+
+    def _fake_execute(**kwargs):
+        captured.update(kwargs)
+        return {
+            "text": json.dumps(_good_payload(), ensure_ascii=False),
+            "model": {"provider": "test", "name": "test-model"},
+            "provider_usage": {},
+        }
+
+    diag_app.config["SETTINGS"] = diag_app.config["SETTINGS"].model_copy(
+        update={
+            "deepseek_diagnostic_report_model": "MiniMax-M3.1-Flash",
+            "deepseek_base_url": "https://api.minimaxi.com/v1",
+            "deepseek_api_key": SecretStr("k" * 40),
+        }
+    )
+    _actor_user(db_session)
+    token, session_id = _prepare_session(diag_client)
+    diag_client.post(
+        "/api/v1/diagnostics/session/report", json={}, headers={TOKEN_HEADER: token}
+    )
+    original = diag_jobs.execute_ai_prompt
+    diag_jobs.execute_ai_prompt = _fake_execute
+    job = SimpleNamespace(target_id=session_id)
+    try:
+        with diag_app.app_context():
+            diag_jobs.handle_diagnostic_report(job)
+    finally:
+        diag_jobs.execute_ai_prompt = original
+    override = captured.get("model_override")
+    assert override is not None and override["model"] == "MiniMax-M3.1-Flash"

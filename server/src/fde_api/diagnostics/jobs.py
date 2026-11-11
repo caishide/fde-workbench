@@ -54,8 +54,15 @@ DIAGNOSTIC_REPORT_JOB_TYPE = "diagnostics.report"
 # 畸形输出时把 worker 拖死。
 CONTRACT_RETRY_LIMIT = 1
 
-# 报告输出预算（提示词＋答案的上下文已由服务端裁剪；这里只给正文留量）
-REPORT_MAX_TOKENS = 6000
+# 报告输出预算（提示词＋答案的上下文已由服务端裁剪；这里只给正文留量）。
+# 16000 是**标定值不是拍脑袋**（2026-11-11 curve 1 真机归因：6000 预算下思考
+# 吃穿预算 ⇒ ai_output_truncated ×3 + 截断残 JSON 契约违规 ×3，6 卡全灭）：
+# 推理模型（MiniMax-M3.1-Flash 级）的思考与正文**共用** max_tokens，6000 连
+# 思考都不够；同端点同模型的 judge 通道实测 16000 双连过（输出 7.1k/8.2k，
+# 思考占大头）、9000 采样到长思考仍截断——两路实测收敛同一值。上限依据
+# V31-P1 实测：MiniMax-M3.1-Flash 硬顶 16384，请求超过硬顶换不来更多正文，
+# 16000 贴顶而不过；「×2 预留」已被证伪（思考随预算增长），不再加码。
+REPORT_MAX_TOKENS = 16000
 
 
 class ReportGenerationError(Exception):
@@ -96,6 +103,48 @@ def _slot_labels(answers: dict[str, Any]) -> dict[str, str]:
     return {key: SLOT_BY_KEY[key].label for key in answers if key in SLOT_BY_KEY}
 
 
+def _diagnostic_model_override() -> dict[str, Any] | None:
+    """诊断报告的**显式模型槽位**（opt-in，默认空＝零行为变更）。
+
+    不设此键时报告模型沿用既有解析链（服务账号的模型偏好行 → system-default，
+    system-default 借用的是行业模板槽位 ``FDE_DEEPSEEK_INDUSTRY_TEMPLATE_MODEL``
+    ——curve 1 真机归因确认该链在单模型端点工作正常）。要给诊断报告独立模型
+    （例如把行业模板槽挪作他用、或单模型端点换型）时设
+    ``FDE_DEEPSEEK_DIAGNOSTIC_REPORT_MODEL`` 即整体接管模型选择——**单模型
+    端点必须填端点实际在售的模型名**（deepseek-v4-pro 默认值在不售它的端点上
+    会 400，curve 1 judge 侧同款教训）。
+    """
+    from flask import current_app
+
+    model_name = str(
+        current_app.config["SETTINGS"].deepseek_diagnostic_report_model or ""
+    ).strip()
+    if not model_name:
+        return None
+    from fde_api.control.model_preferences import _provider_for_base_url
+
+    settings = current_app.config["SETTINGS"]
+    key = settings.deepseek_api_key
+    plaintext = (
+        key.get_secret_value() if hasattr(key, "get_secret_value") else str(key or "")
+    )
+    base_url = str(settings.deepseek_base_url or "")
+    if not base_url or not plaintext:
+        # 显式接管却缺端点/密钥 ⇒ fail-closed：让调用按「模型未配置」失败，
+        # 不静默回落偏好链（那会让「设了槽位却没生效」被掩盖）。
+        raise ReportGenerationError(
+            "report_model_slot_incomplete",
+            "FDE_DEEPSEEK_DIAGNOSTIC_REPORT_MODEL 已设置但端点或密钥缺失。",
+            retryable=False,
+        )
+    return {
+        "model": model_name,
+        "base_url": base_url,
+        "api_key": plaintext,
+        "provider": _provider_for_base_url(base_url),
+    }
+
+
 def _call_model(*, actor_user_id: str, row: LeadDiagnosticSession) -> tuple[str, dict[str, Any]]:
     """调 AI（单一入口 ``execute_ai_prompt``）。"""
     prompt = build_report_prompt(
@@ -112,6 +161,7 @@ def _call_model(*, actor_user_id: str, row: LeadDiagnosticSession) -> tuple[str,
         return_metadata=True,
         use_tools=False,
         max_tokens=REPORT_MAX_TOKENS,
+        model_override=_diagnostic_model_override(),
     )
     text = ""
     model_info: dict[str, Any] = {}

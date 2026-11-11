@@ -240,6 +240,23 @@ def test_system_prompt_encodes_veto_and_parroting_rules() -> None:
     assert "refusal" in dj.SYSTEM_PROMPT
 
 
+def test_rubric_v02_breakpoint_parroting_clause_rescoped() -> None:
+    """rubric v0.2 断点钉（2026-11-11 curve 1 元验证 fail）：复述条款重界定。
+
+    v0.1 判据「≥4 条问题实质与句式高度重合」与①维「按参考材料关键问题给分」
+    结构性混淆——报告与参考材料同出一访谈时实质收敛是构造性的（curve 1 A1
+    误发实测）。v0.2 只认逐字级连续转写并明示同源豁免；版本常量必须显式换版
+    （防「改考题不换版本」伪装成进化）。
+    """
+    assert dj.DIAGNOSTIC_JUDGE_RUBRIC_VERSION == "rubric-v0.2"
+    # 同源豁免句必须可被模型读到（v0.1 误发的直接根因就是豁免只在夹具 notes、
+    # 不在 judge 提示词）
+    assert "同源实质收敛" in dj.SYSTEM_PROMPT
+    assert "连续整段搬运" in dj.SYSTEM_PROMPT
+    # v0.1 的旧判据表述必须已移除（防新旧判据并存）
+    assert "句式高度重合" not in dj.SYSTEM_PROMPT
+
+
 # ── 报告渲染 ─────────────────────────────────────────────────────────
 
 
