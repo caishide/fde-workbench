@@ -260,6 +260,21 @@ async function start(): Promise<void> {
     if (!isTrustedSender(event) || typeof id !== 'string' || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id)) throw new Error('执行记录 ID 无效。')
     clipboard.writeText(id)
   })
+  // CR-056（夜审 r6 设计稿 A′）：直连分片上传在途写计数面。renderer 4 处
+  // signed-URL 分片 PUT 不经 IPC 桥 request 包装，activeMutations 看不见它们
+  // ——上传站经 upload-helper 的 begin/end 调这两通道，把在途直连写计入
+  // 同一 activeMutations 计数器（close-guard 判据不变，语义归一到「在途写」）。
+  // label 只作计数归因（未来分面统计用），不参与判定；begin/end 由 helper
+  // 的 try/finally 保证成对，end 带防 underflow 守卫（renderer 重载时 begin
+  // 可能未达 ⇒ 与 IPC 桥既有计数同语义，不静默负数）。
+  ipcMain.handle(IPC_CHANNELS.appUploadBegin, (event, label: unknown) => {
+    if (!isTrustedSender(event)) throw new Error("Unauthorized IPC sender.")
+    activeMutations++
+  })
+  ipcMain.handle(IPC_CHANNELS.appUploadEnd, (event, label: unknown) => {
+    if (!isTrustedSender(event)) throw new Error("Unauthorized IPC sender.")
+    if (activeMutations > 0) activeMutations--
+  })
 
   mainWindow = createWindow()
   app.on("activate", () => {

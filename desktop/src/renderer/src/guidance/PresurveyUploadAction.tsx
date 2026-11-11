@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { useAuth } from "../auth/AuthProvider"
-import { isProjectFileListDto, isUploadCompleteDto, isUploadedPartDto, isUploadSessionDto } from "../files/runtimeValidation"
+import { isProjectFileListDto, isUploadCompleteDto, isUploadSessionDto } from "../files/runtimeValidation"
+import { uploadMultipartParts } from "../files/upload-helper"
 import type { UploadSessionDto } from "../files/types"
 import { PresurveyAnalysisAction } from "./PresurveyAnalysisAction"
 import type { GuidanceAnalysisDto } from "./types"
@@ -43,16 +44,10 @@ export function PresurveyUploadAction({ projectId, hasGuidance, onConfirmed }: {
     } catch { setError("预调研表上传或安全检查失败，请稍后重试。") }
     finally { setBusy(false) }
   }
+  // CR-056（夜审 r6 A′）：分片 PUT 收拢进 upload-helper（含在途写 begin/end 计数）。
   async function uploadParts(file: File, session: UploadSessionDto) {
-    const total = Math.max(1, Math.ceil(file.size / session.part_size)); const parts: Array<{ part_number: number; etag: string }> = []
-    for (let number = 1; number <= total; number += 1) {
-      const signed = await apiRequest<unknown>(`/api/v1/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(session.id)}/parts`, { method: "POST", body: { part_number: number } })
-      if (!isUploadedPartDto(signed)) throw new Error("invalid part")
-      const start = (number - 1) * session.part_size; const response = await fetch(signed.url, { method: "PUT", body: file.slice(start, Math.min(file.size, start + session.part_size)) })
-      if (!response.ok) throw new Error("upload failed")
-      const raw = response.headers.get("etag") ?? ""; parts.push({ part_number: number, etag: raw.startsWith('"') ? raw.slice(1, -1) : raw })
-    }
-    return parts
+    const base = `/api/v1/projects/${encodeURIComponent(projectId)}/files`
+    return uploadMultipartParts(apiRequest, base, session, file, { label: "presurvey-upload" })
   }
   async function waitUntilAvailable(fileId: string | null): Promise<string> {
     for (let attempt = 0; attempt < 30; attempt += 1) {

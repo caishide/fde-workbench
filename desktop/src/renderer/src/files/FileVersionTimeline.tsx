@@ -5,7 +5,8 @@ import { useDangerConfirm } from "../common/DangerConfirmProvider"
 import { useAsyncAction } from "../common/useAsyncAction"
 import { FilePreview } from "./FilePreview"
 import { fileTooLarge, versionCanBePreviewed } from "./fileCapabilities"
-import { isFileUrlDto, isUploadCompleteDto, isUploadedPartDto, isUploadSessionDto } from "./runtimeValidation"
+import { isFileUrlDto, isUploadCompleteDto, isUploadSessionDto } from "./runtimeValidation"
+import { uploadMultipartParts } from "./upload-helper"
 import type { ProjectFileDto, ProjectFileVersionDto, UploadSessionDto } from "./types"
 import { Loading } from "../components/ui"
 
@@ -113,21 +114,8 @@ export function FileVersionTimeline({ projectId, file, canManage = false, mode =
   }
 
   async function uploadSelectedFile(base: string, selectedFile: File, session: UploadSessionDto) {
-    const total = Math.max(1, Math.ceil(selectedFile.size / session.part_size))
-    const parts: Array<{ part_number: number; etag: string }> = []
-    for (let partNumber = 1; partNumber <= total; partNumber += 1) {
-      const signed = await apiRequest<unknown>(`${base}/${encodeURIComponent(session.id)}/parts`, {
-        method: "POST", body: { part_number: partNumber },
-      })
-      if (!isUploadedPartDto(signed)) throw new Error("invalid signed part")
-      const start = (partNumber - 1) * session.part_size
-      const response = await fetch(signed.url, {
-        method: "PUT", body: selectedFile.slice(start, Math.min(selectedFile.size, start + session.part_size)),
-      })
-      if (!response.ok) throw new Error(`storage_upload_failed:${response.status}`)
-      parts.push({ part_number: partNumber, etag: (response.headers.get("etag") ?? "").replace(/^"|"$/g, "") })
-    }
-    return parts
+    // CR-056（夜审 r6 A′）：分片 PUT 收拢进 upload-helper（含在途写 begin/end 计数）。
+    return uploadMultipartParts(apiRequest, base, session, selectedFile, { label: "version-timeline" })
   }
 
   const content = (

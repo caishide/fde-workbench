@@ -2,6 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审挂账实施轮 r7（CR-056/057 桌面两挂点按 r6 设计稿落地：直连分片上传在途写计数＋打包态 CSP connect-src 构建注入；零迁移零路由零服务端，2026-11-11）
+
+- **CR-056（夜审 r6 设计稿推荐 A′，蔡工 2026-11-11 拍板开实施）**：close-guard 在途写计数补覆盖 renderer 直连 signed-URL 分片 PUT——**新增共享面 `desktop/src/renderer/src/files/upload-helper.ts`**（`uploadMultipartParts` 收拢 4 处同构「取签→分片 PUT」循环：ProjectFiles／PresurveyUploadAction／NewProjectPageV2／FileVersionTimeline，行为逐位保留含取消语义与错误码）；**在途写计数经既有 IPC 桥**（NEW 通道 `appUploadBegin/End`，main 计入 `activeMutations`、preload/web-bridge 各补面对齐，web 形态 no-op 零行为变化）——helper 内置 `notifyUploadBegin/End`（`try/finally` 成对、best-effort 静默退化）；100MB 级上传中途关窗不再静默放行。**静态钉**（close-guard.test.ts 扩 4 例）：main/preload 通道接线在位＋helper begin/finally 成对＋**全仓 renderer 侧裸分片 PUT 只许出现在 upload-helper.ts（第 5 处上传面即红）**。
+- **CR-057（夜审 r6 设计稿推荐 A＋D，同拍板）**：打包态 meta CSP `connect-src` 不再写死回环——NEW 纯函数 `desktop/src/main/build-csp.ts::buildCspConnectSrc`（缺省恒等于旧写死值＝零回归承诺；远程 `fdeApiUrl` origin＋可选 OSS 主机追加去重；绝不 `https:` 通配）＋`electron.vite.config.ts` NEW 构建注入插件（`apply:"build"` 只碰打包物不碰 dev；读 package.json `build.extraMetadata` 的 `fdeApiUrl`/`fdeOssHost` 单点来源，不造第二配置面）。**实弹双向验证**：本地默认打包 `out/renderer/index.html` connect-src 恒 `http://127.0.0.1:8010`（零变化）；临时改 extraMetadata 为 `https://app.fde18.com`＋OSS 主机后重打包 ⇒ `connect-src https://app.fde18.com https://oss-cn-hangzhou.example.com`（注入生效），恢复后回缺省。**方案 D 形态矩阵成文**＝README「远程部署」行补三形态对齐表（本地回环+local／远程 API+local／远程 API+OSS 须补 `fdeOssHost` 否则二进制面静默阻断，半坏→明坏）。
+- **测试**：close-guard +4（通道接线/preload 面/helper 成对/直连面唯一定位静态钉）＋NEW `build-csp.test.ts` **10 例**（缺省零回归/远程 origin/OSS 追加去重/本地+OSS/非 http(s) 回落/坏主机不追加/https: 通配否决钉/vite 插件挂载静态钉）＋NEW `upload-helper.test.ts` **4 例**（3 片边界分片+进度单调/坏签名 URL 抛 invalid signed part/PUT 非 ok 抛 storage_upload_failed:403/取消零分片）；**变异三连全红→字节级还原→绿**（M1 摘 main 上传 IPC 接线⇒close-guard 红；M2 helper 摘 begin/end⇒close-guard 红；M3 摘 vite 插件挂载⇒build-csp 挂载钉红）；typecheck 双 tsconfig 绿；全量 vitest **1022 passed（90 文件）**。
+- 口径：纯桌面＋文档轮——server 零改动⇒无需 rebuild 三镜像/alembic；路由/表/迁移/蓝图/mypy 全部不变；桌面变更 ⇒ **便携版 r35** 重打包随轮交付（asar 字节验证随包）；vitest 终值以本 PR CI 为准（本地全量 **1022 passed（90 文件）**＝M2 轮基线 1004 ＋ 本轮 +18〔build-csp 10 ＋ upload-helper 4 ＋ close-guard 扩面 4〕逐位吻合）。
+
 ## [未发布] — AI 原生化 N1 挂账销项轮＋台账 v1.10（G7 重交回环推进：success.md 定稿活库代录 claim（指针+sha256，原件永不入库）＋G7/G8/G9 门禁材料收集清单落仓＋T-A10 排期销项；G-07 CLOSED 维持、G-01 OPEN 重交推进中，纯文档＋活库门禁代录，2026-11-11）
 
 蔡工交互拍板四项（①T-A10 排期到下一实施轮／②容器栈 rebuild 维持挂账归部署归属方不越权／③G7 重交＝出材料清单供收集／④G8/G9＝出材料准备清单）后的挂账销项轮：

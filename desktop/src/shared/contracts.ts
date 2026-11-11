@@ -85,6 +85,15 @@ export interface FdeBridge {
     openLcscBrowser?(url: string): Promise<void>
     showLcscDownload?(filename: string): Promise<void>
     copyLcscRunId?(id: string): Promise<void>
+    /**
+     * CR-056（夜审 r6 设计稿推荐 A′）：直连分片上传在途写计数面。
+     * renderer 直连 signed URL 的 PUT 不经 apiRequest IPC 桥，main 的
+     * activeMutations 计数器看不见——上传站经此两事件把在途直连写计入
+     * close-guard 判据。web 发行形态无 close-guard（同源反代+无主窗拦截），
+     * 实现为空操作 no-op（形状同桌面 Promise 面）。
+     */
+    uploadBegin?(label: string): Promise<void>
+    uploadEnd?(label: string): Promise<void>
   }
 }
 
@@ -95,6 +104,8 @@ export const IPC_CHANNELS = {
   authLogout: "fde:auth:logout",
   apiRequest: "fde:api:request",
   bridgeCapture: "fde:bridge:capture",
+  appUploadBegin: "fde:app:upload-begin",
+  appUploadEnd: "fde:app:upload-end",
   appVersion: "fde:app:version",
   appSetLcscEnabled: "fde:app:set-lcsc-enabled",
   appOpenLcscBrowser: "fde:app:open-lcsc-browser",

@@ -293,6 +293,11 @@ const bridge: FdeBridge = {
     },
     showLcscDownload: async () => {},
     copyLcscRunId: async (id: string) => { void navigator.clipboard?.writeText(id) },
+    // CR-056（夜审 r6 A′）：直连分片上传计数面。web 形态无 close-guard（同源反代
+    // 且无主窗拦截），计数恒为 no-op——保持 FdeBridge 契约形状与桌面 preload 对齐，
+    // upload-helper 的 notifyUploadBegin/End 在 web 形态下零行为变化。
+    uploadBegin: async () => {},
+    uploadEnd: async () => {},
   },
 }
 

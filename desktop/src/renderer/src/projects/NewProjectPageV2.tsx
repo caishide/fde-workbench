@@ -8,7 +8,8 @@ import { showToast } from "../components/ui"
 import { fetchAllPages } from "../workbench/fetchAllPages"
 import { isModuleCatalogDto, isProjectDto } from "../workbench/runtimeValidation"
 import type { ModuleCatalogDto, TemplateVersionDto, WorkbenchUserDto } from "../workbench/types"
-import { isUploadCompleteDto, isUploadedPartDto, isUploadSessionDto } from "../files/runtimeValidation"
+import { isUploadCompleteDto, isUploadSessionDto } from "../files/runtimeValidation"
+import { uploadMultipartParts, type RendererApiRequest } from "../files/upload-helper"
 import type { UploadSessionDto } from "../files/types"
 import { emptyProjectBasics, ProjectBasicsStep, type ProjectBasics } from "./ProjectBasicsStep"
 import { ProjectDraftAssistant, type ProjectConfigurationDraft } from "./ProjectDraftAssistant"
@@ -201,7 +202,7 @@ function syntheticTemplate(draft: ProjectConfigurationDraft | null, catalog: Mod
 function snapshotPayload(template: TemplateVersionDto, selected: string[]) { return { industry_name: template.industry_name, description: template.description, modules: template.modules.filter((item) => selected.includes(item.module_key)).map((item) => ({ module_key: item.module_key, name: item.name, description: item.description, sort_order: item.sort_order, tasks: item.tasks.map((task) => ({ task_key: task.task_key, name: task.name, description: task.description, duration_days: task.duration_days, default_assignee_role: task.default_assignee_role, dependency_keys: task.dependency_keys, sort_order: task.sort_order })) })) } }
 function isPresurveyDraft(value: unknown): value is { project: Record<string, string>; modules: Array<Record<string, unknown>> } { return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).project === "object" && Array.isArray((value as Record<string, unknown>).modules)) }
 
-async function uploadPresurveySource(apiRequest: ReturnType<typeof useAuth>["apiRequest"], projectId: string, file: File): Promise<void> {
+async function uploadPresurveySource(apiRequest: RendererApiRequest, projectId: string, file: File): Promise<void> {
   const base = `/api/v1/projects/${encodeURIComponent(projectId)}/files`
   const created = await apiRequest<unknown>(base, { method: "POST", body: { name: file.name, display_name: file.name.replace(/\.docx$/i, ""), size_bytes: file.size, mime_type: file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document", category: "attachment", business_category: "预调研", idempotency_key: crypto.randomUUID() } })
   if (!isUploadSessionDto(created)) throw new Error("invalid upload session")
@@ -210,16 +211,7 @@ async function uploadPresurveySource(apiRequest: ReturnType<typeof useAuth>["api
   if (!isUploadCompleteDto(complete)) throw new Error("invalid upload completion")
 }
 
-async function uploadFileParts(apiRequest: ReturnType<typeof useAuth>["apiRequest"], base: string, session: UploadSessionDto, file: File) {
-  const parts: Array<{ part_number: number; etag: string }> = []
-  const total = Math.max(1, Math.ceil(file.size / session.part_size))
-  for (let partNumber = 1; partNumber <= total; partNumber += 1) {
-    const signed = await apiRequest<unknown>(`${base}/${encodeURIComponent(session.id)}/parts`, { method: "POST", body: { part_number: partNumber } })
-    if (!isUploadedPartDto(signed)) throw new Error("invalid upload part")
-    const start = (partNumber - 1) * session.part_size
-    const response = await fetch(signed.url, { method: "PUT", body: file.slice(start, Math.min(file.size, start + session.part_size)) })
-    if (!response.ok) throw new Error("storage upload failed")
-    parts.push({ part_number: partNumber, etag: (response.headers.get("etag") ?? "").replace(/^"|"$/g, "") })
-  }
-  return parts
+async function uploadFileParts(apiRequest: RendererApiRequest, base: string, session: UploadSessionDto, file: File) {
+  // CR-056（夜审 r6 A′）：分片 PUT 收拢进 upload-helper（含在途写 begin/end 计数）。
+  return uploadMultipartParts(apiRequest, base, session, file, { label: "new-project-presurvey" })
 }

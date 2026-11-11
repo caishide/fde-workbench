@@ -239,7 +239,7 @@ worker / scheduler 不监听端口，光看「容器 Up」看不出循环是否�
 - compose 的 api 服务已用 Gunicorn（2 worker）承载并绑定 `127.0.0.1:8010`；远程访问须经 HTTPS 反向代理，不要将 Flask 开发服务器用于生产。
 - PostgreSQL、Redis、OSS 使用独立最小权限账号；Redis 不发布宿主端口（compose 默认不发布）。
 - 本地文件存储目录（容器卷 `fde_storage`）、数据库和管理员配置密文必须一起备份。
-- 桌面安装包默认连接 `http://127.0.0.1:8010`。远程部署时，在打包前修改 `desktop/package.json` 的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。
+- 桌面安装包默认连接 `http://127.0.0.1:8010`。远程部署时，在打包前修改 `desktop/package.json` 的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。**启用 OSS 直连存储（`storage_backend=oss`）时，打包前再补 `build.extraMetadata.fdeOssHost`（OSS 主机，可带或不带 `https://`）——它经构建注入进打包态 CSP 的 `connect-src`（CR-057），漏配则文件二进制面（renderer 直连 signed URL 的上传/下载/预览）被 CSP 静默阻断（半坏隐蔽态）**。形态×存储对齐表：本地回环+local（缺省，零变化）／远程 HTTPS API+local（signed URL 经服务端同源或反代下发）／远程 HTTPS API+OSS（须补 `fdeOssHost`）。`fdeOssHost` 缺省省略＝本地形态零行为变化。
 - 开源版没有内置更新中心；版本升级由部署者通过代码发布、数据库迁移和重新打包完成。
 - **让别人从公网登录的受控试用**：见 [对外受控试用部署方案 v1.0](docs/deployment/对外试用部署方案-v1.md)——覆盖 HTTPS 反向代理、客户端重新打包、账号分发与回收、数据红线及上线验收清单。本文件仍是部署命令的唯一权威，该方案只写对外场景的增量与边界，不复制命令。
 
