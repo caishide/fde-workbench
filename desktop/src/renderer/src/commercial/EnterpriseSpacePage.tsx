@@ -39,7 +39,13 @@ interface SpacePayload {
     registration_entry: Record<string, string>
     projects: { project_id: string; project_code: string; name: string; status: string }[]
   }
-  triage_decisions: { id: string; tier: string; rationale: string | null; decided_at: string | null }[]
+  triage_decisions: {
+    id: string
+    tier: string
+    tier_label?: string
+    rationale: string | null
+    decided_at: string | null
+  }[]
   paid_options: {
     options: Record<string, { label: string; description: string; follow_up: string }>
     current_choice: { id: string; option_key: string; option_label: string; chosen_at: string | null } | null
@@ -48,12 +54,18 @@ interface SpacePayload {
   invitations: SpaceInvitation[]
   org_id: string | null
   registration_entries: Record<string, Record<string, string>>
+  diagnosis: {
+    state: string
+    completed_at: string | null
+    all_completed: boolean
+    deliverables: { key: string; label: string; done: boolean }[]
+  }
 }
 
 const SUBJECT_STORAGE_KEY = "fde.enterprise.subject_key"
 
 export function EnterpriseSpacePage() {
-  const { apiRequest } = useAuth()
+  const { apiRequest, user } = useAuth()
   const [subjectKey, setSubjectKey] = useState("")
   const [space, setSpace] = useState<SpacePayload | null>(null)
   const [error, setError] = useState("")
@@ -66,6 +78,12 @@ export function EnterpriseSpacePage() {
   const [acceptToken, setAcceptToken] = useState("")
   const [inviteBusy, setInviteBusy] = useState(false)
   const [acceptBusy, setAcceptBusy] = useState(false)
+
+  // ── M5-2：三档分流（GAP-14 入口；admin 双闸）状态 ──
+  const [triageTier, setTriageTier] = useState("")
+  const [triageRationale, setTriageRationale] = useState("")
+  const [triagePassword, setTriagePassword] = useState("")
+  const [triageBusy, setTriageBusy] = useState(false)
 
   useEffect(() => {
     try {
@@ -173,6 +191,45 @@ export function EnterpriseSpacePage() {
     }
   }
 
+  // ── M5-2：三档分流人工判定（admin 双闸；诊断完成后才可判定）──
+  async function recordTriage(): Promise<void> {
+    if (!space || triageBusy) return
+    const tier = triageTier
+    const rationale = triageRationale.trim()
+    const password = triagePassword
+    if (!tier) {
+      setError("请选择分流档位。")
+      return
+    }
+    if (!rationale) {
+      setError("请填写分流依据（rationale）。")
+      return
+    }
+    if (!password) {
+      setError("请输入管理员密码以确认本次判定。")
+      return
+    }
+    setTriageBusy(true)
+    setError("")
+    setNotice("")
+    try {
+      await apiRequest<unknown>(
+        `/api/v1/admin/commercial/enterprise-spaces/${encodeURIComponent(space.subject.subject_key)}/triage-decisions`,
+        { method: "POST", body: { tier, rationale, confirm_password: password } },
+      )
+      setTriageTier("")
+      setTriageRationale("")
+      setTriagePassword("")
+      // 先复读刷新再落提示——load() 会清空提示位，顺序颠倒则成功提示被吞
+      await load(space.subject.subject_key)
+      setNotice("已记录三档分流人工判定（可回看）。")
+    } catch (caught) {
+      setError(messageOf(caught))
+    } finally {
+      setTriageBusy(false)
+    }
+  }
+
   return (
     <section className="page enterprise-space-page">
       <header className="page-heading">
@@ -215,6 +272,32 @@ export function EnterpriseSpacePage() {
             <p>业务问题：{space.subject.problem_description ?? "未登记"}</p>
             <p>免费额度状态：{space.quota.state}</p>
             <p>交付状态：{space.engagement_state === "paid_delivery" ? "已选付费交付" : "自助服务"}</p>
+          </section>
+
+          <section className="panel" aria-labelledby="enterprise-diagnosis-heading">
+            <div className="panel-heading">
+              <div>
+                <h2 id="enterprise-diagnosis-heading">诊断完成判据</h2>
+                <p>六项免费交付物全部完成方可进入三档分流与付费选项（判据来自 G2 权威，此处仅聚合呈现）。</p>
+              </div>
+            </div>
+            <p>
+              诊断状态：{space.diagnosis.state}
+              {space.diagnosis.completed_at ? ` · 完成于 ${space.diagnosis.completed_at}` : ""}
+            </p>
+            <ul className="extension-stack">
+              {space.diagnosis.deliverables.map((item) => (
+                <li key={item.key}>
+                  <strong>{item.label}</strong>
+                  <span>{item.done ? "已完成" : "未完成"}</span>
+                </li>
+              ))}
+            </ul>
+            <p>
+              {space.diagnosis.all_completed
+                ? "六项判据已全部满足，可进入三档分流。"
+                : "尚有交付物未完成，暂不可分流。"}
+            </p>
           </section>
 
           <section className="panel" aria-labelledby="enterprise-options-heading">
@@ -266,6 +349,83 @@ export function EnterpriseSpacePage() {
               </ul>
             )}
           </section>
+
+          <section className="panel" aria-labelledby="enterprise-triage-history-heading">
+            <div className="panel-heading">
+              <div>
+                <h2 id="enterprise-triage-history-heading">三档分流决定（可回看）</h2>
+                <p>平台顾问（admin）人工判定并留痕：谁在何时判了哪一档、依据是什么。</p>
+              </div>
+            </div>
+            {space.triage_decisions.length === 0 ? (
+              <p>暂无分流决定。</p>
+            ) : (
+              <ul className="extension-stack">
+                {space.triage_decisions.map((item) => (
+                  <li key={item.id}>
+                    {item.tier_label ?? item.tier} · 判定于 {item.decided_at ?? "未知"}
+                    {item.rationale ? ` · 依据：${item.rationale}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {user?.role === "admin" ? (
+            <section className="panel" aria-labelledby="enterprise-triage-action-heading">
+              <div className="panel-heading">
+                <div>
+                  <h2 id="enterprise-triage-action-heading">记录三档分流（admin 双闸）</h2>
+                  <p>交付咨询环节由平台顾问判定；须输入管理员密码确认。诊断未完成时不可分流。</p>
+                </div>
+              </div>
+              {space.diagnosis.all_completed ? (
+                <form
+                  className="extension-stack"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void recordTriage()
+                  }}
+                >
+                  <label className="field">
+                    <span>分流档位</span>
+                    <select
+                      value={triageTier}
+                      onChange={(event) => setTriageTier(event.target.value)}
+                    >
+                      <option value="">请选择…</option>
+                      {Object.entries(space.paid_options.options).map(([key, option]) => (
+                        <option key={key} value={key}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>分流依据（rationale）</span>
+                    <textarea
+                      value={triageRationale}
+                      onChange={(event) => setTriageRationale(event.target.value)}
+                      placeholder="填写定性判定依据"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>管理员密码</span>
+                    <input
+                      type="password"
+                      value={triagePassword}
+                      onChange={(event) => setTriagePassword(event.target.value)}
+                    />
+                  </label>
+                  <div className="form-actions">
+                    <button className="primary-button" type="submit" disabled={triageBusy}>
+                      {triageBusy ? "正在记录…" : "记录分流判定"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p>诊断六项判据尚未全部完成，无法记录分流。</p>
+              )}
+            </section>
+          ) : null}
 
           {space.org_id ? (
             <section className="panel" aria-labelledby="enterprise-invite-heading">

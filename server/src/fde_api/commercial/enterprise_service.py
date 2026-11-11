@@ -47,6 +47,8 @@ from fde_api.commercial.models import (
     DIAGNOSIS_PROJECT_TIERS,
     ENGAGEMENT_STATES,
     ENTERPRISE_TRIAGE_TIERS,
+    FREE_DIAGNOSIS_DELIVERABLES,
+    FREE_DIAGNOSIS_DELIVERABLE_LABELS,
     REGISTRATION_ENTRIES,
     CommercialEntitlement,
     EnterpriseFreeQuota,
@@ -290,6 +292,24 @@ def get_enterprise_space_view(
             # 非本 org 成员且非 admin（理论上本企业空间读面已 gating 到绑定账号/
             # admin，此处兜底不泄露邀请面）
             invitations = []
+    # GAP-05：六项交付物完成判据聚合（复用 G2 权威常量 FREE_DIAGNOSIS_DELIVERABLES
+    # 与 quota.deliverables 状态，不复制定义；只做聚合呈现——「六键全真」才视为
+    # 诊断完成，门控三档分流与付费选项）。
+    quota_deliverables = quota.deliverables or {}
+    diagnosis_deliverables = [
+        {
+            "key": key,
+            "label": FREE_DIAGNOSIS_DELIVERABLE_LABELS.get(key, key),
+            "done": bool(quota_deliverables.get(key) is True),
+        }
+        for key in FREE_DIAGNOSIS_DELIVERABLES
+    ]
+    diagnosis_view = {
+        "state": quota.state,
+        "completed_at": quota.completed_at.isoformat() if quota.completed_at else None,
+        "all_completed": all(item["done"] for item in diagnosis_deliverables),
+        "deliverables": diagnosis_deliverables,
+    }
     return {
         "subject": {
             "subject_key": subject_key,
@@ -315,6 +335,7 @@ def get_enterprise_space_view(
         "invitations": invitations,
         "org_id": org_row.id if org_row is not None else None,
         "registration_entries": registration_entries_view(),
+        "diagnosis": diagnosis_view,
     }
 
 

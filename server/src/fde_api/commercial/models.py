@@ -215,6 +215,17 @@ FREE_DIAGNOSIS_DELIVERABLES = (
     "next_steps",  # 下一步实施建议
 )
 
+# 六项交付物人类可读标签（单一权威，与 FREE_DIAGNOSIS_DELIVERABLES 同序同闭集；
+# 标签仅呈现用，非完成判据——判据仍是「六键全真」，ADR-004 §1.5）。
+FREE_DIAGNOSIS_DELIVERABLE_LABELS = {
+    "diagnosis_report": "企业问题诊断报告",
+    "process_analysis": "业务流程初步分析",
+    "ai_opportunity_list": "AI 应用机会清单",
+    "implementation_plan": "建议实施方案",
+    "project_tier_budget": "预计项目等级与预算区间",
+    "next_steps": "下一步实施建议",
+}
+
 # AI 草稿采纳申报闭集（GAP-15 采纳率埋点，ADR-007 §2.5 复审触发器的前置承载；
 # 申报值域封闭枚举——完成诊断时由交付咨询环节人工申报，缺省=未申报）
 AI_DRAFT_ADOPTION_OUTCOMES = ("accepted", "modified", "rejected")
