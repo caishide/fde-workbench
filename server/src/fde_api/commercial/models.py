@@ -122,6 +122,46 @@ class CommercialEntitlement(Base, TimestampMixin):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class CommercialRoleAssignment(Base, TimestampMixin):
+    """一人多角色承载（ADR-011 §3.8 兼任；任务书 §4 T4）。
+
+    ``commercial_entitlements.commercial_role`` 单值列保留为「主角色」兼容
+    读面（**不删列**）；本表是**兼任**的承载：一人可有多行（多角色并存），
+    每行附**生效区间**（``valid_from``／``valid_until``，后者空＝长期有效）
+    与**来源**（书面依据指针＋sha256 指纹——证据红线同款，不内嵌正文）。
+    ``users.role`` 权限角色**零改动**（ADR-001 保护清单；本表正交于权限）。
+    """
+
+    __tablename__ = "commercial_role_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "commercial_role IN ('R1', 'R2', 'R3', 'R4')",
+            name="ck_commercial_role_assignments_role",
+        ),
+        CheckConstraint(
+            "valid_until IS NULL OR valid_until > valid_from",
+            name="ck_commercial_role_assignments_window",
+        ),
+        Index("ix_commercial_role_assignments_user", "user_id", "commercial_role"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    commercial_role: Mapped[str] = mapped_column(String(2), nullable=False)
+    valid_from: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    valid_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 来源＝书面依据指针＋sha256 指纹（不内嵌正文——证据红线）
+    source_uri: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assigned_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class TrainingEntitlement(Base, TimestampMixin):
     """培训权益购买行（1:N）：培训费／认证费／陪跑的购买与有效期。
 

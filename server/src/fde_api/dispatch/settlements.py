@@ -22,7 +22,9 @@ from typing import Any, Mapping
 from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 
-from fde_api.auth.models import User
+from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
+from fde_api.auth.models import ROLE_ADMIN, User
+from fde_api.auth.passwords import verify_password
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import (
     DeliveryPackage,
@@ -152,6 +154,38 @@ def _five_seat_shares(
     return platform_pct, shares
 
 
+def _require_vacancy_confirmation(
+    session: Session, actor: User, password: object
+) -> None:
+    """空缺人工确认双闸（ADR-011 §3.5-3：任何 vacant 判定＝**关键流转**）。
+
+    admin＋当前账号密码（ADR-007 双闸，CR-047 限流同款）；系统**不得自动
+    判定「谁没干活」**——判定必须是人的显式输入，摘闸即越权（任务书 T4
+    变异 M10 的守面）。密码不落事件。
+    """
+    if actor.role != ROLE_ADMIN:
+        raise DispatchServiceError(
+            "allocation_vacancy_confirmation_required",
+            "空缺判定是关键流转：仅系统运维员可确认空缺（admin＋密码双闸）。",
+            403,
+        )
+    if not isinstance(password, str) or not password:
+        raise DispatchServiceError(
+            "invalid_request", "confirm_password 必填（空缺人工确认双闸）。", 400
+        )
+    # CR-047：密码确认尝试限流——与 auth verify-password / 商业域确认闸同 key 同阈值同窗口。
+    if confirm_attempts_blocked(actor.id):
+        raise DispatchServiceError(
+            "too_many_attempts", "密码错误次数过多，请 15 分钟后重试。", 429
+        )
+    current = session.get(User, actor.id)
+    if current is None or not verify_password(current.password_hash, password):
+        record_confirm_failure(actor.id)
+        raise DispatchServiceError(
+            "invalid_password", "当前账号密码不正确。", 403
+        )
+
+
 def allocate_five_seats(
     session: Session,
     payment: Payment,
@@ -162,8 +196,10 @@ def allocate_five_seats(
     seat_payees: Mapping[str, str | None],
     vacant_reasons: Mapping[str, str] | None = None,
     rule_version_id: str | None = None,
+    confirm_password: object = None,
+    derived_vacant_seats: frozenset[str] = frozenset(),
 ) -> list[DispatchSettlementAllocation]:
-    """五席位分配原语（ADR-011 §3.2 算式，F 线 T1）。
+    """五席位分配原语（ADR-011 §3.2 算式，F 线 T1；T4 补空缺人工确认双闸）。
 
     - 基数 = 结算行 ``base_amount``（里程碑实收，不重算不二次扣）；
       平台 = T×平台份额%；池 = T×(100−平台份额)%；池内按份数分。
@@ -173,8 +209,11 @@ def allocate_five_seats(
       并断言 **Σ明细 = Σ旧四列 = 基数**；缺行/绕层直写分别 409。
     - ``seat_payees``：席位 → 收款人 user id（platform 恒 None——平台无
       user 行）；``vacant_reasons``：席位 → 原因码（闭集
-      ``ALLOCATION_REASON_CODES``）。谁 vacant 的业务判定归 T3（拉单确权）/
-      T4（空缺人工确认），本原语只按给定占用规格记账。
+      ``ALLOCATION_REASON_CODES``）。**「谁没干活」的人工判定＝关键流转**
+      （T4 落闸：``_require_vacancy_confirmation`` admin＋密码双闸，
+      ADR-011 §3.5-3——闸只咬调用方显式指定的 ``vacant_reasons``；T3 解析器
+      派生的 lead ``no_sourcer`` 是结构性派生事实，豁免）；全 paid 分配
+      不触发。
     """
     settlement = session.scalar(
         select(DeliverySettlement).where(
@@ -239,6 +278,16 @@ def allocate_five_seats(
                 f"非空缺席位 {seat} 必须有非空收款人 user id。",
                 422,
             )
+
+    if set(vacant_reasons or {}) - set(derived_vacant_seats):
+        # ADR-011 §3.5-3（F 线 T4 落闸）：**「谁没干活」的人工判定**＝关键流转，
+        # admin＋密码双闸（规格校验先行，422 形状错优先于授权错）。
+        # 豁免＝``derived_vacant_seats``（T3 解析器派生的 lead ``no_sourcer``，
+        # ADR-011 §3.4 情形六：零商机行 ⇒ 企业自来，是**结构性派生事实**
+        # 而非人工判定，见 ``resolve_lead_seat``）——闸只咬调用方显式指定的
+        # 职能空缺（delivery/county/province 及 T1 直传 lead）；全 paid 分配
+        # 不触发。
+        _require_vacancy_confirmation(session, actor, confirm_password)
 
     if base_amount < 0:
         raise DispatchServiceError("invalid_request", "计提基数不能为负数。")
@@ -424,13 +473,14 @@ def allocate_five_seats_with_lead_attribution(
     actor: User,
     seat_payees: Mapping[str, str | None] | None = None,
     vacant_reasons: Mapping[str, str] | None = None,
+    confirm_password: object = None,
 ) -> list[DispatchSettlementAllocation]:
     """按归属事实分配五席位（T2 基线 × T3 确权的接线原语）。
 
     - lead 席位由 :func:`resolve_lead_seat` **独占裁定**（收款人或
       no_sourcer 空缺）；调用方传入的 ``seat_payees``/``vacant_reasons``
-      只承载**其余池席位**（delivery/county/province，其占用判定归 T4 人工
-      确认）——传 ``lead`` 键一律 400（lead 不归调用方裁量）。
+      只承载**其余池席位**（delivery/county/province，占用判定须过 T4
+      空缺人工确认双闸）——传 ``lead`` 键一律 400（lead 不归调用方裁量）。
     - 比例快照取**当前 active 规则版本**（T2 初始基线 v100 使其常驻在场；
       缺版本 ⇒ :func:`allocate_five_seats` 原生 422
       ``five_seat_snapshot_required`` fail-closed）；``rule_version_id``
@@ -461,6 +511,10 @@ def allocate_five_seats_with_lead_attribution(
         seat_payees=payees,
         vacant_reasons=vacant,
         rule_version_id=version.id if version is not None else None,
+        confirm_password=confirm_password,
+        # T3 解析器派生的 lead 空缺（企业自来 no_sourcer）＝结构性派生事实，
+        # 豁免 T4 人工判定双闸（ADR-011 §3.4 情形六，非「谁没干活」判断）
+        derived_vacant_seats=frozenset({"lead"}) if "lead" in vacant and lead_payee is None else frozenset(),
     )
 
 

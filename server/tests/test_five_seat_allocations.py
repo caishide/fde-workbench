@@ -30,8 +30,14 @@ from fde_api.dispatch.settlements import (
     ALLOCATION_REASON_CODES,
     FIVE_SEAT_KEYS,
     allocate_five_seats,
+    allocate_five_seats_with_lead_attribution,
     mark_payable,
     record_receipt_settlements,
+)
+from fde_api.commercial.models import CommercialOpportunity
+from fde_api.projects.payment_service import (
+    PaymentServiceError,
+    mark_acceptance_passed,
 )
 from fde_api.workbench.models import OperationEvent, Payment, Project
 
@@ -134,6 +140,7 @@ def _allocate(db_session, context, *, vacant: dict[str, str] | None = None):
         rule_snapshot=FULL_FIVE_SNAPSHOT,
         seat_payees=seat_payees,
         vacant_reasons=vacant,
+        confirm_password=INITIAL_PASSWORD,  # T4：空缺人工确认双闸
     )
 
 
@@ -699,3 +706,149 @@ def test_allocation_table_roundtrip(alembic_config, engine):
             )
         }
     assert "dispatch_settlement_allocations" in names
+
+
+# ---------------------------------------------------------------------------
+# F 线 T4：空缺人工确认双闸 ＋ 自拉自交「验收人恒为平台」结构性排除
+# ---------------------------------------------------------------------------
+
+
+def test_vacancy_requires_admin_and_password(db_session):
+    """T4 双闸三负例（M10 守面）：非 admin 403；admin 无密码 400；错密码 403。
+
+    空缺判定＝关键流转（ADR-011 §3.5-3）：系统不得自动判定「谁没干活」，
+    摘闸即越权。"""
+    admin, package, settlement, payment, payees = _context(db_session)
+    not_admin = User(
+        username=f"f4.notadmin.{uuid4().hex[:8]}",
+        display_name="f4 非运维员",
+        role="fde_engineer",  # 本文件 _user 默认 admin，此处须显式非运维角色
+        password_hash=hash_password(INITIAL_PASSWORD),
+        must_change_password=False,
+        is_active=True,
+    )
+    db_session.add(not_admin)
+    db_session.flush()
+    with pytest.raises(DispatchServiceError) as excinfo:
+        allocate_five_seats(
+            db_session,
+            payment,
+            package,
+            actor=not_admin,
+            rule_snapshot=FULL_FIVE_SNAPSHOT,
+            seat_payees=_payees(
+                payees["lead"], payees["delivery"], payees["county"], None
+            ),
+            vacant_reasons={"province": "no_province_partner"},
+        )
+    assert excinfo.value.code == "allocation_vacancy_confirmation_required"
+    assert excinfo.value.status == 403
+    with pytest.raises(DispatchServiceError) as excinfo:
+        allocate_five_seats(
+            db_session,
+            payment,
+            package,
+            actor=admin,
+            rule_snapshot=FULL_FIVE_SNAPSHOT,
+            seat_payees=_payees(
+                payees["lead"], payees["delivery"], payees["county"], None
+            ),
+            vacant_reasons={"province": "no_province_partner"},
+            confirm_password=None,
+        )
+    assert excinfo.value.code == "invalid_request"
+    assert excinfo.value.status == 400
+    with pytest.raises(DispatchServiceError) as excinfo:
+        allocate_five_seats(
+            db_session,
+            payment,
+            package,
+            actor=admin,
+            rule_snapshot=FULL_FIVE_SNAPSHOT,
+            seat_payees=_payees(
+                payees["lead"], payees["delivery"], payees["county"], None
+            ),
+            vacant_reasons={"province": "no_province_partner"},
+            confirm_password="definitely-wrong",
+        )
+    assert excinfo.value.code == "invalid_password"
+    assert excinfo.value.status == 403
+
+
+def test_resolver_derived_no_sourcer_exempt_from_gate(db_session):
+    """豁免钉：T3 解析器派生的 lead ``no_sourcer``（企业自来，ADR-011 §3.4
+    情形六）是**结构性派生事实**而非「谁没干活」的人工判定 ⇒ T3 包装器
+    无密码照常落行；全 paid 分配同理不触发双闸。"""
+    admin, package, settlement, payment, payees = _context(db_session)
+    rows = allocate_five_seats_with_lead_attribution(
+        db_session,
+        payment,
+        package,
+        actor=admin,
+        seat_payees=_payees(
+            None, payees["delivery"], payees["county"], payees["province"]
+        ),
+    )  # 无 confirm_password——lead 空缺来自解析器，不归人工判定
+    by_seat = {row.seat_key: row for row in rows}
+    assert by_seat["lead"].status == "vacant"
+    assert by_seat["lead"].reason_code == "no_sourcer"
+    # 全 paid（无任何空缺）不触发双闸
+    _allocate(db_session, (admin, package, settlement, payment, payees))
+
+
+def test_delivery_payee_cannot_mark_own_acceptance(db_session):
+    """M11 守面：交付席位收款人本人标记验收 ⇒ 403 ``self_acceptance_forbidden``
+    （自拉自交项目验收人恒为平台，ADR-011 §3.8）。"""
+    admin, package, settlement, payment, payees = _context(db_session)
+    package.seat_delivery = payees["delivery"]
+    db_session.flush()
+    delivery_user = db_session.get(User, payees["delivery"])
+    with pytest.raises(PaymentServiceError) as excinfo:
+        mark_acceptance_passed(db_session, delivery_user, package.project_id)
+    assert excinfo.value.code == "self_acceptance_forbidden"
+    assert excinfo.value.status == 403
+
+
+def test_lead_owner_cannot_mark_own_acceptance(db_session):
+    """lead 归属人本人同被排除（拉单收款人与交付收款人同一谓词，验收咽喉
+    ``mark_acceptance_passed`` 双调用方都汇于此）。"""
+    from test_commercial_opportunity_attribution import _sha
+
+    admin, package, settlement, payment, payees = _context(db_session)
+    owner = _user("f4.owner")
+    db_session.add(owner)
+    db_session.flush()
+    project = db_session.get(Project, package.project_id)
+    db_session.add(
+        CommercialOpportunity(
+            enterprise_code=project.enterprise_code,
+            title="f4 自拉自交反例",
+            status="attribution_confirmed",
+            reported_by_user_id=owner.id,
+            source_uri="fdeops://f-line-t4/own.md",
+            content_hash=_sha("own"),
+            attribution_owner_user_id=owner.id,
+            attribution_confirmed_by_user_id=owner.id,
+            attribution_confirmed_at=datetime.now(timezone.utc),
+            attribution_uri="fdeops://f-line-t4/attr.md",
+            attribution_hash=_sha("attr"),
+        )
+    )
+    db_session.flush()
+    with pytest.raises(PaymentServiceError) as excinfo:
+        mark_acceptance_passed(db_session, owner, package.project_id)
+    assert excinfo.value.code == "self_acceptance_forbidden"
+    assert excinfo.value.status == 403
+
+
+def test_platform_actor_can_mark_acceptance(db_session):
+    """非收款人（平台方 admin）验收照常——排除谓词只咬席位收款人本人；
+    且零交付包项目零感知（``payments_marked=0`` 分支不受闸影响）。"""
+    admin, package, settlement, payment, payees = _context(db_session)
+    package.seat_delivery = payees["delivery"]
+    db_session.flush()
+    result = mark_acceptance_passed(db_session, admin, package.project_id)
+    assert result["payments_marked"] == 1
+    db_session.flush()
+    db_session.expire(settlement)
+    assert settlement.acceptance_passed_at is not None

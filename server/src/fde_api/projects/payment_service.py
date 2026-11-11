@@ -307,17 +307,64 @@ def update_payment(
         session.close()
 
 
+def _delivery_payee_ids(session: Session, project: Project) -> set[str]:
+    """验收时刻可辨认的席位收款人（F 线 T4，ADR-011 §3.8）。
+
+    - **交付席位**：交付包 ``seat_delivery``（draft 结算行的
+      ``seat_delivery_user_id`` 即自包镜像——验收前已知）；
+    - **拉单席位**：该企业代号下已确认归属的 ``attribution_owner_user_id``
+      （归属三戳成套——与 T3 ``resolve_lead_seat`` 同一谓词，不造第二套）。
+
+    市县/省级收款人在分配时才产生（分配后置于验收），验收时刻无从辨认 ⇒
+    不在本谓词内；「验收人恒为平台」由 G8 拍板权限尺（manage 门）共同守。
+    """
+    from fde_api.commercial.models import CommercialOpportunity
+    from fde_api.dispatch.models import DeliveryPackage
+
+    payees: set[str] = set()
+    for seat_delivery in session.scalars(
+        select(DeliveryPackage.seat_delivery).where(
+            DeliveryPackage.project_id == project.id,
+            DeliveryPackage.seat_delivery.is_not(None),
+        )
+    ):
+        if seat_delivery is not None:  # mypy 收窄（SQL 过滤后 ORM 仍标 Optional）
+            payees.add(seat_delivery)
+    if project.enterprise_code:
+        for owner_id in session.scalars(
+            select(CommercialOpportunity.attribution_owner_user_id).where(
+                CommercialOpportunity.enterprise_code == project.enterprise_code,
+                CommercialOpportunity.attribution_owner_user_id.is_not(None),
+            )
+        ):
+            if owner_id is not None:
+                payees.add(owner_id)
+    return payees
+
+
 def mark_acceptance_passed(session: Session, actor: User, project_id: str) -> dict[str, Any]:
     """G8 过门联动（gate_service decide 事务内调用，P0-4）：验收通过时刻打标。
 
     只处理已实收行（received_at 非空）：acceptance_passed_at 是
     delivery_settlements 从 draft → accrued 的起算条件之一（实收 + 验收），
     打标后顺手推进该项目已满足双条件的结算计提。无包项目零感知。
+
+    F 线 T4（ADR-011 §3.8）：自拉自交项目的**验收人恒为平台**——席位收款人
+    本人不得标记验收（结构性排除；反例用例：本人验收 403
+    ``self_acceptance_forbidden``）。本函数是 ``acceptance_passed_at`` 的
+    **唯一写咽喉**（G8 过门与收款补打两条调用方都汇于此），排除落在咽喉。
     """
     project = session.get(Project, project_id)
     if project is None:
         # 调用方（gate/收款钩子）都在项目事务内，防御分支只为类型收窄
         return {"payments_marked": 0, "settlements_accrued": 0}
+    if actor.id in _delivery_payee_ids(session, project):
+        raise PaymentServiceError(
+            "self_acceptance_forbidden",
+            "自拉自交项目验收人恒为平台：席位收款人本人不得标记验收"
+            "（ADR-011 §3.8；验收须由平台方拍板）。",
+            403,
+        )
     rows = session.scalars(
         select(Payment)
         .where(

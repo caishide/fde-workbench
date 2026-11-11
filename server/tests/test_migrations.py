@@ -90,7 +90,9 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # F 线 T2：五席位分账上线前初始基线版本（dispatch_rule_versions 种一行 active，
 #          纯数据种子零 DDL）
 # 多客户 M2：users 注册列（email/email_verified_at/registration_state）＋user_registrations 表（additive）
-HEAD_REVISION = "b8d4f6a2c9e7"
+# F 线 T4：commercial_role_assignments 单表（兼任承载：一人多角色＋生效区间
+#          ＋来源，additive；ADR-011 §3.8；十七度插队改挂 M2 b8d4f6a2c9e7 之后保单头）
+HEAD_REVISION = "e5c9f2a7d4b6"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1143,9 +1145,10 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + 多客户 M1 组织底座 a5e9c3f1b7d4（改挂 T1 之后保单头）
     # + 夜审修复 r5 迁移窗口 a9c5e2d7b3f1（改挂 M1 之后保单头）
     # + F 线 T2 初始基线 c8d2f6a4e9b1（改挂 r5 之后保单头）
-    # + 多客户 M2 注册底座 b8d4f6a2c9e7（改挂 T2 之后保单头）之后 = 64）；
+    # + 多客户 M2 注册底座 b8d4f6a2c9e7（改挂 T2 之后保单头）
+    # + F 线 T4 兼任承载 e5c9f2a7d4b6（改挂 M2 之后保单头）之后 = 65）；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 64
+    assert len(known) == 65
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical

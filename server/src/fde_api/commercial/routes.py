@@ -49,6 +49,10 @@ from fde_api.commercial.enterprise_service import (
     get_enterprise_space_view,
     record_paid_option_choice,
 )
+from fde_api.commercial.role_assignment_service import (
+    assign_commercial_role,
+    list_role_assignments,
+)
 from fde_api.commercial.service import CommercialServiceError, get_entitlement_for_view
 from fde_api.errors import error_response
 from fde_api.extensions import db
@@ -271,6 +275,50 @@ def withdraw_opportunity_route(opportunity_id: str):
     with db.session() as session, session.begin():
         data = withdraw_opportunity(
             session, actor=g.current_user, opportunity_id=opportunity_id
+        )
+        return jsonify({"data": data, "error": None})
+
+
+# ---- F 线 T4：兼任承载（ADR-011 §3.8；一人多角色，主角色兼容读面）----
+
+
+@commercial_blueprint.post("/role-assignments")
+@require_auth
+def assign_role_assignment_route():
+    """分配商业角色（**关键流转**：admin＋密码双闸；兼任承载写原语）。
+
+    一人多角色（附生效区间与书面依据指针＋sha256 指纹）；同角色区间重叠
+    409；零写 ``users.role``／``commercial_entitlements``（主角色单值列
+    不动，ADR-001 保护清单）。治理面不进 api_catalog。
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    with db.session() as session, session.begin():
+        data = assign_commercial_role(
+            session,
+            actor=g.current_user,
+            user_id=payload.get("user_id"),
+            commercial_role=payload.get("commercial_role"),
+            valid_from=payload.get("valid_from"),
+            valid_until=payload.get("valid_until"),
+            source_uri=payload.get("source_uri"),
+            content_hash=payload.get("content_hash"),
+            confirm_password=payload.get("confirm_password"),
+        )
+        return jsonify({"data": data, "error": None})
+
+
+@commercial_blueprint.get("/role-assignments/<user_id>")
+@require_auth
+def list_role_assignments_route(user_id: str):
+    """读兼任明细（admin 全量可读；本人只读自己；其余 403）。
+
+    返回兼实行集＋``main_commercial_role``（``commercial_entitlements``
+    单值列兼容读面——不删列语义的承载面）。
+    """
+    with db.session() as session:
+        data = list_role_assignments(
+            session, actor=g.current_user, user_id=user_id
         )
         return jsonify({"data": data, "error": None})
 

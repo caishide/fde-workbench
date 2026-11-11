@@ -1,10 +1,10 @@
 {
- "route_count": 459,
+ "route_count": 461,
  "blueprint_count": 51,
- "table_count": 149,
- "revision_count": 64,
+ "table_count": 150,
+ "revision_count": 65,
  "heads": [
-  "b8d4f6a2c9e7"
+  "e5c9f2a7d4b6"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -450,6 +450,14 @@
    "down_revision": "b8d4f2a6c0e8",
    "create_tables": [
     "ai_call_audits"
+   ],
+   "add_column_tables": []
+  },
+  "e5c9f2a7d4b6": {
+   "file": "e5c9f2a7d4b6_commercial_role_assignments.py",
+   "down_revision": "b8d4f6a2c9e7",
+   "create_tables": [
+    "commercial_role_assignments"
    ],
    "add_column_tables": []
   },
