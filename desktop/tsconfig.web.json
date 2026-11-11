@@ -20,6 +20,7 @@
     "src/shared/**/*.ts",
     "tests/renderer/**/*.ts",
     "tests/renderer/**/*.tsx",
+    "tests/shared/**/*.ts",
     "src/main/**/*.ts"
   ]
 }

@@ -21,6 +21,18 @@ import {
   type LoginInput,
   type UserDto,
 } from "../../shared/contracts"
+// CR-071（夜审 r8 设计稿推荐 A）：校验族提升 shared/api-safety.ts 纯函数单点。
+// web 桥与桌面 main/api-ipc.ts 消费同一实现——method 白名单／auth 路径排除／
+// 编码结构逃逸（raw+decoded 双查）／multipart 严格 schema（非法显式拒绝、
+// 不再降级）／body 可序列化，与桌面恒等价（tests 等价性静态钉防再漂移）。
+import {
+  isAllowedMethod,
+  isAuthExcludedPath,
+  isBodySerializable,
+  isMultipartFileShape,
+  isSafeApiPath,
+  type MultipartFileBodyShape,
+} from "../../shared/api-safety"
 
 // 同源反代：路径一律以 /api/v1/ 开头，由 Nginx 转发到回环 8010。
 const API_BASE = ""
@@ -195,43 +207,51 @@ async function logout(): Promise<BridgeResult<null>> {
   return ok(null)
 }
 
-function buildMultipartBody(value: Record<string, unknown>): FormData | null {
-  const fields = value.fields
-  const file = value.file
-  if (!isRecord(fields) || !isRecord(file)) return null
-  const fieldName = file.field_name
-  const name = file.name
-  const type = file.type
-  const bytes = file.bytes
-  if (typeof fieldName !== "string" || typeof name !== "string" ||
-      typeof type !== "string" || !(bytes instanceof Uint8Array)) return null
+// CR-071：multipart 组装（形状校验已由 shared 原语 isMultipartFileShape 先行
+// 通过；旧版 buildMultipartBody 形状非法 return null 的静默降级路径已废除）。
+function buildMultipartBody(value: MultipartFileBodyShape): FormData {
   const form = new FormData()
-  for (const [key, item] of Object.entries(fields)) {
+  for (const [key, item] of Object.entries(value.fields)) {
     if (typeof item === "string") form.append(key, item)
   }
-  form.append(fieldName, new Blob([bytes.slice()], { type }), name)
+  form.append(value.file.field_name, new Blob([value.file.bytes.slice()], { type: value.file.type }), value.file.name)
   return form
 }
 
-// 路径白名单：只允许同源 /api/v1/ 下的相对路径，杜绝把 access token 发到外部域。
-function isSafePath(path: string): boolean {
-  if (!path.startsWith("/api/v1/") || path.includes("\\") || path.includes("#") ||
-      path.includes("..") || /[\u0000-\u001f\u007f]/.test(path)) return false
-  try {
-    const url = new URL(path, window.location.origin)
-    return url.origin === window.location.origin && url.pathname.startsWith("/api/v1/")
-  } catch { return false }
+// 校验项 2+3+4+5+8：路径安全（raw+decoded 双查遍历/编码结构逃逸/控制字符
+// ＋origin 归一匹配）＋auth 路径排除（与桌面同尺，verify-password 唯一例外）。
+// 同源 web 形态 origin＝window.location.origin，杜绝把 access token 发到外部域。
+function isSafeApiRequest(path: string, method: string): boolean {
+  if (!isSafeApiPath(path, window.location.origin)) return false
+  return !isAuthExcludedPath(path, method)
 }
 
 async function apiRequest<T>(
   path: string,
   options: ApiRequestOptions,
 ): Promise<BridgeResult<ApiResponse<T>>> {
-  if (!isSafePath(path)) {
+  // 校验项 1：method 白名单（此前 web 桥零校验，任意 method 可发——本轮封堵）
+  if (!isAllowedMethod(options.method)) {
+    return fail({ code: "invalid_request", message: "请求方法不合法。" })
+  }
+  if (!isSafeApiRequest(path, options.method)) {
     return fail({ code: "invalid_request", message: "请求路径不合法。" })
   }
-  const multipart = isRecord(options.body) && options.body.kind === "multipart_file"
-    ? buildMultipartBody(options.body) : null
+  // GET 不带 body（桌面 validateRequest 同一语义——等价性样本钉覆盖）
+  if (options.method === "GET" && options.body !== undefined) {
+    return fail({ code: "invalid_request", message: "GET 请求不应携带请求体。" })
+  }
+  // 校验项 6＋7：multipart 严格 schema（非法显式拒绝，不再无 body 裸发）
+  // ＋body 可序列化回环（与桌面 serializeBody 同一语义）
+  let multipart: FormData | null = null
+  if (isRecord(options.body) && options.body.kind === "multipart_file") {
+    if (!isMultipartFileShape(options.body)) {
+      return fail({ code: "invalid_request", message: "请求体形状不合法。" })
+    }
+    multipart = buildMultipartBody(options.body)
+  } else if (options.body !== undefined && !isBodySerializable(options.body)) {
+    return fail({ code: "invalid_request", message: "请求体不可序列化。" })
+  }
   const headers: Record<string, string> = {
     accept: "application/json",
     authorization: `Bearer ${options.accessToken}`,
