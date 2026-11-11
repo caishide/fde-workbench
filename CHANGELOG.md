@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — somwyn G8/G9 收口轮（G-01 CLOSED＝九门全 passed·项目 100% 结项＋⑦出站闸开闸生效；纯运维＋文档轮（代码零变更、无迁移、无新路由、桌面零改动），2026-11-11）
+
+蔡工拍板「1、2 已完成／somwyn 进度 100%」后的核实与收口轮——实测发现两处「清单已录、活体未落」的缺口并当场闭合：
+
+- **实测校真（先核后动）**：somwyn（`FDE-20261025-9BF8E4AE`）当日已自行推进大半——G7 重交 4/4（03:01 success.md 定稿＋11:06 B 试点章程补齐）⇒ 11:08 `pilot.reviewer` 拍 **pass**；15/15 任务 completed、项目 status=completed；宿主 `G7-G9材料收集清单-2026-11-11.md` 权威清单「代录完成」节录满 12 件全 sha256。**两处缺口**：①清单「代录完成」节的后 4 件（G8 POC 验收表 `0919dae4…`／business-case `81c43114…`／G9 演练记录 `6330d31f…`／Go-Live 实际件 PDF `b389b040…`）**未入库**（库内 G8 1/3、G9 3/5 claimed）；②蔡工在清单的拍板批注（G8=proceed／G9=pass／G-01 CLOSED）**未落库**（G8/G9 仍 evidence 态）。
+- **①G8/G9 补录（admin 代录，先验指纹再提交）**：四份文件**现算 sha256 与清单 2026-11-11 版逐位比对（全 MATCH）**→ `submit_gate_evidence` 补录（note 注明「清单已录未入库、指纹现算 MATCH、留痕可推翻」）⇒ G8 3/3、G9 5/5 claimed（15:50，`gate_evidence_submitted` ×2 留痕）。
+- **②拍板转录（pilot.reviewer 代录，非代拍）**：蔡工书面批注在先（授权强于 N1 leg3「按推荐项」先例）⇒ AI 以 `pilot.reviewer` 执行 `decide_gate`：G8 result=pass＋**decision=proceed**（三态过门硬闸满足）、G9 result=pass；note 全注批注出处、留痕可推翻；decided_by 记 `pilot.reviewer`（蔡工本人经第二账号，D-1 账号分离语义维持）。**终态：G1–G9 九道门禁全部 passed、G-01/G-07 双 CLOSED、somwyn 100% 结项（C 款 3,300 元里程碑触发，记账模式，宿主清单在案）**；台账 v1.15＋任务书 §13 记录 #19。
+- **⑦ 出站闸开闸生效**：部署态 `server/.env` 写 `FDE_AGENT_HOST_EGRESS_GATE_ENABLED=1`＋`FDE_AGENT_HOST_EGRESS_ALLOWLIST=zcode.z.ai,api.z.ai,z.ai,api.minimaxi.com,bigmodel.cn,open.bigmodel.cn`（四探针实测出站集＋GLM API 端点族种子；可随 `agent_egress_audit` 审计逐步收紧）→ compose recreate → **活体验证**：容器 env 两键在位＋`/api/v1/health/ready` 200＋三容器 healthy；首个宿主 run 的 `agent_egress_audit` 审计事件待下次自然 run 留证。zcode 升级须复测四探针的边界注记不变。
+- **文档收口**：台账 v1.15（修订记录＋G-01 行 CLOSED 终态＋somwyn 收口轮附注）；phase-status P2 遗留行与收尾排期表 #1/#5 行；final-acceptance-checklist #14 → ✅（17+1 待条件 → **18 项全达成**）；任务书 §6.1 ⑦行开闸生效注记＋§13 #19＋§15 N1 行收口终态。
+- 口径：纯运维＋文档轮——**代码零变更、无迁移、无新路由、桌面零改动**（pytest/vitest/mypy 全不变；无需 rebuild/alembic/重打包；活库门禁事件留痕即证据）。清单尾注「工作台后端 gates 证据模块尚未实现」系陈旧误注，已勘误（gates 表/服务/API 全在役，本轮 12 件皆经 `submit_gate_evidence` 入库）。
 ## [未发布] — 获客诊断第十七轮·版本差可判定：时间机复刻 prompt-v1 组补样至 n≥3（009/023 复判均 within_noise＋生成侧合规差异 11/22→0/18 首登记；**纯文档零代码零迁移零路由**，2026-11-11）
 
 第十六轮注册的消解条件（`诊断评测-分数面分布-1.md` §4.1「v1 组补到 n≥3 ⇒ 版本差即可判」）在 HEAD 代码上**字面不可执行**——三个机械事实：①prompt-v1 文本已不存在（curve-3 断点 `5dbbe4b` 整体替换）；②`NUMBER_GATE_VERSION` 被当前 runner 无条件打进 run.json；③runner 无版本选择 CLI。忠实执行＝**时间机复刻**：历史 v1 组唯一 run `2026-11-11`（08:31 创建）生成于 #311（08:20）之后、`5dbbe4b`（11:08）之前 ⇒ `e96efa3` 就是它的生成树；detached worktree @ `e96efa3` 用 era 自带 runner 跑两轮（生成器与 judge 语义零触碰），忠实性由四轴组键机械保证（非自觉）。
