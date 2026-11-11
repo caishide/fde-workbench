@@ -44,6 +44,9 @@ def require_auth(view: ViewFunction) -> ViewFunction:
 
         g.current_user = user
         g.access_token_claims = claims
+        # M3a：org 上下文注入（**读库值**，非令牌 claim——令牌是 15 分钟快照，
+        # 授权判定一律以 users.org_id 为准，规格 §4）。
+        g.current_user_org_id = user.org_id
         return view(*args, **kwargs)
 
     return cast(ViewFunction, wrapped)
@@ -102,6 +105,9 @@ def _current_request_identity():
             settings.jwt_secret,
             algorithms=["HS256"],
             issuer="fde-workbench",
+            # M3a：7 个既有 claim 必填；org_id 走**在场性**显式校验（见下）——
+            # PyJWT 的 require 判定是「payload.get(claim) is None ⇒ 缺 claim」，
+            # 而平台身份的 org_id 合法值就是 null ⇒ 不能进 require 列表。
             options={"require": ["sub", "role", "pwd", "ver", "iat", "exp", "iss"]},
         )
     except jwt.PyJWTError:
@@ -112,6 +118,14 @@ def _current_request_identity():
         or not isinstance(claims.get("pwd"), bool)
         or type(claims.get("ver")) is not int
     ):
+        return None, None, _invalid_access_response()
+
+    # M3a：org_id claim 必须**在场**——缺该 claim 的是隔离改造前的旧令牌，
+    # 一律 401（fail-closed：「缺 claim」若按平台身份放行＝陈旧令牌越权）；
+    # 在场且为 null ＝平台身份（§11-8 拍板语义），合法。
+    if "org_id" not in claims:
+        return None, None, _invalid_access_response()
+    if claims["org_id"] is not None and not isinstance(claims["org_id"], str):
         return None, None, _invalid_access_response()
 
     session = db.session()
