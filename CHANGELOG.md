@@ -23,7 +23,15 @@
 - **交付与部署**：PR **#323**（head 两笔）→ CI 四 job 全绿 → squash 合并 **`634d3ca`**＝fork/main 顶；**main run 42969299906 四绿收口**（并发 push 取消过一次 ⇒ 等对方 run 完成后 rerun，收口于 completed/success 四 job 全 success）。本轮**零 server 改动** ⇒ 无需 rebuild 三镜像／无 alembic 升级（活体容器镜像 ID 与构建产物一致、`alembic current`＝`a7c2f9e1b4d8 (head)`、`/api/v1/health/ready` 200、url_map 与审计清单逐位一致）。
 - **登记可推翻项**：L-1 判定规则／L-2 `MIN_DISTRIBUTION_RUNS=3`／L-3 锚点 judge 轴 vs 逐卡四轴／L-4 error 行排除语义／L-5 全调用节流／L-6 评测进程内抬访客日限额／L-7 离散度归因口径／L-8 纯 judge 噪声带＝9 分（n=4）。**明细与读法边界见 NEW `docs/audit/诊断评测-分数面分布-1.md`**（仓库侧只存汇总＋指针＋sha256，原件留真相层）。
 
-## ## [未发布] — 多客户 M3b 批次④ 轮：特殊域与平台事实 57 端点（dispatch package_access 授予留痕＋特殊域隔离核验；零迁移零新路由零新表零桌面，2026-11-11）
+## ## [未发布] — 多客户 M3b 收口轮：四批 236 端点全量销号完成＋部署活体复验（纯文档零代码零迁移零路由零桌面，2026-11-11）
+
+- **销号完成**：M3b 四批全部合并入 fork/main——①-a（24 条，PR #325 `828557e`）／①-b（15 条，PR #328 `8cefc07`）／②（43 条，PR #331 `7eb9a17`）／③（97 条，PR #335 `713407b`）／④（57 条，PR #336 `405c541`＝fork/main 顶）。★**销号范围＝盘点表现测 236 全量**（write-level 79 实改＋read-only 157 读面收敛核验；任务书「122 写端点」是 M0 前先验，盘点表为准）。
+- **pytest 链（全部取**合并树 CI 实测**，不承袭 PR 期数字）**：①-b **3025 收集 = 3018 passed + 7 skipped**〔run 42978834244〕／② **3039 = 3032 + 7**〔PR #331 run 42983140581〕／③ **3052 = 3045 + 7**〔PR #335 server-tests〕／④ **3058 = 3051 + 7**〔PR #336 run 42989050456〕。★口径链的基必须取**合并树**实测——①-a 的 PR 期实测 3010 是 **rebase 前** PR 树值（rebase 融合上游 #323 ＋9 后合并树实测 3019），拿它推算会偏。
+- **结构口径现测**（收口现测，不承袭）：462 total／**461 non-static 路由**／**51 蓝图**／**150 业务表**／**66 迁移单头 `a7c2f9e1b4d8`** ＝ 四批零迁移零新路由零新表零新蓝图。
+- **部署活体复验**（合并树 `405c541` 干净树 rebuild）：三镜像 api `4434826db5e8`／worker `ab3fec947c15`／scheduler `85c7f91e3a88`，容器 `.Image` 与构建产物**逐位一致**；`alembic upgrade head` **幂等 no-op**，容器内 `alembic current` = `a7c2f9e1b4d8 (head)`；活体 `url_map` **462 total / 461 non-static** ≡ 口径；ready **200**／live **200**；★**diagnostics 部署闸默认关 ⇒ 活体 404（不确认面存在）**；三容器 **healthy**；`/app/migrations` 挂载**＝本工作树**（批次①部署时此处曾指向**他人工作树** `fde-wt-f1`——活体部署跨会话共享资源复现，已按「部署后必验三项」处置）。
+- **遗留如实登记（不掩盖）**：①**internal org 桶内跨企业混装**（盘点表待 M0 补充 #7）⇒ 消解路径归 M5；②**商机/额度主体以代号关联而非 org FK**（`enterprise_code`／`subject_key`）⇒ 其留痕判定原语未就绪，归 M5；③**活库企业身份账号 0**（注册闸关）⇒ 企业身份分支的**活体验证**待试点首个企业账号（不以测试库冒充活体）；④ADR-M3 §5「跨企业 package_access 授权 admin-only」半边**不适用**（无显式授予端点，授权在发布流程隐式发生＝派单本体跨企业）；⑤`revoke_package_access` 当前零生产调用点（仅测试可达），本轮未改其签名。
+
+## [未发布] — 多客户 M3b 批次④ 轮：特殊域与平台事实 57 端点（dispatch package_access 授予留痕＋特殊域隔离核验；零迁移零新路由零新表零桌面，2026-11-11）
 
 - **销号范围**：《全局面盘点表》④ 特殊域与平台事实全量销号——**dispatch 撮合域 18**（packages 写面 10＋offers 3＋disputes 2＋simulator replay 1＋admin rules 2）＋**simulation 演练域 14**＋agents／ai／bridge／internal／users／auth 等 25。机器判定分布＝特殊域单列 32（ADR-M3 §5）＋读面收敛核验 16＋R1 admin-only 保持＋留痕核验 5＋R2 目录写 1＋R3 主体归属 2，**逐条人工复核**：simulation 演练域是**平台级训练域**（不挂 projects/orgs，样本为模拟体）⇒ org 维度不适用；internal 3 条是**服务间认证**（令牌，非用户面）；agents／ai／bridge 各域的隔离面由既有套件覆盖（盘点表测试指针）⇒ 本批**核验销号不重复造例**。
 - **实改面＝dispatch `package_access` 授予留痕**（ADR-M3 §5 对撮合域只提的一件事：「谁授权给谁」）：`dispatch/access.py::grant_package_access` 每次授予落一条 `package_access_granted` 事件（授权人 → 被授权人 → 包 → 角色），被授权人属**别家企业**时，共享事件记录器（`projects/events.py`）单点接线自动加 `cross_org_` 前缀并把 `org_id` 取为**被授权账号归属**——跨企业授权在审计面可分辨（企业之间 vs 平台内部桶）。★**「跨企业授权 admin-only」半边如实登记为不适用**：仓库里**不存在**显式的 package_access 授予/撤销端点，授权只在**发布**流程里隐式发生（派单撮合本体：交付方席位天然跨企业），对其加 admin 闸＝断掉派单本体；`revoke_package_access` 当前零生产调用点（仅测试可达），本轮未改其签名。
