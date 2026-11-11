@@ -12,11 +12,26 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 import { buildCloseGuardDialogSpec, shouldDeferWindowClose } from "../../src/main/close-guard"
+import { walkSourceFiles } from "./source-walk"
 
+const DESKTOP_ROOT = fileURLToPath(new URL("../..", import.meta.url))
 const INDEX_SOURCE = readFileSync(
-  join(fileURLToPath(new URL("../..", import.meta.url)), "src", "main", "index.ts"),
+  join(DESKTOP_ROOT, "src", "main", "index.ts"),
   "utf-8",
 )
+const UPLOAD_HELPER_SOURCE = readFileSync(
+  join(DESKTOP_ROOT, "src", "renderer", "src", "files", "upload-helper.ts"),
+  "utf-8",
+)
+const PRELOAD_SOURCE = readFileSync(
+  join(DESKTOP_ROOT, "src", "preload", "index.ts"),
+  "utf-8",
+)
+
+// 直连分片 PUT 上传面：renderer 里 `fetch(<signed/part url>, { method:"PUT", body: <file>.slice(...) })`
+// 的形态。收拢后全仓 renderer 只许 upload-helper.ts 出现这一处（其余 4 处已消复制）；
+// 新增第 5 处直连上传面即被本正则命中 ⇒ 红。
+const DIRECT_PUT_UPLOAD_RE = /fetch\([\s\S]{0,90}?method:\s*["']PUT["'][\s\S]{0,90}?\.slice\(/
 
 describe("CR-034 在途写不退出保护决策内核", () => {
   it("无在途写入时不拦截关闭", () => {
@@ -75,5 +90,39 @@ describe("CR-034 index.ts 接线静态钉（防再次静默脱线）", () => {
   it("activeMutations 既有累计/递减点仍存在（保护数据源不被移除）", () => {
     expect(INDEX_SOURCE).toMatch(/activeMutations\+\+/)
     expect(INDEX_SOURCE).toMatch(/activeMutations--/)
+  })
+})
+
+describe("CR-056 直连分片上传在途写计数面（夜审 r6 设计稿 A′）静态钉", () => {
+  it("main 侧两个上传计数通道接线在位（begin/end 计入 activeMutations）", () => {
+    expect(INDEX_SOURCE).toMatch(/IPC_CHANNELS\.appUploadBegin/)
+    expect(INDEX_SOURCE).toMatch(/IPC_CHANNELS\.appUploadEnd/)
+    expect(INDEX_SOURCE).toMatch(/activeMutations\+\+/)
+    expect(INDEX_SOURCE).toMatch(/activeMutations--/)
+  })
+
+  it("preload 面暴露 uploadBegin/uploadEnd（与 main 通道一一对应）", () => {
+    expect(PRELOAD_SOURCE).toMatch(/IPC_CHANNELS\.appUploadBegin/)
+    expect(PRELOAD_SOURCE).toMatch(/IPC_CHANNELS\.appUploadEnd/)
+  })
+
+  it("upload-helper 在取签前 begin、try/finally 兜底 end（成对计数不泄漏）", () => {
+    expect(UPLOAD_HELPER_SOURCE).toMatch(/notifyUploadBegin\(/)
+    expect(UPLOAD_HELPER_SOURCE).toMatch(/notifyUploadEnd\(/)
+    expect(UPLOAD_HELPER_SOURCE).toMatch(/try\s*\{/)
+    expect(UPLOAD_HELPER_SOURCE).toMatch(/finally\s*\{/)
+  })
+
+  it("全仓 renderer 侧直连分片 PUT 只许出现在 upload-helper.ts（第 5 处上传面即红）", () => {
+    const rendererFiles = walkSourceFiles(
+      join(DESKTOP_ROOT, "src", "renderer"),
+      (name) => name.endsWith(".ts") || name.endsWith(".tsx"),
+    )
+    const offenders = rendererFiles.filter((file) => {
+      if (file.endsWith("upload-helper.ts")) return false
+      const source = readFileSync(file, "utf-8")
+      return DIRECT_PUT_UPLOAD_RE.test(source)
+    })
+    expect(offenders).toEqual([])
   })
 })

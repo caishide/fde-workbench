@@ -12,9 +12,9 @@ import {
   isFileUrlDto,
   isProjectFileListDto,
   isUploadCompleteDto,
-  isUploadedPartDto,
   isUploadSessionDto,
 } from "./runtimeValidation"
+import { uploadMultipartParts } from "./upload-helper"
 import { Loading } from "../components/ui"
 import type {
   ProjectFileDto,
@@ -214,29 +214,23 @@ export function ProjectFiles({ projectId, canManage, uploadOnly = false }: Proje
     void runUpload(id)
   }
 
+  // CR-056（夜审 r6 A′）：分片 PUT 收拢进 upload-helper（4 站同构循环消复制，
+  // 且 helper 内置 begin/end 在途写计数——直连上传中途关窗不再静默放行）。
+  // label＝上传条目 id（取消语义由 isCancelled(id) 保留；helper 每片后 onProgress 映射进进度 UI）。
   async function uploadParts(id: string, file: File, session: UploadSessionDto): Promise<Array<{ part_number: number; etag: string }>> {
-    const partSize = session.part_size
-    const total = Math.max(1, Math.ceil(file.size / partSize))
-    const parts: Array<{ part_number: number; etag: string }> = []
-    let uploadedBytes = 0
-    for (let partNumber = 1; partNumber <= total; partNumber += 1) {
-      if (isCancelled(id)) return parts
-      const signed = await apiRequest<unknown>(`${filesPath(projectId)}/${encodeURIComponent(session.id)}/parts`, {
-        method: "POST",
-        body: { part_number: partNumber },
-      })
-      if (isCancelled(id)) return parts
-      if (!isUploadedPartDto(signed)) throw new Error("invalid signed part")
-      const start = (partNumber - 1) * partSize
-      const end = Math.min(file.size, start + partSize)
-      const response = await fetch(signed.url, { method: "PUT", body: file.slice(start, end) })
-      if (!response.ok) throw new Error(`storage_upload_failed:${response.status}`)
-      const etag = stripQuote(response.headers.get("etag") ?? "")
-      parts.push({ part_number: partNumber, etag })
-      uploadedBytes += end - start
-      patchUpload(id, { progress: Math.min(100, Math.round((uploadedBytes / Math.max(1, file.size)) * 100)) })
-    }
-    return parts
+    return uploadMultipartParts(
+      apiRequest,
+      filesPath(projectId),
+      session,
+      file,
+      {
+        label: id,
+        isCancelled: (label) => isCancelled(label),
+        onProgress: (fraction) => {
+          patchUpload(id, { progress: Math.min(100, Math.round(fraction * 100)) })
+        },
+      },
+    )
   }
 
   function cancelUpload(id: string): void {
@@ -390,10 +384,6 @@ function categoryLabel(category: ProjectFileDto["category"]): string {
 
 function businessCategoryLabel(category: BusinessCategory): string {
   return BUSINESS_CATEGORY_LABELS[category]
-}
-
-function stripQuote(value: string): string {
-  return value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value
 }
 
 /** The upload inherits the single 业务阶段 filter (未分类/全部 map to uncategorized). */
