@@ -71,6 +71,7 @@ def _payload(username: str | None = None) -> dict[str, str]:
         "username": username or f"ent.{uuid4().hex[:10]}",
         "display_name": "测试企业甲",
         "password": SELF_PASSWORD,
+        "email": f"{uuid4().hex[:12]}@example.com",
         "subject_key": VALID_USCC,
         "problem_description": "描述业务问题：订单履约周期过长，需要一次完整诊断。",
     }
@@ -100,6 +101,39 @@ def _post_raw(client, ip: str, body: str = "not-json"):
 def limited_client(app):
     app.extensions["fde_api_redis"] = _FakeRedis()
     return app.test_client()
+
+
+class _FakeSes:
+    """注册面开闸后的假 SES（M2 收拢：G6 路由走统一注册面，注册事务提交后
+    会真实触发验证邮件发送——测试绝不发真邮件）。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def send_text(self, *, sender: str, recipient: str, subject: str, body: str) -> str:
+        self.calls.append(
+            {"sender": sender, "recipient": recipient, "subject": subject, "body": body}
+        )
+        return f"ses-msg-{len(self.calls)}"
+
+
+@pytest.fixture(autouse=True)
+def _open_registration_gate(app, monkeypatch):
+    """多客户 M2 收拢语义：G6 路由委托统一注册面（同一部署闸/状态机/邮箱验证）。
+    本文件测的是 K8 限流闸本身 ⇒ 用例前提＝注册面开（否则全部 404，限流闸
+    永远测不到业务校验路径）。"""
+    monkeypatch.setattr(
+        "fde_api.mailing.service.create_ses_client", lambda settings: _FakeSes()
+    )
+    app.config["SETTINGS"] = app.config["SETTINGS"].model_copy(
+        update={
+            "registration_enabled": True,
+            "ses_enabled": True,
+            "public_base_url": "https://fde.example.com",
+            "ses_send_subdomain": "mail.somwyn.com",
+            "ses_from_address": "no-reply@mail.somwyn.com",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +243,8 @@ def test_redis_down_fails_open_with_warning(app, db_session, caplog):
         response = _post_register(client, "10.9.9.9")
 
     assert response.status_code == 400, "Redis 故障不得伪装成限流"
-    assert response.json["error"]["code"] == "invalid_subject_key"
+    # M2 统一注册面：email 是首个必填校验（空载荷先撞 invalid_request）
+    assert response.json["error"]["code"] == "invalid_request"
     assert any("rate limiter" in record.message.lower() for record in caplog.records), (
         "Redis 故障放行必须留下 WARNING（不得静默）"
     )

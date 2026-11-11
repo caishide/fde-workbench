@@ -382,6 +382,12 @@ def _duplicate_username_error() -> UserServiceError:
     )
 
 
+def _duplicate_email_error() -> UserServiceError:
+    return UserServiceError(
+        "email_already_exists", "A user with this email already exists.", 409
+    )
+
+
 def _user_creation_failed_error() -> UserServiceError:
     return UserServiceError(
         "user_creation_failed", "Unable to create user at this time.", 503
@@ -389,15 +395,27 @@ def _user_creation_failed_error() -> UserServiceError:
 
 
 def register_self_service_user(
-    session: Any, *, username: str, display_name: str, password: str
+    session: Any,
+    *,
+    username: str,
+    display_name: str,
+    password: str,
+    role: str = "viewer",
+    email: str | None = None,
+    org_id: str | None = None,
+    registration_state: str = "active",
 ) -> User:
-    """企业自助注册账号（商业化 G6；**当事人自证**，无 admin actor，ADR-010）。
+    """自助注册账号原语（商业化 G6 引入；多客户 M2 扩参——四入口统一注册面）。
 
     与 ``create_user`` 的差异：密码由当事人自选（非临时密码 ⇒
-    ``must_change_password=False``）；平台权限角色固定 ``viewer``（最低档——
-    商业自助面的鉴权按绑定账号判定，不靠平台角色提权）；创建事件由商业域
-    以当事人为 actor 落 ``operation_events``（本原语只管账号行，调用方持有
-    同一事务——账号/主体/额度/身份分层要么全成要么全败）。
+    ``must_change_password=False``）；创建事件由调用方落 ``operation_events``
+    （本原语只管账号行，调用方持有同一事务——多件套要么全成要么全败）。
+
+    M2 扩参（ADR-M2 §2 初始角色矩阵 / ADR-M4 状态机）：``role``（企业入口
+    project_lead，其余 viewer——交付者的 fde_engineer 由供给池审核授予，不在
+    注册面）；``email``（注册面验证通道，必经 ``_require_email`` 归一化后传入，
+    重复即 409）；``org_id``（企业入口建号即建 org）；``registration_state``
+    （自助注册落 pending_email；admin 建号路径不经本原语）。
     """
     normalized_username = normalize_username(username)
     normalized_display_name = display_name.strip()
@@ -419,18 +437,40 @@ def register_self_service_user(
     )
     if existing is not None:
         raise _duplicate_username_error()
+    if email is not None:
+        existing_email = session.scalar(
+            select(User.id).where(User.email == email).with_for_update()
+        )
+        if existing_email is not None:
+            raise _duplicate_email_error()
     user = User(
         username=normalized_username,
         display_name=normalized_display_name,
-        role="viewer",
+        role=role,
+        email=email,
+        org_id=org_id,
+        registration_state=registration_state,
         password_hash=hash_password(password),
         must_change_password=False,
         is_active=True,
     )
     session.add(user)
     try:
-        session.flush()
+        with session.begin_nested():
+            session.flush()
     except IntegrityError:
-        # 并发同名校验兜底：唯一约束在库层兜底（SELECT 抢先窗口）
+        # 并发同名校验兜底：唯一约束在库层兜底（SELECT 抢先窗口）。savepoint
+        # 已回滚，可再查——按既存行判别是用户名还是邮箱撞车。
+        if (
+            session.scalar(
+                select(User.id).where(User.username == normalized_username)
+            )
+            is not None
+        ):
+            raise _duplicate_username_error() from None
+        if email is not None and (
+            session.scalar(select(User.id).where(User.email == email)) is not None
+        ):
+            raise _duplicate_email_error() from None
         raise _duplicate_username_error() from None
     return user

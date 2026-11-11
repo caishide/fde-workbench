@@ -29,6 +29,7 @@ from fde_api.system_configuration import apply_persisted_configuration
 _BLUEPRINT_SPECS: tuple[tuple[str, str], ...] = (
     ("fde_api.health", "health_blueprint"),
     ("fde_api.auth.routes", "auth_blueprint"),
+    ("fde_api.registration.routes", "registration_blueprint"),  # 多客户 M2 四入口注册
     ("fde_api.ai.routes", "ai_blueprint"),
     ("fde_api.users", "users_blueprint"),
     ("fde_api.system_configuration", "blueprint"),

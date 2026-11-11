@@ -38,7 +38,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from fde_api.auth.models import ROLE_ADMIN, User
+from fde_api.auth.models import ROLE_ADMIN, ROLE_PROJECT_LEAD, User
 from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
 from fde_api.auth.passwords import verify_password
 from fde_api.commercial.models import (
@@ -148,16 +148,23 @@ def register_enterprise(
     username: object,
     display_name: object,
     password: object,
+    email: object,
     subject_key_raw: object,
     problem_description: object,
+    org_id: object = None,
     request_id: object = None,
 ) -> dict[str, Any]:
-    """企业自助注册（R1；**当事人自证**，无 admin 门）。
+    """企业自助注册主体与额度层（R1；**当事人自证**，无 admin 门）。
 
-    一个事务里四件事要么全成要么全败：账号（users.role=viewer，自选密码 ⇒
-    ``must_change_password=False``）＋身份分层（``commercial_role='R1'``，G1
-    结构复用）＋主体与免费额度（同主体幂等——已存在则**绝不新建、绝不重置**，
-    ADR-004 §1.2）＋事件留痕（事件 actor＝新注册的当事人本人）。
+    多客户 M2 起由统一注册面（``fde_api/registration``）委托调用——本函数只管
+    账号行之上的商业承载：身份分层（``commercial_role='R1'``，G1 结构复用）＋
+    主体与免费额度（同主体幂等——已存在则**绝不新建、绝不重置**，ADR-004
+    §1.2）＋事件留痕（事件 actor＝新注册的当事人本人）。账号行由
+    ``register_self_service_user`` 建立：初始角色按 ADR-M2 §2 矩阵升为
+    ``project_lead``（org 内——企业空间 M5 的组织者角色），注册状态落
+    ``pending_email``（邮箱验证后推进，ADR-M4 状态机）；``email`` 必填
+    （验证通道）、``org_id`` 由统一注册面按 subject_key get-or-create 后传入
+    （建号即建 org，同主体幂等）。
     """
     subject_key = normalize_subject_key(subject_key_raw)
     display = _require_str(display_name, "display_name", max_len=160)
@@ -166,9 +173,20 @@ def register_enterprise(
         raise _error("invalid_request", "request_id 必须是字符串。")
     if not isinstance(username, str) or not isinstance(password, str):
         raise _error("invalid_request", "username/password 必须是字符串。")
+    if not isinstance(email, str) or not email:
+        raise _error("invalid_request", "email 必填（注册面邮箱验证通道）。")
+    if not isinstance(org_id, str) or not org_id:
+        raise _error("invalid_request", "org_id 必填（统一注册面建号即建 org）。")
     try:
         user = register_self_service_user(
-            session, username=username, display_name=display, password=password
+            session,
+            username=username,
+            display_name=display,
+            password=password,
+            role=ROLE_PROJECT_LEAD,
+            email=email,
+            org_id=org_id,
+            registration_state="pending_email",
         )
     except UserServiceError as error:
         raise _error(error.code, error.message, error.status) from None
@@ -209,6 +227,8 @@ def register_enterprise(
     return {
         "user_id": user.id,
         "username": user.username,
+        "email": user.email,
+        "org_id": org_id,
         "subject_key": subject_key,
         "quota_created": quota_created,
         "quota_state": quota.state if quota is not None else None,

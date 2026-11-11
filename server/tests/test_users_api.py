@@ -762,6 +762,9 @@ def test_user_dtos_never_include_security_storage(admin_client):
             "username",
             "display_name",
             "role",
+            # 多客户 M2：注册生命周期字段（email 可空＝admin 建号用户）
+            "email",
+            "registration_state",
             "is_active",
             "must_change_password",
             "created_at",

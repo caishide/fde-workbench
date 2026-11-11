@@ -98,11 +98,74 @@ def login(username: str, password: str, device_label: str) -> tuple[User, TokenP
             password_matches = verify_password(hash_value, password)
             if user is None or not password_matches:
                 raise AuthServiceError(*INVALID_CREDENTIALS)
+            # 多客户 M2 注册状态机闸（ADR-M4 §1/§5）：状态检查在密码验证之后
+            # ——只有凭据正确的本人才能得知账号状态（不向枚举者泄露）。
+            _registration_state_gate(user)
             if not user.is_active:
                 raise AuthServiceError("account_inactive", "This account is inactive.", 403)
 
             pair = _issue_token_pair(session, user, device_label)
         return user, pair
+    finally:
+        session.close()
+
+
+# 多客户 M2（ADR-M4）：注册状态机对登录/刷新的拦截语义。pending_review 可登录
+# （viewer 最小面，业务能力由既有角色闸决定）；其余非 active 状态拦截。
+REGISTRATION_LOGIN_BLOCKS: dict[str, tuple[str, str, int]] = {
+    "pending_email": (
+        "email_not_verified",
+        "邮箱尚未验证：请先完成邮箱验证或重发验证邮件。",
+        403,
+    ),
+    "suspended": ("account_suspended", "This account is suspended.", 403),
+    "rejected": ("registration_rejected", "This registration was rejected.", 403),
+}
+
+
+def _registration_state_gate(user: User) -> None:
+    blocked = REGISTRATION_LOGIN_BLOCKS.get(user.registration_state)
+    if blocked is not None:
+        raise AuthServiceError(*blocked)
+
+
+_STATE_BY_LOGIN_BLOCK_CODE = {
+    code: state for state, (code, _, _) in REGISTRATION_LOGIN_BLOCKS.items()
+}
+
+
+def record_state_blocked_login(username: str, code: str) -> None:
+    """注册状态拦截登录的留痕（ADR-M4 §5「未验证邮箱登录…4xx 且留痕」）。
+
+    尽力而为：事件写失败只记 WARNING（登录限流器仍是防刷主力，本留痕是审计
+    增益不是防线）。``record_event`` 函数内导入——auth→projects 顶层边会与
+    projects.events→auth.models 构成包环（test_architecture_purity 冻结闸）。
+    """
+    state = _STATE_BY_LOGIN_BLOCK_CODE.get(code)
+    if state is None:
+        return
+    session = db.session()
+    try:
+        with session.begin():
+            user = session.scalar(
+                select(User).where(
+                    User.username == normalize("NFKC", username).strip().lower()
+                )
+            )
+            if user is None or user.registration_state != state:
+                return
+            from fde_api.projects.events import record_event
+
+            record_event(
+                session, user, "login_blocked_registration_state", user, {"state": state}
+            )
+    except Exception:  # noqa: BLE001  —— 留痕尽力而为，不遮蔽登录错误本身
+        current_app.logger.warning(
+            "login-blocked audit event failed (username=%s state=%s)",
+            username,
+            state,
+            exc_info=True,
+        )
     finally:
         session.close()
 
@@ -135,6 +198,9 @@ def rotate_refresh_token(raw_token: str) -> tuple[User, TokenPair]:
                 or refresh_session.expires_at <= now
             ):
                 raise AuthServiceError(*REFRESH_TOKEN_INVALID)
+            # 多客户 M2：注册状态机闸同样守住刷新面（pending_email/suspended/
+            # rejected 不得凭旧 refresh 绕过登录闸续期）。
+            _registration_state_gate(user)
             if not user.is_active:
                 raise AuthServiceError("account_inactive", "This account is inactive.", 403)
 

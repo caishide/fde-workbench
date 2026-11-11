@@ -166,6 +166,9 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
+        # 多客户 M2：注册生命周期字段（email 可空＝存量/admin 建号用户）。
+        "email": user.email,
+        "registration_state": user.registration_state,
         "is_active": user.is_active,
         "must_change_password": user.must_change_password,
         "created_at": user.created_at.isoformat(),

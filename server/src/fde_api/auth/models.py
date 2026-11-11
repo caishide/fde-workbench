@@ -94,7 +94,19 @@ class User(Base):
             "role IN ('admin', 'project_lead', 'fde_engineer', 'viewer')",
             name="ck_users_role",
         ),
+        # 多客户 M2 注册生命周期状态机（ADR-M4 §1）：pending_email →
+        # pending_review（仅审核制入口）→ active；suspended 可恢复（admin 动作
+        # 留痕）；rejected 终态。admin 建号与存量行落 active（迁移
+        # server_default）。登录闸按此状态判定（auth/service）。
+        CheckConstraint(
+            "registration_state IN ('pending_email', 'pending_review',"
+            " 'active', 'suspended', 'rejected')",
+            name="ck_users_registration_state",
+        ),
         Index("ix_users_org_id", "org_id"),
+        # 可空唯一（多行 NULL 合法共存——存量/admin 建号用户无邮箱）；与迁移
+        # ix_users_email 同形（元数据对账测试要求模型与迁移逐位一致）。
+        Index("ix_users_email", "email", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -102,6 +114,13 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 多客户 M2：邮箱（注册面验证通道）。**可空**＝存量与 admin 建号用户无邮箱
+    # （与 org_id=NULL 存量不回填同款语义）；唯一索引下多行 NULL 在 PG 合法共存。
+    email: Mapped[str | None] = mapped_column(String(255))
+    email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    registration_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     auth_version: Mapped[int] = mapped_column(
@@ -140,6 +159,13 @@ class User(Base):
     @validates("username")
     def normalize_username(self, _: str, value: str) -> str:
         return normalize("NFKC", value).strip().lower()
+
+    @validates("email")
+    def normalize_email(self, _: str, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize("NFKC", value).strip().lower()
+        return normalized or None
 
     @validates("role")
     def validate_role(self, _: str, value: str) -> str:

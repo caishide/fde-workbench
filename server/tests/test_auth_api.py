@@ -83,6 +83,9 @@ def test_login_returns_access_and_rotatable_refresh(client, active_user, db_sess
         "username": "sample_user",
         "display_name": "示例用户",
         "role": "admin",
+        # 多客户 M2：注册生命周期字段（email 可空＝admin 建号用户）
+        "email": None,
+        "registration_state": "active",
         "must_change_password": True,
         "is_active": True,
     }
@@ -402,6 +405,9 @@ def test_change_password_revokes_all_prior_sessions_and_issues_permitted_pair(
         "username": "sample_user",
         "display_name": "示例用户",
         "role": "admin",
+        # 多客户 M2：注册生命周期字段（email 可空＝admin 建号用户）
+        "email": None,
+        "registration_state": "active",
         "must_change_password": False,
         "is_active": True,
     }

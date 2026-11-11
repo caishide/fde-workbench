@@ -452,6 +452,9 @@ def db_session(app) -> Session:
         INTERNAL_ORG_NAME,
         Org,
     )
+    # 多客户工作平台 M2：注册生命周期行（user_id/reviewed_by 均 RESTRICT
+    # 引用 users）——清理序必须先于 users。
+    from fde_api.registration.models import UserRegistration
     from fde_api.mailing.models import MailingEvent, MailingSend
     from fde_api.control.models import (
         AIModelConfig,
@@ -726,6 +729,8 @@ def db_session(app) -> Session:
         IndustryTemplate,
         ModuleCatalog,
         Org,
+        # 多客户 M2：注册生命周期行（RESTRICT 引用 users，先于 users 清理）。
+        UserRegistration,
         RefreshSession,
         User,
     )
