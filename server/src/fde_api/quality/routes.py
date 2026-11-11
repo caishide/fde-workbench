@@ -1,4 +1,4 @@
-"""quality 蓝图：5 路由（V3.1 P1-2，全部不进 api_catalog——治理审阅面）。
+"""quality 蓝图：6 路由（V3.1 P1-2 五路由 ＋ N3a（G-05）generate-ai；全部不进 api_catalog——治理审阅面）。
 
 任务书 §10 API 目标语义的项目域落法（偏差注记见 CHANGELOG）：生成/列表挂
 项目域（与 delivery-plans 同惯例），review/execute 保留任务书全局路径
@@ -72,3 +72,25 @@ def get_test_execution(execution_id):
     """执行记录（can_view）。"""
     data = service.get_execution(actor=g.current_user, execution_id=execution_id)
     return jsonify({"data": data, "error": None})
+
+# AI 原生化 N3a（G-05）：quality 用例 AI 起草（试点首发位 D-4）。
+@quality_blueprint.post("/projects/<project_id>/test-plans/generate-ai")
+@require_auth
+def generate_ai_test_plan(project_id):
+    """AI 起草测试用例（can_manage；N3a G-05）：
+
+    单一入口 ``execute_ai_prompt``（预算门＋审计＋提示词指纹/版本归因）＋输出契约
+    整批闸（失败零写入）＋输出端兜底脱敏；产出恒为 **draft 计划**——发布语义仍由
+    审阅闸（draft→approved＋需求覆盖闸）承载，执行闸（仅 approved＋production 硬闸）
+    零改动。AI 通道故障按 DSH 同尺映射（503 可重试 / 409 终态）。
+    """
+    from fde_api.control.ai_server_client import DSHRuntimeError
+    from fde_api.quality import draft
+
+    try:
+        data = draft.draft_ai_test_plan(
+            actor=g.current_user, project_id=project_id, payload=_payload()
+        )
+    except DSHRuntimeError as error:
+        return error_response(error.code, error.public_message, 503 if error.retryable else 409)
+    return jsonify({"data": data, "error": None}), 201
