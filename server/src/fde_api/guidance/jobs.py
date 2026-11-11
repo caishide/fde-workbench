@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from fde_api.agents.quota import record_action as record_seat_action
 from fde_api.ai.kimi import KimiError, KimiFileClient
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import current_layout, open_read_stream
 from fde_api.files.models import ProjectFileVersion
 from fde_api.guidance.ai_prompt import build_kimi_presurvey_analysis_messages
 from fde_api.guidance.ai_schema import GuidanceContractError, LIST_FIELDS, validate_guidance_output
@@ -127,7 +128,9 @@ def handle_presurvey_analysis(job) -> None:
             attempts += 1
             try:
                 # 每次尝试重新开流：上一次尝试已消费/关闭了流。
-                with object_storage.current.open_stream(version.storage_key) as stream:
+                with open_read_stream(
+                    object_storage.current, session, version.storage_key, layout=current_layout()
+                ) as stream:
                     payload = client.analyze_docx_json(
                         stream=stream,
                         filename=analysis.source_filename,

@@ -19,6 +19,12 @@ from sqlalchemy.orm import selectinload
 
 from fde_api.auth.models import User
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFileVersion
 from fde_api.files.names import extension_of, preview_key
 from fde_api.files.service import (
@@ -132,7 +138,12 @@ def get_preview_url(*, actor: User, project_id: str, version_id: str) -> str:
         # an empty frame because the response metadata no longer matches content.
         if extension in _DIRECT_PREVIEW_EXTENSIONS:
             return object_storage.current.sign_download(
-                version.storage_key,
+                existing_read_key(
+                    object_storage.current,
+                    session,
+                    version.storage_key,
+                    layout=current_layout(),
+                ),
                 version.original_filename,
                 expires_seconds=_PREVIEW_EXPIRES_SECONDS,
             )
@@ -156,7 +167,11 @@ def get_preview_url(*, actor: User, project_id: str, version_id: str) -> str:
         key = preview_storage_key or version.storage_key
         filename = f"{version.safe_filename}.pdf"
         return object_storage.current.sign_download(
-            key, filename, expires_seconds=_PREVIEW_EXPIRES_SECONDS
+            existing_read_key(
+                object_storage.current, session, key, layout=current_layout()
+            ),
+            filename,
+            expires_seconds=_PREVIEW_EXPIRES_SECONDS,
         )
     except FileServiceError:
         raise
@@ -179,7 +194,12 @@ def get_download_url(*, actor: User, project_id: str, version_id: str) -> str:
                 "file_not_available", "The file is not available.", 409
             )
         return object_storage.current.sign_download(
-            version.storage_key,
+            existing_read_key(
+                object_storage.current,
+                session,
+                version.storage_key,
+                layout=current_layout(),
+            ),
             version.original_filename,
             expires_seconds=_PREVIEW_EXPIRES_SECONDS,
         )
@@ -274,9 +294,14 @@ def _preview_object_key(project_id: str, version: ProjectFileVersion) -> str:
 def _direct_preview(session, version: ProjectFileVersion, project_id: str) -> dict:
     """Copy an already-previewable format onto its immutable preview key."""
     target_key = _preview_object_key(project_id, version)
-    stored = object_storage.current.copy(
-        source_key=version.storage_key, target_key=target_key
+    source_key = existing_read_key(
+        object_storage.current, session, version.storage_key, layout=current_layout()
     )
+    stored = None
+    for placement in physical_write_targets(session, target_key, layout=current_layout()):
+        stored = object_storage.current.copy(
+            source_key=source_key, target_key=placement
+        )
     preview_version = _create_preview_version(
         session, version, target_key, stored
     )
@@ -294,8 +319,8 @@ def _convert_office_preview(
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             input_path = Path(temp_dir) / version.safe_filename
-            with object_storage.current.open_stream(
-                version.storage_key
+            with open_read_stream(
+                object_storage.current, session, version.storage_key, layout=current_layout()
             ) as stream:
                 input_path.write_bytes(stream.read())
             output_dir = Path(temp_dir) / "out"
@@ -306,9 +331,13 @@ def _convert_office_preview(
             if pdf_path is None:
                 raise RuntimeError("libreoffice produced no PDF")
             with pdf_path.open("rb") as pdf_stream:
-                stored = object_storage.current.put_stream(
-                    target_key, pdf_stream, _PREVIEW_MIME_TYPE, {}
-                )
+                stored = None
+                for placement in physical_write_targets(
+                    session, target_key, layout=current_layout()
+                ):
+                    stored = object_storage.current.put_stream(
+                        placement, pdf_stream, _PREVIEW_MIME_TYPE, {}
+                    )
             preview_version = _create_preview_version(
                 session, version, target_key, stored
             )

@@ -45,6 +45,12 @@ from fde_api.documents.qa import inspect_generated_docx
 from fde_api.documents.rich_text import RichTextDocument, render_rich_text
 from fde_api.documents.snapshots import build_document_snapshot
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.files.names import document_key, extension_of, safe_filename
 from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
@@ -753,7 +759,9 @@ def _load_template_docx(
     template_version: DocumentTemplateVersion | None,
 ) -> bytes:
     if template_version is not None and template_version.docx_storage_key:
-        stream = object_storage.current.open_stream(template_version.docx_storage_key)
+        stream = open_read_stream(
+            object_storage.current, session, template_version.docx_storage_key, layout=current_layout()
+        )
         try:
             return stream.read()
         finally:
@@ -765,7 +773,9 @@ def _load_template_docx(
             ProjectFileVersion, template_version.docx_file_version_id
         )
         if file_version is not None and file_version.storage_key:
-            stream = object_storage.current.open_stream(file_version.storage_key)
+            stream = open_read_stream(
+                object_storage.current, session, file_version.storage_key, layout=current_layout()
+            )
             try:
                 return stream.read()
             finally:
@@ -1009,14 +1019,18 @@ def _ensure_docx_file_version(
     if version.docx_file_version_id:
         existing = session.get(ProjectFileVersion, version.docx_file_version_id)
         if existing is not None:
-            return _write_docx_bytes(existing, rendered_bytes, sha256)
+            return _write_docx_bytes(session, existing, rendered_bytes, sha256)
 
     filename = f"{document.business_code}-v{version.version_number}{DOCX_EXTENSION}"
     safe = safe_filename(filename)
     storage_key = document_key(document.project_id, document.id, version.id, filename)
-    stored = object_storage.current.put_stream(
-        storage_key, io.BytesIO(rendered_bytes), DOCX_MIME, {}
-    )
+    stored = None
+    for placement in physical_write_targets(session, storage_key, layout=current_layout()):
+        stored = object_storage.current.put_stream(
+            placement, io.BytesIO(rendered_bytes), DOCX_MIME, {}
+        )
+    assert stored is not None
+    assert stored is not None
     project_file = ProjectFile(
         project_id=document.project_id,
         category="document",
@@ -1051,11 +1065,20 @@ def _ensure_docx_file_version(
 
 
 def _write_docx_bytes(
-    file_version: ProjectFileVersion, rendered_bytes: bytes, sha256: str
+    session: Session,
+    file_version: ProjectFileVersion,
+    rendered_bytes: bytes,
+    sha256: str,
 ) -> ProjectFileVersion:
-    stored = object_storage.current.put_stream(
-        file_version.storage_key, io.BytesIO(rendered_bytes), DOCX_MIME, {}
-    )
+    stored = None
+    for placement in physical_write_targets(
+        session, file_version.storage_key, layout=current_layout()
+    ):
+        stored = object_storage.current.put_stream(
+            placement, io.BytesIO(rendered_bytes), DOCX_MIME, {}
+        )
+    assert stored is not None
+    assert stored is not None
     file_version.size_bytes = stored.size
     file_version.etag = stored.etag
     file_version.sha256 = sha256

@@ -23,6 +23,12 @@ from fde_api.control.knowledge import build_project_snapshot
 from fde_api.control.models import SkillDefinition, SkillVersion
 from fde_api.control.service import ControlServiceError
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFile
 from fde_api.projects.permissions import project_access
 from fde_api.workbench.models import Project
@@ -200,7 +206,9 @@ def call_tool(session, *, user, claims, allowed, name, arguments):
         if type(offset) is not int or offset < 0:
             raise ControlServiceError("invalid_request", "正文偏移无效。", 400)
         try:
-            with object_storage.current.open_stream(version.storage_key) as stream:
+            with open_read_stream(
+                object_storage.current, session, version.storage_key, layout=current_layout()
+            ) as stream:
                 content = extract_file_text(stream.read(10_000_001), version.extension)
         except ControlServiceError:
             raise

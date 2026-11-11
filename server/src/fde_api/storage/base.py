@@ -108,7 +108,9 @@ def validate_object_key(key: str) -> str:
         raise StorageError("invalid_object_key")
 
     parts = key.split("/")
-    allowed_root = parts[0] in {"projects", "document-templates"}
+    # M4 批次 D：新布局物理键带主体段（org/{org_id}/… ／ platform/…），
+    # 逻辑键仍在 projects/…（storage/layout.py 单一权威翻译）。
+    allowed_root = parts[0] in {"projects", "document-templates", "org", "platform"}
     if len(parts) < 3 or not allowed_root or any(
         not part or part in {".", ".."} for part in parts
     ):

@@ -17,6 +17,12 @@ from fde_api.control.service import ControlServiceError
 from fde_api.control.weixin_files import MAX_ATTACHMENT_BYTES, upload_attachment
 from fde_api.control.weixin_models import WeixinAccount, WeixinInbox
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 
 
@@ -58,7 +64,9 @@ def send_file(*, user, claims, allowed, project_id=None, file_id=None, version_i
                 raise ControlServiceError("wechat_context_required", "请先从绑定的微信发送一条消息，再请求发送文件。", 409)
             account_id, binding_id = account.id, binding.id
             _event(session, user, identifier, "delivery_requested", {"file_id": file.id, "version_id": version.id}, project_id)
-            with object_storage.current.open_stream(version.storage_key) as stream:
+            with open_read_stream(
+                object_storage.current, session, version.storage_key, layout=current_layout()
+            ) as stream:
                 content = stream.read(MAX_ATTACHMENT_BYTES + 1)
             media = upload_attachment(client(), credentials=credentials, content=content, filename=version.original_filename)
             _event(session, user, identifier, "delivery_uploaded", {"file_id": file.id, "version_id": version.id}, project_id)

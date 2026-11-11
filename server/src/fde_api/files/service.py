@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from fde_api.auth.models import User
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import current_layout, physical_write_targets
 from fde_api.files.models import (
     BUSINESS_CATEGORIES,
     BUSINESS_CATEGORY_UNCATEGORIZED_LABEL,
@@ -218,6 +219,18 @@ def complete_upload(
                     upload_session.multipart_upload_id,
                     normalized_parts,
                 )
+                # 新布局 placement：对象按状态机补落其余物理目标
+                # （dual_write/read_new+ ⇒ copy 到主体段键；legacy ⇒ 零 copy）。
+                for placement in physical_write_targets(
+                    session,
+                    upload_session.storage_prefix,
+                    layout=current_layout(),
+                ):
+                    if placement != upload_session.storage_prefix:
+                        object_storage.current.copy(
+                            source_key=upload_session.storage_prefix,
+                            target_key=placement,
+                        )
                 project_file = _resolve_or_create_file(
                     session, upload_session, project.id, category, business_category, actor
                 )
