@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断第十七轮·版本差可判定：时间机复刻 prompt-v1 组补样至 n≥3（009/023 复判均 within_noise＋生成侧合规差异 11/22→0/18 首登记；**纯文档零代码零迁移零路由**，2026-11-11）
+
+第十六轮注册的消解条件（`诊断评测-分数面分布-1.md` §4.1「v1 组补到 n≥3 ⇒ 版本差即可判」）在 HEAD 代码上**字面不可执行**——三个机械事实：①prompt-v1 文本已不存在（curve-3 断点 `5dbbe4b` 整体替换）；②`NUMBER_GATE_VERSION` 被当前 runner 无条件打进 run.json；③runner 无版本选择 CLI。忠实执行＝**时间机复刻**：历史 v1 组唯一 run `2026-11-11`（08:31 创建）生成于 #311（08:20）之后、`5dbbe4b`（11:08）之前 ⇒ `e96efa3` 就是它的生成树；detached worktree @ `e96efa3` 用 era 自带 runner 跑两轮（生成器与 judge 语义零触碰），忠实性由四轴组键机械保证（非自觉）。
+
+- **复刻面**：诊断表零迁移改动（`e96efa3→fork/main` 仅两笔商业域迁移）；模型槽位不变（生成与评分均 MiniMax-M3.1-Flash——换模型＝换生成器配置＝破坏组可比性）。唯一改动面＝两处**评测进程 harness 补丁**（未提交本地改动，仓库 HEAD runner 零改动）：①`_ThrottledSession`＋`--call-interval-seconds`（era runner 无节流，2026-11-11 限流实录兜底）；②`--eval-set-version`（era 版 run_id≡考卷版本同源，解耦后 ev5/ev6 才能落对组）。diff 83 行真相层 `_forensics/tm-run-eval-e96efa3-harness.diff`（sha256 `75042fe0…`）。
+- **守窗实录**（配额窗口＝小时级滚动窗，修正第十六轮「同日再等无意义」推论）：17:52 探针 13 连 429 → 20:02:22 开窗 → 链一（ev5 生成 001/003 ready＋4 卡死于 `report_unsourced_number`；ev5 judge meta fail exit=3；ev6 生成 001/009/023 ready；ev6 judge meta pass usable=True）20:02–20:36 → 链二补样（ev5 子集重生成 009/010/023 ready＋somwyn 三连死；ev5 judge meta 重掷 pass usable=True）20:57–21:11。**已 usable 的 ev6 不重卷**（judge scores.json 整体覆写＝meta 重掷有掀组风险，风险对称下不动）。
+- **读数（规则代码实跑）**：v1 组 `2026-11-11|prompt-v1||rubric-v0.2`（runs 2026-11-11/ev5/ev6，组键自动归组——机械断言通过）vs v2 组（ev2/ev3/ev4）：**009 Δ=−2.0（带 21）、023 Δ=−0.7（带 12）均 `within_noise`**；001/010/somwyn v1 n=1 ⇒ `insufficient_data`；excluded_rows 0/0。第十六轮单样本 Δ（−6.3/−7.0）的「看着像生成器变差」被真样本推翻。锚点组 n=4→6（A1 极差 1；A2 噪声带 9→**12**）。账本 `eval-runs/distributions/20261111T131327Z.json`（sha256 `f5d95419…`，truth 层）。
+- **生成侧合规差异（本轮新发现，配置包整体归因）**：v1 时代四次批跑滚动死于 `report_unsourced_number` **11/22 卡次**（50%）vs v2 时代三跑 **0/18**——curve-3 断点同时改了提示词与契约检查器本体（分层作用域＋来源重界定＋拒因回灌；era＝全量扫描＋盲重抽），归因只能给配置包整体；somwyn 三连死同因是 D1「一个量词毙掉整份报告」的活例。**评分面 within_noise＋生成面死亡率 50%→0%＝v2 的可判定收益在生成侧**。
+- **登记**：**L-9 时间机评测配方**（生成器版本升级时旧版本组必须在切换前补足 n≥3，否则版本差永久不可判；配方可复用：锁定旧版本提交→detached worktree→era 自带 runner→harness-only 补丁→组键机械归组）；**L-10 配额窗口观测修正**（小时级滚动窗，当日三次状态翻转实证，守窗探针循环为正确姿势）；judge meta 门逐掷随机（ev5 首掷 fail/ev6 首掷 pass——重掷即补样，已 usable 的 run 不重卷是纪律）。
+- **同步**：NEW `docs/audit/诊断评测-分数面分布-2.md`（本底册：只有数字与 run id，随 #343 squash `e05f1d6` 已合并）＋任务书 T-09 行＋指纹登记 ⑥＋底册消解回执补入 `分数面分布-1.md` §4.1（以上随 #343）＋本节与 AGENTS 当前状态头（剥离回填，T-10b 第十二轮先例）。考卷与评分规则零改动（六卡/rubric-v0.2/meta-v0.2/answer_mapping 指纹全不变 ⇒ 不构成 C 类改考题，指纹登记无新指纹行）。零报告正文零答案材料——仓库侧只有数字与 run id＋指针+sha256。
+
 ## [未发布] — 交付案例学习闭环设计轮：三缺口多方案设计稿待拍板（案例摄取管线／可判定读数／知识片段接线；纯文档零代码零迁移零路由，2026-11-11）
 
 - **缘起与结论**：蔡工问句「系统能否通过学习案例获得更好的交付能力（如 `D:\test\FDE\knowledge` 下的 FDE 交付案例）」，交互问答拍板**立项设计轮**。现测结论：诊断线已有一条实证进化闭环（生成 0/6→3/6→6/6＋`delta-noise-band` 判定），但只覆盖诊断报告一种交付物；交付能力面差**三缺口**——①摄取管线（存储面已预留：`SimulationScenario.source_kind='import'`＋`import_scenarios` 路由＋三视图泄漏自检，缺转换器与污染边界裁定）；②可判定读数（round16 分布方法论未移植训练场，单 run 读数已被 round16/17 证伪过）；③知识片段接线（`render_masked_context` 支持、`agents/service.py:390` 硬编码空元组——管道铺好、水源未接）。
@@ -15,7 +26,6 @@
 - **DSH 对外交付物行动清单 v1（🟡 待拍板前置件——非立项、非成稿、不代表任何决策）**：把「DSH 封装成智能体底座交付各客户」的主张转成 OWNER 可拍板的书面决策件前置。①**拆清三件被混谈的事**：内部执行层（已裁决 `dsh_enabled=False` 走 zcode 宿主代理——不翻案）／对外交付物形态（四份既有决策均不覆盖＝本轮唯一对象）／底层许可与安全责任（Q11 未销号＝前置闸）。②现状证据分级 A/B/C：「直接否决」不成立（无决策覆盖），「直接开工」同样不成立（对外部署方案 v2 已拍板 `DSH false` 基线）；原始需求出处（A1）未确认＝B 级依据不得升 A。③**A1–A9 行动清单**（授权动作 A5 法务／A7 客户书面／A9 OWNER 拍板不可代做；当前可执行仅 A1/A2/A3/A8 纯文档）＋六项验收判据（①客户资料零外传、②H1–H13/N1–N7 不放宽＝一票否决）＋失败退回 `DSH=false`＋zcode 宿主代理现成态。专项评估草案待立项，本件只登记行动与待确认项。
 - **商业化复核轮台账补记（「补账并入随轮 PR」纪律的抢救落地）**：`docs/commercialization/phase-status.md` 回填「复核轮：三项挂账现测＋交互式复确认」节——该轮在已删除的工作树 `fde-wt-g1`（分支 `docs/commercial-recheck-3parked`，基线 `e93b8e6`）完成，台账留痕未随轮落库即工作树销毁，本轮补记。三项挂账交互复确认**全维持原裁决**：§17 商业数值维持 unset（fail-closed，预写默认值判红）／§1.8 体验上限消费维持归 V3.2 simulation 域／GAP-15 维持半激活（缺首条采纳样本，任一真实采纳留痕落 `operation_events` 即自动销号）。**复测现测（本轮落账前重跑）**：桌面 typecheck 双 tsconfig 零报错＋`enterprise-register`/`enterprise-space` 双文件 **10/10 passed**——台账声称数字逐位吻合。
 - 口径：纯文档零代码零迁移零路由零桌面——pytest/vitest/mypy 全不变，无需 rebuild/alembic/重打包。
-=======
 ## [未发布] — AI 原生化 N3b G-03 DAG ADR 设计轮（三拍板落 ADR：节点类型闭集不扩展／AI 产物返件式草稿零落库／与确定性编译器并列双来源闸唯一；纯文档零代码零迁移零路由，2026-11-11）
 
 - **ADR 落盘（NEW `docs/architecture/AI原生化N3b-DAG-AI起草ADR-v1.md`；任务书 §15 序 2，台账 v1.14）**：蔡工交互拍板三问——①**节点闭集不扩展**（维持 `call/skill/agent/human_approval` 四值；`models.py:27` 定义侧＋`constants.py:50` 执行侧守卫双锚不动；附契约推荐项「AI 起草图须含 ≥1 human_approval 节点」留痕可推翻）；②**返件式草稿零落库**（本体轮 NEW 路由 `generate-ai-draft` 只返回草稿 DAG＋validate 干跑明细；人工采纳走既有 create_definition〔can_manage，draft 态〕→ publish_definition〔admin，D-2〕；契约失败重试一次 409 `ai_draft_contract_failed`，**全程业务域零写入**——事件与 ai_call_audits 照常留痕）；③**并列双来源、闸唯一**（`draft-from-plan` 零 AI 缺省腿零改动＝本体轮 DoD③ 承重墙；AI 增强腿同输入域两稿可比人工择优；三道 validate 干跑〔AI 预检→create_definition 复验→publish 复验〕＋两道人工闸，AI 无任何旁路）。
