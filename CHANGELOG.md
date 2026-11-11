@@ -2,6 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 多客户 M3b 批次①-b 轮：控制台第三套可见性规则收拢（`_project_scope` 销号）＋模板·内部面核验（零迁移零新路由零新表零桌面，2026-11-11）
+
+- **核心销号＝《全局面盘点表》待 M0 补充 #6**：`control/service.py::_project_scope` 是可见性的**第三套规则**（leader-OR-成员——无 org 谓词、leader 分支无角色尺），本轮删除本体，**三个消费点全部收拢统一入口 `visible_project_filter`**（M3a 单一权威）：`list_task_center`（服务内 337）、`list_automation_approvals`（服务内 681）、`list_task_board`（**`control/task_board.py:93` 经 import 跨模块消费——首轮只扫 service.py 漏检，回归测试红抓回后同配方收拢**；跨模块 grep 是「第三套规则」排查的教训面）。关键场景仍是**跨企业成员关系**：企业乙账号被加进企业甲项目后，控制台两清单（任务/审批）不再经旧路径漏出＝幽灵行防线对控制台域补齐。
+- **核验销号（12 条，零代码改动面，盘点表处置建议逐条人工复核）**：industry-templates 6 条写面＋templates research-forms 3 条写面＝`@require_role("admin")` 角色闸在位（R2 目录写 admin-only 保持；机器判定把 PATCH/DELETE 版本面标成「读面」属 AST 误判，人工复核纠正）；internal 3 条＝**服务间认证**（`/internal/dsh/*` DSH 服务令牌、`/internal/clawbot/*` ClawBot 网关令牌——非 JWT 用户面，org 维度不适用，M4 令牌租户化的输入，盘点表维度 5 已登记）；task-center 3 条写面＝服务层 `authorize_ai_capability → project_access`（统一入口含 org 谓词）✓。
+- **测试**：NEW `test_m3b_batch1b_task_center.py` **6 例**——跨企业成员两清单不漏出（审批清单＋任务主清单，各带平台身份 leader 同域可见性 sanity）、跨企业审批决策 403、行业模板 6 写面/调研表单 3 写面 admin 闸 403、internal 服务间面坏令牌 401。**摘除式变异（两消费点两形态全打：`scope =` 赋值形＋`.where()` 内联形换回 org-less leader-OR-成员）⇒ 2 红→还原→6 绿**；邻域回归 task_board/control_plane/审批 SLA/expirations/metrics_v31 **58 例全绿**（首轮 6 红即 task_board 的 NameError＝第三消费点漏检信号）；mypy 官方闸 **279 零新增**；ruff 绿。
+- **口径**：零迁移零新路由零新表零新蓝图 ⇒ 结构口径不变（461 路由/51 蓝图/150 表/66 rev 单头 `a7c2f9e1b4d8`）；pytest **CI 实测 3025 收集 = 3018 passed + 7 skipped**〔PR CI run 42971930465 server-tests；基线＝批次①-a **合并树** main run 42970619241 实测 **3019 收集 = 3012 passed + 7 skipped**（合并 SHA `828557e`）＋本轮 **+6** ＝ 3025 逐位吻合；★①-a PR 期实测 3010 收集＝rebase 前 PR 树值，已随 #323 插队融合作废〕。**批次①（39 条）随本 PR 全量销号**；部署活体复验＋DoD 回写归批次①收口轮。
+
 ## [未发布] — 多客户 M3b 批次①-a 轮：AI 与扩展控制面 org 收口＋跨 org 留痕接线（零迁移零新路由零新表零桌面，2026-11-11）
 
 - **任务书 §7-M3b ＋ M3b 拍板（2026-11-11 交互四项，全部推荐项）**：①销号范围＝**236 全量**（write-level 79 实改＋read-only 157 读面收敛核验；任务书「122 写端点」是 M0 前先验，盘点表现测为准）；②read-only 核验深度＝**域级代表性用例**进 CI；③节奏＝**批次①先行，绿后同会话续推②③④**；④留痕触发面＝**企业 org 之间才算**（平台内部桶＝平台身份大本营，不算跨 org——否则试点期每次日常写动作都产生事件）。批次①（平台控制面 39 条）按蓝图原子性拆两实际批：**①-a「AI 与扩展控制面」24 条**（ai 6／extensions 14／modules 2／document-templates 1／users ai-access 1，本节）＋①-b「模板·任务中心·内部面」15 条（含待 M0 补充 #6 `_project_scope` 收拢，另 PR）。

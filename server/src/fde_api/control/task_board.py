@@ -18,11 +18,11 @@ from fde_api.control.access import authorize_ai_capability
 from fde_api.control.models import AutomationTask
 from fde_api.control.scheduler import next_schedule_time
 from fde_api.control.service import (
-    ControlServiceError, _project_scope, _serialize_automation_task, _serialize_project_task,
+    ControlServiceError, _serialize_automation_task, _serialize_project_task,
 )
 from fde_api.errors import error_response
 from fde_api.extensions import db
-from fde_api.projects.permissions import project_access
+from fde_api.projects.permissions import project_access, visible_project_filter
 from fde_api.projects.service import ProjectServiceError
 from fde_api.projects.task_service import TASK_STATUSES, update_project_task
 from fde_api.workbench.models import OperationEvent, Project, ProjectModule, ProjectTask
@@ -90,7 +90,7 @@ def _automation_item(user: User, task: AutomationTask) -> dict[str, Any]:
 def list_task_board(*, user: User) -> dict[str, Any]:
     session = db.session()
     try:
-        scope = _project_scope(user)
+        scope = visible_project_filter(user)
         project_tasks = list(session.scalars(
             select(ProjectTask)
             .join(ProjectModule, ProjectTask.project_module_id == ProjectModule.id)
