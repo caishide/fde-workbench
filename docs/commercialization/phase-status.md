@@ -807,3 +807,14 @@ docs/commercialization/
 - **T8 文档同步与收口核查**（本轮，纯文档）：同步清单逐项执行（AGENTS/CHANGELOG/phase-status/rules×2/审计清单 CSV·JSON/架构图/ADR-011 状态栏）；逐阶段验收判据对照无倒填；route CSV 再生成（+13/−13 行均为上游 M3b 新测试文件引用列，零路由增删）；JSON 零 diff；架构图防陈旧闸 OK。
 - **全阶段口径（T8 现测）**：pytest **3070 收集 = 3063 passed + 7 skipped**〔PR CI run 43002032759＋main run 43003894517 四绿〕；mypy 279；150 表／66 rev 单头 `a7c2f9e1b4d8`／461 路由／51 蓝图／api_catalog 94；活体复验绿（镜像三枚一致／alembic head／461 non-static）。
 
+---
+
+## 外部闸消解轮·§1.4 集团归并裁定落地 — 已完成（纯文档零代码）
+
+- 分支：`docs/legal-14-decision`（工作树 `D:\test\fde-wt-legal14`，基线 fork/main）
+- 状态：**completed**（OWNER 经营裁决 Q1–Q5 落入五处权威文档）
+- **起因**：用户追问「法务裁定问题能否用交互选择解决」——可以，但**如实定性**：OWNER（业务方）答这五项＝**经营/风险接受裁决，非法律意见**；五项全裁为保守默认/现状维持 ⇒ 本轮零代码。
+- **裁决**：Q1/Q4 额度按法人计（USCC 单键，不建集团归并键；滥用敞口由既有人工闸遏制＋显式登记；**任务书 §17-3 销号**）／Q2 注册面不带母公司 USCC／Q3 只境内 USCC（mod-31 硬闸维持）／Q5 归并主张证据指针制（`source_uri`＋sha256 前瞻合同，与 admin 人工闸双轨，本轮零代码）。
+- **落点**：问题单 v1.1（§6 裁决记录＋状态改「OWNER 经营裁决已落」）＋ ADR-004 新增 §4 裁定回填 ＋ 00-gap-register GAP-04 回填行 ＋ 分账拍板决策包 X-03 标注已裁决。
+- **性质红线**：全部标注「OWNER 经营/风险接受裁决，非法律意见；法务正式意见列可选后续复核（不阻塞 M 线开工）」。
+- 口径：纯文档零代码；pytest/vitest/mypy 全不变；零迁移零路由 ⇒ 无需 rebuild/alembic/重打包。
