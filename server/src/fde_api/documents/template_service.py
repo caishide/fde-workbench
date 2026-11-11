@@ -32,6 +32,12 @@ from fde_api.documents.models import (
 )
 from fde_api.documents.template_parser import scan_docx_placeholders
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.names import safe_filename
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -149,7 +155,7 @@ def test_generate_template_version(
     session = db.session()
     try:
         version = _load_version(session, version_id)
-        data = _read_version_docx(version)
+        data = _read_version_docx(session, version)
         text = _test_render_template(data)
         residual = _RESIDUAL_TOKEN_RE.findall(text)
         if residual:
@@ -320,7 +326,7 @@ def get_template_version_download_url(*, actor: User, version_id: str) -> str:
                     version.template.document_type,
                     version.template_id,
                     version.version_number,
-                    _read_version_docx(version),
+                    _read_version_docx(session, version),
                 )
                 for field, value in stored_docx.items():
                     setattr(version, field, value)
@@ -332,7 +338,9 @@ def get_template_version_download_url(*, actor: User, version_id: str) -> str:
                     "template_docx_unavailable", "模板文件暂不可用。", 409
                 )
             return object_storage.current.sign_download(
-                storage_key,
+                existing_read_key(
+                    object_storage.current, session, storage_key, layout=current_layout()
+                ),
                 filename,
                 expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
             )
@@ -515,18 +523,22 @@ def _store_template_docx(
     version_number: int,
     docx_bytes: bytes,
 ) -> dict[str, Any]:
+    session = db.session()  # 布局解析只读；帮手自取（调用点零改动）
     filename = f"{document_type}-v{version_number}{DOCX_EXTENSION}"
     safe = safe_filename(filename)
     storage_key = (
         f"document-templates/{template_id}/{document_type}"
         f"/versions/{version_number}/{safe}"
     )
-    stored = object_storage.current.put_stream(
-        storage_key,
-        io.BytesIO(docx_bytes),
-        DOCX_MIME,
-        {},
-    )
+    stored = None
+    for placement in physical_write_targets(session, storage_key, layout=current_layout()):
+        stored = object_storage.current.put_stream(
+            placement,
+            io.BytesIO(docx_bytes),
+            DOCX_MIME,
+            {},
+        )
+    assert stored is not None
     return {
         "docx_original_filename": filename,
         "docx_mime_type": DOCX_MIME,
@@ -577,6 +589,7 @@ def _load_version(session: Session, version_id: str) -> DocumentTemplateVersion:
 
 
 def _read_upload_bytes(upload: Any) -> bytes:
+    session = db.session()  # 布局解析只读；帮手自取（调用点零改动）
     if isinstance(upload, bytes):
         return upload
     if hasattr(upload, "read"):
@@ -584,7 +597,9 @@ def _read_upload_bytes(upload: Any) -> bytes:
         return data if isinstance(data, bytes) else bytes(data)
     storage_key = getattr(upload, "storage_key", None)
     if isinstance(storage_key, str) and storage_key:
-        stream = object_storage.current.open_stream(storage_key)
+        stream = open_read_stream(
+            object_storage.current, session, storage_key, layout=current_layout()
+        )
         try:
             return stream.read()
         finally:
@@ -594,9 +609,14 @@ def _read_upload_bytes(upload: Any) -> bytes:
     )
 
 
-def _read_version_docx(version: DocumentTemplateVersion) -> bytes:
+def _read_version_docx(session: Session, version: DocumentTemplateVersion) -> bytes:
     if version.docx_storage_key:
-        stream = object_storage.current.open_stream(version.docx_storage_key)
+        stream = open_read_stream(
+            object_storage.current,
+            session,
+            version.docx_storage_key,
+            layout=current_layout(),
+        )
         try:
             return stream.read()
         finally:
@@ -606,7 +626,9 @@ def _read_version_docx(version: DocumentTemplateVersion) -> bytes:
     # legacy project-file reference yet.
     docx_file = version.docx_file
     if docx_file is not None and docx_file.storage_key:
-        stream = object_storage.current.open_stream(docx_file.storage_key)
+        stream = open_read_stream(
+            object_storage.current, session, docx_file.storage_key, layout=current_layout()
+        )
         try:
             return stream.read()
         finally:

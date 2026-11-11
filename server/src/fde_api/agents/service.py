@@ -584,8 +584,15 @@ def _execute_run(
     settings = _settings()
     run_id = new_uuid()
     workspace_root = Path(settings.agent_workspace_root)
-    workspace = workspace_root / run_id
-    context_ref = f"{workspace_root.as_posix().strip('/')}/{run_id}/{_CONTEXT_FILE}"
+    # M4 批次 D（S2）：短生命周期临时面存量不搬，新 run 即主体段
+    # （org/{org_id}/… ／ platform/…；root 锚定校验不受影响）。
+    from fde_api.storage.layout import org_object_prefix
+
+    _org_segment = org_object_prefix(getattr(actor, "org_id", None))
+    workspace = workspace_root / _org_segment / run_id
+    context_ref = (
+        f"{workspace_root.as_posix().strip('/')}/{_org_segment}/{run_id}/{_CONTEXT_FILE}"
+    )
 
     try:
         with db.session() as session, session.begin():

@@ -19,6 +19,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFileVersion
 from fde_api.files.names import attachment_key, document_key, extension_of
 from fde_api.files.scanner import (
@@ -119,7 +125,9 @@ def _process_file_core(
     filename = version.original_filename
 
     # Read enough head bytes to sniff the magic signature.
-    with object_storage.current.open_stream(version.storage_key) as stream:
+    with open_read_stream(
+        object_storage.current, session, version.storage_key, layout=current_layout()
+    ) as stream:
         head = stream.read(HEAD_BYTES)
 
     if _media_type_mismatch(head, filename):
@@ -136,7 +144,9 @@ def _process_file_core(
             preview_status=version.preview_status,
         )
 
-    with object_storage.current.open_stream(version.storage_key) as stream:
+    with open_read_stream(
+        object_storage.current, session, version.storage_key, layout=current_layout()
+    ) as stream:
         digest, scan = hash_and_scan(stream, scanner)
 
     if scan.status == "infected":
@@ -168,10 +178,16 @@ def _process_file_core(
             preview_status=version.preview_status,
         )
 
-    # Clean -> promote to the immutable final key.
+    # Clean -> promote to the immutable final key（新布局按状态机落物理键）。
     final_key = _final_key(project_file, version)
-    object_storage.current.copy(source_key=version.storage_key, target_key=final_key)
-    head_obj = object_storage.current.head(final_key)
+    source_key = existing_read_key(
+        object_storage.current, session, version.storage_key, layout=current_layout()
+    )
+    placed: str | None = None
+    for placement in physical_write_targets(session, final_key, layout=current_layout()):
+        object_storage.current.copy(source_key=source_key, target_key=placement)
+        placed = placement
+    head_obj = object_storage.current.head(placed or final_key)
 
     version.storage_key = final_key
     version.sha256 = digest

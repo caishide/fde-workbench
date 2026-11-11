@@ -31,6 +31,11 @@ class Settings(BaseSettings):
         validation_alias="FDE_PRODUCT_NAME",
     )
     storage_backend: Literal["local", "oss"] = "local"
+    # 存储布局五步状态机（M4 批次 D；出厂默认 legacy＝现状零回归）：
+    # legacy → dual_write → read_new → readonly → retired（storage/layout.py 单一权威）。
+    storage_layout: Literal[
+        "legacy", "dual_write", "read_new", "readonly", "retired"
+    ] = "legacy"
     local_storage_root: Path = Path(".fde-storage")
     oss_endpoint: str | None = None
     oss_bucket: str | None = None

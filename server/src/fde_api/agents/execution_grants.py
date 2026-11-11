@@ -64,6 +64,7 @@ def issue_run_grant(
     jwt_secret: str,
     user_id: str,
     project_id: str,
+    org_id: str | None = None,
     run_id: str,
     workspace: str,
     actions: tuple[str, ...] = HOST_CHANNEL_ACTIONS,
@@ -77,6 +78,7 @@ def issue_run_grant(
         derive_grant_secret(jwt_secret),
         user_id=user_id,
         project_id=project_id,
+        org_id=org_id,
         run_id=run_id,
         workspace=workspace,
         actions=list(actions),
@@ -130,10 +132,16 @@ def authorize_host_run(
     （自 ``agents/service.py`` 拆出：热点文件预算闸「只许拆、不许长」，
     2026-11-09。）
     """
+    from fde_api.auth.models import User
+
+    with session_factory() as session:
+        actor_row = session.get(User, user_id)
+        actor_org_id = actor_row.org_id if actor_row is not None else None
     token = issue_run_grant(
         jwt_secret=jwt_secret,
         user_id=user_id,
         project_id=project_id,
+        org_id=actor_org_id,
         run_id=run_id,
         workspace=workspace,
     )

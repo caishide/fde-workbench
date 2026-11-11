@@ -35,6 +35,12 @@ from fde_api.documents.models import (
     ProjectDocumentVersion,
 )
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.files.names import document_key, extension_of, safe_filename
 from fde_api.files.service import create_direct_file_version
@@ -246,9 +252,14 @@ def upload_manual_revision(
                 document.project_id, document.id, f"v{version_number}", filename
             )
             sha256 = hashlib.sha256(docx_bytes).hexdigest()
-            stored = object_storage.current.put_stream(
-                storage_key, io.BytesIO(docx_bytes), DOCX_MIME, {}
-            )
+            stored = None
+            for placement in physical_write_targets(
+                session, storage_key, layout=current_layout()
+            ):
+                stored = object_storage.current.put_stream(
+                    placement, io.BytesIO(docx_bytes), DOCX_MIME, {}
+                )
+            assert stored is not None
             file_version = create_direct_file_version(
                 session,
                 document.project_id,
@@ -745,7 +756,12 @@ def get_document_download_url(
                 "file_not_available", "The document version is not available.", 409
             )
         signed_url = object_storage.current.sign_download(
-            docx_file.storage_key,
+            existing_read_key(
+                object_storage.current,
+                session,
+                docx_file.storage_key,
+                layout=current_layout(),
+            ),
             docx_file.original_filename,
             expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
         )
@@ -823,7 +839,12 @@ def get_document_preview_url(
                 "preview_not_available", "The document preview is not available.", 409
             ) from None
         return object_storage.current.sign_download(
-            preview_file.storage_key,
+            existing_read_key(
+                object_storage.current,
+                session,
+                preview_file.storage_key,
+                layout=current_layout(),
+            ),
             preview_file.original_filename,
             expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
         )
@@ -1156,9 +1177,15 @@ def _serialize_version_report(version: ProjectDocumentVersion) -> dict[str, Any]
 def _signed_download(docx_file: ProjectFileVersion | None) -> str | None:
     if docx_file is None or not _is_downloadable(docx_file):
         return None
+    session = db.session()  # 布局解析只读；帮手自取（调用点零改动）
     try:
         return object_storage.current.sign_download(
-            docx_file.storage_key,
+            existing_read_key(
+                object_storage.current,
+                session,
+                docx_file.storage_key,
+                layout=current_layout(),
+            ),
             docx_file.original_filename,
             expires_seconds=DOWNLOAD_EXPIRES_SECONDS,
         )

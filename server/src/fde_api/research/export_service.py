@@ -19,6 +19,12 @@ from fde_api.config import Settings
 from fde_api.documents.catalog import load_template_manifest
 from fde_api.documents.qa import inspect_generated_docx
 from fde_api.extensions import db, object_storage
+from fde_api.storage.layout import (  # noqa: F401 — 批次 D 布局翻译
+    current_layout,
+    existing_read_key,
+    open_read_stream,
+    physical_write_targets,
+)
 from fde_api.documents.catalog import RESOURCE_TEMPLATES_DIR
 from fde_api.documents.models import DocumentTemplate, DocumentTemplateVersion
 from fde_api.files.models import ProjectFile, ProjectFileVersion
@@ -184,7 +190,11 @@ def export_research_result(*, actor: User, project_id: str, form_id: str) -> dic
             filename = f"{display_name}-v{number}.docx"
             safe = safe_filename(filename)
             storage_key = f"projects/{project.id}/library/{existing.id}/v{number}/{safe}"
-            stored = object_storage.current.put_stream(storage_key, io.BytesIO(data), DOCX_MIME, {"source": "research-export", "subject-id": subject.id, "form-id": form.id})
+            stored = None
+            for placement in physical_write_targets(session, storage_key, layout=current_layout()):
+                stored = object_storage.current.put_stream(placement, io.BytesIO(data), DOCX_MIME, {"source": "research-export", "subject-id": subject.id, "form-id": form.id})
+            assert stored is not None
+            assert stored is not None
             version = ProjectFileVersion(
                 file_id=existing.id, version_number=number, source="system_generated",
                 original_filename=filename, safe_filename=safe, extension=".docx", mime_type=DOCX_MIME,
@@ -353,7 +363,9 @@ def _published_research_template(session) -> bytes | None:
             )
         )
         if version is not None and version.docx_storage_key:
-            stream = object_storage.current.open_stream(version.docx_storage_key)
+            stream = open_read_stream(
+                object_storage.current, session, version.docx_storage_key, layout=current_layout()
+            )
             try:
                 return stream.read()
             finally:
@@ -361,7 +373,9 @@ def _published_research_template(session) -> bytes | None:
         if version is not None and version.docx_file_version_id:
             file_version = session.get(ProjectFileVersion, version.docx_file_version_id)
             if file_version is not None and file_version.storage_key:
-                stream = object_storage.current.open_stream(file_version.storage_key)
+                stream = open_read_stream(
+                    object_storage.current, session, file_version.storage_key, layout=current_layout()
+                )
                 try:
                     return stream.read()
                 finally:

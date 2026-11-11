@@ -56,6 +56,7 @@ def issue_execution_grant(
     *,
     user_id: str,
     project_id: str,
+    org_id: str | None = None,
     run_id: str,
     workspace: str,
     actions: list[str] | tuple[str, ...],
@@ -76,6 +77,7 @@ def issue_execution_grant(
     payload = {
         "user_id": user_id,
         "project_id": project_id,
+        "org_id": org_id,  # M4 批次 D：org 归属元数据（计量/审计面，非授权面）
         "run_id": run_id,
         "workspace": workspace,
         "actions": sorted(actions),  # 集合语义顺序无关（#209 确定性纪律）

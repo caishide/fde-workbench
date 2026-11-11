@@ -108,19 +108,29 @@ def _project_code(session: Any, project_id: str) -> str:
 # 草稿独立文件根（物理隔离：与 .fde-storage 上传存储不共根）
 
 
-def _draft_dir(draft_id: str, settings=None):
+def _draft_dir(session, draft, settings=None):
+    """草稿物理目录（M4 批次 D：主体段 org/{org_id}/… ／ platform/…）。
+
+    短生命周期临时面**存量不搬**——新写入即新段；部署前创建的草稿目录
+    在旧位置自然留存至 7 天留存期耗尽（清理 miss 仅磁盘残留，非安全面）。
+    """
+    from fde_api.jobs.outbox import subject_org_of_project
+    from fde_api.storage.layout import org_object_prefix
+
     root = (settings or _settings()).transcript_draft_root
-    return root / draft_id
+    return root / org_object_prefix(
+        subject_org_of_project(session, draft.project_id)
+    ) / draft.id
 
 
-def _write_draft_file(draft_id: str, content: str) -> None:
-    directory = _draft_dir(draft_id)
+def _write_draft_file(session, draft, content: str) -> None:
+    directory = _draft_dir(session, draft)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "transcript.txt").write_text(content, encoding="utf-8")
 
 
-def _remove_draft_dir(draft_id: str, settings=None) -> None:
-    shutil.rmtree(_draft_dir(draft_id, settings), ignore_errors=True)
+def _remove_draft_dir(session, draft, settings=None) -> None:
+    shutil.rmtree(_draft_dir(session, draft, settings), ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +302,7 @@ def create_draft(*, actor: User, payload: dict[str, Any]) -> dict[str, Any]:
         )
         session.add(draft)
         session.flush()
-        _write_draft_file(draft.id, redacted_content)
+        _write_draft_file(session, draft, redacted_content)
         record_event(session, actor, "transcript_draft_created", project, {
             "draft_id": draft.id,
             "source_kind": source_kind,
@@ -354,7 +364,7 @@ def discard_draft(*, actor: User, draft_id: str) -> dict[str, Any]:
         draft.content_sha256 = None
         draft.redaction_entries = None
         draft.cleaned_at = now
-        _remove_draft_dir(draft.id)
+        _remove_draft_dir(session, draft)
         record_event(session, actor, "transcript_draft_discarded", project, {"draft_id": draft.id})
         return _serialize_draft(draft, detail=True)
 
@@ -404,7 +414,7 @@ def promote_draft(*, actor: User, draft_id: str, payload: dict[str, Any]) -> dic
         draft.client_confirmation_method = method
         draft.promoted_ref = f"interview_minutes:{minutes.id}"
         draft.cleaned_at = now
-        _remove_draft_dir(draft.id)
+        _remove_draft_dir(session, draft)
         record_event(session, actor, "transcript_draft_promoted", project, {
             "draft_id": draft.id,
             "minutes_id": minutes.id,
@@ -443,7 +453,7 @@ def purge_expired_drafts(*, now: datetime | None = None, limit: int = 100, setti
                 draft.content_sha256 = None
                 draft.redaction_entries = None
                 draft.cleaned_at = current
-                _remove_draft_dir(draft.id, settings)
+                _remove_draft_dir(session, draft, settings)
             purged = len(drafts)
             return purged
     finally:

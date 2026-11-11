@@ -347,6 +347,98 @@ def register_cli(app: Flask) -> None:
             session.close()
 
 
+    @app.cli.command("storage-migrate-layout")
+    @click.option("--execute", is_flag=True, default=False, help="缺省 dry-run；--execute 才真正写盘。")
+    @click.option("--limit", type=int, default=None, help="最多处理 N 个对象（分窗推进用）。")
+    def storage_migrate_layout_command(execute: bool, limit: int | None) -> None:
+        """存量对象 legacy→主体段 复制迁移（M4 批次 D；逐文件 sha256 核对，幂等可重跑）。
+
+        扫本地存储根 objects/ 下 projects/ 与 document-templates/ 两个旧布局根，
+        按当前 FDE_STORAGE_LAYOUT 状态把每个逻辑键补落到其余物理目标
+        （dual_write/read_new+ ⇒ org/{org_id}/… 或 platform/…）。目标在场且
+        sha256 一致 ⇒ 跳过（幂等）；一致性与源逐文件核对，不一致 ⇒ 记账不静默。
+        生产执行是运维动作（不在部署流程内自动跑）。
+        """
+        import hashlib as _hashlib
+        from pathlib import Path as _Path
+
+        from flask import current_app
+
+        from fde_api.extensions import object_storage
+        from fde_api.storage.layout import physical_write_targets, resolve_storage_layout
+        from fde_api.storage.base import StorageError
+        from fde_api.storage.local import LocalObjectStorage
+
+        storage = object_storage.current
+        if not isinstance(storage, LocalObjectStorage):
+            raise click.ClickException("迁移命令仅支持 local 存储后端（oss 走供应商侧生命周期）。")
+        layout = resolve_storage_layout(current_app.config["SETTINGS"])
+        objects_root = storage.root / "objects"
+        legacy_roots = [objects_root / "projects", objects_root / "document-templates"]
+        scanned = copied = skipped = mismatched = 0
+
+        def _digest(path) -> str:
+            digest = _hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+
+        def _object_disk_path(key: str):
+            return objects_root / _Path(key)
+
+        session = db.session()
+        try:
+            for legacy_root in legacy_roots:
+                if not legacy_root.is_dir():
+                    continue
+                for path in sorted(legacy_root.rglob("*")):
+                    if not path.is_file():
+                        continue
+                    if limit is not None and scanned >= limit:
+                        click.echo(f"Stopped at limit={limit}.")
+                        return
+                    logical_key = path.relative_to(objects_root).as_posix()
+                    scanned += 1
+                    source_digest = _digest(path)
+                    targets = [
+                        t
+                        for t in physical_write_targets(session, logical_key, layout=layout)
+                        if t != logical_key
+                    ]
+                    for target in targets:
+                        target_path = _object_disk_path(target)
+                        if target_path.is_file() and _digest(target_path) == source_digest:
+                            skipped += 1
+                            continue
+                        if not execute:
+                            click.echo(f"would copy {logical_key} -> {target}")
+                            copied += 1
+                            continue
+                        try:
+                            storage.copy(source_key=logical_key, target_key=target)
+                        except StorageError as error:
+                            # 逐对象容错：孤儿/缺 sidecar 的源不中断整轮（汇总后 fail loud）。
+                            mismatched += 1
+                            click.echo(f"ERROR copying {logical_key} -> {target}: {error}")
+                            continue
+                        if _digest(target_path) != source_digest:
+                            mismatched += 1
+                            click.echo(f"MISMATCH after copy: {target}")
+                        else:
+                            copied += 1
+            click.echo(
+                f"layout={layout} dry_run={not execute} scanned={scanned} "
+                f"copied={copied} skipped={skipped} mismatched={mismatched}"
+            )
+            if mismatched:
+                raise click.ClickException(
+                    f"{mismatched} 个对象复制失败或 sha256 不一致——逐一核查后再重跑。"
+                )
+        finally:
+            session.close()
+
+
 def _reconcile_jobs(queue: object) -> None:
     """One reconciliation sweep; never allowed to kill the worker loop."""
     from fde_api.jobs.reconcile import reconcile_jobs

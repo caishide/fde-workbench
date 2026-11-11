@@ -80,7 +80,11 @@ def test_draft_create_redacts_via_t2_pipeline(db_session, d4_client, d4_settings
     created = datetime.fromisoformat(data["created_at"])
     assert timedelta(days=6) < expires - created <= timedelta(days=7, minutes=1)
     # 独立文件根：正文落盘且 sha256 与行一致
-    root = d4_settings.transcript_draft_root / data["id"]
+    # M4 批次 D：新写入落主体段（org/{org_id}/…；与产品 _draft_dir 同源解析）
+    from fde_api.transcripts.models import TranscriptDraft
+    from fde_api.transcripts.service import _draft_dir
+    draft_row = db_session.get(TranscriptDraft, data["id"])
+    root = _draft_dir(db_session, draft_row, settings=d4_settings)
     assert (root / "transcript.txt").read_text(encoding="utf-8") == data["content"]
     # 事件留痕：命中数在 changes 里，正文永不进事件
     event = db_session.query(OperationEvent).filter_by(event_type="transcript_draft_created").one()

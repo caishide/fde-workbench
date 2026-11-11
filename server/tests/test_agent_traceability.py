@@ -102,7 +102,11 @@ def test_t1_reverse_chain_from_solution_to_problem_refs(db_session, d4_client, d
     detail = leader.get(f"/api/v1/agents/runs/{run['id']}")
     assert detail.status_code == 200
     context_ref = detail.json["data"]["context_ref"]
-    context_path = Path(d4_settings.agent_workspace_root) / run["id"] / "context.md"
+    # M4 批次 D：新 run 落主体段——与产品同源构造（actor org ⇒ org_object_prefix）
+    from fde_api.storage.layout import org_object_prefix
+    context_path = (
+        Path(d4_settings.agent_workspace_root) / org_object_prefix(leader.user.org_id) / run["id"] / "context.md"
+    )
     assert context_ref.endswith(f"{run['id']}/context.md")
     rendered = context_path.read_text(encoding="utf-8")
     assert "src-1" in rendered and "库存与订单数据割裂" in rendered
