@@ -382,3 +382,243 @@ def render_curve_md(
             lines.append(f"- {point}")
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+# ── 分数面可判定性（T-09 读数规则：同考卷同生成器多 run 分布） ─────────
+#
+# 登记事实（curve 3，2026-11-11）：锚点 A2 同一输入两次评分 77→84 ⇒ judge
+# 单点噪声 ≥7 分，逐卡 ±10 以内属噪声域 ⇒ **单点分数差不可作能力变化判定**。
+# 读数规则（本节登记，留痕可推翻；**非校准阈值**——E-1：oracle 数据攒够前
+# 不校准任何通过线）：分数差 Δ 可判定 ⇔ 参与两组样本数各 ≥ MIN_DISTRIBUTION_RUNS
+# ∧ |Δ| > 噪声带（参与分布的观测极差较大者，含锚点纯 judge 噪声极差）。
+# 锚点输入逐字节固定（真相层夹具）⇒ 锚点重跑得分＝**纯 judge 噪声**，与生成器
+# 版本无关——故锚点分布按 judge 轴分组、逐卡分布按四轴分组，两者不可混用。
+
+DECIDABLE_RULE_ID = "delta-noise-band-2026-11-11"
+
+# 逐卡可比组四轴：考卷×生成器×数字闸×评分规则全同，重跑得分才是同位样本。
+COMPARABLE_KEYS = (
+    "eval_set_version",
+    "prompt_version",
+    "number_gate_version",
+    "judge_version",
+)
+# 锚点可比组两轴：锚点输入固定，只随评分规则与元夹具版本变。
+ANCHOR_GROUP_KEYS = ("judge_version", "meta_fixture_version")
+
+# 每组最少样本数（2026-11-11 登记：每卡 ≥3 run 取分布——n=3 的极差只偏窄
+# 不放宽，是「可判定」的必要条件而非充分条件，读数时如实携带 n）。
+MIN_DISTRIBUTION_RUNS = 3
+
+
+def comparable_key(item: dict[str, Any]) -> tuple[str, ...]:
+    """逐卡可比组键（四轴；缺版本标签记空串——缺标签本身就是不可比信号）。"""
+    run = item.get("run") or {}
+    scores = item.get("scores") or {}
+    return tuple(str(run.get(key) or scores.get(key) or "") for key in COMPARABLE_KEYS)
+
+
+def anchor_group_key(item: dict[str, Any]) -> tuple[str, ...]:
+    """锚点可比组键（judge 轴：锚点输入固定，与生成器无关）。"""
+    scores = item.get("scores") or {}
+    meta = scores.get("meta_gate") or {}
+    values = {
+        "judge_version": scores.get("judge_version"),
+        "meta_fixture_version": meta.get("meta_fixture_version"),
+    }
+    return tuple(str(values.get(key) or "") for key in ANCHOR_GROUP_KEYS)
+
+
+def distribution_stats(values: list[float]) -> dict[str, Any]:
+    """一组同位样本的分布读数（极差＝观测噪声宽度；n<2 ⇒ stdev=None 不编造）。"""
+    if not values:
+        raise SystemExit("distribution_stats: 空样本（不产空分布）")
+    xs = sorted(float(v) for v in values)
+    n = len(xs)
+    mean = sum(xs) / n
+    stdev: float | None = None
+    if n >= 2:
+        variance = sum((x - mean) ** 2 for x in xs) / (n - 1)
+        stdev = round(variance**0.5, 1)
+    return {
+        "n": n,
+        "mean": round(mean, 1),
+        "min": xs[0],
+        "max": xs[-1],
+        "range": round(xs[-1] - xs[0], 1),
+        "stdev": stdev,
+    }
+
+
+def score_distributions(
+    runs: list[dict[str, Any]], *, min_runs: int = MIN_DISTRIBUTION_RUNS
+) -> dict[str, Any]:
+    """按可比组聚合逐卡分布与锚点分布。
+
+    **只收 usable_as_evolution_evidence=True 的 run**（元验证不过的分数不得作
+    判定输入——协议语义在这里机械执行，不靠文档自觉）；**只收 status=evaluated
+    且未作废的行**——judge error 行与复述作废行不是 0 分，是**无数据**，进分布
+    就是拿假 0 分污染噪声带。逐卡按四轴、锚点按 judge 轴各归各组。
+    """
+    case_groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    anchor_groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    excluded = {"case_rows": 0, "anchor_rows": 0}
+    for item in runs:
+        scores = item.get("scores")
+        if not scores or scores.get("usable_as_evolution_evidence") is not True:
+            continue
+        run_id = str((item.get("run") or {}).get("run_id") or "")
+        case_group = case_groups.setdefault(
+            comparable_key(item), {"runs": [], "case_scores": {}}
+        )
+        if run_id not in case_group["runs"]:
+            case_group["runs"].append(run_id)
+        for case_id, row in (scores.get("cases") or {}).items():
+            row = row or {}
+            if str(row.get("status") or "") != "evaluated" or row.get("score_invalid"):
+                excluded["case_rows"] += 1
+                continue
+            case_group["case_scores"].setdefault(str(case_id), []).append(float(row["total"]))
+        anchor_group = anchor_groups.setdefault(
+            anchor_group_key(item), {"runs": [], "anchor_scores": {}}
+        )
+        if run_id not in anchor_group["runs"]:
+            anchor_group["runs"].append(run_id)
+        for anchor in (scores.get("meta_gate") or {}).get("anchors") or []:
+            if str(anchor.get("status") or "") != "evaluated" or anchor.get(
+                "parroting_suspected"
+            ):
+                excluded["anchor_rows"] += 1
+                continue
+            anchor_group["anchor_scores"].setdefault(
+                str(anchor.get("anchor_id")), []
+            ).append(float(anchor["total"]))
+
+    def _dist_group(group: dict[str, Any], field: str) -> dict[str, Any]:
+        source = group[{"cases": "case_scores", "anchors": "anchor_scores"}[field]]
+        return {
+            "runs": sorted(group["runs"]),
+            field: {
+                name: distribution_stats(values) for name, values in sorted(source.items())
+            },
+        }
+
+    return {
+        "rule_id": DECIDABLE_RULE_ID,
+        "min_runs": min_runs,
+        "excluded_rows": excluded,
+        "case_groups": {
+            "|".join(key): _dist_group(group, "cases") for key, group in sorted(case_groups.items())
+        },
+        "anchor_groups": {
+            "|".join(key): _dist_group(group, "anchors")
+            for key, group in sorted(anchor_groups.items())
+        },
+    }
+
+
+def noise_width(*dists: dict[str, Any]) -> float:
+    """噪声带＝参与分布的观测极差较大者（n<2 的分布无宽度，不参与取大）。"""
+    widths = [float(d["range"]) for d in dists if d.get("n", 0) >= 2]
+    return max(widths) if widths else 0.0
+
+
+def decidable_delta(
+    delta: float,
+    *dists: dict[str, Any],
+    min_runs: int = MIN_DISTRIBUTION_RUNS,
+) -> dict[str, Any]:
+    """分数差可判定性判定（读数规则 DECIDABLE_RULE_ID，非校准阈值）。
+
+    返回 ``decidable=True/False``（可判/噪声域）或 ``None``（n 不足 ⇒
+    insufficient_data——不是「不可判定」，是还没资格判）。
+    """
+    width = noise_width(*dists)
+    n_list = [int(d["n"]) for d in dists]
+    if any(n < min_runs for n in n_list):
+        return {
+            "rule_id": DECIDABLE_RULE_ID,
+            "decidable": None,
+            "reason": "insufficient_data",
+            "n_list": n_list,
+            "noise_width": width,
+            "abs_delta": abs(delta),
+        }
+    readable = abs(delta) > width
+    return {
+        "rule_id": DECIDABLE_RULE_ID,
+        "decidable": readable,
+        "reason": "" if readable else "within_noise",
+        "n_list": n_list,
+        "noise_width": width,
+        "abs_delta": abs(delta),
+    }
+
+
+def render_distribution_md(summary: dict[str, Any]) -> str:
+    """渲染分布底册 markdown（仓库存汇总+指针；零报告正文零答案材料）。"""
+    min_runs = int(summary.get("min_runs") or MIN_DISTRIBUTION_RUNS)
+    lines: list[str] = []
+    lines.append("# 诊断评测·分数面分布（可判定性底册）")
+    lines.append("")
+    lines.append(
+        f"> **读数规则（`{summary.get('rule_id') or DECIDABLE_RULE_ID}`，非校准阈值）**："
+        "分数差 Δ 可判定 ⇔ 参与两组样本数各 ≥ "
+        f"{min_runs} ∧ |Δ| > 噪声带（参与分布的观测极差较大者，含锚点）。"
+        "锚点输入逐字节固定 ⇒ 锚点极差＝**纯 judge 噪声**；逐卡极差＝生成+judge"
+        "联合噪声。n 不足 ⇒ insufficient_data（还没资格判）。oracle 数据攒够前"
+        "不校准任何通过线（E-1）；单点分数差不构成能力结论。"
+    )
+    lines.append("")
+
+    case_groups = summary.get("case_groups") or {}
+    anchor_groups = summary.get("anchor_groups") or {}
+    if not case_groups and not anchor_groups:
+        lines.append("**尚无可用分布**（无 usable run）——insufficient_data。")
+        return "\n".join(lines) + "\n"
+
+    lines.append("## 逐卡分布组（考卷×生成器×数字闸×judge 四轴全同才同组）")
+    lines.append("")
+    for key, group in case_groups.items():
+        _render_dist_group(lines, key, group, "cases", min_runs)
+
+    lines.append("## 锚点分布组（judge×元夹具两轴——纯 judge 噪声）")
+    lines.append("")
+    for key, group in anchor_groups.items():
+        _render_dist_group(lines, key, group, "anchors", min_runs)
+    return "\n".join(lines) + "\n"
+
+
+def _render_dist_group(
+    lines: list[str],
+    key: str,
+    group: dict[str, Any],
+    field: str,
+    min_runs: int,
+) -> None:
+    dists = group.get(field) or {}
+    runs = group.get("runs") or []
+    sample_n = min((d["n"] for d in dists.values()), default=0)
+    readiness = "✅ 达最小样本" if sample_n >= min_runs else f"⚠️ n<{min_runs}（insufficient_data）"
+    lines.append(f"### 组 `{key}`（runs: {', '.join(runs) or '—'}）——{readiness}")
+    lines.append("")
+    if not dists:
+        lines.append("（该组无可分布样本）")
+        lines.append("")
+        return
+    lines.append("| 对象 | n | 均值 | min | max | 极差 | stdev |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for name, dist in dists.items():
+        stdev = dist.get("stdev")
+        lines.append(
+            "| {name} | {n} | {mean} | {mn} | {mx} | {rg} | {sd} |".format(
+                name=name,
+                n=dist["n"],
+                mean=dist["mean"],
+                mn=dist["min"],
+                mx=dist["max"],
+                rg=dist["range"],
+                sd="—" if stdev is None else stdev,
+            )
+        )
+    lines.append("")

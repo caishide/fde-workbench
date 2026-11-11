@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,29 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 DEFAULT_ACTOR_USERNAME = "diag-ai-service"
+
+
+class _ThrottledSession:
+    """评测器侧全调用节流代理（2026-11-11 实录：共享配额环境下评分连发必撞
+    provider 429，内部重试 1s/3s 只会维持限流窗口）——包住 judge 客户端的
+    HTTP session，任意两次请求之间强制最小间隔；只作用于本进程，零生产改动。
+    覆盖元验证段（锚点＋反例连发）与逐卡段，比卡间隔更根本。"""
+
+    def __init__(self, inner: Any, min_interval: float) -> None:
+        self._inner = inner
+        self._min_interval = float(min_interval)
+        self._last_call = 0.0
+
+    def post(self, *args: Any, **kwargs: Any):
+        now = time.monotonic()
+        wait = self._last_call + self._min_interval - now
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call = time.monotonic()
+        return self._inner.post(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
 
 def _actor_username() -> str:
@@ -300,6 +324,14 @@ def cmd_judge(args: argparse.Namespace) -> int:
         client = judge_client()
         if client is None:
             raise SystemExit("评分面无 provider（缺 API Key）——fail-closed，不产空评分档案。")
+        if args.call_interval_seconds > 0:
+            # 全调用节流：元验证段＋逐卡段任意两次请求间的最小间隔（私有属性
+            # 替换仅在本评测进程内生效；生产 worker 路径不受影响）。
+            client._session = _ThrottledSession(client._session, args.call_interval_seconds)
+            print(
+                f"throttle: min_interval={args.call_interval_seconds}s",
+                flush=True,
+            )
         settings = current_app.config["SETTINGS"]
         override = str(getattr(settings, "diagnostic_judge_model", "") or "").strip()
         judge_model = override or settings.deepseek_simulation_evaluation_model
@@ -408,6 +440,16 @@ def main() -> int:
     jud = sub.add_parser("judge", help="元验证闸 + 逐卡评分（评分档案落真相层）")
     jud.add_argument("--run", required=True)
     jud.add_argument("--cases", default="", help="逗号分隔子集（缺省=已就绪全量）")
+    jud.add_argument(
+        "--call-interval-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "评分通道任意两次 HTTP 请求之间的最小间隔秒数（共享 AI 配额环境的"
+            "全调用节流，覆盖元验证段＋逐卡段；缺省 0＝无间隔原行为）。"
+            "2026-11-11 实录：无间隔连发触发 provider 429 且内部重试维持限流窗口。"
+        ),
+    )
 
     cur = sub.add_parser("curve", help="聚合全部 run 渲染版本化曲线文档")
     cur.add_argument("--doc-number", type=int, required=True)
