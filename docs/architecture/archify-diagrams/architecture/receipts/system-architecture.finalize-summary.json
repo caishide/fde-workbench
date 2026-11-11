@@ -6,13 +6,13 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-    "sha256": "ab3b56876e20de3fa84f7a44aa623cf0ebe15ce2a5618b7ff1eca12f44c679c5",
+    "path": "D:\\test\\fde-wt-n1\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "f1a311956db1d9d590f3466e5618c631eaef3c4421b79a4582223fe5037ad00a",
     "bytes": 15320
   },
   "artifact": {
-    "path": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
-    "sha256": "030a877be158aa7616eafbefaccbc78adb73e80eeb85db8bfe0125843fc20eeb",
+    "path": "D:\\test\\fde-wt-n1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "a1cb33661e0876080df7aeba8e157aa941a95a283512fc545dfc3660cfdc3233",
     "bytes": 845314
   },
   "gates": {
@@ -28,22 +28,22 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize.json",
-    "summaryReceipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize-summary.json",
-    "browserCheckReceipt": "D:\\test\\fde-wt-f1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.browser-check.json"
+    "receipt": "D:\\test\\fde-wt-n1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-n1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-n1\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.browser-check.json"
   },
   "update": {
     "status": "current",
     "installedVersion": "3.2.0",
     "availableVersion": "3.2.0",
     "releaseNotes": null,
-    "checkedAt": "2026-11-10T05:14:42.005Z",
+    "checkedAt": "2026-11-11T11:30:03.296Z",
     "source": "cache",
     "noticeRequired": false,
     "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 6965,
+  "durationMs": 5185,
   "browserCheck": {
     "requested": true,
     "ran": true

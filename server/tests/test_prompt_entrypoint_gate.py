@@ -43,10 +43,13 @@ _ALLOWED_CALL_NAMES = {"_workbench_system_prompt"}
 #   （discovery/prompt.py 模块级常量，仍是内部权威常量形态——2026-11-09 登记）。
 # - DIAGNOSTIC_REPORT_SYSTEM_PROMPT：获客诊断 T-10b 的报告生成提示词
 #   （diagnostics/prompts.py 模块级常量，jobs.py 直传——2026-11-11 登记）。
+# - QUALITY_TESTCASE_DRAFT_SYSTEM_PROMPT：AI 原生化 N3a 的 quality 用例
+#   AI 起草提示词（quality/draft.py 模块级常量，同模块直传——2026-11-11 登记）。
 _ALLOWED_PROMPT_CONSTANTS = {
     "DISCOVERY_SYSTEM_PROMPT",
     "DISCOVERY_CHUNK_SYSTEM_PROMPT",
     "DIAGNOSTIC_REPORT_SYSTEM_PROMPT",
+    "QUALITY_TESTCASE_DRAFT_SYSTEM_PROMPT",
 }
 
 

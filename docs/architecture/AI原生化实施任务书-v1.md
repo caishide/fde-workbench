@@ -136,7 +136,7 @@
 |---|---|---|---|---|---|---|
 | **N1** | Path 0 | G-01、G-07 | M+L | pilot-runbook C1–C7；#235 已合并→抽取腿**已复测**（V31-P1c 全量 rerun，§13 记录 #10） | **有**（真实订单 + 通道开启） | **D-1 已拍板（2026-11-09）⇒ 解挂**；等前置清零 |
 | **N2** | Path 2a | G-09、G-16、G-08 | S+M+S | 无（纯服务端+迁移） | 无 | **建议先开**（不被业务闸阻塞） |
-| **N3a** | Path 1 | G-05 | M | N2 完成（**已满足**，#240） | 无 | **已排期：下一实施轮首发（2026-11-11，§14/§15）** |
+| **N3a** | Path 1 | G-05 | M | N2 完成（**已满足**，#240） | 无 | **✅ 已实施（2026-11-11 首发，§13 #16；G-05 CLOSED）** |
 | **N3b** | Path 1 | G-04、G-03 | M + **L（先出 ADR）** | N2 完成 | 无 | N3a 之后 |
 | **N3c** | Path 1 | G-06、G-15 | M | N2 完成 | 部分（派单推荐形态见 D-5） | N3b 之后 |
 | **N4** | Path 2b | G-10、G-11、G-14 | M+L+M | N2 完成；消费 N3 的真实样本 | 部分（CI 预算见 D-6） | N3a 之后（需样本） |
@@ -153,7 +153,7 @@
 
 | 序 | 轮次 | 开工条件（现态） | 预计体量 | 备注 |
 |---|---|---|---|---|
-| 1 | **N3a**（G-05 quality 用例 AI 起草） | 前置已齐（N2 完成）⇒ **下一 feature 轮立即开工** | M，单轮 | 首发位 D-4 推荐项；确定性拼装零回归 |
+| 1 | **N3a**（G-05 quality 用例 AI 起草） | ✅ **已开工落地（2026-11-11，§13 #16）** | M，单轮 | 首发位 D-4 推荐项；确定性拼装保留为无 AI 缺省腿（零回归）；G-05 CLOSED |
 | 2 | **N3b ADR**（G-03 DAG 设计轮） | 与 N3a **并行**（纯设计，可先行） | 小（纯文档） | 节点闭集是否扩展/双来源谁优先 |
 | 3 | **N3b 本体**（G-04/G-03） | ADR 评审过 | M+L | 方案条目 AI 起草＋DAG 草稿 validate 干跑＋人工发布 |
 | 4 | **N3c**（G-06/G-15） | N3b 后（建议序） | M | 派单推荐旁挂 AI 建议腿＋桌面编排面；G-15 可与 T-A10 合批 |
@@ -615,6 +615,7 @@
 | 13 | 2026-11-11 | **N1 人工链收口轮（台账 v1.9）**：蔡工交互拍板三项（①试点判定完成／②腿①偏差纠正为 pilot.reviewer 重审／③随轮回写）后执行。**腿① 偏差纠正落地**——蔡工拍板「改 pilot.reviewer 重审」⇒ admin 逐件「撤回复核」（清空 `reviewed_by_user_id`/`reviewed_at`）→ `pilot.reviewer` 逐件重标，**7 产物 `reviewed_by_user_id` 全部改挂 `pilot.reviewer`**（`bd78b768…`，@13:01），`agent_artifact_reviewed` 事件 ×14（admin 撤回 7＋pilot.reviewer 重标 7）留痕——**D-1 账号分离语义自此真正行使**（提交人=admin 发起人／审阅人=`pilot.reviewer` 第二账号，与腿③ G7 拍板人同尺）；纠正走服务层 `set_artifact_reviewed` 写路径（非直接 UPDATE 库），不绕过 H1–H13。**★试点达成口径裁定（Q1 拍板「试点判定完成」）**：N1 试点判为**完成于「AI 自动化链跑通＋G-07 候选登记＋G7 诚实 fail 拍板＋腿①偏差纠正后账号分离语义闭合」**——G-07 两段判据全行使⇒**维持 CLOSED**；G-01 执行面（真实订单 completed run＋候选登记＋人工闸采纳＋门禁拍板留痕）已走完，但**消解判据「至 G9」所依赖的 G8/G9＝真实交付阶段证据（PoC 验收表／business-case／生产环境／Runbook／Go-Live 单／演练记录），属业务里程碑、超试点范围、不可代造**⇒ **G8/G9 保持 pending 不代拍**，标注「依赖真实交付证据、超试点范围」；**G-01 维持 OPEN**（试点完成≠判据达成，诚实口径不虚过——真实交付期材料到齐后 G8/G9 提交+拍板，届时 G-01 CLOSED）。**★红线守死**：门禁证据只存指针+sha256、AI 不代拍板/不造假（G8/G9 证据不可代造）；写外呼/发信/付款永不降级永不自动；腿①纠正走写路径留痕；①商用条款（外部依赖）/⑦网络限制面（结构缺口）维持未过不声称 |
 | 14 | 2026-11-11 | **N1 挂账销项轮（台账 v1.10）**：蔡工交互拍板四项（①T-A10 排期到下一实施轮／②容器栈 rebuild 维持挂账归部署归属方不越权／③G7 重交＝出材料清单供收集／④G8/G9＝出材料准备清单）后执行。**G7 重交回环推进**——`submit_gate_evidence`（admin 代录、指针+sha256、原件永不入库）把宿主真实件 success.md 定稿（`fdeops://engagements/somwyn/.fde/success.md`，S1/S2 切片已签收口径，self-acceptance 声明原样保留）claim 进 G7「success.md 定稿」清单项，G7 `failed→evidence`（3/4 claimed；「B 试点章程定稿」缺项如实不 claim＝不虚挂）；`gate_evidence_submitted` 事件 @11-11 留痕。**B 试点章程框架草稿**落宿主 `gates/G7-B试点章程-框架草稿-待定稿.md`（抽自 decisions/context/success/delivery，【待补】＝蔡工定稿＋客户书面确认；**不提交门禁**）。**NEW 仓内 [AI原生化N1门禁材料收集清单-v1.md](./AI原生化N1门禁材料收集清单-v1.md)**：G7×4＋G8×3＋G9×5 逐项「要什么/谁出/放哪/指纹纪律/提交＋拍板通道」（提交＝admin 代录⇒拍板＝`pilot.reviewer`，`gate_decider_conflict` 硬闸），推进顺序 G7 pass→G8 三态→G9 拍⇒**G-01 CLOSED**。**T-A10 排期销项**：backlog 行 PROPOSED→「✅ 排期已拍板（下一实施轮）」（排期销项≠实施授权；进程空间＝宿主裸跑全量＋容器态降级裁决随实施轮拍板，不预设）。**判据状态不变**：G-07 CLOSED、G-01 OPEN（重交回环推进中；容器栈 rebuild 挂账 owner＝部署归属方，本会话不执行；①商用条款/⑦网络限制面维持未过不声称） |
 | 15 | 2026-11-11 | **N3–N6 排期写入轮（纯文档零代码，蔡工拍板「先把排期写进台账/任务书，再按任务书逐一实施」）**：任务书 §14 四行 N3a/N3b/N3c、N4、N5、N6 状态「未开工」→「已排期」＋NEW §15 排期总表（序 1–7：N3a 下一轮首发⇒N3b ADR 并行⇒N3b⇒N3c（G-15 可与 T-A10 合批）⇒N4（非必需观察轮）⇒N6（小轮）⇒N5 末位＋安全评审）；台账 v1.11 同步（修订记录＋G-02/G-03/G-04/G-05/G-06/G-10/G-11/G-13/G-14/G-15 现状锚注记「已排期＝§15，开工仍走既有流程」）。**排期≠实施授权**：D-4～D-8 均已有「按推荐执行」缺省值（§6），无新业务闸；每轮开工仍须认领前查在途 PR＋feature 分支＋CI 四绿。**判据状态不变**：G-01 OPEN 重交推进中（N1 线材料收集照 v1.10 清单），G-07 CLOSED 维持 |
+| 16 | 2026-11-11 | **N3a 实施轮（§15 序 1 首发；台账 v1.12 G-05 CLOSED）**：蔡工「先写排期再逐一实施」拍板后按 §15 序 1 施工——NEW `server/src/fde_api/quality/draft.py`（提示词常量 `QUALITY_TESTCASE_DRAFT_SYSTEM_PROMPT` 进 J-1 白名单＋输出契约校验器 `validate_testcase_draft`：requirement_key 闭集＝项目 accepted 键、覆盖先验（每条 accepted ≥1 用例）、字段形状/长度闭集、确定性归一化序 (requirement_key,原下标)）＋NEW 路由 `POST /projects/<id>/test-plans/generate-ai`（路由 461→462，不进 api_catalog）；**DoD 逐条落地**：①单一入口 `execute_ai_prompt`（purpose=`quality_testcase_draft`＋prompt_version=`quality-draft-prompt-v1`，审计账本归因三元）②契约/JSON 失败**整批零写入**（即时重试一次仍违⇒409 `ai_draft_contract_failed`；DB 写入是全管线最后一步）③**草稿态不可被下游消费**（产物恒 draft：execute 仅 approved 409 not_executable；发布仍走人工 review 闸＋需求覆盖闸——既有闸零改动）④**变异三验证**（M1 摘 execute approved 闸／M2 写入提前破坏零残留／M3 摘 J-1 白名单）全红→还原绿；**输出端兜底脱敏**（`redact_text_detailed` 词典故障 fail-closed 422＋凭据串命中 422 `sensitive_credential_detected`＋替换留痕 `quality.redaction_review` 事件）＋**溯源留痕** `test_plan_ai_drafted` 事件（prompt_version＋model 归因）。测试 NEW `test_quality_ai_draft.py` 7 例；零迁移（复用既有 test_plans/test_cases 三表——AI 起草是通道增强非新表）；口径：路由 462/蓝图 51/表 150/66 rev 单头 a7c2f9e1b4d8（mypy 279 基线不变）；审计清单＋archify 架构域四件套（candidate/HTML/preview 整页实拍 1440×2098）同轮同步。**明确不做（任务书边界）：不自动批准／不跳需求覆盖闸／不动 production 硬闸**；G-05 消解判据四件全立⇒**CLOSED（v1.12）**；N4 消费真实样本（序 5）在 N3a 出样本后启动 |
 
 ---
 
