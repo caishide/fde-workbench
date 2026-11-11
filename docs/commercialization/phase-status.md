@@ -792,3 +792,18 @@ docs/commercialization/
   3. **§17 裁决＝维持 unset（fail-closed）**：数值一律不落数（缺省即不可收款），运维 readiness 面已呈现缺口与等待来源；待试点数据＋业务方书面输入再落（D-12 同向）。
 - 口径：纯文档零代码；pytest/vitest/mypy 全不变；零迁移零路由 ⇒ 无需 rebuild/alembic/重打包。
 - 剩余外部闸（本轮后终态）：**§1.4＝问题单已备、等法务回应**（Q1–Q5 逐一应答即销号，回应前维持保守默认＋人工闸）；§1.8（V3.2 域）与 §17（业务拍板）为**裁决性维持**，非外部闸卡点。
+## F 线分账口径改造 T0–T8（五席位百份制分账）— T0–T6 已完成／T7 本期后置／T8 收口核查（2026-11-11）
+
+- **任务书**：`分账口径改造任务书-v1.md`（§4 阶段闸）；**裁决**：ADR-011；**规则唯一成文处**：`rules/five-seat-split-rules.md`（机器可读块 ↔ 代码常量 ↔ 迁移种子三方机器闸 `test_three_way_machine_gate_rules_file_constants_migration`）。
+- **T0 口径签闸与规则成文**（纯文档）：#296→`10838b9`；五件产物入库（规则文件／签字待补页／开工现测口径报告／偏差登记表／ADR-011 状态栏说明）；**书面签字 29/29 完成（2026-11-10）**，签闸待补页 #327 `0f2005b` 书面复确认。
+- **T1 五席位纵向分配明细层**：#302→`f71364c`；NEW `dispatch_settlement_allocations`（迁移 `b7e4c1a9f3d5`）；`allocate_five_seats` 平台吸收尾差 Σ＝T 恒等；四 CHECK＋部分唯一索引；`delivery_settlements` 零加列（20 列结构钉）；变异 M1–M4 全红→还原→绿。
+- **T2 比例落库与上线前初始基线版本**：#305→`a62d5f7`；迁移种入 `active` 基线（`published_at`＝真实执行时刻，**30 天公示硬闸一字未改**）；冷启动档显式废止；既有四处公示反例全绿＋NEW 第二版零公示 422 反例；变异 M5/M6/M6b。
+- **T3 拉单确权接线**：#310→`a43c0aa`；lead 三态解析（归属未确认 409 `attribution_not_confirmed` fail-closed；企业自来 `vacant`＋`no_sourcer`）；**R2 角色闸退役换席位费已缴闸**（关键流转口径变更，书面依据 ADR-011 §5-F＋签字页 A-7，`rules/opportunity-attribution-rules.md` 同步）；变异 M7/M8。
+- **T4 空缺沉淀与兼任承载**：#312→`4354cd2`；空缺原因码闭集＋人工确认双闸（豁免须 `derived_vacant_seats` 显式声明）；NEW `commercial_role_assignments`（`users.role` 零改动）；自拉自交验收人恒为平台（本人验收 403）；变异 M9–M11。
+- **T5 就近硬闸加固（不提权）**：#321→`c6c1cf4`；`onsite_required` 默认 True 硬闸＋15 分钟逐级自动扩圈接进 `expire_stale_offers`；**stage_b_weights 40/30/20/10 未变**；变异 M12/M12b（M12b 首版无判别力教训记案）。
+- **T6 结算／税／票／对账回归**：#334→`b2bd225`；累计预扣多收款主体＋province 进项票前置闸 422 `input_invoice_required`＋`project_share` 金额改引用五席位明细聚合（引用不重算语义不变）＋区域结算 county 对齐 409；零迁移零新路由零新表；变异 M13/M13b/M14/M15。
+- **变异总账（任务书 §6）**：M1–M15（含 M6b、M12b）**17 组全转红→字节级还原→sha256 一致→绿**，随 T6 收口。
+- **T7 省级服务商启用**：**本期后置（拍板：合规四项＋律师意见未齐不开工）**；`regional_sale_gate` 四条件签署证据未登记 ⇒ 结构性关闭；province 席位缺省 `vacant`＋`no_province_partner`；`regional_agent` 无写路径保持。
+- **T8 文档同步与收口核查**（本轮，纯文档）：同步清单逐项执行（AGENTS/CHANGELOG/phase-status/rules×2/审计清单 CSV·JSON/架构图/ADR-011 状态栏）；逐阶段验收判据对照无倒填；route CSV 再生成（+13/−13 行均为上游 M3b 新测试文件引用列，零路由增删）；JSON 零 diff；架构图防陈旧闸 OK。
+- **全阶段口径（T8 现测）**：pytest **3070 收集 = 3063 passed + 7 skipped**〔PR CI run 43002032759＋main run 43003894517 四绿〕；mypy 279；150 表／66 rev 单头 `a7c2f9e1b4d8`／461 路由／51 蓝图／api_catalog 94；活体复验绿（镜像三枚一致／alembic head／461 non-static）。
+

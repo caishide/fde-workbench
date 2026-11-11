@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — F 线 T8 轮：文档同步与收口核查（同步清单逐项执行＋逐阶段验收判据对照无倒填＋ADR-011 状态栏工程生效状态更新；**纯文档零代码零迁移零路由**，2026-11-11）
+
+- **任务书 §4-T8**（F 线最后阶段；依赖 T1–T6 已满足〔全阶段 PR CI 四绿〕；T7 省级启用按拍板本期后置不阻塞）。本轮 = **goal 循环收口轮**：把 T0–T6 六轮各自维护的同步面做**一次性全量核对**，把 ADR-011 状态栏从「工程仍未生效」更新为现测真值。
+- **同步清单逐项执行**：①`AGENTS.md` 当前状态头注＋口径行标题前置 T8＋工作流与陷阱 NEW「rebase 自动合并两类新坑」（CHANGELOG 节体错位／口径行整行取上游侧——T6 轮七次 rebase 实录的两类「合并面文档改动后必须结构终扫」教训）；②`CHANGELOG.md` 本节；③`phase-status.md` NEW「F 线分账口径改造 T0–T8」节（T0–T6 逐阶段 PR/合并 SHA/变异证据＋T7 后置态）；④`rules/five-seat-split-rules.md` T2/T4/T5/T6 各轮已随轮同步（三方机器闸 `test_three_way_machine_gate_rules_file_constants_migration` 现测绿）；⑤`rules/regional-partner-program-rules.md` **不涉**（T7 未做，售卖闸保持 closed）；⑥`rules/opportunity-attribution-rules.md` T3 已随轮同步（R2 角色闸退役换席位费闸），本轮机器闸复测绿；⑦审计清单：**route CSV 再生成（+13/−13 行均为上游 M3b 批次②新测试文件的引用列回填，零路由增删）＋`v3-workbench-inventory.json` 与 DB CSV 零 diff**（结构 461/51/150/66 不变）；⑧架构图防陈旧闸现测 **OK**（图上数字与 JSON 逐项一致，本轮零结构变化无需改图）；⑨`ADR-011` 状态栏：三从句全部过时（书面签字待补→**已完成 29/29**；初始基线未发布→**已随 T2 迁移种入 `active`**；法务意见未齐→**#330 已消解**）⇒ 换「工程生效状态（T8 现测）」并逐阶段列合并 SHA；**状态键保持非 `Accepted`**（升 Accepted 须 OWNER 书面授权，Agent 不得代改）。
+- **逐阶段验收判据对照（§4，无倒填）**：T0 规则机器闸三方一致＋签字闸闭环（#296→`10838b9`；#327 复确认）；T1 Σ＝T 恒等＋四情形逐分对齐＋`delivery_settlements` 20 列结构钉（#302→`f71364c`）；T2 初始基线 `active`＋公示硬闸一字未改＋第二版零公示 422 反例（#305→`a62d5f7`）；T3 归属未确认 fail-closed 409＋企业自来 `no_sourcer`＋R2→席位费闸有书面依据（#310→`a43c0aa`）；T4 空缺原因码闭集＋人工确认双闸＋自拉自交本人验收 403（#312→`4354cd2`）；T5 默认到场硬闸＋15 分钟逐级扩圈＋权重 40/30/20/10 未变（#321→`c6c1cf4`）；T6 预扣多主体分流＋进项票前置＋科目层引用聚合＋county 对齐（#334→`b2bd225`）。变异总账 M1–M15（含 M6b、M12b）**17 组**全转红→字节还原→sha256 一致→绿。
+- **测试**：本轮零新增（收口核查为文档轮）；判据复核本地现测＝F 线六文件定向 **99 例全绿**（`test_dispatch_five_seat_baseline`+`test_five_seat_allocations`+`test_ledger_sync_nail`+`test_commercial_opportunity_attribution`+`test_f_line_t6_tax_invoice_reconciliation` 82 例＋`test_f_line_t5_onsite_hard_gate` 17 例）；全量口径 **3070 收集 = 3063 passed + 7 skipped** 不变（终值以本 PR CI 实测为准）。
+- **口径**：零迁移零新路由零新表零新蓝图 ⇒ 结构口径不变（**461 路由／51 蓝图／150 表／66 rev 单头 `a7c2f9e1b4d8`**；api_catalog 94；mypy 279）；route CSV 引用列 +13/−13（零结构变化）；架构图防陈旧闸 OK；pytest 3070 收集不变。零代码 ⇒ 合并后无需 rebuild／无需 alembic／无需重打包。
+- **goal 循环状态**：T0→T6 全阶段 DONE＋T7 本期后置（挂账在案：合规四项＋律师意见，消解条件=OWNER 取得材料后开工）＋T8 收口核查本轮完成 ⇒ **F 线分账口径改造 goal 循环全链完成**（「是否允许结束 goal」由 OWNER 判定，不得自判）。
+
+
 ## [未发布] — F 线 T6 轮：结算／税／票／对账回归（五主体下票税分流＋科目层改引用五席位明细聚合；**零迁移零新路由零新表**，2026-11-11）
 
 - **任务书 §4-T6**（ADR-011 §4 配套已裁决口径：开票主体／税／发票前置三行；T2–T5
