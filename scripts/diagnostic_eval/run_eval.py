@@ -130,6 +130,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     from fde_api.diagnostics import jobs as diag_jobs
     from fde_api.diagnostics import service
     from fde_api.diagnostics.jobs import handle_diagnostic_report
+    from fde_api.diagnostics.report_contract import NUMBER_GATE_VERSION
     from fde_api.diagnostics.questionnaire import DIAGNOSTIC_SLOTS, FIRST_SCREEN_SLOTS
 
     slot_keys = {
@@ -205,9 +206,12 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     run_json = {
         "run_id": args.run,
-        "eval_set_version": args.run,
+        "eval_set_version": args.eval_set_version or args.run,
         "created_at": datetime.now(UTC).isoformat(),
         "prompt_version": prompt_version,
+        # 数字闸版本随 run 落档（curve 3 断点）：口径变 ⇒ 生成结果可比性变，
+        # 必须与 prompt_version 同列可追（曲线文档按此标注版本断点）。
+        "number_gate_version": NUMBER_GATE_VERSION,
         "report_version": report_version or "",
         "generator": {"mode": "production_path_sync", "actor": _actor_username()},
         "fixtures_version": sorted(
@@ -391,6 +395,15 @@ def main() -> int:
     gen = sub.add_parser("generate", help="生产路径批跑生成报告（原件落真相层）")
     gen.add_argument("--run", required=True, help="评测集版本号，如 2026-11-11")
     gen.add_argument("--cases", default="", help="逗号分隔子集（缺省=全量）")
+    gen.add_argument(
+        "--eval-set-version",
+        default="",
+        help=(
+            "考卷版本标签（缺省＝run id）。**同一考卷的多轮重跑必须显式传同一个值**——"
+            "曲线按「考卷版本 + 生成器版本」两轴呈现，只改生成器不许改考卷版本号"
+            "（改了就是 C 类改考题，须打版本断点）。"
+        ),
+    )
 
     jud = sub.add_parser("judge", help="元验证闸 + 逐卡评分（评分档案落真相层）")
     jud.add_argument("--run", required=True)

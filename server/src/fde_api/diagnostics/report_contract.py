@@ -28,12 +28,28 @@
 台数）是有来源的。闸的判据是「这个数字能不能在问卷/测算卡里找到」；找不到
 ⇒ 该句必须写「待澄清」说明缺什么（R-4 的两个出口：fail-closed 或标待澄清，
 本实现取「标待澄清」这一出口，因为「fail-closed」会把客户自述也一并毙掉）。
+
+**数字闸 v2 口径重界定（2026-11-11，curve 3 断点；留痕可推翻）**
+——curve 2 真机归因发现三个独立缺陷，全部是**闸的口径/机制**问题，不是模型
+编数字：
+
+| 缺陷 | 现象 | v2 处置 |
+|---|---|---|
+| D1 口径错位 | 闸扫「任何数字串」，而 R-4 的声明域是**规模/金额/比例/周期/时间的量值断言**；中文泛指量词（「输出一套清单」里的「一套」）被当成无源业务数字 ⇒ curve 2 三张卡全灭在 `report_unsourced_number`，零真实信号 | **分层作用域**：现状层（结论与问题清单）＝对客户事实的断言 ⇒ 全量必检；处方层（第一步/动作/闭环处置回写）里的计数与周期是**建议参数**或对已有事实的复述 ⇒ 免检；**金额与比例类任何层都必检**（基线数字编造的重灾面） |
+| D2 裁决依赖输入里的偶然字面 | 「一个」在 somwyn 卡放行、在 datawhale-001 卡拒收——差别只在**规则生成的测算卡措辞**里偶然出现了「挑一个高频…」（闸把整个测算卡当数字来源） | **可溯源集合重界定**：来源＝**客户答案 ＋ 政策引文编号/日期**；测算卡的规则生成文本（下一步建议/免责声明/我方解读/缺口清单）**不再**是数字来源 |
+| D3 修复不可达 | 契约失败后重试是**同提示词重抽**（盲重抽），模型看不到拒因 ⇒ 可修的违规（删词/改写/标待澄清）两次都烧光 ⇒ 一个量词毙掉整份报告 | **拒因回灌**：第二次尝试带上拒因与修法指引（生成侧由 `jobs.py` 接线） |
+
+**v2 的边界（诚实声明）**：处方层免检的是「计数/周期」类——**编造的客户事实
+若出现在处方层，契约闸不拦**（例：「把 3 台设备的台账补齐」里的「3 台」）；
+兜底层是 rubric ③（编造基线数字单列重罚）与展示闸 C1（无源数字不得进展示
+层）。契约闸的职责被限定为「**这个数字有没有合法来源**」，「用得对不对」
+（是否张冠李戴、是否冒充基线）归 judge 层——两层分工，不互相顶替。
 """
 from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from fde_api.diagnostics.policy_data import (
     INTERPRETATION_BY_POLICY_ID,
@@ -78,6 +94,22 @@ CLARIFY_MARKER = "待澄清"
 # 建议段字段（禁用词闸的扫描面）
 ADVICE_FIELDS = ("first_step", "actions", "closing_loop")
 
+# 数字闸版本（2026-11-11 curve 3 断点：口径重界定，见模块说明）
+NUMBER_GATE_VERSION = "number-gate-v2"
+
+# 数字闸的作用域分层（v2）——判据是「这句话在断言客户事实，还是在提建议」
+LAYER_SITUATION = "situation"  # 现状层：结论与问题清单＝对客户现状的断言
+LAYER_ADVICE = "advice"  # 处方层：第一步/动作/闭环处置回写＝建议与产出
+
+# 量词分类（v2）——数字闸按「数 + 量词」判定这个数是什么性质的断言
+# 金额/比例：基线数字编造的重灾面（补贴额、成本率、倍数）⇒ 任何层必检
+MONEY_UNITS = frozenset({"元", "块", "%", "％", "倍"})
+# 周期：现状层＝客户事实（周期多久），处方层＝建议节奏 ⇒ 分层判定
+PERIOD_UNITS = frozenset({"天", "周", "月", "年", "个月", "星期"})
+# 计数：现状层＝客户事实（几台/几人），处方层＝产出数量或对已列对象的复述
+COUNT_UNITS = frozenset({"个", "家", "人", "台", "套", "条", "项"})
+ALL_UNITS = MONEY_UNITS | PERIOD_UNITS | COUNT_UNITS
+
 MAX_HEADLINE_CHARS = 200
 MAX_TEXT_CHARS = 600
 MAX_FINDINGS = 6
@@ -85,13 +117,38 @@ MAX_OPEN_QUESTIONS = 8
 MAX_ACTIONS = 12
 
 _FINDING_ID_RE = re.compile(r"^f[1-9]$")
-# 数字识别：阿拉伯数字 ＋ **中文数字＋量词**（只认「数+量词」的形态——裸「一」
-# 会把「第一次」「一致」「一起」这类正常汉语全部误判成数字）。
-_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+# 数字识别（v2）：**数 + 量词**才算一个量值断言——
+# ① 阿拉伯数字（可带量词：「99人」「30%」「3台」）；
+# ② 中文数字 + 量词（「两套」「三天」「三个月」）。
+# 只认「数+量词」形态：裸「一」会把「第一次」「一致」「一起」这类正常汉语
+# 全部误判成数字。
+_UNIT_PATTERN = r"个月|星期|个|家|人|台|套|条|项|年|月|天|周|倍|元|块|%|％"
+_NUMBER_RE = re.compile(rf"(\d+(?:\.\d+)?)\s*({_UNIT_PATTERN})?")
 _CN_NUMBER_RE = re.compile(
-    r"[零一二三四五六七八九十百千万两几半]\s*"
-    r"(?:个月|星期|个|家|人|台|套|条|项|年|月|天|周|倍|万|亿|元|块|%|％)"
+    rf"([零一二三四五六七八九十百千万两几半])\s*({_UNIT_PATTERN})"
 )
+# 中文数字取值（单字 + 量词形态——「十」是十、「万」是一万）
+_CN_VALUES: dict[str, float | None] = {
+    "零": 0.0,
+    "一": 1.0,
+    "二": 2.0,
+    "两": 2.0,
+    "三": 3.0,
+    "四": 4.0,
+    "五": 5.0,
+    "六": 6.0,
+    "七": 7.0,
+    "八": 8.0,
+    "九": 9.0,
+    "十": 10.0,
+    "百": 100.0,
+    "千": 1000.0,
+    "万": 10000.0,
+    "亿": 100000000.0,
+    "半": 0.5,
+    # 「几」是泛指（几家/几台）——不是量值断言（v2：泛指量词不构成数字）
+    "几": None,
+}
 
 
 class ReportContractError(Exception):
@@ -143,37 +200,130 @@ def _string(value: Any, *, field: str, max_chars: int = MAX_TEXT_CHARS) -> str:
     return text
 
 
-def number_tokens(text: str) -> set[str]:
-    """文本里的数字串（``70%`` → ``70``；``1.5`` → ``1.5``；``三个月`` → ``三个月``）。"""
-    tokens = set(_NUMBER_RE.findall(text))
-    tokens |= {match.group(0).replace(" ", "") for match in _CN_NUMBER_RE.finditer(text)}
+class NumberToken(NamedTuple):
+    """一个量值断言的解析结果（v2）。
+
+    ``value``：数值（``None``＝泛指量词「几家」，不是量值断言）；
+    ``unit``：量词（空串＝裸数字）；``surface``：原始字面（报错提示用）。
+    """
+
+    value: float | None
+    unit: str
+    surface: str
+
+
+# 比对键（不含字面）：中文数字与阿拉伯数字归一后可比（「两套」≡「2套」）
+NumberKey = tuple[float | None, str]
+
+
+def number_tokens(text: str) -> list[NumberToken]:
+    """文本里的量值断言（v2：**数 + 量词**才算一个断言）。
+
+    「70%」→ (70, %)、「1.5」→ (1.5, 裸)、「三个月」→ (3, 个月)、
+    「两套」→ (2, 套)、「十几家」→ 泛指（值 None，不是量值断言）。
+    """
+    tokens: list[NumberToken] = []
+    for match in _NUMBER_RE.finditer(text):
+        tokens.append(
+            NumberToken(float(match.group(1)), match.group(2) or "", match.group(0).strip())
+        )
+    for match in _CN_NUMBER_RE.finditer(text):
+        tokens.append(
+            NumberToken(
+                _CN_VALUES[match.group(1)],
+                match.group(2),
+                match.group(0).replace(" ", ""),
+            )
+        )
     return tokens
 
 
-def allowed_number_tokens(*corpora: Any) -> set[str]:
-    """可溯源数字集合（问卷答案 + 测算卡）。
+def allowed_number_tokens(*corpora: Any) -> set[NumberKey]:
+    """可溯源数字集合（这些语料里出现过的「数 + 量词」都算有来源）。
 
     客户自己写的数字（人数、周期、台数）**有来源**——数字闸认它们；找不到
     来源的数字必须写「待澄清」（R-4）。
     """
-    tokens: set[str] = set()
+    keys: set[NumberKey] = set()
     for corpus in corpora:
         if corpus is None:
             continue
         text = json.dumps(corpus, ensure_ascii=False, sort_keys=True)
-        tokens |= number_tokens(text)
-    return tokens
+        keys |= {(token.value, token.unit) for token in number_tokens(text)}
+    return keys
 
 
-def _check_numbers(text: str, *, field: str, allowed: set[str]) -> None:
+# 政策引文字段（数字可作来源：官方编号与日期）。**不含**政策原文口径里的
+# 量值——政策自己的「70%」「2027 目标」不是客户事实的来源，否则报告里任何
+# 百分比都能借政策口径放行。
+POLICY_CITATION_KEYS = (
+    "policy_id",
+    "title",
+    "doc_number",
+    "issued_on",
+    "snapshot_date",
+    "official_source_url",
+)
+
+
+def sourced_number_tokens(answers: Any, assessment: Any) -> set[NumberKey]:
+    """可溯源数字集合 v2＝**客户答案 ＋ 政策引文编号/日期**。
+
+    曲线 3 归因 D2：v1 把**整个测算卡**当数字来源，于是「挑一个高频场景」这类
+    规则生成措辞里的「一个」也让「公司只有一个系统」放行——裁决取决于测算卡
+    措辞的偶然字面，不是数字本身有没有来源。v2 只认两类来源：
+    ① 客户自己写的答案；② 政策引文的编号与日期。
+    """
+    keys = allowed_number_tokens(answers)
+    if isinstance(assessment, dict):
+        keys |= allowed_number_tokens(assessment.get("policy_snapshot_date"))
+        for policy in assessment.get("matched_policies") or []:
+            if not isinstance(policy, dict):
+                continue
+            keys |= allowed_number_tokens(
+                {key: policy.get(key) for key in POLICY_CITATION_KEYS}
+            )
+    return keys
+
+
+def _number_in_scope(token: NumberToken, *, layer: str) -> bool:
+    """这个数字是不是本闸要管的范围（v2 分层口径）。
+
+    判据＝「**这个数字断言了一个量级吗**」：
+
+    - 泛指量词（「几家」）⇒ 不是数字，不在闸内；
+    - 金额与比例（元/块/%/倍）⇒ 量级断言，**任何层必检**（基线数字编造的重灾面）；
+    - 值＝1 的计数与周期（「一套」「一个月」）⇒ 中文里多为泛指/单数用法
+      （a set of… / a month），不构成量级断言 ⇒ 免检；
+    - 裸数字（无量词，如「46」）⇒ 量级断言，只在现状层必检；
+    - 计数与周期（值≥2）⇒ 量级断言：现状层必检（客户事实）；处方层免检
+      （建议节奏／产出数量／对问卷里已列对象的复述——复述必有来源，天然放行）。
+
+    **兜底分工（诚实声明）**：值＝1 的计数放行，意味着「公司只有一个系统」
+    这类客户事实类编造**不再由契约闸拦**——它由 rubric ③ 的**案例禁编造清单**
+    与展示闸 C1 兜底（评分器按案例卡逐条核）。理由是**代价不对称**：契约闸的
+    误拒会直接毙掉整份报告（访客拿不到任何东西），而漏放交给评分层扣分。
+    """
+    if token.value is None:
+        return False
+    if token.unit in MONEY_UNITS:
+        return True
+    if token.value == 1 and token.unit in (COUNT_UNITS | PERIOD_UNITS):
+        return False
+    return layer == LAYER_SITUATION
+
+
+def _check_numbers(text: str, *, field: str, allowed: set[NumberKey], layer: str) -> None:
     if CLARIFY_MARKER in text:
         return
     for token in number_tokens(text):
-        if token not in allowed:
+        if not _number_in_scope(token, layer=layer):
+            continue
+        if (token.value, token.unit) not in allowed:
             _fail(
                 "report_unsourced_number",
-                f"{field} 里的数字「{token}」没有来源（问卷与测算卡里都没有）——"
-                f"请删掉或在该句写「{CLARIFY_MARKER}」并说明缺什么。",
+                f"{field} 里的数字「{token.surface}」没有来源（问卷答案与政策引文里都没有）——"
+                f"请删掉这个数字、改写成不带数字的说法，或在该句写「{CLARIFY_MARKER}」并说明缺什么。",
             )
 
 
@@ -187,10 +337,10 @@ def _check_forbidden(text: str, *, field: str) -> None:
 
 
 def validate_report_payload(
-    payload: dict[str, Any], *, allowed_numbers: set[str] | None = None
+    payload: dict[str, Any], *, allowed_numbers: set[NumberKey] | None = None
 ) -> dict[str, Any]:
     """结构 + 语义校验；不合规即抛 ``ReportContractError``（fail-closed）。"""
-    allowed = allowed_numbers or set()
+    allowed: set[NumberKey] = allowed_numbers or set()
 
     missing = [key for key in TOP_LEVEL_KEYS if key not in payload]
     if missing:
@@ -200,7 +350,7 @@ def validate_report_payload(
         _fail("report_contract_invalid", f"报告含未定义字段：{unknown}")
 
     headline = _string(payload["headline"], field="headline", max_chars=MAX_HEADLINE_CHARS)
-    _check_numbers(headline, field="headline", allowed=allowed)
+    _check_numbers(headline, field="headline", allowed=allowed, layer=LAYER_SITUATION)
 
     findings_raw = payload["findings"]
     if not isinstance(findings_raw, list) or not findings_raw:
@@ -229,7 +379,12 @@ def validate_report_payload(
                 "report_contract_invalid",
                 f"findings[{index - 1}].stage 只能是 {list(LOOP_STAGES)} 之一。",
             )
-        _check_numbers(problem, field=f"findings[{index - 1}].problem", allowed=allowed)
+        _check_numbers(
+            problem,
+            field=f"findings[{index - 1}].problem",
+            allowed=allowed,
+            layer=LAYER_SITUATION,
+        )
         findings.append({"id": finding_id, "problem": problem, "stage": stage})
         seen_ids.append(finding_id)
 
@@ -247,7 +402,12 @@ def validate_report_payload(
         "output": _string(first_step_raw["output"], field="first_step.output"),
     }
     for key in ("what", "output"):
-        _check_numbers(first_step[key], field=f"first_step.{key}", allowed=allowed)
+        _check_numbers(
+            first_step[key],
+            field=f"first_step.{key}",
+            allowed=allowed,
+            layer=LAYER_ADVICE,
+        )
         _check_forbidden(first_step[key], field=f"first_step.{key}")
 
     actions_raw = payload["actions"]
@@ -276,7 +436,12 @@ def validate_report_payload(
             item["expected_output"], field=f"actions[{index - 1}].expected_output"
         )
         for field_name, value in (("action", action_text), ("expected_output", expected)):
-            _check_numbers(value, field=f"actions[{index - 1}].{field_name}", allowed=allowed)
+            _check_numbers(
+                value,
+                field=f"actions[{index - 1}].{field_name}",
+                allowed=allowed,
+                layer=LAYER_ADVICE,
+            )
             _check_forbidden(value, field=f"actions[{index - 1}].{field_name}")
         actions.append(
             {
@@ -305,7 +470,12 @@ def validate_report_payload(
         key: _string(closing_raw[key], field=f"closing_loop.{key}") for key in CLOSING_LOOP_KEYS
     }
     for key in CLOSING_LOOP_KEYS:
-        _check_numbers(closing_loop[key], field=f"closing_loop.{key}", allowed=allowed)
+        _check_numbers(
+            closing_loop[key],
+            field=f"closing_loop.{key}",
+            allowed=allowed,
+            layer=LAYER_ADVICE,
+        )
         _check_forbidden(closing_loop[key], field=f"closing_loop.{key}")
 
     policy_ids_raw = payload["policy_ids"]
@@ -390,6 +560,9 @@ def assemble_report(
     return {
         "version": REPORT_VERSION,
         "prompt_version": prompt_version,
+        # 数字闸版本随报告落库：这份报告是在哪一版数字口径下过闸的
+        # （curve 3 断点＝number-gate-v2；口径变 ⇒ 报告的可比性变）。
+        "number_gate_version": NUMBER_GATE_VERSION,
         "generated_at": generated_at,
         "layers": {
             # ①现状与问题

@@ -25,11 +25,13 @@ from fde_api.diagnostics import jobs as diag_jobs
 from fde_api.diagnostics.models import LeadDiagnosticSession
 from test_diagnostics_mvp import _FakeRedis
 from fde_api.diagnostics.report_contract import (
+    NumberKey,
     ReportContractError,
     allowed_number_tokens,
     assemble_report,
     parse_report_json,
     report_share_view,
+    sourced_number_tokens,
     validate_report_payload,
 )
 from fde_api.diagnostics.service import hash_share_token, hash_token
@@ -75,7 +77,9 @@ def _good_payload() -> dict[str, Any]:
 # ── 契约闸（纯函数，不碰库） ─────────────────────────────────────────
 
 
-def _validate(payload: dict[str, Any], *, allowed: set[str] | None = None) -> dict[str, Any]:
+def _validate(
+    payload: dict[str, Any], *, allowed: set[NumberKey] | None = None
+) -> dict[str, Any]:
     return validate_report_payload(payload, allowed_numbers=allowed or set())
 
 
@@ -643,3 +647,234 @@ def test_worker_passes_slot_override_to_execute_when_set(diag_app, diag_client, 
         diag_jobs.execute_ai_prompt = original
     override = captured.get("model_override")
     assert override is not None and override["model"] == "MiniMax-M3.1-Flash"
+
+
+# ── curve 3 修复轮（2026-11-11）：数字闸 v2 口径重界定 + 拒因回灌 ────────
+#
+# 归因（curve 2 真机）：三张卡全灭在 report_unsourced_number，而被判无源的
+# 三个字面是「一个」「一套」「两套」——**都不是编造的业务数字**。根因是闸的
+# 口径与机制（D1 口径错位／D2 裁决依赖测算卡偶然字面／D3 重试盲抽），不是
+# 模型编数字。本节钉的是 v2 的四条语义边界 + 修复回灌接线。
+
+
+def test_number_gate_v2_scope_by_layer() -> None:
+    """作用域分层（v2 D1）：现状层的数字必检；处方层的计数/周期是建议参数
+    ⇒ 免检；但**金额与比例类任何层都必检**（基线数字编造的重灾面）。"""
+    # 现状层（结论）里的无源数字 ⇒ 拒收
+    payload = _good_payload()
+    payload["headline"] = "设备停机造成的损失约每月 12 万元。"
+    with pytest.raises(ReportContractError) as caught:
+        _validate(payload)
+    assert caught.value.code == "report_unsourced_number"
+
+    # 处方层（建议）里的计数与周期 ⇒ 放行（「一套」「两周」是产出数量/节奏）
+    payload = _good_payload()
+    payload["first_step"]["output"] = "输出一套清单，两周内完成一次演练。"
+    validated = _validate(payload)
+    assert validated["first_step"]["output"]
+
+    # 处方层里的金额与比例 ⇒ 仍拒收（编造基线数字的重灾面）
+    payload = _good_payload()
+    payload["actions"][0]["expected_output"] = "一份能证明节省 30% 成本的对比记录。"
+    with pytest.raises(ReportContractError) as caught:
+        _validate(payload)
+    assert caught.value.code == "report_unsourced_number"
+
+
+def test_number_gate_v2_indefinite_quantifier_is_not_a_quantity() -> None:
+    """泛指量词不是量级断言：「一个」「一套」「几家」在中文里多为泛指/单数用法
+    （a set of… / a few），不构成量级断言 ⇒ 免检。**兜底分工**：客户事实类编造
+    （如「只有一个师傅」的师徒配比）由 rubric ③ 的 must_not_hallucinate 与展示闸
+    C1 兜底——契约闸的误拒会直接毙掉整份报告，代价与漏放不对称。"""
+    payload = _good_payload()
+    payload["first_step"]["what"] = "选一个高频场景，输出一套清单。"
+    validated = _validate(payload)
+    assert validated["first_step"]["what"]
+
+    payload = _good_payload()
+    payload["findings"][0]["problem"] = "有几家外包供应商各自维护一套台账。"
+    validated = _validate(payload)
+    assert validated["findings"][0]["problem"]
+
+    payload = _good_payload()
+    payload["findings"][0]["problem"] = "公司只有一个系统承接全部订单。"
+    validated = _validate(payload)
+    assert validated["findings"][0]["problem"]
+
+
+def test_number_gate_v2_normalizes_chinese_and_arabic_numerals() -> None:
+    """中文数字与阿拉伯数字归一：「两套」≡「2套」——同一来源的两种写法必须
+    等价（v1 按字面比对 ⇒ 「2套」在答案里而报告写「两套」会被误拒）。
+    本钉落在**现状层**（处方层的计数免检 ⇒ 放这里就没有判别力）。"""
+    allowed = allowed_number_tokens({"sys.systems": "OA 与 ERP 2套系统"})
+    payload = _good_payload()
+    payload["headline"] = "现有 OA 与 ERP 两套系统互不相通，先补齐数据口径。"
+    validated = _validate(payload, allowed=allowed)
+    assert validated["headline"]
+
+
+def test_number_gate_v2_sourced_set_excludes_rule_generated_boilerplate() -> None:
+    """可溯源集合重界定（v2 D2）：测算卡的**规则生成文本**（下一步建议/免责
+    声明/解读）与政策原文口径里的量值**不是**数字来源——v1 把整个测算卡当来源，
+    于是规则措辞里偶然出现的数字会替客户事实「担保」（同一句话在两张卡上结论
+    相反：判定取决于措辞的偶然字面，不是数字本身有没有来源）。"""
+    assessment = {
+        "readiness_tier": "先做基础准备",
+        "matched_policies": [
+            {
+                "policy_id": "guofa_2025_11",
+                "title": "《国务院关于深入实施「人工智能+」行动的意见》",
+                "doc_number": "国发〔2025〕11号",
+                "issued_on": "2025-08-21",
+                "original_wording": "到 2027 年……应用普及率超 70%",
+                "official_source_url": "https://www.gov.cn/example.pdf",
+                "snapshot_date": "2026-10-19",
+            }
+        ],
+        "next_actions": ["先做 3 类单据的盘点"],
+        "disclaimers": ["快照超 30 天须重核"],
+    }
+    allowed = sourced_number_tokens({"org.scale": "20–99人"}, assessment)
+
+    # 规则生成措辞里的「3」不再让现状层的「3 类单据」放行
+    payload = _good_payload()
+    payload["findings"][0]["problem"] = "现有 3 类单据需要人工核对。"
+    with pytest.raises(ReportContractError) as caught:
+        _validate(payload, allowed=allowed)
+    assert caught.value.code == "report_unsourced_number"
+
+    # 政策原文口径里的 70% 不是客户事实的来源（否则任何百分比都能借政策放行）
+    payload = _good_payload()
+    payload["actions"][0]["expected_output"] = "一份证明能提升 70% 效率的对比记录。"
+    with pytest.raises(ReportContractError) as caught:
+        _validate(payload, allowed=allowed)
+    assert caught.value.code == "report_unsourced_number"
+
+
+def test_number_gate_v2_policy_citation_numbers_are_sourced() -> None:
+    """政策**引文的编号与日期**是合法来源（报告可以引用文号，不该被数字闸拦）。"""
+    assessment = {
+        "matched_policies": [
+            {
+                "policy_id": "guofa_2025_11",
+                "title": "《国务院关于深入实施「人工智能+」行动的意见》",
+                "doc_number": "国发〔2025〕11号",
+                "issued_on": "2025-08-21",
+                "original_wording": "到 2027 年……应用普及率超 70%",
+                "official_source_url": "https://www.gov.cn/example.pdf",
+                "snapshot_date": "2026-10-19",
+            }
+        ],
+        "policy_snapshot_date": "2026-10-19",
+    }
+    allowed = sourced_number_tokens({"org.scale": "20–99人"}, assessment)
+    payload = _good_payload()
+    payload["headline"] = "申报口径按国发〔2025〕11号原文执行，先补齐数据口径。"
+    validated = _validate(payload, allowed=allowed)
+    assert validated["headline"]
+
+
+def test_number_gate_version_recorded_in_report() -> None:
+    """数字闸版本随报告落库：口径变 ⇒ 报告可比性变，必须能追责。"""
+    from fde_api.diagnostics.report_contract import NUMBER_GATE_VERSION
+
+    assert NUMBER_GATE_VERSION == "number-gate-v2"
+    validated = _validate(_good_payload())
+    report = assemble_report(
+        payload=validated,
+        assessment=None,
+        model_info=None,
+        generated_at="2026-11-11T00:00:00+00:00",
+        prompt_version="diagnostic-report-prompt-v2",
+    )
+    assert report["number_gate_version"] == "number-gate-v2"
+
+
+def test_prompt_v2_number_clause_aligned_with_gate() -> None:
+    """提示词 v2（curve 3 断点）：R-4 条款必须与 number-gate-v2 口径一致——
+    数字来源＝问卷答案＋政策引文；现状层必检／建议里的节奏与产出数量可写。
+    提示词与闸口径漂移 ⇒ 生成器按一套口径写、闸按另一套判 ⇒ 白烧调用。"""
+    from fde_api.diagnostics.prompts import (
+        DIAGNOSTIC_REPORT_SYSTEM_PROMPT,
+        REPORT_PROMPT_VERSION,
+    )
+
+    assert REPORT_PROMPT_VERSION == "diagnostic-report-prompt-v2"
+    assert "问卷答案里客户自己说的" in DIAGNOSTIC_REPORT_SYSTEM_PROMPT
+    assert "政策引文里的编号与日期" in DIAGNOSTIC_REPORT_SYSTEM_PROMPT
+    assert "重试修复" in DIAGNOSTIC_REPORT_SYSTEM_PROMPT
+
+
+def test_worker_feeds_rejection_reason_into_retry(
+    diag_app, diag_client, db_session
+) -> None:
+    """拒因回灌（v2 D3）：第一次被契约拒收 ⇒ 第二次的提示词必须带拒因，
+    让重试是**修复**而不是同提示词盲重抽（v1 下一个量词会毙掉整份报告）。"""
+    prompts: list[str] = []
+
+    def _fake_execute(**kwargs):
+        prompts.append(str(kwargs.get("prompt") or ""))
+        if len(prompts) == 1:
+            bad = _good_payload()
+            bad["headline"] = "设备停机造成的损失约每月 12 万元。"
+            return {
+                "text": json.dumps(bad, ensure_ascii=False),
+                "model": {"provider": "test", "name": "test-model"},
+                "provider_usage": {},
+            }
+        return {
+            "text": json.dumps(_good_payload(), ensure_ascii=False),
+            "model": {"provider": "test", "name": "test-model"},
+            "provider_usage": {},
+        }
+
+    _actor_user(db_session)
+    token, session_id = _prepare_session(diag_client)
+    diag_client.post(
+        "/api/v1/diagnostics/session/report", json={}, headers={TOKEN_HEADER: token}
+    )
+    original = diag_jobs.execute_ai_prompt
+    diag_jobs.execute_ai_prompt = _fake_execute
+    job = SimpleNamespace(target_id=session_id)
+    try:
+        with diag_app.app_context():
+            diag_jobs.handle_diagnostic_report(job)
+    finally:
+        diag_jobs.execute_ai_prompt = original
+    db_session.expire_all()
+    row = db_session.get(LeadDiagnosticSession, session_id)
+    assert row.status == "report_ready"
+    assert len(prompts) == 2
+    assert "repair" not in prompts[0]
+    assert "repair" in prompts[1]
+    assert "report_unsourced_number" in prompts[1] or "12" in prompts[1]
+
+
+def test_worker_uses_sourced_number_set_not_whole_assessment(
+    diag_app, diag_client, db_session
+) -> None:
+    """worker 端到端接线钉（v2 D2）：数字来源集合＝客户答案＋政策引文，
+    **不是**整个测算卡——测算卡规则生成文本里的数字不构成来源。"""
+    _actor_user(db_session)
+    token, session_id = _prepare_session(diag_client)
+    diag_client.post(
+        "/api/v1/diagnostics/session/report", json={}, headers={TOKEN_HEADER: token}
+    )
+    db_session.expire_all()
+    row = db_session.get(LeadDiagnosticSession, session_id)
+    row.assessment = {
+        "readiness_tier": "先做基础准备",
+        "matched_policies": [],
+        "next_actions": ["先做 3 类单据的盘点"],
+    }
+    db_session.commit()
+    bad = _good_payload()
+    bad["findings"][0]["problem"] = "现有 3 类单据需要人工核对。"
+    row = _run_handler(
+        diag_app,
+        db_session,
+        session_id,
+        [json.dumps(bad, ensure_ascii=False), json.dumps(bad, ensure_ascii=False)],
+    )
+    assert row.status == "submitted"
+    assert row.failure_code == "report_unsourced_number"
