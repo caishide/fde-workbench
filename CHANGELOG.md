@@ -14,6 +14,18 @@
 - **测试 +10**（`server/tests/test_diagnostic_eval_batch_lib.py`，累计 29 例全绿）：四轴分组区分／锚点跨生成器版本合并／分布统计（样本偏差·单样本不编造·空样本 fail-closed）／error 与作废行排除且计数如实／严格越带判定＋单样本不进带宽／n 不足 ⇒ `insufficient_data`／渲染携带规则与表头与「纯 judge 噪声」「不校准任何通过线」「四轴全同才同组」「✅ 达最小样本」／薄组与空组标记。**变异四连全红→还原→绿**（M1 摘 usable 过滤〔**首版变异无判别力已改设计再验**〕／M2 摘锚点 judge 轴合并／M3 摘严格大于改 ≥／M4 摘 error 行过滤）。**mypy 279 基线不变**；零迁移零路由零蓝图零桌面。
 - **交付与部署**：PR **#323**（head 两笔）→ CI 四 job 全绿 → squash 合并 **`634d3ca`**＝fork/main 顶；**main run 42969299906 四绿收口**（并发 push 取消过一次 ⇒ 等对方 run 完成后 rerun，收口于 completed/success 四 job 全 success）。本轮**零 server 改动** ⇒ 无需 rebuild 三镜像／无 alembic 升级（活体容器镜像 ID 与构建产物一致、`alembic current`＝`a7c2f9e1b4d8 (head)`、`/api/v1/health/ready` 200、url_map 与审计清单逐位一致）。
 - **登记可推翻项**：L-1 判定规则／L-2 `MIN_DISTRIBUTION_RUNS=3`／L-3 锚点 judge 轴 vs 逐卡四轴／L-4 error 行排除语义／L-5 全调用节流／L-6 评测进程内抬访客日限额／L-7 离散度归因口径／L-8 纯 judge 噪声带＝9 分（n=4）。**明细与读法边界见 NEW `docs/audit/诊断评测-分数面分布-1.md`**（仓库侧只存汇总＋指针＋sha256，原件留真相层）。
+## [未发布] — 多客户 M3b 批次①-b 轮：控制台第三套可见性规则收拢（`_project_scope` 销号）＋模板·内部面核验（零迁移零新路由零新表零桌面，2026-11-11）
+
+- **核心销号＝《全局面盘点表》待 M0 补充 #6**：`control/service.py::_project_scope` 是可见性的**第三套规则**（leader-OR-成员——无 org 谓词、leader 分支无角色尺），本轮删除本体，**三个消费点全部收拢统一入口 `visible_project_filter`**（M3a 单一权威）：`list_task_center`（服务内 337）、`list_automation_approvals`（服务内 681）、`list_task_board`（**`control/task_board.py:93` 经 import 跨模块消费——首轮只扫 service.py 漏检，回归测试红抓回后同配方收拢**；跨模块 grep 是「第三套规则」排查的教训面）。关键场景仍是**跨企业成员关系**：企业乙账号被加进企业甲项目后，控制台两清单（任务/审批）不再经旧路径漏出＝幽灵行防线对控制台域补齐。
+- **核验销号（12 条，零代码改动面，盘点表处置建议逐条人工复核）**：industry-templates 6 条写面＋templates research-forms 3 条写面＝`@require_role("admin")` 角色闸在位（R2 目录写 admin-only 保持；机器判定把 PATCH/DELETE 版本面标成「读面」属 AST 误判，人工复核纠正）；internal 3 条＝**服务间认证**（`/internal/dsh/*` DSH 服务令牌、`/internal/clawbot/*` ClawBot 网关令牌——非 JWT 用户面，org 维度不适用，M4 令牌租户化的输入，盘点表维度 5 已登记）；task-center 3 条写面＝服务层 `authorize_ai_capability → project_access`（统一入口含 org 谓词）✓。
+- **测试**：NEW `test_m3b_batch1b_task_center.py` **6 例**——跨企业成员两清单不漏出（审批清单＋任务主清单，各带平台身份 leader 同域可见性 sanity）、跨企业审批决策 403、行业模板 6 写面/调研表单 3 写面 admin 闸 403、internal 服务间面坏令牌 401。**摘除式变异（两消费点两形态全打：`scope =` 赋值形＋`.where()` 内联形换回 org-less leader-OR-成员）⇒ 2 红→还原→6 绿**；邻域回归 task_board/control_plane/审批 SLA/expirations/metrics_v31 **58 例全绿**（首轮 6 红即 task_board 的 NameError＝第三消费点漏检信号）；mypy 官方闸 **279 零新增**；ruff 绿。
+- **口径**：零迁移零新路由零新表零新蓝图 ⇒ 结构口径不变（461 路由/51 蓝图/150 表/66 rev 单头 `a7c2f9e1b4d8`）；pytest **CI 实测 3025 收集 = 3018 passed + 7 skipped**〔PR CI run 42971930465 server-tests；基线＝批次①-a **合并树** main run 42970619241 实测 **3019 收集 = 3012 passed + 7 skipped**（合并 SHA `828557e`）＋本轮 **+6** ＝ 3025 逐位吻合；★①-a PR 期实测 3010 收集＝rebase 前 PR 树值，已随 #323 插队融合作废〕。**批次①（39 条）随本 PR 全量销号**；部署活体复验＋DoD 回写归批次①收口轮。
+## [未发布] — 夜审挂账设计轮 r8（CR-071 web 桥校验族多方案设计稿＋活体部署挂账销项＋4 挂账触发态 E0 现测；纯文档零代码零迁移零路由，2026-11-11）
+
+- **CR-071 设计轮（蔡工 2026-11-11 续「按你建议继续实施」开设计轮；4 挂账触发态 E0 现测坐实时机已到）**：NEW `docs/audit/夜审-CR071-web桥校验族多方案设计稿-2026-11-11.md`（取证基线 fork/main `828557e`，全部锚点现测）——**两桥 8 项校验面对照**：桌面 `api-ipc.ts::validateRequest` 8/8 全在位；web 桥 `fde-web-bridge.ts` 仅 3/8（缺 method 白名单〔任意 method 可发〕／auth 路径排除／编码双重解码〔`%2e%2e`/`%252f` 可穿透 raw 检查〕／multipart 严格拒绝〔非法形状 `return null`⇒无 body 裸发＝静默降级〕／控制字符区间／body 可序列化）；**推荐 A＝NEW `shared/api-safety.ts` 纯函数单点**（桌面 api-ipc.ts 与 web 桥双消费同一原语＋**等价性静态钉**防再漂移——报告消解条件「规则提升 shared/ 单点」原文落地）；B 双副本必漂移／C 最小封口（不封编码逃逸真绕过面）均否决留痕。**实施待蔡工拍板**（纯桌面零服务端⇒无需 rebuild/alembic；桌面改动⇒便携版 r36 随轮）。
+- **4 挂账触发态 E0 现测（只读）**：CR-071＝**半满足**（web 桥本体＋`web.html` 已在 main 树、`feat/web-distro-t1` 在途扩大暴露面、公网试用部署文档 4 份在场＋README:244 活链⇒设计轮时机已到）；CR-061（host_poll 生产闸默认关⇒并发领取不可达）／CR-055（用例编辑·需求撤销通道未立项⇒护栏钉无施工面）／CR-074（`c4f7a2d9e1b6` 迁移文件未再触碰）＝**触发未满足维持挂账**。
+- **活体部署挂账销项（他线已按部署合同推进）**：r8 E0 只读复验＝容器内 `alembic current`＝`a7c2f9e1b4d8 (head)`（＝fork/main 单链迁移头，F 线 T5 迁移已应用）＋三容器 healthy＋活体 url_map non-static **461** ≡ 审计清单——**活体已追平 fork/main 不再落后**（r6 登记时停在 r5 `a9c5e2d7b3f1` 落后三迁移），部署挂账销项，后续随新迁移线走各改动线部署合同。
+- 口径：纯文档轮——server 零改动⇒无需 rebuild/alembic；桌面零改动⇒不重打包；pytest/mypy/vitest 零变化（终值随本 PR CI 复核）。
 
 ## [未发布] — 多客户 M3b 批次①-a 轮：AI 与扩展控制面 org 收口＋跨 org 留痕接线（零迁移零新路由零新表零桌面，2026-11-11）
 
@@ -387,6 +399,13 @@ curve 1 真机归因（#307/#308）的修复轮：生成 0/6 全灭（`ai_output
 
 - **部署（确定版 rebuild，覆盖轮 3＋轮 4 全部 server 变更；轮 5 纯桌面零服务端）**：从合并态 fork/main `8c0b113`（轮 4 squash，含轮 3 `4e1d6c5`）干净 server 树构建三镜像并 up -d——api `sha256:f863fe65f5bb…`／worker `sha256:a0d9fe40d37f…`／scheduler `sha256:749c618afce0…`，三容器 `.Image` 与构建产物逐位一致且 healthy；`alembic upgrade head` 幂等 no-op（容器内 `alembic current`＝`f3a9c7e1d5b2 (head)`，轮 3/4/5 零迁移）；活体 `url_map` non-static **448** ≡ 口径（轮 4 readiness 路由在场）；`/api/v1/health/ready` **200**。main run 收口：轮 4 run `42797107137`／轮 5 run `42800276475` 各四 job 全绿（轮 5 squash＝`b39ca9b`，纯桌面不需重建）。
 - **便携版 r31（清偿轮 3/4/5 累计「便携版重打包挂账」）**：从合并态 `b39ca9b` 打包（`npm run build` ＋ `electron-builder --win dir --x64`，EXIT=0）；asar sha256 `113289d4783d1eab45d0159d2776b414ce4d57a1a8b4aa7fab22dca50e2124cb`；中文 marker 字节验证（marker 文件法防编码假阴性）×3 全命中——「商业化运维」×2（轮 4 运维面板）／「读取企业空间」×2／「企业自助」×2（轮 5 企业空间面）；交付目录 `release/蔡工FDE-0.3.0-便携版-r31`（旧目录零覆盖；release/ 已 gitignore 永不入库）。轮 3 焦点竞态修复无独立 UI 文案故无 marker（其交付证据＝PR #283 用例＋users 30 轮/danger-confirm 20 轮零红实录，代码已随合并态进包）。
+
+## [未发布] — 外部闸消解轮：§1.4 集团归并法务裁定问题单 v1 ＋ §1.8／§17 裁决落账（纯文档零代码零迁移，2026-11-11）
+
+- **起因**：用户问「剩余的外部闸能不能用交互式问题选择方式解决」——三项逐一裁决：**§1.4 可「问清」**（把给法务的问题、口径选项、工程影响、等待方一次写清即解锁销号路径），§1.8／§17 是**裁决性问题**（归哪个域／是否落数），交互选择即落定。
+- **§1.4＝NEW `docs/commercialization/ADR-004-集团归并-法务裁定问题单-v1.md`（Q1–Q5）**：Q1 额度按法人还是集团计（A 不分别=现状保守默认＋人工闸／B 集团归并→`normalize_subject_key` 单点改，ADR-004 §3 已预留该单点）／Q2 注册面母公司 USCC 字段（必填·选填·不带）／Q3 无 USCC 主体（只境内=零改动／放宽=另立 ADR 修订）／Q4 额度去重规则终态（任务书 §17-3 销号条件）／Q5 归并主张证据要求（门禁证据红线同尺：指针＋sha256）；每项带代码锚（`quota_service.normalize_subject_key`＝`server/src/fde_api/commercial/quota_service.py:70`）、等待方、到位后动作；**边界声明**＝不代法务判断、不预置工程、不触碰代码/迁移/路由，裁定前维持保守默认（不分别＋人工闸，滥用敞口显式登记不阻塞 M 线）。
+- **§1.8＝裁决「归 V3.2 simulation 域」**：`check_experience_limit` 消费方属独立 V3.2 域 Goal 线（`fde-wt-v32`），跨域不越线——本主线不接线，V3.2 线开工时同线实施（维持挂账，非本轮可解）。
+- **§17＝裁决「维持 unset（fail-closed）」**：认证费/陪跑期/认证通过线/分成比例/试运营指标与首期金额一律不落数（缺省即不可收款，方向不变）；运维面板（轮 4 readiness 面）已呈现缺口与「等谁拍板」指针；待试点数据回来再落数（D-12 同向：数值一律由业务方书面输入，不预写默认值）。
 
 ## [未发布] — F 线签字闸书面复确认轮（签闸待补页 28 行确认生效＋A-7 留待真实发布＋关联拍板点零改动复确认；纯文档零代码零迁移，2026-11-11）
 
