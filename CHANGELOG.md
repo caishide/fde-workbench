@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 多客户 M5 轮：企业组织成员邀请面＋三档分流入口＋六项判据聚合（迁移 c1d4e7f9a2b3 68→69 rev＋桌面分流面板，2026-11-11/12）
+
+- **M5-1 组织成员邀请面（PR #349）**：NEW 迁移 `c1d4e7f9a2b3`（68→69 rev，`org_member_invitations` 表）；邀请/列表/撤销/接受四端点（`POST/GET /api/v1/commercial/orgs/<org_id>/invitations`、`POST .../<invitation_id>/revoke`、`POST /api/v1/commercial/orgs/invitations/accept`）。**一次性令牌＋邮箱绑定**（sec 评审：邀请是社会工程攻击面）——令牌明文只回传一次、库内只存 sha256 指纹；接受时强制 `actor.email == invited_email` 且 actor 为平台身份（`org_id IS NULL`）；**邀请是 org 归属面不是第二套权限体系**（红线 8）：接受邀请唯一副作用＝`users.org_id` 置为本 org，可见性由既有 `project_org_scope_filter` 覆盖，零平行权限表。企业空间读面透出 `org_id` ＋邀请清单；桌面端企业空间页 NEW「成员邀请」面板（发送邀请/一次性令牌展示/邀请清单/接受邀请）。
+- **M5-2 三档分流入口＋六项判据聚合（同 PR #349）**：GAP-05——企业空间读面 NEW `diagnosis` 聚合块（键集＝G2 权威 `FREE_DIAGNOSIS_DELIVERABLES`，`all_completed`＝六键全真）；GAP-14——桌面端 NEW「记录三档分流（admin 双闸）」面板（viewer 不渲染＝前端门控，服务端 admin+密码双闸不变）＋「三档分流决定（可回看）」历史面板。
+- **M5-3 收尾验收轮（本轮）**：NEW `server/tests/test_m5_e2e_acceptance.py` 端到端 1 例——一家测试企业从公开自助注册（`quota_created=True`，零 admin 建号）→ 绑定/确认（诊断完成）→ 邀请链（第二账号公开注册→邀请→接受→org 归属＋`org_member_invitation_accepted` 事件留痕）→ 三档分流（非 admin 403→admin 双闸）→ 三付费选项呈现→企业自选付费选项 ⇒ `engagement_state=paid_delivery`；桌面端补 3 例（诊断聚合块六标签＋未完成态、分流历史 rationale 回看、admin 门控：viewer 无面板/admin 有面板含密码双闸）。
+- **测试口径**：M5 邀请 13 例（`test_commercial_m5_invitation.py`）＋企业空间 31 例（`test_commercial_enterprise_space.py`）＋端到端 1 例（`test_m5_e2e_acceptance.py`）全绿；桌面端 enterprise-space 9 例（+3）全绿＋typecheck 双 tsconfig 零报错。变异与 CI 口径留空不写（本轮无变异要求）。
+- **实现口径说明**（详见 `docs/commercialization/multi-tenant/M5-验收对照-v1.md`）：①邀请是 org 归属面（`users.org_id`）而非直接 `add_project_member`——依据 AGENTS.md M3a 红线「org 是归属维度不是授权维度」，等效满足 G6「复用既有权限模型零平行权限表」；②「成员变动通知全组织」v1.1 语义＝org 维度 `operation_events` 留痕＋邀请清单读面，邮件通知无 SES 生产批复不承诺；③admin 在 complete/triage 两处出现是 G6 口径允许的人工闸，不算「人工建号」。
+
 ## [未发布] — somwyn G8/G9 收口轮（G-01 CLOSED＝九门全 passed·项目 100% 结项＋⑦出站闸开闸生效；纯运维＋文档轮（代码零变更、无迁移、无新路由、桌面零改动），2026-11-11）
 
 蔡工拍板「1、2 已完成／somwyn 进度 100%」后的核实与收口轮——实测发现两处「清单已录、活体未落」的缺口并当场闭合：

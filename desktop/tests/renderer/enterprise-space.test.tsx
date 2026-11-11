@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest"
 
 import React from "react"
-import { cleanup, screen, waitFor } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -216,5 +216,102 @@ describe("企业空间视图", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("读取企业空间失败。")
     expect(screen.queryByRole("heading", { name: "主体" })).not.toBeInTheDocument()
+  })
+
+  it("诊断聚合块呈现六项判据标签与未完成状态（GAP-05）", async () => {
+    const apiRequest = vi.fn().mockResolvedValue(ok({ status: 200, data: space, error: null }))
+    mockSpaceBridge(apiRequest)
+    const { renderApp } = await import("./test-utils")
+    renderApp(<App />)
+    const user = userEvent.setup()
+
+    await loadSpace(user)
+
+    expect(
+      await screen.findByRole("heading", { name: "诊断完成判据" }),
+    ).toBeInTheDocument()
+    // 六项判据标签逐项在场（键集与文案由服务端单一权威下发，桌面原样呈现）
+    expect(screen.getByText("企业问题诊断报告")).toBeInTheDocument()
+    expect(screen.getByText("业务流程初步分析")).toBeInTheDocument()
+    expect(screen.getByText("AI 应用机会清单")).toBeInTheDocument()
+    expect(screen.getByText("建议实施方案")).toBeInTheDocument()
+    expect(screen.getByText("预计项目等级与预算区间")).toBeInTheDocument()
+    expect(screen.getByText("下一步实施建议")).toBeInTheDocument()
+    // all_completed=false ⇒ 未完成逐项标注 + 汇总提示
+    expect(screen.getAllByText("未完成")).toHaveLength(6)
+    expect(screen.getByText("尚有交付物未完成，暂不可分流。")).toBeInTheDocument()
+  })
+
+  it("三档分流决定历史可回看（rationale 逐条呈现）", async () => {
+    const apiRequest = vi.fn().mockResolvedValue(ok({ status: 200, data: space, error: null }))
+    mockSpaceBridge(apiRequest)
+    const { renderApp } = await import("./test-utils")
+    renderApp(<App />)
+    const user = userEvent.setup()
+
+    await loadSpace(user)
+
+    expect(
+      await screen.findByRole("heading", { name: "三档分流决定（可回看）" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/免费诊断额度内/)).toBeInTheDocument()
+    expect(screen.getByText(/self_service/)).toBeInTheDocument()
+  })
+
+  it("非 admin 不渲染分流判定面板（admin 双闸前端门控）", async () => {
+    const apiRequest = vi.fn().mockResolvedValue(ok({ status: 200, data: space, error: null }))
+    mockSpaceBridge(apiRequest)
+    const { renderApp } = await import("./test-utils")
+    renderApp(<App />)
+    const user = userEvent.setup()
+
+    await loadSpace(user)
+
+    await screen.findByRole("heading", { name: "三档分流决定（可回看）" })
+    expect(
+      screen.queryByRole("heading", { name: "记录三档分流（admin 双闸）" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("admin 渲染分流判定面板且表单含管理员密码双闸（GAP-14）", async () => {
+    // admin 完整判定表单只在诊断六项全完成后渲染 ⇒ 用完成态空间
+    const completedSpace = {
+      ...space,
+      diagnosis: {
+        ...space.diagnosis,
+        all_completed: true,
+        completed_at: "2026-11-11T00:00:00+00:00",
+        deliverables: space.diagnosis.deliverables.map((item) => ({ ...item, done: true })),
+      },
+    }
+    const apiRequest = vi.fn().mockResolvedValue(ok({ status: 200, data: completedSpace, error: null }))
+    const adminViewer = { ...viewerUser, role: "admin" } as UserDto
+    installBridge(
+      bridge({
+        refresh: vi.fn().mockResolvedValue(ok(authResult(adminViewer))),
+        apiRequest,
+      }),
+    )
+    const { renderApp } = await import("./test-utils")
+    renderApp(<App />)
+    const user = userEvent.setup()
+
+    await loadSpace(user)
+
+    expect(
+      await screen.findByRole("heading", { name: "记录三档分流（admin 双闸）" }),
+    ).toBeInTheDocument()
+    // admin 面板双闸形态：管理员密码输入框 + 分流依据 textarea + 提交按钮
+    const adminPanel = screen
+      .getByRole("heading", { name: "记录三档分流（admin 双闸）" })
+      .closest("section") as HTMLElement
+    expect(adminPanel).not.toBeNull()
+    expect(adminPanel.textContent).toContain("管理员密码")
+    expect(adminPanel.textContent).toContain("分流依据（rationale）")
+    expect(adminPanel.querySelector("input[type='password']")).not.toBeNull()
+    expect(adminPanel.querySelector("textarea")).not.toBeNull()
+    expect(
+      within(adminPanel).getByRole("button", { name: "记录分流判定" }),
+    ).toBeInTheDocument()
   })
 })
