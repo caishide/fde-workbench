@@ -124,7 +124,15 @@
 - **交付与部署**：PR **#323**（head 两笔）→ CI 四 job 全绿 → squash 合并 **`634d3ca`**＝fork/main 顶；**main run 42969299906 四绿收口**（并发 push 取消过一次 ⇒ 等对方 run 完成后 rerun，收口于 completed/success 四 job 全 success）。本轮**零 server 改动** ⇒ 无需 rebuild 三镜像／无 alembic 升级（活体容器镜像 ID 与构建产物一致、`alembic current`＝`a7c2f9e1b4d8 (head)`、`/api/v1/health/ready` 200、url_map 与审计清单逐位一致）。
 - **登记可推翻项**：L-1 判定规则／L-2 `MIN_DISTRIBUTION_RUNS=3`／L-3 锚点 judge 轴 vs 逐卡四轴／L-4 error 行排除语义／L-5 全调用节流／L-6 评测进程内抬访客日限额／L-7 离散度归因口径／L-8 纯 judge 噪声带＝9 分（n=4）。**明细与读法边界见 NEW `docs/audit/诊断评测-分数面分布-1.md`**（仓库侧只存汇总＋指针＋sha256，原件留真相层）。
 
-## ## [未发布] — 多客户 M3b 收口轮：四批 236 端点全量销号完成＋部署活体复验（纯文档零代码零迁移零路由零桌面，2026-11-11）
+## ## [未发布] — 多客户 M4 批次 A 轮：Redis 面主体归属核销（纯测试零生产代码改动零迁移零路由，2026-11-11）
+
+- **M0 判定两处经 M4 现测纠正为核销**（机器判定人工纠正先例）：①**K4/K5**（`fde:ai-execution:{id}:state`/`:events`）——`ai/executions.py::get_execution` **已**按 `state.actor_id != actor.id ⇒ 404`（`ai_execution_not_found`，不确认存在性），状态与事件流同一归属闸覆盖，sec 评审「必加 actor 归属校验」的要求**已结构性满足**；②**K3**（`fde:ai:action:{identifier}`，arch 评审点名的「最高危」）——锁键 identifier＝`sha256([user.id, execution_id, data])` **已含执行者维度**＋MCP claims 系 JWT 签名（`sub`/`auth_version` 从库重解析）＋事件账按 `actor_user_id` 过滤 ⇒ 「UUID 不可枚举不足以作为防线」的担忧由三重绑定兜住。M0 盘点（先验口径）写「无主体维度」，M4 现测（引用前现测纪律）推翻。
+- **NEW `test_m4_batch1_redis_subject.py` 3 例进 CI**：①K4/K5 跨主体读 ⇒ 404＋阳性对照（本人可读含首条 stage 事件）；②K3 跨账号同 `(execution_id, data)` 提交 ⇒ action_id 必不同＋事件账按 actor 隔离＋B 重放不撞 A 的账；③K10/K11 非项目成员持合法 preview token commit ⇒ 404 `project_not_found`（token 绑 `(preview_id, project_id)`＋`load_subject_project` 项目闸）。
+- **变异验收**：M1 摘 `get_execution` actor 校验 ⇒ 1 红；M2 摘 K3 identifier 的 user.id 维度＋事件账 actor 过滤 ⇒ 1 红；字节级还原＋sha256 对账后 3 绿；邻域回归（execution/api_actions 既有 15 例）全绿。
+- **K1/K2/K6–K9/K12/K13 核验销号**：自带主体维度（username+ip／user_id／IP 假名／令牌指纹）或属服务间认证/匿名面/运维心跳（既有套件覆盖，不重复造例）；K10/K11 归属闸核销见上。
+- 口径：pytest **+3**（基线＝F 线 T6 融合树 CI 实测 **3070 收集 = 3063 passed + 7 skipped**〔#334 段自报合并态；基链＝M3b 收口 3058＋T6 +12；上游十四度插队 rebase 融合〕＋本轮 +3 ⇒ 预期 **3073 收集 = 3066 passed + 7 skipped**，终值以本 PR CI 为准）；mypy 279 不变；零迁移零新路由零新表零新蓝图零桌面。
+
+## [未发布] — 多客户 M3b 收口轮：四批 236 端点全量销号完成＋部署活体复验（纯文档零代码零迁移零路由零桌面，2026-11-11）
 
 - **销号完成**：M3b 四批全部合并入 fork/main——①-a（24 条，PR #325 `828557e`）／①-b（15 条，PR #328 `8cefc07`）／②（43 条，PR #331 `7eb9a17`）／③（97 条，PR #335 `713407b`）／④（57 条，PR #336 `405c541`＝fork/main 顶）。★**销号范围＝盘点表现测 236 全量**（write-level 79 实改＋read-only 157 读面收敛核验；任务书「122 写端点」是 M0 前先验，盘点表为准）。
 - **pytest 链（全部取**合并树 CI 实测**，不承袭 PR 期数字）**：①-b **3025 收集 = 3018 passed + 7 skipped**〔run 42978834244〕／② **3039 = 3032 + 7**〔PR #331 run 42983140581〕／③ **3052 = 3045 + 7**〔PR #335 server-tests〕／④ **3058 = 3051 + 7**〔PR #336 run 42989050456〕。★口径链的基必须取**合并树**实测——①-a 的 PR 期实测 3010 是 **rebase 前** PR 树值（rebase 融合上游 #323 ＋9 后合并树实测 3019），拿它推算会偏。
