@@ -8,6 +8,12 @@
 - **核验销号（12 条，零代码改动面，盘点表处置建议逐条人工复核）**：industry-templates 6 条写面＋templates research-forms 3 条写面＝`@require_role("admin")` 角色闸在位（R2 目录写 admin-only 保持；机器判定把 PATCH/DELETE 版本面标成「读面」属 AST 误判，人工复核纠正）；internal 3 条＝**服务间认证**（`/internal/dsh/*` DSH 服务令牌、`/internal/clawbot/*` ClawBot 网关令牌——非 JWT 用户面，org 维度不适用，M4 令牌租户化的输入，盘点表维度 5 已登记）；task-center 3 条写面＝服务层 `authorize_ai_capability → project_access`（统一入口含 org 谓词）✓。
 - **测试**：NEW `test_m3b_batch1b_task_center.py` **6 例**——跨企业成员两清单不漏出（审批清单＋任务主清单，各带平台身份 leader 同域可见性 sanity）、跨企业审批决策 403、行业模板 6 写面/调研表单 3 写面 admin 闸 403、internal 服务间面坏令牌 401。**摘除式变异（两消费点两形态全打：`scope =` 赋值形＋`.where()` 内联形换回 org-less leader-OR-成员）⇒ 2 红→还原→6 绿**；邻域回归 task_board/control_plane/审批 SLA/expirations/metrics_v31 **58 例全绿**（首轮 6 红即 task_board 的 NameError＝第三消费点漏检信号）；mypy 官方闸 **279 零新增**；ruff 绿。
 - **口径**：零迁移零新路由零新表零新蓝图 ⇒ 结构口径不变（461 路由/51 蓝图/150 表/66 rev 单头 `a7c2f9e1b4d8`）；pytest **CI 实测 3025 收集 = 3018 passed + 7 skipped**〔PR CI run 42971930465 server-tests；基线＝批次①-a **合并树** main run 42970619241 实测 **3019 收集 = 3012 passed + 7 skipped**（合并 SHA `828557e`）＋本轮 **+6** ＝ 3025 逐位吻合；★①-a PR 期实测 3010 收集＝rebase 前 PR 树值，已随 #323 插队融合作废〕。**批次①（39 条）随本 PR 全量销号**；部署活体复验＋DoD 回写归批次①收口轮。
+## [未发布] — 夜审挂账设计轮 r8（CR-071 web 桥校验族多方案设计稿＋活体部署挂账销项＋4 挂账触发态 E0 现测；纯文档零代码零迁移零路由，2026-11-11）
+
+- **CR-071 设计轮（蔡工 2026-11-11 续「按你建议继续实施」开设计轮；4 挂账触发态 E0 现测坐实时机已到）**：NEW `docs/audit/夜审-CR071-web桥校验族多方案设计稿-2026-11-11.md`（取证基线 fork/main `828557e`，全部锚点现测）——**两桥 8 项校验面对照**：桌面 `api-ipc.ts::validateRequest` 8/8 全在位；web 桥 `fde-web-bridge.ts` 仅 3/8（缺 method 白名单〔任意 method 可发〕／auth 路径排除／编码双重解码〔`%2e%2e`/`%252f` 可穿透 raw 检查〕／multipart 严格拒绝〔非法形状 `return null`⇒无 body 裸发＝静默降级〕／控制字符区间／body 可序列化）；**推荐 A＝NEW `shared/api-safety.ts` 纯函数单点**（桌面 api-ipc.ts 与 web 桥双消费同一原语＋**等价性静态钉**防再漂移——报告消解条件「规则提升 shared/ 单点」原文落地）；B 双副本必漂移／C 最小封口（不封编码逃逸真绕过面）均否决留痕。**实施待蔡工拍板**（纯桌面零服务端⇒无需 rebuild/alembic；桌面改动⇒便携版 r36 随轮）。
+- **4 挂账触发态 E0 现测（只读）**：CR-071＝**半满足**（web 桥本体＋`web.html` 已在 main 树、`feat/web-distro-t1` 在途扩大暴露面、公网试用部署文档 4 份在场＋README:244 活链⇒设计轮时机已到）；CR-061（host_poll 生产闸默认关⇒并发领取不可达）／CR-055（用例编辑·需求撤销通道未立项⇒护栏钉无施工面）／CR-074（`c4f7a2d9e1b6` 迁移文件未再触碰）＝**触发未满足维持挂账**。
+- **活体部署挂账销项（他线已按部署合同推进）**：r8 E0 只读复验＝容器内 `alembic current`＝`a7c2f9e1b4d8 (head)`（＝fork/main 单链迁移头，F 线 T5 迁移已应用）＋三容器 healthy＋活体 url_map non-static **461** ≡ 审计清单——**活体已追平 fork/main 不再落后**（r6 登记时停在 r5 `a9c5e2d7b3f1` 落后三迁移），部署挂账销项，后续随新迁移线走各改动线部署合同。
+- 口径：纯文档轮——server 零改动⇒无需 rebuild/alembic；桌面零改动⇒不重打包；pytest/mypy/vitest 零变化（终值随本 PR CI 复核）。
 
 ## [未发布] — 多客户 M3b 批次①-a 轮：AI 与扩展控制面 org 收口＋跨 org 留痕接线（零迁移零新路由零新表零桌面，2026-11-11）
 

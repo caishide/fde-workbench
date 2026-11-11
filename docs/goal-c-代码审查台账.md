@@ -28,7 +28,9 @@
 
 | r7 | 夜审挂账实施轮·桌面两挂点落地（CR-056 A′ 直连分片上传在途写计数＋CR-057 A+D 打包态 CSP connect-src 构建注入＋形态矩阵成文；蔡工 2026-11-11 续拍板「按建议继续处理」开实施轮；纯桌面＋文档，零迁移零路由零服务端） | **已完成 2026-11-11**（CR-056＝NEW `desktop/src/renderer/src/files/upload-helper.ts::uploadMultipartParts` 收拢 4 处直连分片 PUT〔ProjectFiles/PresurveyUploadAction/NewProjectPageV2/FileVersionTimeline〕＋NEW IPC 通道 `appUploadBegin/End`（main 计入 activeMutations、preload/web-bridge 各补面对齐、web 形态 no-op 零变化）＋helper 内置 notify begin/end（try/finally 成对 best-effort）＋静态钉「全仓 renderer 裸分片 PUT 只许在 upload-helper.ts」；CR-057＝NEW 纯函数 `desktop/src/main/build-csp.ts::buildCspConnectSrc`（缺省恒＝旧写死值零回归）＋`electron.vite.config.ts` NEW 构建注入插件（apply:"build" 只碰打包物；读 package.json extraMetadata 的 fdeApiUrl/可选 fdeOssHost 单点来源）＋README 三形态对齐矩阵成文；**实弹双向验证**＝本地默认打包 connect-src 恒回环零变化、临时改 extraMetadata 后 out/renderer/index.html connect-src 注入远程 API＋OSS 主机后恢复；变异三连全红→还原→绿；typecheck 双 tsconfig 绿；全量 vitest **1022 passed（90 文件）**〔＝M2 轮基线 1004＋本轮 +18〕） | CHANGELOG「夜审挂账实施轮 r7」节 |
 
-**部署挂账（归他线，不占 r 编号）**：活体部署现停在夜审 r5 收口点 `a9c5e2d7b3f1`（2026-11-10 三镜像＋alembic＋活体三项复验全绿）；fork/main 其后合入 #305/#309/#312（新迁移 c8d2f6a4e9b1/b8d4f6a2c9e7/e5c9f2a7d4b6，64 rev head e5c9f2a7d4b6）⇒ 活体落后 fork/main 两新迁移，**推进归改动线（F 线 T4/M2 owner）部署合同**（rebuild 三镜像＋alembic upgrade＋活体三项复验），本台账不代部署。
+| r8 | 夜审挂账设计轮·CR-071（web 桥 apiRequest 校验族系统性弱于桌面 IPC 面；蔡工 2026-11-11 续「按你建议继续实施」开设计轮；纯文档零代码，触发态 E0 现测＝web 桥暴露面已在途扩大〔web-distro-t1 在途＋公网部署文档 4 份〕⇒ 设计轮时机已到，061/055/074 触发未满足维持挂账） | **已完成 2026-11-11**（NEW docs/audit/夜审-CR071-web桥校验族多方案设计稿-2026-11-11.md：两桥 8 项校验面对照〔桌面 api-ipc.ts 8/8 在位，web 桥 fde-web-bridge.ts 仅 3/8＝缺 method 白名单/auth 排除/编码双重解码/multipart 严格拒绝/控制字符/body 可序列化〕；推荐 A＝规则提升 NEW `shared/api-safety.ts` 纯函数单点〔桌面＋web 双消费同一原语＋等价性静态钉防再漂移〕；B 双副本必漂移／C 最小封口不封编码逃逸真绕过面，均否决留痕；owner＝蔡工，实施待拍板〔纯桌面零服务端⇒无需 rebuild/alembic，桌面改动⇒便携版 r36 随轮〕） | 台账本节 |
+
+**部署挂账（归他线，不占 r 编号）**：★**2026-11-11 r8 轮 E0 只读复验＝活体已不再落后**——容器内 `alembic current`＝`a7c2f9e1b4d8 (head)`（＝fork/main 单链迁移头，F 线 T5 迁移已应用）；三容器 healthy；活体 url_map non-static **461** ≡ 审计清单。他线已按部署合同推进（r6 登记时活体停在 r5 `a9c5e2d7b3f1` 落后两迁移，现已追平）⇒ 部署挂账销项，后续随新迁移线走各改动线部署合同。
 
 ## 发现总表
 
@@ -103,7 +105,7 @@
 | CR-068 | P3 | **fixed（夜审 r3）** | confirm_term 缺 _link_subjects_to_term（当前零生产调用方，接线将漏链）——docstring 声明接线前须补链接 | ontology/service.py:296-316 | 夜审r1 |
 | CR-069 | P3 | **fixed（夜审 r4：reconcile 拆 409 no_snapshot／500 sync_failed，双态 monkeypatch 测试）** | bridge reconcile 把投影失败误报 409 no_snapshot | bridge/routes.py:45-52 | 夜审r1 |
 | CR-070 | P3 | **fixed（夜审 r3）** | web 桥 openLcscBrowser 无域白名单（桌面三域闸 web host 缺失；AIServerChat 有同款先例） | fde-web-bridge.ts:288 | 夜审r1 |
-| CR-071 | P3 | 维持挂账（拍板 2026-11-10：结构化挂账——web 桥暴露面扩大/公网部署前系统性补齐校验族） | web 桥 apiRequest 校验族系统性弱于桌面 IPC 面（method 白名单/auth 排除/编码逃逸/multipart 静默降级） | fde-web-bridge.ts:217-224 | 夜审r1 |
+| CR-071 | P3 | 维持挂账（拍板 2026-11-10：结构化挂账——web 桥暴露面扩大/公网部署前系统性补齐校验族；**2026-11-11 r8 设计轮已出待拍板**） | web 桥 apiRequest 校验族系统性弱于桌面 IPC 面（method 白名单/auth 排除/编码逃逸/multipart 静默降级）；**设计稿＝docs/audit/夜审-CR071-web桥校验族多方案设计稿-2026-11-11.md 推荐 A（规则提升 shared/api-safety.ts 单点，两桥共用＋等价性静态钉；现测 web 桥 8 项缺 6 项）** | fde-web-bridge.ts:217-224 | 夜审r1＋设计轮r8 |
 | CR-072 | P3 | **fixed（夜审 r4：拍板＝可观测标记——显式前缀 fde-session-plain-v1＋console.warn，load 剥前缀兼容旧版）** | safeStorage 不可用时 refresh token 静默明文落盘无告警面 | auth-store.ts:60-71 | 夜审r1 |
 | CR-073 | P3 | **fixed（夜审 r3）** | LCSC 桌面执行业务错误被吞成 internal_error（「已有立创查询正在执行」不可达 renderer） | api-ipc.ts:349 | 夜审r1 |
 | CR-074 | P3 | 维持挂账（拍板 2026-11-10：迁移文件＝修复禁区——下次触碰该迁移文件的轮次顺带修正） | c4f7a2d9e1b6 downgrade 按值还原 purpose 范围大于 Backup hint（触发近乎不可能；涉迁移文件=修复禁区） | migrations/versions/c4f7a2d9e1b6:67 | 夜审r1 |
@@ -613,7 +615,7 @@
 - **CR-056/057 [P2→r7 修（已 fixed，2026-11-11 蔡工续拍板「按建议继续处理」开实施轮）]**：桌面多方案组——056 按 r6 设计稿 A′ 落地（IPC 桥 `appUploadBegin/End` 计入 activeMutations＋4 站直连分片 PUT 收拢 `files/upload-helper.ts`＋全仓裸分片 PUT 唯一定位静态钉）；057 按 r6 设计稿 A＋D 落地（`build-csp.ts` 纯函数＋`electron.vite.config.ts` 构建注入，extraMetadata 单点来源；B 运行时下发因 meta∧header CSP 交集语义剔除留痕；README 三形态矩阵成文＝半坏→明坏）。设计稿＝`docs/audit/夜审-CR056-CR057-多方案设计稿-2026-11-11.md`；实施证据＝实弹双向打包验证＋变异三连＋全量 vitest 1022（90 文件）；**本轮起两条 P2 挂账销号**，触发条件由「机械守护」接替（静态钉守第 5 处上传面／connect-src 缺省零回归钉）。
 - **CR-058/063/068/070/073/075/076/077/078/079 [→r3 修]**：卫生批——web 桥版本单源化/可见性对账测试/confirm_term docstring/web 桥 lcsc 白名单/LCSC 业务错误透传/恒真断言清理/不可取消钉加宽/__init__ docstring 去产品名/口径配方 AST 化/.env.example 补两行注释键。
 - **CR-059 [P2→挂账]**：两 FK 索引——涉迁移合并窗口。
-- **CR-061..CR-074 [P3→挂账]**：疑点组——逐条消解条件见报告 §四/§六（host-poll 族 061 与 CR-048 同批；064/066/067/072 权限语义拍板；069 bridge 错误映射；071 web 桥校验族设计轮；074 涉迁移文件禁区）。
+- **CR-061..CR-074 [P3→挂账]**：疑点组——逐条消解条件见报告 §四/§六（host-poll 族 061 与 CR-048 同批；064/066/067/072 权限语义拍板；069 bridge 错误映射；074 涉迁移文件禁区）。**071 设计轮已出（r8，纯文档待拍板）**：现测 web 桥 8 项校验缺 6（method 白名单/auth 排除/编码双重解码/multipart 静默降级/控制字符/body 可序列化）vs 桌面 8/8 全在位；推荐 **A 规则提升 NEW `shared/api-safety.ts` 纯函数单点**（桌面 api-ipc.ts 与 web 桥 fde-web-bridge.ts 双消费同一原语＋**等价性静态钉**防再漂移；B 双副本必漂移／C 最小封口不封编码逃逸真绕过面，均否决留痕）。设计稿＝`docs/audit/夜审-CR071-web桥校验族多方案设计稿-2026-11-11.md`；**触发态 E0 现测**＝web 桥暴露面已在途扩大（web-distro-t1 在途＋公网部署文档 4 份在场）⇒ 设计轮时机已到。余 061（host_poll 生产闸关⇒并发不可达）/055（用例编辑·需求撤销通道未立项⇒护栏无施工面）/074（迁移文件未再触碰）**触发未满足维持挂账**。
 
 ## 驳回/观察记录（不占编号）
 
