@@ -169,13 +169,14 @@ class KimiFileClient:
         actor_id: str | None = None
         blocked = False
         try:
-            from fde_api.ai.auditing import budget_exceeded, current_actor_id
+            from fde_api.ai.auditing import current_actor_id, subject_budget_exceeded
             from fde_api.extensions import db
 
             actor_id = current_actor_id()
             budget = int(current_app.config["SETTINGS"].ai_monthly_token_budget or 0)
             with db.session() as session:
-                blocked = budget_exceeded(session, actor_id, budget)
+                # M4 批次 B：判定升级为**主体级**（企业身份按 org 额度＋org 全员合计）。
+                blocked = subject_budget_exceeded(session, actor_id, instance_budget=budget)
         except Exception:  # noqa: BLE001 - 预算设施故障不阻塞业务（fail-open）
             logger.warning("kimi budget gate failed open request_id=%s", request_id, exc_info=True)
             return
