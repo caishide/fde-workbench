@@ -22,3 +22,9 @@
 ## 建议改走（「建议」条款留痕）
 
 - 无改道；唯一偏差是任务书两条现状数字（见 BLOCKED.md），均按「证据留痕＋设计稿用现测值」处置，未改变任何「只允许」路径。
+
+## 事故与修复记录（2026-11-12）
+
+- **事故**：共享工作树 HEAD 被并发会话切回其分支（`docs/case-learning-ledger-backfill`），本包首个 commit（原 `e3efa0f`）落在**他人分支**上（其远端已在 `ca83924`，若其继续 push 即污染 PR #354）。
+- **修复**：①独立 worktree（`D:/test/fde-wt-fusion`）内 cherry-pick 搬运（→`e9b1a6a`）＋rebase 到当时 fork/main `c97eedf`（→`27cc354`）；②他人本地分支 `git reset --mixed ca83924` 复位到其 push 原状（mixed 不碰工作树文件，其未提交改动零影响）；③rebase 后现测 fork/main 两笔新提交（#349/#353）与本稿 28 锚点涉及文件域零触碰（`git diff e05f1d6..c97eedf --stat -- <锚点文件域>` 无输出）。
+- **教训**：共享主树的 HEAD 是跨会话争用面——本包后续所有 git 写操作一律在独立 worktree 内执行；commit 后必须核对 `[分支名 sha]` 输出与预期分支一致。
