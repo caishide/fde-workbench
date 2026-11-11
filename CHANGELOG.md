@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — ⑦ 宿主通道出站限制面方案 A′ 实施轮（NEW `agents/host_egress_proxy.py` 白名单闸＋`NODE_USE_ENV_PROXY=1` 实测修正；审计事件 `agent_egress_audit`；config 双键 fail-closed；测试 +14＋变异双验证；四探针真机实录推翻一处设计前置；同轮 ① 商用条款公开条款路线消解＋V31-P2 落定；台账 v1.13；零迁移零新表零路由，2026-11-11）
+
+蔡工拍板「⑦采纳推荐 A／①不发申请函自行消解／其它按建议实施」后双腿同轮施工：
+
+- **⑦ 腿（代码）**：NEW `server/src/fde_api/agents/host_egress_proxy.py`（纯 stdlib 正向代理：仅监听 `127.0.0.1` 临时端口；白名单外 CONNECT 一律 403、明文 HTTP absolute-form 一律拒；域名后缀精确匹配〔裸 IP 不命中域名条目〕；`EgressAuditEntry` 域名级审计只记不判内容）＋ `run_host_channel` 闸接线（spawn 前起闸→env 注入→`finally` 停闸；闸启动失败＝A 类不 spawn 不计费）＋ `AgentRunResult` 新可选字段 `egress_audit`（容器适配器恒空缺省，零回归）＋ service 层 `agent_egress_audit` 事件（与 run 状态写**同事务**；`summarize_audit` 计数＋去重域名清单有界 20）＋ config 双键 `agent_host_egress_gate_enabled`（**默认关**）／`agent_host_egress_allowlist`（**空＋开＝fail-closed**：run 拒绝发起转 L2 不计费——既不无限制放行也不静默全拒绝）；`.env.example` 种子注记＋README 配置边界表登记。
+- **★实测改判据（四探针真机实录，zcode 0.17.1／Electron 44／内嵌 Node 24.21）**：设计提请的兼容前提「zcode 尊重 `HTTPS_PROXY`」**首探即证伪**——裸注入代理后 zcode 照常 exit 0 完成真实模型调用（无效白名单反证同证＝流量完全绕行，Node fetch 默认无视代理 env）；**A′ 修正＝注入 `NODE_USE_ENV_PROXY=1`**（Node 24 内建代理开关）后：无效白名单 ⇒ **exit 1 被拦**（AI_APICallError）＋代理审计捕获真实出站集（`zcode.z.ai:443`＋`api.minimaxi.com:443`）；真实白名单 ⇒ exit 0 放行＋审计两条 `tunnel_allowed`。方案 A 以 **A′ 形态成立**；设计提请文档追加 §6 实施记录（状态 PROPOSED→已实施）。
+- **测试**：NEW `test_host_egress_proxy.py` 14 例——白名单规范化 fail-closed（空/非法形状）／后缀匹配（子域边界/裸 IP）／真实回环代理三行为（CONNECT 放行隧道回环／CONNECT 域外 403＋审计／明文 HTTP 拒绝）／`run_host_channel` env 注入（含 `NODE_USE_ENV_PROXY` 钉）与审计回收／停机收口（run 后端口拒绝连接）／`summarize_audit` 形状／service 接线静态钉（防配置面静默拆除）；**变异双验证全红→还原绿**（M1 摘白名单判定／M2 摘 env 注入）；宿主通道既有 22 例零回归；mypy 官方闸 **279 基线不变**；零迁移零新表零路由。server 变更 ⇒ 合并后 rebuild 三镜像（alembic 幂等 no-op）。
+- **① 腿（纯文档＋本地取证，蔡工拍板「不发申请函」）**：**公开条款书面取证路线**——供应商已发布之生效条款即书面确认：智谱服务协议 §3.4「可…商业化使用平台内模型及其生成的内容」＋ z.ai ToS 产出物权利归属用户（you retain all rights, title, and interest in … Outputs）＋第三方服务条款（provide services to any third party → 责任归我方，未禁止）；六份条款页快照落本地 `fdeops://vendor-terms-snapshot-2026-11-11/`（sha256 逐一登记任务书 §6.1① 行，快照日 2026-11-11；**原件永不入仓入库**）；双方订阅协议反售条款解读注记如实落行（禁的是模型能力转售/聚合——本工作台内部自用产出成品交付物，结构上不落入）；申请函草稿转备选不发送；**推向市场前 bespoke 书面确认维持 backlog T-Z1 挂账不变**。
+- **V31-P2 同轮落定**：pilot-runbook Step 6 增分批注记（`item_ids` 起点 ≤3/请求、>60s 再分半）；**评估结论＝客户端分批为准、服务端不改**（服务端切片引入部分提交语义风险，timeout 加大只掩盖行锁串行；somwyn 实测 9 任务单全量 >120s 熔断 vs `item_ids` 9 次分批全成；留痕可推翻）。
+- **随轮回写**：台账 **v1.13**（修订记录）；任务书 §6.1 ①⑦两行改判＋结论行「**10 过／2 部分〔⑧⑪〕／未过项清零**」＋ §13 记录 #17；phase-status 收尾排期表六项全部落定回写＋P2 遗留行；final-acceptance-checklist #14 行与尾注（待条件收敛为待真实交付期 G8/G9 材料）。
+- **边界如实**：`NODE_USE_ENV_PROXY` 只约束遵守它的 Node 运行时（当前 zcode ✓）——**zcode 升级须复测四探针，失效即按设计提请退方案 B**；闸默认关，白名单初始集待蔡工按实际订阅端点裁剪写入 `server/.env` 后方可开闸（审计披露全部被拒域，可逐步收紧）。
+
 ## [未发布] — AI 原生化 N3a 实施轮：quality 用例 AI 起草落地（NEW `quality/draft.py`＋generate-ai 路由；单一入口＋契约整批零写入＋输出端兜底脱敏＋溯源留痕；G-05 CLOSED，台账 v1.12；+1 路由 461→462，零迁移零新表，2026-11-11）
 
 蔡工「先把排期写进台账/任务书，再按任务书逐一实施」拍板后，按任务书 §15 序 1 首发 N3a 施工（**「AI 起草 → 人工审核 → 发布」两段式推进到第一处决策位**，D-4 首发位＝quality）：

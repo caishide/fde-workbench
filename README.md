@@ -190,6 +190,7 @@ cd server
 | `FDE_AI_MONTHLY_TOKEN_BUDGET` | AI 调用月度 token 预算（按用户核算），超限拒绝新调用并留审计记录；`0` = 不限额 |
 | `FDE_AI_REASONING_MODEL_PATTERN` | 可选：推理模型额外特征（Python 正则）。直连腿对命中推理特征的模型把输出预算 ×2（reasoning 与正文共享 max_tokens，不预留时正文被思考挤到截断）；留空只用内置特征（MiniMax-M 系列/DeepSeek reasoner·R1/QwQ/通用 reasoner·thinking/OpenAI o1·o3·o4），本项为**额外**分支，误配只放宽不收窄 |
 | `FDE_AGENT_MONTHLY_BUDGET` | 平台月度 agent 预算（token 单位）；`0` = 不限额 |
+| `FDE_AGENT_HOST_EGRESS_GATE_ENABLED` / `FDE_AGENT_HOST_EGRESS_ALLOWLIST` | ⑦ 宿主通道出站限制面（方案 A′，**默认关**）：开启后宿主 spawn zcode 前起本地正向代理（仅监听 127.0.0.1 临时端口）注入 `HTTP(S)_PROXY/NO_PROXY/NODE_USE_ENV_PROXY`，白名单外 CONNECT 一律 403 拒绝并落 `agent_egress_audit` 事件（只记域名不记内容）。白名单＝逗号分隔域名后缀；**开启但白名单空/形状非法 = fail-closed**（run 拒绝发起转 L2 不计费）。依赖 zcode 内嵌 Node ≥24（当前 0.17.1 ✓；升级须复测设计提请 §6 四探针） |
 | `FDE_ENTERPRISE_DICT` | 可选：售前企业名脱敏的现场真实词典文件路径；缺省用仓库内种子词典（仅合成示例），真实词典文件永不进 git，文件缺失时 fail-closed 阻断入库 |
 | `FDE_TRANSCRIPT_DRAFT_ROOT` / `FDE_TRANSCRIPT_DRAFT_RETENTION_DAYS` | T-A9 转写草稿区：独立文件根（默认 `.fde-transcript-drafts`，与对象存储分卷物理隔离）与 T+7 自动清理保留天数（≥1）。草稿只收文本——录音原件永不进平台 |
 

@@ -44,7 +44,7 @@ operation_events 与审计留痕，产出复盘报告。
 | 3 | 事实/需求人工审阅 | facts/requirements 三动作 PATCH（接受/拒绝/澄清）+ 批量接受 | accepted 戳 + `requirement_reviewed` 事件 | P0-1；红线=推断/开放问题强制待澄清 |
 | 4 | 本体候选生成→审阅→确认 | POST `/projects/{pid}/ontology/candidates/generate` → 既有 change-set submit→confirm | confirmed 术语 + subjects.term_id 回填链接 | P0-2（#205）；AI 不绕过审批 |
 | 5 | 交付方案生成→审阅→发布 | POST `/projects/{pid}/delivery-plans/generate` → PATCH review → POST publish | approved/published 方案（旧行退位 superseded） | P0-3（#207） |
-| 6 | 方案条目分解到任务 | POST `/delivery-plans/{id}/tasks`（dry_run 预览 → 选择性创建） | project_tasks（待认领）+ links 幂等锚 | P0-3 |
+| 6 | 方案条目分解到任务 | POST `/delivery-plans/{id}/tasks`（dry_run 预览 → 选择性创建）。**分批注记（V31-P2，2026-11-11）**：任务单多的方案**必须用 `item_ids` 分批提交**（起点 ≤3 个/请求；单请求 >60s 立即再分半）——somwyn 实测 9 任务单全量一次提交卡项目行锁 >120s 被 gunicorn 120s 熔断（HTTP 500、事务回滚零残留），`item_ids` 9 次分批全成；服务端切片/timeout 不改（评估结论见 phase-status 收尾排期表，留痕可推翻） | project_tasks（待认领）+ links 幂等锚 | P0-3 |
 | 7 | Workflow 草稿：模板复制或 draft-from-plan | POST `/projects/{pid}/workflows/draft-from-plan` 或人工按 `GET /api/v1/workflow-templates` 模板手建 → POST validate | draft 定义（validate 干跑全绿） | P0-4（#209） |
 | 8 | Workflow 人工发布（admin）+ 发起运行 | POST publish（admin-only，D-2）→ POST runs（幂等键） | 锁版版本行 + run/节点留痕；human_approval 节点走任务中心 | T-W1~W5（V3 前收口） |
 | 9 | 测试计划→执行→证据 | quality：POST generate → PATCH review（覆盖闸）→ POST execute（dev/staging；production 硬闸）→ 证据 POST `/evidence`（指针+sha256） | test_plans/cases/executions + project_evidence；失败不可改写 | P1-2（#211） |

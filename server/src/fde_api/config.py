@@ -180,6 +180,14 @@ class Settings(BaseSettings):
     agent_allowed_egress: str = ""
     # 上下文脱敏禁区词（逗号分隔，真实客户名等）：命中即拒绝发起 run（fail-closed）
     agent_forbidden_terms: str = ""
+    # ⑦ 宿主通道出站限制面（任务书 §9 方案 A，2026-11-11 拍板实施）：开启后
+    # 宿主 spawn zcode 前起本地正向代理（仅监听 127.0.0.1 临时端口），把
+    # HTTP(S)_PROXY/NO_PROXY 注入进程 env；白名单外 CONNECT 一律 403 拒绝，
+    # 出站审计落 agent_egress_audit 事件（只记域名不记内容）。白名单=逗号
+    # 分隔域名后缀（如 api.z.ai,open.bigmodel.cn）；**空 + 开启 = fail-closed**
+    # （run 拒绝发起转 L2 不计费——既不无限制放行也不静默全拒绝）。
+    agent_host_egress_gate_enabled: bool = False
+    agent_host_egress_allowlist: str = ""
     # run workspace 根目录（相对路径相对服务端工作目录）
     agent_workspace_root: str = "agent-workspaces"
     # 沙箱内 agent CLI 命令（zcode 适配器 spawn 段）

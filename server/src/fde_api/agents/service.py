@@ -72,6 +72,11 @@ from fde_api.agents.host_channel import (
     HostChannelSettings,
     run_host_channel,
 )
+from fde_api.agents.host_egress_proxy import (
+    EgressGateError,
+    HostEgressGate,
+    summarize_audit,
+)
 from fde_api.agents.models import (
     AgentArtifact,
     AgentCredential,
@@ -728,8 +733,29 @@ def _execute_run(
                 max_cost_units=agent.max_cost_units,
             ),
         )
+        # ⑦ 出站限制面（方案 A）：闸开启时按配置白名单构建单 run 代理。
+        # 白名单空/形状非法 = fail-closed，转 L2 不计费（同 bin 缺失语义）；
+        # 关闭 = None ⇒ run_host_channel 行为零变化。
+        egress_gate: HostEgressGate | None = None
+        if bool(getattr(settings, "agent_host_egress_gate_enabled", False)):
+            try:
+                egress_gate = HostEgressGate(
+                    [item for item in (settings.agent_host_egress_allowlist or "").split(",") if item.strip()]
+                )
+            except EgressGateError as error:
+                _mark_l2(db.session(), run_id, f"egress_gate_config_invalid:{error}")
+                raise _error(
+                    "agent_unavailable",
+                    f"宿主通道出站闸配置无效（{error}），已转 L2 模板填空，本次不计费。",
+                    503,
+                    detail={
+                        "run_id": run_id,
+                        "fallback_level": "L2",
+                        "reason": f"egress_gate_config_invalid:{error}",
+                    },
+                ) from error
         try:
-            result = run_host_channel(host_ctx, host_settings, output_scanner=host_scanner)
+            result = run_host_channel(host_ctx, host_settings, output_scanner=host_scanner, egress_gate=egress_gate)
         except HostChannelError as error:
             _mark_l2(db.session(), run_id, str(error))
             raise _error(
@@ -744,6 +770,13 @@ def _execute_run(
                 run_row.status = "running"
                 run_row.execution_provider = "host_channel"
                 run_row.workspace_ref = str(normalized_workspace)
+            # ⑦ 出站审计持久化：与 run 状态写同事务（域名级计数+去重清单，
+            # 有界 20 条；空审计零事件——未开启闸或无出站尝试都不留噪声）。
+            if result.egress_audit:
+                record_event(session, actor, "agent_egress_audit", project, {
+                    "run_id": run_id,
+                    **summarize_audit(result.egress_audit),
+                })
         data, failures, gate_open = _finalize(
             db.session,
             run_id=run_id,
