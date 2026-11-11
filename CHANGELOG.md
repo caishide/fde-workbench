@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 交付案例学习闭环 L1 实施轮：真相层导入卡 → 训练场摄取管线（转换器 NEW `scripts/simulation/import_cases.py`＋污染单向阀静态钉＋首批 4 包清单；pytest +10；零迁移零路由零蓝图零桌面零生产代码改动，2026-11-12）
+
+蔡工 2026-11-12「开L1」授权后按设计稿 §5-L1 行落地缺口一——知识层交付案例 → 训练场场景库的摄取管线；并把污染单向阀从「设计裁定」升级为机械静态钉（校验判别力本身已验收）。
+
+- **摄取管线（转换器）**：NEW `scripts/simulation/import_cases.py`——真相层 `import_card_v1` 卡 → 训练场导入包（与 `POST /simulation/scenarios/import` 信封同构）。闸门四连 fail-closed：卡 schema 允许名单（未知顶层键／缺 attribution 必填键即拒）→ 生产 `validate_scenario`（八规则）→ 生产 `load_view` 三视图泄漏自检（tester/customer/judge）→ 输出目录落本仓内即拒（判卷基准永不进仓）。
+- **人工闸不放松**：转换器写死 `source_kind='import'`、`status='draft'`；建行（导入）与激活（draft→active）两步皆人工动作，AI 不代发起、不碰 API。激活走 `PATCH /simulation/scenarios/{id}`（追加不可变新版本，旧版不可变）。
+- **污染单向阀机械承载**：NEW `server/tests/test_diagnostic_simulation_valve.py`——AST 静态钉两例：①`fde_api/diagnostics/**` 零 simulation 导入（诊断生成器面不许反向读训练场）②`scripts/diagnostic_eval/**` 的 simulation 导入仅许 judge 白名单（`fde_api.simulation.diagnostic_judge`）。判卷基准可进训练场 judge 参考面，禁流向诊断生成器。
+- **首批 4 包（真相层，仓库侧只留指针＋sha256）**：IMP-SOMWYN-E2E（仓内代号化复盘）／IMP-DW015-TRADE-DOCS＋IMP-DW008-LEGAL-DOCS（FDE-case-library MIT 独立抽象重写，附来源对照表＋许可快照）／IMP-SOMWYN-DIAG（诊断案例集复用＝单向阀验证卡，判卷基准经字段映射只进 judge 面）。清单与指纹见 `docs/audit/交付场景导入包-首批清单与指纹-2026-11-12.md`。
+- **验收证据**：转换器实跑 4/4 包过闸；pytest +10 全绿（转换器套件 8 例＋真相层实卡验收 1 例［卡不在场显式 skip，不静默绿］＋单向阀静态钉 2 例）；变异三连全红→还原→绿（M1 摘 attribution 必填闸／M2 摘泄漏自检／M3 诊断面注入 simulation 导入，各恰一钉红）；既有污染钉 7 钉复跑全绿（被扫面零答案材料零回归）。
+- **拍板留痕**：设计稿 §6 四项未获逐项答复，按「按推荐执行＋留痕可推翻」先例记默认立场——①独立 L 线 ②首批三类来源照单 ③单向阀确认并加静态钉 ④L3 才消费 lessons 来源边界；记录于 `docs/audit/交付案例学习闭环-L1任务书-2026-11-12.md`，可推翻。
+- 口径：脚本＋测试＋文档轮——**零迁移零路由零蓝图零桌面零生产代码改动**（L1 轮当轮现测 469 路由／51 蓝图／151 表／69 rev 单头 `c1d4e7f9a2b3`，当轮口径不变；现行口径以 AGENTS.md「现行结构口径」行为准；mypy 279 基线不变；无需 rebuild/alembic/重打包）。导入与激活由蔡工在桌面/API 人工执行，清单 §4 给了三步指令。
+
 ## [未发布] — AI 原生化 N3b 本体轮：G-04 方案条目 AI 起草＋G-03 DAG AI 起草返件式零落库（NEW `plans/draft_ai.py`＋`workflows/draft_ai.py`＋2 路由全不进 api_catalog；确定性缺省腿零改动＝并列双来源闸唯一；G-04/G-03 双 CLOSED，台账 v1.16；+2 路由 474→476，零迁移，2026-11-12）
 
 - **G-04（交付方案条目 AI 起草 → CLOSED）**：NEW `server/src/fde_api/plans/draft_ai.py`——`DELIVERY_PLAN_DRAFT_SYSTEM_PROMPT`（J-1 白名单登记）＋契约校验器 `validate_plan_draft`（item_type 六值闭集／requirement_key·fact_id 闭集＝项目在册值〔越界整批拒绝〕／requirement 条目必引键／覆盖先验〔每条 accepted 需求 ≥1 条目引用，缺项整批拒〕／确定性归一〔条目保持模型序、引用去重保序〕）＋输出端兜底脱敏（`redact_text_detailed` 递归 title/detail：词典故障 422 `pseudonym_dict_unavailable` fail-closed／凭据串 422 `sensitive_credential_detected`）＋落库走既有 DeliveryPlan/DeliveryPlanItem（版本行递增 `_next_version`、历史不覆盖）＋事件 `delivery_plan_ai_drafted`（prompt_version＋model 归因）＋`delivery_plan_redaction_review` 脱敏复核事件。NEW 路由 `POST /api/v1/projects/<project_id>/delivery-plans/generate-ai`（can_manage，plans 蓝图 6→7，不进 api_catalog；DSH 故障 503/409 同尺映射）。**发布语义零新增闸**：产物恒 draft，`review_plan`（approved 闸＋审核戳）→`publish_plan` 既有闸机械承载「仅经 approved 闸发布」；确定性拼装 `generate` 缺省腿零改动（AI 草稿与确定性草稿并列共存＝并列双来源）。

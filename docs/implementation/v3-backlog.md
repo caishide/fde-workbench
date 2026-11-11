@@ -910,11 +910,22 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 
 ## 交付案例学习闭环登记（2026-11-11，来源：设计稿 `docs/audit/交付案例学习闭环-三缺口设计稿-2026-11-11.md`，PR #350）
 
-### T-L0 交付案例学习闭环（案例摄取管线＋交付线可判定读数＋agent 知识片段接线）— **设计稿待拍板（§6 四项；实施授权＝拍板后按设计稿 §5 拆 L1–L3 三轮，本行只销「无设计稿」，非实施）**
+### T-L0 交付案例学习闭环（案例摄取管线＋交付线可判定读数＋agent 知识片段接线）— **L1 已实施（PR #360 → `f2f8c86`，2026-11-12）＋L2/L3 待开工**（§6 四项拍板＝按推荐执行＋留痕可推翻；本行销「L1 摄取管线」，L2 读数／L3 lessons 接线未开工）
 - 目标：把「学习交付案例 → 交付能力提升」从诊断线（已实证：生成 0/6→3/6→6/6）扩展到训练场与 agent 上下文。三缺口与推荐/否决方案全量见设计稿 §2；本行只登记状态与拍板入口。
 - 现测事实锚（2026-11-11，fork/main `49c14e4`）：训练场摄取存储面已预留（`SimulationScenario.source_kind='import'`＋`import_scenarios` 路由 `simulation/routes.py:136`＋三视图泄漏自检 `scenarios/loader.py:82-88`）；agent 知识片段段预留未接线（`render_masked_context` 支持、唯一调用点 `agents/service.py:390` 硬编码空元组）；污染钉扫描面＝`server/src/fde_api`＋`server/seeds`＋`desktop/src`＋fixtures（`test_diagnostic_eval_contamination.py:37-41`），`scripts/` 在面外。
 - 待拍板四项（设计稿 §6）：①Goal 线归属（推荐独立 L 线，勿并入 N 线）②首批案例源（推荐 somwyn 复盘代号化＋FDE-case-library 抽象重写 2 例〔MIT 已核〕＋诊断案例集复用 1 例验证单向阀）③污染单向阀裁定（推荐确认：判卷基准进训练场 judge 参考面、禁止流向诊断生成器＋静态钉）④lessons 来源边界（推荐允许展示面提炼，判卷基准侧永不进）。
 - 红线自证：判卷基准永不进生成器提示词/few-shot/seeds；客户资料零入仓（转换器读真相层、导入包只落本地/库内）；B#35 第三方材料只抽象重写＋逐卡 attribution 登记＋快照日期；H1–H13 不放宽（导入包审阅与场景激活恒人工）。
+#### ✅ T-L0 L1 实施轮（2026-11-12，状态：**已实施并合并**——PR #360 → `f2f8c86`，CI 4 job 全绿，服务端 3144 passed / 8 skipped）
+
+**落地实现**：
+
+- 摄取管线：NEW `scripts/simulation/import_cases.py`——真相层 `import_card_v1` 卡 → 训练场导入包转换器；闸门四连 fail-closed（卡 schema 允许名单 → 生产 `validate_scenario` 八规则 → 生产 `load_view` 三视图泄漏自检 → 输出目录落仓内即拒）；写死 `source_kind='import'`、`status='draft'`——导入建行与激活恒人工，AI 不代发起。
+- 污染单向阀机械承载：NEW `server/tests/test_diagnostic_simulation_valve.py`（AST 静态钉）——`fde_api/diagnostics/**` 零 simulation 导入；`scripts/diagnostic_eval/**` 的 simulation 导入仅许 judge 白名单 `fde_api.simulation.diagnostic_judge`。判卷基准可进训练场 judge 参考面，禁流向诊断生成器。
+- 首批 4 包（真相层 `D:\test\FDE\knowledge\交付场景导入包\`，不入仓）：IMP-SOMWYN-E2E／IMP-DW015-TRADE-DOCS／IMP-DW008-LEGAL-DOCS／IMP-SOMWYN-DIAG（★单向阀验证卡）；仓库侧只留指针＋sha256，见 `docs/audit/交付场景导入包-首批清单与指纹-2026-11-12.md`（含 B#35 来源对照表＋许可快照 2026-11-12）。
+- 验收证据：转换器实跑 4/4 包过闸；pytest +10 全绿（含真相层实卡验收 1 例，卡不在场显式 skip 不静默绿）；变异三连全红→还原→绿（M1 摘 attribution 闸／M2 摘泄漏自检／M3 诊断面注入 simulation 导入，各恰一钉红，还原后 `diagnostics/service.py` 字节级无残留）；既有污染钉 7 钉复跑全绿。
+- 拍板留痕：设计稿 §6 四项未获逐项答复，按「按推荐执行＋留痕可推翻」先例记默认立场（①独立 L 线 ②首批三类来源照单 ③单向阀确认＋静态钉 ④L3 才消费 lessons 来源边界），记录于 `docs/audit/交付案例学习闭环-L1任务书-2026-11-12.md`。
+
+**本轮未做（授权边界内）**：L2 锚点场景＋分布读数、L3 `lessons.json` 接线均未开工（排期≠实施授权，待蔡工另行放行）；导入与激活两步由蔡工在桌面/API 人工执行。
 | V31-P2 | **批量分解 vs gunicorn timeout**：全量 9 任务单请求卡项目行锁 >120s 被 `--timeout 120` abort（零残留，重跑安全=幂等锚验证通过） | somwyn 试点 Step 6（分批 item_ids 缓解，9/9 成功） | P2 | runbook Step 6 增补「大方案 item_ids 分批」注记；服务端批量切片上限评估或 timeout 拍板 |
 | V31-P3 | **转写草稿卷属主**：容器 `/app/.fde-transcript-drafts` 属主 root → 首写 PermissionError | somwyn 试点 Step 1（`chown fde:fde` 已临时修复） | ✅ **已实施（2026-11-10）**：Dockerfile 预建目录并以 fde 属主 chown（存量卷一次性 chown 语义不变）；随下次 rebuild 生效 | 镜像/entrypoint 以运行属主（fde）预建目录 |
 | V31-D1 | **审阅动作 admin 代执行复核**（人工项）：试点全程审阅动作（facts/reqs 接受、测试计划批准、执行登记）由 admin 代执行；本体 confirm 与 workflow 拍板已由 pilot.reviewer 决策分离完成 | somwyn 试点全程 | ✅ **已复核销号（2026-11-09）** | AI 技术核验稿先行（22 事实锚点程序化核验 21/22 精确命中，#10 内容正确行号锚滑一位留档注记；7 需求↔事实溯源映射齐；测试账 v1 superseded/v2 approved/7×passed dev 逐项吻合；★1/★2 澄清材料实证在案〔Zoho 投递 id/四条验收口径〕）→ **蔡工交互拍板**（29 项全部认可／两 ★ 澄清后接受并已流转 accepted〔审阅 comment 标注蔡工授权链，admin 代执行留痕〕／测试定性认可）。清单 `.fde/pilot-D1复核清单-2026-11-09.md` §三/§四 已回填；后续试点按 runbook C4 配置 project_lead 执行 |
