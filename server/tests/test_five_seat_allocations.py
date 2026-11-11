@@ -462,6 +462,35 @@ def test_missing_row_blocks_payable_409(db_session):
     assert excinfo.value.status == 409
 
 
+def _record_input_invoice(db_session, context) -> None:
+    """T6：机构席位（province）按项目登记进项票（G3 科目行附凭证指针＋
+    指纹）——金额＝五席位明细聚合（动作③口径），payable 前置闸的正路径。"""
+    from fde_api.commercial.ledger_service import record_revenue_entry
+
+    admin, package, settlement, payment, payees = context
+    province_row = db_session.scalar(
+        select(DispatchSettlementAllocation).where(
+            DispatchSettlementAllocation.settlement_id == settlement.id,
+            DispatchSettlementAllocation.seat_key == "province",
+            DispatchSettlementAllocation.status == "paid",
+        )
+    )
+    assert province_row is not None
+    record_revenue_entry(
+        db_session,
+        actor=admin,
+        subject_type="project_share",
+        line_item="platform_share",
+        payee_user_id=payees["province"],
+        delivery_settlement_id=settlement.id,
+        delivery_package_id=package.id,
+        amount=float(province_row.amount),
+        source_uri="fdeops://f-line-t6/input-invoice/province",
+        content_hash="a" * 64,
+        confirm_password=INITIAL_PASSWORD,
+    )
+
+
 def test_complete_allocations_allow_payable(db_session):
     admin, package, settlement, payment, payees = _context(db_session)
     _allocate(db_session, (admin, package, settlement, payment, payees))
@@ -469,6 +498,11 @@ def test_complete_allocations_allow_payable(db_session):
     settlement.acceptance_passed_at = datetime.now(timezone.utc)
     payment.invoice_no = "INV-F1-002"
     db_session.flush()
+    # T6：paid 的 province 席位须先登记进项票（无登记 422 input_invoice_required）
+    with pytest.raises(DispatchServiceError) as exc_info:
+        mark_payable(db_session, actor=admin, settlement_id=settlement.id)
+    assert exc_info.value.code == "input_invoice_required"
+    _record_input_invoice(db_session, (admin, package, settlement, payment, payees))
     result = mark_payable(db_session, actor=admin, settlement_id=settlement.id)
     assert result["status"] == "payable"
 

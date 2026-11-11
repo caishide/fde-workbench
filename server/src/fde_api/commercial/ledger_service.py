@@ -24,7 +24,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import ROLE_ADMIN, User
@@ -46,7 +46,11 @@ from fde_api.commercial.models import (
     CommercialSplitRule,
 )
 from fde_api.commercial.service import CommercialServiceError
-from fde_api.dispatch.models import DeliveryPackage, DeliverySettlement
+from fde_api.dispatch.models import (
+    DeliveryPackage,
+    DeliverySettlement,
+    DispatchSettlementAllocation,
+)
 from fde_api.dispatch.settlements import seat_shares_for
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Contract, Payment, Quote
@@ -542,9 +546,12 @@ def record_revenue_entry(
     2. 关联收款的实收额（``payment_id`` → ``payments.received_amount``）；
     3. 人工录入的线下约定金额（必附 ``source_uri`` + ``content_hash``）。
 
-    项目分成科目**只引用既有分账结果**：金额取 ``delivery_settlements`` 的
-    delivery 席位金额（ADR-003 §2.2「不重算」），席位份额快照取
-    ``seat_shares_for`` 的结果引用；传入不一致的金额一律 409 拒绝。
+    项目分成科目**只引用既有分账结果**（ADR-003 §2.2「不重算」）：五席位
+    明细在场 ⇒ 金额＝该收款主体在本结算明细中**已分配份额的聚合**
+    （T6：挂单/交付/市县各席位均可出分成科目，不再按旧四席位镜像列取数）；
+    无明细的存量行按旧口径取 delivery 席位金额（任务书 §7 数据兼容）。
+    席位份额快照取 ``seat_shares_for`` 的结果引用；传入不一致的金额一律
+    409 拒绝。
     """
     _require_admin(actor)
     _confirm_password(session, actor, confirm_password)
@@ -622,13 +629,55 @@ def record_revenue_entry(
             )
         settlement = session.get(DeliverySettlement, linked["delivery_settlement_id"])
         assert settlement is not None  # 已由 _resolve_linked_objects 校验
-        resolved_amount = Decimal(settlement.delivery_amount)
+        alloc_count = session.scalar(
+            select(func.count())
+            .select_from(DispatchSettlementAllocation)
+            .where(DispatchSettlementAllocation.settlement_id == settlement.id)
+        )
+        if alloc_count:
+            # T6 五席位明细聚合：金额＝该收款主体的已分配份额合计（挂单/
+            # 交付/市县席位均可出科目；空缺沉淀不产生分成科目）。主体必填。
+            subject_id = (
+                payee_user_id
+                if isinstance(payee_user_id, str) and payee_user_id.strip()
+                else (subject_user_id if isinstance(subject_user_id, str) and subject_user_id.strip() else None)
+            )
+            if subject_id is None:
+                raise _error(
+                    "project_share_payee_required",
+                    "五席位明细在场 ⇒ 分成科目必须指明收款主体"
+                    "（subject_user_id／payee_user_id）。",
+                    400,
+                )
+            allocated = session.scalar(
+                select(
+                    func.coalesce(
+                        func.sum(DispatchSettlementAllocation.amount), 0
+                    )
+                ).where(
+                    DispatchSettlementAllocation.settlement_id == settlement.id,
+                    DispatchSettlementAllocation.payee_user_id == subject_id,
+                    DispatchSettlementAllocation.status == "paid",
+                )
+            )
+            resolved_amount = Decimal(allocated or 0)
+            if resolved_amount <= 0:
+                raise _error(
+                    "project_share_payee_not_allocated",
+                    "该收款主体在本结算的五席位明细中没有已分配份额"
+                    "（空缺沉淀由平台吸收，不产生分成科目）。",
+                    409,
+                )
+            basis["allocation_source"] = "dispatch_settlement_allocations"
+        else:
+            # 存量行（无明细）：旧口径 delivery 席位金额（任务书 §7 数据兼容）
+            resolved_amount = Decimal(settlement.delivery_amount)
         if amount is not None:
             requested = _to_amount(amount, "amount")
             if requested != resolved_amount:
                 raise _error(
                     "amount_mismatch_settlement",
-                    "项目分成金额必须等于既有分账的 delivery 席位金额（科目层不重算）。",
+                    "项目分成金额必须等于既有分账结果（科目层不重算）。",
                     409,
                 )
         package = session.get(DeliveryPackage, settlement.package_id)
