@@ -80,6 +80,9 @@ class AgentRunResult:
     receipt_state: str = "ok"
     # V3.1 P1-1：执行策略快照（透传 ctx，_finalize 落 agent_runs.policy_snapshot_hash）
     policy_snapshot_hash: str | None = None
+    # ⑦ 出站审计（宿主通道方案 A 专有）：域名级条目（ts/kind/host/port），
+    # 容器适配器恒缺省空表——service 层据此落 agent_egress_audit 事件。
+    egress_audit: tuple[Mapping[str, Any], ...] = ()
 
 
 class RunEventProvider(Protocol):

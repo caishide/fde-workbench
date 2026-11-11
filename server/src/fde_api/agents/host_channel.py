@@ -226,6 +226,7 @@ def run_host_channel(
     clock: Callable[[], float] = time.monotonic,
     sleeper: Callable[[float], None] = time.sleep,  # noqa: ARG001 - 预留：与容器适配器签名对齐
     env_extra: Mapping[str, str] | None = None,
+    egress_gate: Any | None = None,
 ) -> AgentRunResult:
     """宿主通道执行：校验 → spawn → 超时熔断 → 解析汇总 → 预算 → 产物扫描。
 
@@ -234,6 +235,10 @@ def run_host_channel(
     终态全部沿用）。``tool_calls`` 恒空（--json 无逐事件流，诚实缺失）。
     ``spawner=None`` 时取模块级 ``_default_spawner``（运行时解析——测试
     monkeypatch 该模块属性即可全链替换，不受默认参数定义时绑定影响）。
+    ``egress_gate``（⑦ 方案 A，可选）：传入 ``HostEgressGate`` 实例时，
+    spawn 前启动本地正向代理并把 ``HTTP(S)_PROXY/NO_PROXY`` 注入进程 env
+    （代理 env 覆盖 ``env_extra``——限制面语义优先）；``finally`` 停代理，
+    出站审计条目随 ``result.egress_audit`` 回收（域名级，只记不判内容）。
     """
     del sleeper  # 单发进程模型无轮询间隔；保留形参对齐容器适配器注入面
     if spawner is None:
@@ -250,104 +255,128 @@ def run_host_channel(
     # 长度上限）+ 超时上限钳制（运行期熔断窗口仍以钳后值为准）。
     assert_command_allowed(argv, allowed_bin=settings.zcode_bin)
     effective_timeout_ms = clamp_timeout_ms(ctx.timeout_ms)
-    try:
-        proc = spawner(
-            argv,
-            env=host_channel_env(env_extra),
-            cwd=ctx.workspace_host,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-        )
-    except OSError as error:
-        raise HostChannelError(f"zcode 进程拉起失败：{error}") from error
+    # ⑦ 出站闸：先起代理再拼 env——注入失败（端口异常等）属通道故障，
+    # 不 spawn 不计费（A 类，同 spawner OSError 语义）。
+    if egress_gate is not None:
+        try:
+            egress_gate.start()
+        except Exception as error:  # noqa: BLE001 - 任一启动故障都收窄为通道错误
+            raise HostChannelError(f"egress 代理启动失败：{error}") from error
+    env = host_channel_env(env_extra)
+    if egress_gate is not None:
+        env.update(egress_gate.proxy_env())
 
-    timed_out = False
-    exit_code: int | None
-    stdout_text = ""
-    stderr_text = ""
+    def _audit() -> tuple[Mapping[str, Any], ...]:
+        if egress_gate is None:
+            return ()
+        return tuple(entry.as_dict() for entry in egress_gate.drain_audit())
+
     try:
         try:
-            remaining = effective_timeout_ms / 1000 - (clock() - started)
-            stdout_text, stderr_text = proc.communicate(timeout=max(remaining, 0.0))
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            proc.kill()
-            stdout_text, stderr_text = proc.communicate()
-            exit_code = proc.returncode
-    except OSError as error:
-        raise HostChannelError(f"zcode 进程回收失败：{error}") from error
+            proc = spawner(
+                argv,
+                env=env,
+                cwd=ctx.workspace_host,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+        except OSError as error:
+            raise HostChannelError(f"zcode 进程拉起失败：{error}") from error
 
-    duration_ms = int((clock() - started) * 1000)
-    if timed_out:
+        timed_out = False
+        exit_code: int | None
+        stdout_text = ""
+        stderr_text = ""
+        try:
+            try:
+                remaining = effective_timeout_ms / 1000 - (clock() - started)
+                stdout_text, stderr_text = proc.communicate(timeout=max(remaining, 0.0))
+                exit_code = proc.returncode
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                proc.kill()
+                stdout_text, stderr_text = proc.communicate()
+                exit_code = proc.returncode
+        except OSError as error:
+            raise HostChannelError(f"zcode 进程回收失败：{error}") from error
+
+        duration_ms = int((clock() - started) * 1000)
+        if timed_out:
+            return AgentRunResult(
+                status="timeout",
+                exit_code=None,
+                token_cost=0,
+                duration_ms=duration_ms,
+                artifacts=(),
+                tool_calls=(),
+                degraded=False,
+                degraded_reason=None,
+                policy_snapshot_hash=ctx.policy_snapshot_hash,
+                egress_audit=_audit(),
+            )
+
+        degraded = bool(ctx.credentials)  # 平台凭据解密结果未被宿主通道使用 ⇒ L1
+        degraded_reason = "host_channel_no_credential_injection" if degraded else None
+
+        try:
+            payload = parse_host_summary(stdout_text)
+            tokens = summarize_host_payload(payload)
+        except HostChannelError:
+            if exit_code == 0:
+                raise  # 退出码成功但汇总不可解析：fail-closed，不伪造 completed
+            tokens = 0  # 进程本就失败：终态诚实为 failed，汇总缺失不掩盖
+
+        if exit_code != 0:
+            # 失败终态：stderr 仅供诊断，不进 result（AgentRunResult 无该字段；
+            # 失败原因由 exit_code + run 层 summary 承载）。
+            del stderr_text
+            return AgentRunResult(
+                status="failed",
+                exit_code=exit_code,
+                token_cost=tokens,
+                duration_ms=duration_ms,
+                artifacts=(),
+                tool_calls=(),
+                degraded=degraded,
+                degraded_reason=degraded_reason,
+                policy_snapshot_hash=ctx.policy_snapshot_hash,
+                egress_audit=_audit(),
+            )
+
+        # B-2 宿主版：成本汇总后计账；超上限按上限截断 + budget_exceeded
+        # （对齐容器版「越界事件不入账」——宿主侧无法事中熔断，事后诚实降档）
+        if ctx.max_cost_units and tokens > ctx.max_cost_units:
+            return AgentRunResult(
+                status="budget_exceeded",
+                exit_code=exit_code,
+                token_cost=ctx.max_cost_units,
+                duration_ms=duration_ms,
+                artifacts=(),  # 只有 completed 认产物（B-1 同款）
+                tool_calls=(),
+                degraded=degraded,
+                degraded_reason=degraded_reason,
+                policy_snapshot_hash=ctx.policy_snapshot_hash,
+                egress_audit=_audit(),
+            )
+
+        artifacts = tuple(output_scanner.scan())
         return AgentRunResult(
-            status="timeout",
-            exit_code=None,
-            token_cost=0,
-            duration_ms=duration_ms,
-            artifacts=(),
-            tool_calls=(),
-            degraded=False,
-            degraded_reason=None,
-            policy_snapshot_hash=ctx.policy_snapshot_hash,
-        )
-
-    degraded = bool(ctx.credentials)  # 平台凭据解密结果未被宿主通道使用 ⇒ L1
-    degraded_reason = "host_channel_no_credential_injection" if degraded else None
-
-    try:
-        payload = parse_host_summary(stdout_text)
-        tokens = summarize_host_payload(payload)
-    except HostChannelError:
-        if exit_code == 0:
-            raise  # 退出码成功但汇总不可解析：fail-closed，不伪造 completed
-        tokens = 0  # 进程本就失败：终态诚实为 failed，汇总缺失不掩盖
-
-    if exit_code != 0:
-        # 失败终态：stderr 仅供诊断，不进 result（AgentRunResult 无该字段；
-        # 失败原因由 exit_code + run 层 summary 承载）。
-        del stderr_text
-        return AgentRunResult(
-            status="failed",
+            status="completed",
             exit_code=exit_code,
             token_cost=tokens,
             duration_ms=duration_ms,
-            artifacts=(),
+            artifacts=artifacts,
             tool_calls=(),
             degraded=degraded,
             degraded_reason=degraded_reason,
+            receipt_state=str(getattr(output_scanner, "receipt_state", "ok")),
             policy_snapshot_hash=ctx.policy_snapshot_hash,
+            egress_audit=_audit(),
         )
-
-    # B-2 宿主版：成本汇总后计账；超上限按上限截断 + budget_exceeded
-    # （对齐容器版「越界事件不入账」——宿主侧无法事中熔断，事后诚实降档）
-    if ctx.max_cost_units and tokens > ctx.max_cost_units:
-        return AgentRunResult(
-            status="budget_exceeded",
-            exit_code=exit_code,
-            token_cost=ctx.max_cost_units,
-            duration_ms=duration_ms,
-            artifacts=(),  # 只有 completed 认产物（B-1 同款）
-            tool_calls=(),
-            degraded=degraded,
-            degraded_reason=degraded_reason,
-            policy_snapshot_hash=ctx.policy_snapshot_hash,
-        )
-
-    artifacts = tuple(output_scanner.scan())
-    return AgentRunResult(
-        status="completed",
-        exit_code=exit_code,
-        token_cost=tokens,
-        duration_ms=duration_ms,
-        artifacts=artifacts,
-        tool_calls=(),
-        degraded=degraded,
-        degraded_reason=degraded_reason,
-        receipt_state=str(getattr(output_scanner, "receipt_state", "ok")),
-        policy_snapshot_hash=ctx.policy_snapshot_hash,
-    )
+    finally:
+        if egress_gate is not None:
+            egress_gate.stop()
 
 
 __all__ = [
