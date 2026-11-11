@@ -68,7 +68,54 @@ def grant_package_access(
         row.revoked_at = None
         row.granted_at = now
     session.flush()
+    _record_grant_event(
+        session,
+        package_id=package_id,
+        user_id=user_id,
+        role=role,
+        granted_by_user_id=granted_by_user_id,
+    )
     return row
+
+
+def _record_grant_event(
+    session: Session,
+    *,
+    package_id: str,
+    user_id: str,
+    role: str,
+    granted_by_user_id: str | None,
+) -> None:
+    """授予留痕（ADR-M3 §5「谁授权给谁」）。
+
+    被授权人属**别家企业**时，共享事件记录器（``projects/events.py``）的单点
+    接线自动加 ``cross_org_`` 前缀并把 ``org_id`` 取为**被授权账号归属**——
+    跨企业授权因此在审计面可分辨（企业之间 vs 平台内部桶）。
+    """
+    if not granted_by_user_id:
+        return
+    # 延迟导入：fde_api.projects.__init__ 会急切拉起（dispatch ⇄ projects 包环，
+    # 沿 channel_guard.py 的既有先例）。
+    from fde_api.projects.events import record_event  # noqa: PLC0415
+
+    actor = session.get(User, granted_by_user_id)
+    subject = session.get(User, user_id)
+    if actor is None or subject is None:
+        return
+    package = session.get(DeliveryPackage, package_id)
+    record_event(
+        session,
+        actor,
+        "package_access_granted",
+        subject,
+        {
+            "package_id": package_id,
+            "user_id": user_id,
+            "role": role,
+            "granted_by_user_id": granted_by_user_id,
+            "project_id": package.project_id if package is not None else None,
+        },
+    )
 
 
 def revoke_package_access(
