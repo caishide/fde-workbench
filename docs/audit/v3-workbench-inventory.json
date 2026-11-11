@@ -1,10 +1,10 @@
 {
- "route_count": 469,
- "blueprint_count": 51,
- "table_count": 151,
- "revision_count": 69,
+ "route_count": 474,
+ "blueprint_count": 52,
+ "table_count": 152,
+ "revision_count": 70,
  "heads": [
-  "c1d4e7f9a2b3"
+  "d7e2f4a9c1b3"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -407,6 +407,16 @@
     "interview_minutes"
    ],
    "add_column_tables": []
+  },
+  "d7e2f4a9c1b3": {
+   "file": "d7e2f4a9c1b3_diagnostic_lead_claims.py",
+   "down_revision": "c1d4e7f9a2b3",
+   "create_tables": [
+    "lead_diagnostic_claims"
+   ],
+   "add_column_tables": [
+    "lead_diagnostic_sessions"
+   ]
   },
   "d9c3e7f1a5b8": {
    "file": "d9c3e7f1a5b8_s1_agent_tables.py",
