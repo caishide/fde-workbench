@@ -107,6 +107,64 @@ def budget_exceeded(session: Any, actor_id: str | None, budget: int) -> bool:
     return tokens_used_this_month(session, actor_id) >= budget
 
 
+def org_tokens_used_this_month(session: Any, org_id: str) -> int:
+    """当前自然月该企业 org 全员的 AI token 消耗总量（审计表汇总）。
+
+    M4 批次 B（任务书 §7-M4「按主体分别设额」）：企业额度账的用量口径＝
+    **同 org 全员合计**（org 是主体承载，``orgs.subject_key`` 即主体键），
+    不是单账号——防止企业内多账号分摊绕过主体额度。
+    """
+    from sqlalchemy import func, select
+
+    from fde_api.auth.models import User
+
+    month_start = datetime.now(UTC).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    total = session.scalar(
+        select(func.coalesce(func.sum(AICallAudit.input_tokens + AICallAudit.output_tokens), 0)).where(
+            AICallAudit.actor_user_id.in_(
+                select(User.id).where(User.org_id == org_id)
+            ),
+            AICallAudit.created_at >= month_start,
+            AICallAudit.status.in_(("succeeded", "budget_blocked")),
+        )
+    )
+    return int(total or 0)
+
+
+def subject_budget_exceeded(
+    session: Any, actor_id: str | None, *, instance_budget: int
+) -> bool:
+    """主体级月度预算判定（M4 批次 B 单一权威点）。
+
+    - **企业身份＋org 已配置**（``orgs.ai_monthly_token_budget`` 非空）：该
+      值为额度，用量按同 org 全员月度合计（主体账——防企业内多账号分摊）。
+    - **其余**（平台身份 ``org_id=NULL``，或 org 未配置 NULL）：**完整回到
+      现状**＝实例值 ``instance_budget``＋按 user 汇总（零回归；「未配置＝
+      未进主体额度账」，回退不改变存量企业行为）。
+    - actor 未知或预算非正数（0=不限额）一律放行；**设施故障 fail-open 由
+      调用方 try/except 负责**（三调用点既有语义不变）。
+    """
+    if not actor_id:
+        return False
+    from fde_api.auth.models import User
+    from fde_api.orgs.models import Org
+
+    user = session.get(User, actor_id)
+    if user is None:
+        return False
+    org_id = user.org_id
+    if org_id:
+        org = session.get(Org, org_id)
+        if org is not None and org.ai_monthly_token_budget is not None:
+            budget = int(org.ai_monthly_token_budget)
+            if budget <= 0:
+                return False
+            return org_tokens_used_this_month(session, org_id) >= budget
+    return budget_exceeded(session, actor_id, int(instance_budget or 0))
+
+
 def record_audit(
     *,
     request_id: str,

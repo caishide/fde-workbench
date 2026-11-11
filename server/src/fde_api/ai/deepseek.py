@@ -128,13 +128,14 @@ class DeepSeekClient:
         # 预算设施自身故障时放行（fail-open），不阻塞业务。
         actor_id: str | None = None
         try:
-            from fde_api.ai.auditing import budget_exceeded, current_actor_id
+            from fde_api.ai.auditing import current_actor_id, subject_budget_exceeded
 
             actor_id = current_actor_id()
             budget = 0
             if has_app_context():
                 budget = int(current_app.config["SETTINGS"].ai_monthly_token_budget or 0)
-            if budget_exceeded(_budget_session(), actor_id, budget):
+            # M4 批次 B：判定升级为**主体级**（企业身份按 org 额度＋org 全员合计）。
+            if subject_budget_exceeded(_budget_session(), actor_id, instance_budget=budget):
                 _audit(
                     request_id,
                     actor_id,

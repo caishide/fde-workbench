@@ -50,6 +50,11 @@ from fde_api.commercial.regional_service import (
     register_gate_condition,
     serialize_gate,
 )
+from fde_api.commercial.org_budget_service import (
+    OrgBudgetServiceError,
+    get_org_ai_budget,
+    set_org_ai_budget,
+)
 from fde_api.commercial.enterprise_service import (
     record_advisor_note,
     record_triage_decision,
@@ -86,6 +91,49 @@ def _handle_service_error(error: CommercialServiceError):
         ),
         error.status,
     )
+
+
+@admin_commercial_blueprint.errorhandler(OrgBudgetServiceError)
+def _handle_org_budget_error(error: OrgBudgetServiceError):
+    return (
+        jsonify(
+            {
+                "data": None,
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "details": None,
+                },
+            }
+        ),
+        error.status,
+    )
+
+
+# ── M4 批次 B：企业 org AI 月度预算治理面（admin+密码双闸；治理面不进 api_catalog）──
+
+
+@admin_commercial_blueprint.get("/orgs/<org_id>/ai-budget")
+@require_auth
+def get_org_ai_budget_route(org_id: str):
+    with db.session() as session:
+        data = get_org_ai_budget(session, actor=g.current_user, org_id=org_id)
+        return jsonify({"data": data, "error": None})
+
+
+@admin_commercial_blueprint.put("/orgs/<org_id>/ai-budget")
+@require_auth
+def set_org_ai_budget_route(org_id: str):
+    payload = _json_payload()
+    with db.session() as session, session.begin():
+        data = set_org_ai_budget(
+            session,
+            actor=g.current_user,
+            org_id=org_id,
+            budget=payload.get("budget"),
+            confirm_password=payload.get("confirm_password"),
+        )
+        return jsonify({"data": data, "error": None})
 
 
 

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -64,6 +65,11 @@ class Org(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     # 可选挂 G6 企业主体键（规范化 USCC，18 位；1 org : 1 subject_key）
     subject_key: Mapped[str | None] = mapped_column(String(18))
+    # 多客户 M4 批次 B（任务书 §7-M4「AI 预算按主体分别设额」）：企业 org 的
+    # AI 月度 token 预算（**可空＝未配置**，读侧回落实例值 ``ai_monthly_token_budget``
+    # ＝现状语义零回归；``0``＝不限额，沿 E7 心智）。企业身份用户的用量按
+    # 同 org 全员月度合计判此额度；平台身份不受 org 额度约束（按 user 现状）。
+    ai_monthly_token_budget: Mapped[int | None] = mapped_column(Integer)
     # 创建者＝**纯指针无 FK**（先例：transcripts minutes.draft_id 同形）——
     # users.org_id→orgs 与 orgs.created_by→users 互指会构成 FK 环，元数据
     # 不可拓扑排序（SAWarning: unresolvable cycles）；provenance 由应用层

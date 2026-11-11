@@ -1,10 +1,10 @@
 {
- "route_count": 462,
+ "route_count": 464,
  "blueprint_count": 51,
  "table_count": 150,
- "revision_count": 66,
+ "revision_count": 67,
  "heads": [
-  "a7c2f9e1b4d8"
+  "c3f7b1d9e5a2"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -247,6 +247,14 @@
    "create_tables": [],
    "add_column_tables": [
     "projects"
+   ]
+  },
+  "c3f7b1d9e5a2": {
+   "file": "c3f7b1d9e5a2_org_ai_monthly_budget.py",
+   "down_revision": "a7c2f9e1b4d8",
+   "create_tables": [],
+   "add_column_tables": [
+    "orgs"
    ]
   },
   "c4f7a2d9e1b6": {

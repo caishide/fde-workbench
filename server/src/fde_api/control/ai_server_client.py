@@ -349,11 +349,15 @@ def execute_ai_prompt(*, user_id: str, prompt: str, execution_id: str | None = N
         # 故障 fail-open）。此门带显式 user_id——后台任务（workflow skill
         # 节点等无请求上下文场景）同样生效，补齐 deepseek 门依赖 flask g 的
         # 后台盲区。先判门再签 MCP token：拦截路径零写副作用。
+        # M4 批次 B：判定升级为**主体级**（企业身份按 org 额度＋org 全员合计；
+        # 平台身份沿用实例值＋按 user）。
         budget_blocked = False
         try:
-            from fde_api.ai.auditing import budget_exceeded
+            from fde_api.ai.auditing import subject_budget_exceeded
 
-            budget_blocked = budget_exceeded(session, user_id, int(settings.ai_monthly_token_budget or 0))
+            budget_blocked = subject_budget_exceeded(
+                session, user_id, instance_budget=int(settings.ai_monthly_token_budget or 0)
+            )
         except Exception:  # noqa: BLE001 - 预算设施故障不阻塞业务（fail-open）
             logger.warning("AI budget gate failed open execution_id=%s", identifier, exc_info=True)
         # 工具只能经由 DSH 转发；没有可用运行时时不签发 MCP token。
