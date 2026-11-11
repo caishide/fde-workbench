@@ -16,6 +16,10 @@ def issue_access_token(user: User, settings: Settings) -> str:
         "role": user.role,
         "pwd": not user.must_change_password,
         "ver": user.auth_version,
+        # M3a：7 claim → 8 claim。可空＝平台身份（org_id IS NULL，§11-8 拍板）。
+        # **claim 只作追溯/跨服务传递**——org 授权判定一律读库（users.org_id），
+        # 令牌是 15 分钟快照，拿 claim 当授权依据＝陈旧令牌越权（规格 §4）。
+        "org_id": user.org_id,
         "iat": issued_at,
         "exp": expires_at,
         "iss": "fde-workbench",

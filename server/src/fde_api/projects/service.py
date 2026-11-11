@@ -22,7 +22,7 @@ from fde_api.dispatch.channel_guard import (
 )
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
-from fde_api.projects.permissions import project_access
+from fde_api.projects.permissions import project_access, visible_project_filter
 from fde_api.research.models import ProjectResearchSubject
 from fde_api.research.form_service import initialize_subject_forms
 from fde_api.research.template_service import snapshot_research_definition
@@ -241,18 +241,10 @@ def list_projects(
     session = db.session()
     try:
         filters = []
-        if actor.role != "admin":
-            filters.append(
-                or_(
-                    Project.leader_user_id == actor.id,
-                    exists(
-                        select(ProjectMember.id).where(
-                            ProjectMember.project_id == Project.id,
-                            ProjectMember.user_id == actor.id,
-                        )
-                    ),
-                )
-            )
+        # M3a：可见性预过滤**复用统一入口谓词**（projects/permissions.py）——
+        # 本文件不再私藏第二套可见性规则（否则跨企业成员关系会在列表里
+        # 露出幽灵行：列表可见而详情无权，test_visibility_parity.py 先红）。
+        filters.append(visible_project_filter(actor))
         search = query.get("search")
         if search:
             pattern = f"%{_escape_like_literal(search)}%"

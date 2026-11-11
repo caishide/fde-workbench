@@ -2,6 +2,23 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 多客户工作平台 M3a/M3c 轮：统一隔离入口＋跨企业越权套件骨架（零迁移零新路由零新表零桌面，2026-11-11）
+
+任务书 §7-M3a/M3c ＋ ADR-M3 §2/§3；**规格先行**（ADR-M3 §2.4 强制：装饰器扩展行为规格必须先于任何批量改动入库）。
+
+- **规格先行件** NEW `docs/commercialization/multi-tenant/M3a-隔离入口与装饰器扩展规格-v1.md`——ADR-M3 §2.4 的六项强制内容齐（org 校验发生层＝**服务层**／默认拒绝 fail-closed／平台身份白名单的显式形态／跨 org 动作留痕点／失败码闭集〔`forbidden` 403 与 `not_found` 404〕／逐批验证方法＝变异用例先红后绿）＋org 三态语义＋SQL 下推权威式＋JWT 口径。**M3b 每批 PR 必须引用本件**。
+- **org 语义单一入口** NEW `fde_api/orgs/isolation.py`（纯领域判定，零 flask 零环境读取）：**平台身份**（`users.org_id IS NULL`）不受 org 限制；**企业身份**可见范围＝本企业 org ＋ 平台内部 org 桶 ＋ 平台级行（`projects.org_id IS NULL`）；**admin** 是平台能力恒真。**org 只是归属维度不是授权维度**——成员关系仍是可见性的必要条件（红线 8：不建第二套权限体系）。内部 org 桶「平台立项 → 企业账号作 viewer 成员」（G6 通路）不得被隔离打断，桶内跨企业混装的已知边界在规格 §1 显式登记（消解路径归 M5，不掩盖）。
+- **统一入口 SQL 下推**（M3a 目标）：`projects/permissions.py::visible_project_ids` 由「全表取回 + Python 逐项目判定」改为 **SQL 谓词**（成员 EXISTS ＋ leader 分支 ＋ org 谓词全部下推，`ix_projects_org_id` 索引在位）——红线 10「不在 SQL 后再加一层 Python 过滤」；新增 `visible_project_filter(user)` 谓词供列表级复用；对象级 `project_access` 与列表级**同语义**（两入口不一致＝幽灵行，`test_visibility_parity.py` 对账钉）。
+- **幽灵行修复（列表↔详情收敛）**：`projects/service.py::list_projects` 原先**私藏第二套可见性规则**（leader-OR-成员，无 org 谓词）⇒ 跨企业成员关系会在**列表**里露出「列表可见而详情无权」的行（本轮实测复现）。改为**复用统一入口谓词**——隔离逻辑不写进热点文件（eng 评审），本文件只调用权威谓词；净减 8 行（1945→**1937**，预算 ≤1946 未破）。
+- **JWT 8 claim**：新增 `org_id` claim（可空＝平台身份）；解码走**在场性**校验——claim 必须在场（平台身份取 null），**缺该 claim 的旧令牌一律 401**（fail-closed）。★**实现坑（本轮实测踩中）**：PyJWT 的 `options.require` 判定是「`payload.get(claim) is None` ⇒ 缺 claim」，而平台身份的 `org_id` 合法值恰是 null ⇒ 放进 require 列表会把**全部平台身份令牌判死**（实测 74 例 401 误杀）⇒ `org_id` 不进 require 列表，改解码后显式判「在场 ＋ 类型（None/str）」。★**授权判定一律读库**（`users.org_id`），不信令牌 claim——令牌是 15 分钟快照，拿 claim 当授权依据＝陈旧令牌越权；装饰器注入 `g.current_user_org_id`（读库值）。
+- **M3c 越权套件骨架** NEW `server/tests/test_cross_tenant_isolation.py`（**8 例绿 ＋ 1 例 `xfail(strict=True)` 待销号**）＋共用工厂 `server/tests/multi_tenant_harness.py`：覆盖面＝任务书 §7-M3c 七域（项目详情／项目列表／调研对象／文件／调研导出／AI 执行状态／API-action 待确认／对话会话）。**关键场景＝跨企业成员关系**（企业甲账号被平台身份加进企业乙的项目）——只测「素不相识的账号」不构成判别力（成员关系本来就会挡住），跨企业成员关系才是 org 维度真正要挡的场景。
+- **`xfail(strict=True)` 机制**：未改造面挂严格 xfail——改造完成即 XPASS ⇒ 严格模式判失败 ⇒ **强制摘标记**；这把「销号」从人工纪律变成机械闸（与「越权用例不进 CI 不许合并」互为一对）。
+- **M3a 单元钉** NEW `server/tests/test_org_scope_entry.py`（**12 例**）：列表级↔对象级可见集**逐位一致**（角色矩阵 admin/平台身份/企业 leader/企业成员/非成员/停用）／跨企业成员不可见／同企业成员可见／平台身份成员跨 org 可见（交付者多企业服务）／**平台立项桶可见**（G6 通路不得被隔离打断）／admin 全可见／停用账号空集／**SQL 下推钉**（捕获实际 SQL：WHERE ＋ project_members ＋ org_id 三者在场）／org 三态语义／claim 在场性与类型／**缺 claim 旧令牌 401**／**授权以读库为准**（签发后改归属 ⇒ 上下文取库中新值）。
+- **变异两连全红→还原→绿**（判别力验收）：M1 摘对象级 `org_scope_allows` ⇒ **7 红**（5 个越权域用例 ＋ 2 个入口钉）／M2 摘 SQL org 谓词 ⇒ **3 红**（含项目列表幽灵行用例与 SQL 下推钉）；还原后 sha256 复原、全绿。
+- **盘点表回写（红线 4「盘点表外不得擅改」纪律落地）**：M3b 销号追踪节加「批次 ①–④」骨架行 ＋ M3a/M3c 行；**待 M0 补充登记两条**——①`control/service.py::_project_scope` 是**第三套**可见性规则（无 org 谓词，被 `list_task_center`／`list_task_board` 消费）⇒ 登记为**批次 ① 销号项**，本轮只登记不改；②internal org 桶内跨企业混装 ⇒ 消解路径归 M5。
+- **零迁移零新路由零新表零蓝图零桌面** ⇒ 结构口径不变（现测：149 表／64 rev 单头 `b8d4f6a2c9e7`／459 路由／51 蓝图／api_catalog 94）；审计清单零 diff；archify 防陈旧闸不受影响；mypy **279 零新增**（官方闸 OK）；ruff 绿；热点闸 projects/service.py 1937 ≤1946。
+- 口径：pytest 本地 CI 同命令 `-n 4 --dist loadfile` 实测 **2953 收集 = 2945 passed + 7 skipped + 1 xfailed**（14m46s EXIT=0；＝M2 CI 基线 2925 ＋ #311 诊断报告生成器修复轮 +7 ＋ 本轮 +21 逐位吻合；★本地全量两次被**跨会话 worker 库池对撞**杀死（`fde_workbench_w{N}_test` 固定名＝跨 worktree 全局共享池，改 `FDE_TEST_DATABASE_URL` **不隔离** worker 池）——散布 401 access_token_invalid／setup E＝环境级签名、零代码级失败；处置＝私有库串行 ＋ CI（Ubuntu 隔离库）为权威）；vitest 不变（零桌面改动）；零迁移零路由 ⇒ 无需 rebuild／alembic 之外的部署变更（本轮 server 变更 ⇒ 合并后 rebuild 三镜像 ＋ `alembic upgrade head` 幂等 no-op）。
+
 ## [未发布] — F 线 T4 轮：空缺沉淀与兼任承载（空缺人工确认双闸＋兼任承载表＋自拉自交验收人恒为平台；迁移 `e5c9f2a7d4b6`，2026-11-11）
 
 - **任务书 §4 T4**（ADR-011 §3.5/§3.8；T1×T3 依赖已齐；OWNER 判定问题按「按推荐执行＋留痕可推翻」先例进入本轮，推荐项＝进入 T4，T3 轮 AskUserQuestion 未获答复）。三件套：
@@ -12,6 +29,7 @@
 - **变异三连全红→字节级还原（sha256 终验一致）→绿**：M9（摘原因码闭集校验 ⇒ 422 用例红；DB 层 `ck_dispatch_settlement_allocations_vacant_shape` 兜底仍在）；M10（摘空缺双闸 ⇒ 三负例红）；M11（摘验收排除 ⇒ 本人验收两例红）。注：T3 报告的「M9＝摘资格闸」为 T3 自加的第三组，与本轮任务书编号 M9（无原因码）同名异义，编号以任务书为准、已在案注明。
 - 口径（十七度插队融合态：上游 #311 多客户 M2 注册面轮于本 PR CI 期间落 main，rebase 改挂迁移＋两侧全留）：**150 表**（本轮 +1；融合 M2 +1）/ **65 rev 单头 `e5c9f2a7d4b6`**（挂 M2 `b8d4f6a2c9e7` 之后保单头）/ **461 路由**（本轮 +2；融合 M2 +8）/ 蓝图 51（融合 M2 +1）/ api_catalog 94 不变；mypy **279 基线不变**；ruff 绿；审计清单三件套重生成（route +2 行/DB +1 行/JSON **461/51/150/65**）；架构图口径同步（candidate.json＋system-architecture.html「459 路由→461／149 表→150／51 蓝图」＋preview 整页实拍 1440×2098），防陈旧闸绿；pytest 终值＝**main run 42943191824 server-tests 实测 2942 passed + 7 skipped**（2949 收集，476.58s；T4 树本地实测 **2896 收集 = 2889 passed + 7 skipped**（9m17s＝T3 基线 2879 + 本轮 +17 逐位吻合）；融合树 collect 现测 **2949 收集**（+M2 +53）——CI 终值 2942+7 与融合树 collect 逐位吻合；CI skip 7 比本地 6 多 1＝污染钉 N6 显式 skip 的设计行为）。
 - **★合并与部署终态（回填）**：PR #312 head `c02f8e6` → squash 合并 SHA **`4354cd2`**＝fork/main 顶（main run **42943191824** 四 job 全绿：desktop／server-tests／secrets-scan／pseudonymization 各 `completed/success`；server-tests 实测 **2942 passed + 7 skipped**／476.58s）。本轮历经**十七度插队**（#311 M2 注册面轮带新迁移落 main ⇒ re-parent 本迁移挂 `b8d4f6a2c9e7` 之后保单头＋重编号迁移计数断言＋重校 AGENTS/CHANGELOG 口径＋重生成审计清单＋串行重置 worker 库＋融合树全量 2949 收集＝2942+7），其后 #314／#313 两笔纯文档插队亦逐笔消解（两侧全留）。三镜像从合并 SHA 干净树 rebuild（api `ac1a05551a1f`／worker `0a024b0b5a70`／scheduler `b147fb638dca`，三容器 `.Image` 与构建产物**逐位一致**）＋`alembic upgrade head` **真实升级** `b8d4f6a2c9e7 → e5c9f2a7d4b6`、容器内 `alembic current`＝`e5c9f2a7d4b6 (head)`；活体 `url_map` **462 total / 461 non-static** ≡ 口径；server 变更已随合并落部署。桌面零改动不重打包。
+)
 ## [未发布] — 诊断报告生成器修复轮（REPORT_MAX_TOKENS 16000 标定＋诊断模型槽位显式化＋rubric v0.2 复述条款重界定；零迁移零路由零蓝图，2026-11-11）
 
 curve 1 真机归因（#307/#308）的修复轮：生成 0/6 全灭（`ai_output_truncated` ×3＋截断残 JSON ×2＋无源数字 ×1）＋元验证闸 fail（A1 顶格 100 越带＋同源复述误发）。
