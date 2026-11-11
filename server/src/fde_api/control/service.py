@@ -26,10 +26,11 @@ from fde_api.control.models import AutomationApproval, AutomationTask, Automatio
 from fde_api.control.knowledge import snapshot_for_run
 from fde_api.extensions import db
 from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.projects.permissions import visible_project_filter
 from fde_api.projects.service import ProjectServiceError
 from fde_api.projects.task_service import batch_assign_project_tasks_in_session
 from fde_api.users.service import DISPLAY_NAME_MAX_LENGTH
-from fde_api.workbench.models import Project, ProjectMember, ProjectModule, ProjectTask
+from fde_api.workbench.models import Project, ProjectModule, ProjectTask
 
 
 class ControlServiceError(Exception):
@@ -333,7 +334,7 @@ def submit_wechat_command(*, payload: dict[str, Any]) -> dict[str, Any]:
 def list_task_center(*, user: User) -> dict[str, Any]:
     session = db.session()
     try:
-        scope = _project_scope(user)
+        scope = visible_project_filter(user)
         project_tasks = list(
             session.scalars(
                 select(ProjectTask)
@@ -676,7 +677,7 @@ def list_automation_approvals(*, user: User) -> dict[str, Any]:
                     joinedload(AutomationApproval.project),
                     joinedload(AutomationApproval.requested_by),
                 )
-                .where(_project_scope(user), AutomationApproval.status == "pending")
+                .where(visible_project_filter(user), AutomationApproval.status == "pending")
                 .order_by(AutomationApproval.created_at.desc(), AutomationApproval.id)
             ).unique()
         )
@@ -916,15 +917,6 @@ def _batch_assign_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
             raise ControlServiceError("invalid_tool_arguments", "批量分配任务参数无效。", 400)
         normalized.append({"task_id": item["task_id"], "version": item["version"]})
     return {"member_user_id": member_user_id, "mode": mode, "assignments": normalized}
-
-
-def _project_scope(user: User):
-    if user.role == "admin":
-        return Project.id.is_not(None)
-    return or_(
-        Project.leader_user_id == user.id,
-        Project.id.in_(select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)),
-    )
 
 
 def _serialize_account_user(user: User) -> dict[str, Any]:
