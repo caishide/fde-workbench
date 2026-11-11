@@ -45,11 +45,18 @@ _ALLOWED_CALL_NAMES = {"_workbench_system_prompt"}
 #   （diagnostics/prompts.py 模块级常量，jobs.py 直传——2026-11-11 登记）。
 # - QUALITY_TESTCASE_DRAFT_SYSTEM_PROMPT：AI 原生化 N3a 的 quality 用例
 #   AI 起草提示词（quality/draft.py 模块级常量，同模块直传——2026-11-11 登记）。
+# - DELIVERY_PLAN_DRAFT_SYSTEM_PROMPT：AI 原生化 N3b（G-04）的交付方案 AI
+#   起草提示词（plans/draft_ai.py 模块级常量，同模块直传——2026-11-12 登记）。
+# - WORKFLOW_DAG_DRAFT_SYSTEM_PROMPT：AI 原生化 N3b（G-03）的 DAG AI 起草
+#   提示词（workflows/draft_ai.py 模块级常量，同模块直传——2026-11-12 登记，
+#   N3b ADR §3 机制 1）。
 _ALLOWED_PROMPT_CONSTANTS = {
     "DISCOVERY_SYSTEM_PROMPT",
     "DISCOVERY_CHUNK_SYSTEM_PROMPT",
     "DIAGNOSTIC_REPORT_SYSTEM_PROMPT",
     "QUALITY_TESTCASE_DRAFT_SYSTEM_PROMPT",
+    "DELIVERY_PLAN_DRAFT_SYSTEM_PROMPT",
+    "WORKFLOW_DAG_DRAFT_SYSTEM_PROMPT",
 }
 
 

@@ -54,6 +54,15 @@ APPROVAL_CAPABILITIES = frozenset(
     for capability in CAPABILITY_REQUIREMENTS
     if not capability.startswith("system.")
 )
+# 节点字段白名单（唯一真身——validate_dag 与 AI 起草契约校验器 workflows/draft_ai
+# 共用同一份，防第二份清单漂移；N3b ADR §2「同一闭集就是全部可用面」）。
+ALLOWED_NODE_FIELDS = frozenset({
+    "key", "type", "ref", "depends_on", "when", "output", "max_retries",
+    "params", "max_cost_units", "capability", "expires_minutes", "effect",
+    # V3.1 P0-4 节点契约扩展（4.4）：timeout/输入输出 Schema/失败分类/方案关联——
+    # 本轮只做草稿期形状校验，执行器增强随 P1 执行通道轮
+    "timeout_seconds", "input_schema", "output_schema", "failure_class", "plan_ref",
+})
 
 
 class WorkflowDefinitionError(Exception):
@@ -173,17 +182,10 @@ def validate_dag(
             continue
         by_key[key] = node
 
-    allowed_node_fields = {
-        "key", "type", "ref", "depends_on", "when", "output", "max_retries",
-        "params", "max_cost_units", "capability", "expires_minutes", "effect",
-        # V3.1 P0-4 节点契约扩展（4.4）：timeout/输入输出 Schema/失败分类/方案关联——
-        # 本轮只做草稿期形状校验，执行器增强随 P1 执行通道轮
-        "timeout_seconds", "input_schema", "output_schema", "failure_class", "plan_ref",
-    }
     outputs: dict[str, str] = {}
     deps_map: dict[str, list[str]] = {}
     for key, node in by_key.items():
-        extra = set(node) - allowed_node_fields
+        extra = set(node) - ALLOWED_NODE_FIELDS
         if extra:
             errors.append(
                 DagIssue("unknown_field", f"节点 {key} 不支持字段：{'、'.join(sorted(extra))}。", key)

@@ -115,14 +115,22 @@ def test_j1_system_message_contents_are_whitelisted_shapes():
 
 
 def test_j1_executors_system_prompt_call_site_is_still_governed_instructions():
-    """J-1 附钉：工作流 skill 节点 system_prompt 仍=治理面发布 instructions（T-S1）。
+    """J-1 附钉：工作流侧 system_prompt 实参恒为治理面形态（T-S1＋N3b ADR §3）。
 
-    若有人把运行期外部文字接进该实参，说明白名单④被旁路——直接转红。
+    若有人把运行期外部文字接进该实参，说明白名单被旁路——直接转红。
 
     扫描范围=**整个 workflows 包**（架构评估 P1-2 拆分后 skill 分派实现搬到了
     workflows/dispatch.py；这条钉的是「工作流侧的 system_prompt 实参」，不是某个
     具体文件——否则下次再挪文件就会让钉失效）。
+
+    允许的治理形态两种（2026-11-12 N3b 本体轮扩）：
+    ① ``instructions`` 形参直传（executor skill 分派＝治理面发布版本行，T-S1 原钉）；
+    ② J-1 入口白名单登记的模块常量（``_ALLOWED_PROMPT_CONSTANTS`` 同一登记表
+    单一真身——workflows/draft_ai.py 的 WORKFLOW_DAG_DRAFT_SYSTEM_PROMPT，
+    N3b ADR §3 机制 1）。域外新增形态（f-string/未登记变量/属性链）仍即红。
     """
+    from test_prompt_entrypoint_gate import _ALLOWED_PROMPT_CONSTANTS
+
     package = SRC / "workflows"
     matches: list[tuple[str, int, object]] = []
     for path in sorted(package.glob("*.py")):
@@ -134,8 +142,13 @@ def test_j1_executors_system_prompt_call_site_is_still_governed_instructions():
                     matches.append((path.name, node.lineno, kw.value))
     assert matches, "工作流侧的 system_prompt 调用点消失了？"
     for filename, lineno, value in matches:
-        assert isinstance(value, ast.Name) and value.id == "instructions", (
-            f"workflows/{filename}:{lineno} system_prompt 实参不再是治理面 instructions 变量"
+        governed = (
+            isinstance(value, ast.Name)
+            and (value.id == "instructions" or value.id in _ALLOWED_PROMPT_CONSTANTS)
+        )
+        assert governed, (
+            f"workflows/{filename}:{lineno} system_prompt 实参不再是治理面形态"
+            "（instructions 直传或 J-1 登记常量）"
         )
 
 

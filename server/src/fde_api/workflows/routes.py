@@ -14,7 +14,8 @@ from fde_api.errors import error_response
 from fde_api.extensions import db
 from fde_api.plans import service as plans_service
 from fde_api.plans.service import PlansServiceError
-from fde_api.workflows import compiler, definition_service, executor, templates as workflow_templates
+from fde_api.workflows import compiler, definition_service, draft_ai, executor
+from fde_api.workflows import templates as workflow_templates
 from fde_api.workflows.executor import WorkflowRunError
 
 workflows_blueprint = Blueprint("workflows", __name__)
@@ -259,4 +260,53 @@ def validate_workflow_route(project_id, definition_id):
             "version": definition.version,
             "content_sha256": definition.content_sha256,
         }
+    return jsonify({"data": data, "error": None})
+
+
+# ---------------------------------------------------------------------------
+# AI 原生化 N3b（G-03）：DAG AI 起草——返件式草稿、业务域零落库（ADR v1 §3）
+# 与 draft-from-plan 并列双来源、闸唯一（§4）：缺省腿（确定性编译器）零改动；
+# 本路由只返回草稿＋validate 干跑明细，人工采纳走既有 create_definition→publish。
+
+
+@workflows_blueprint.post("/api/v1/projects/<project_id>/workflows/generate-ai-draft")
+@require_auth
+def generate_ai_workflow_draft_route(project_id):
+    """AI 起草 DAG 草稿（can_manage；N3b G-03，ADR v1 §3 返件式零落库）：
+
+    输入域与 ``draft-from-plan`` 同尺（plan_id＋implementation_skill_ref＋
+    approval_capability?，方案须 approved/published、技能须 published 白名单、
+    capability 白名单，全部前置闸在 AI 调用前——零烧费）。响应只携带草稿 DAG
+    ＋validate 干跑明细＋dag_sha256（**业务域表零写入**——事件与 ai_call_audits
+    照常留痕＝审计面）；人工采纳走既有 create_definition→publish（三道干跑＋
+    两道人工闸，AI 无旁路）。AI 通道故障按 DSH 同尺映射（503 可重试 / 409 终态）。
+    """
+    from fde_api.control.ai_server_client import DSHRuntimeError
+
+    payload = _payload()
+    plan_id = payload.get("plan_id")
+    skill_ref = payload.get("implementation_skill_ref")
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise WorkflowRunError("invalid_request", "plan_id 必填且须为字符串。", 400)
+    if not isinstance(skill_ref, str) or not skill_ref.strip():
+        raise WorkflowRunError("invalid_request", "implementation_skill_ref 必填且须为字符串。", 400)
+    approval_capability = payload.get("approval_capability") or "workbench.write"
+    if not isinstance(approval_capability, str):
+        raise WorkflowRunError("invalid_request", "approval_capability 须为字符串。", 400)
+    try:
+        with db.session() as session, session.begin():
+            project = executor.load_project(session, g.current_user, project_id, manage=True)
+            plan = plans_service.load_plan_in_project(
+                session, g.current_user, project_id, plan_id.strip(), manage=True
+            )
+            data = draft_ai.draft_workflow_dag(
+                session,
+                actor=g.current_user,
+                project=project,
+                plan=plans_service.serialize_plan(session, plan),
+                implementation_skill_ref=skill_ref.strip(),
+                approval_capability=approval_capability,
+            )
+    except DSHRuntimeError as error:
+        return error_response(error.code, error.public_message, 503 if error.retryable else 409)
     return jsonify({"data": data, "error": None})
