@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from fde_api.auth.models import ROLE_ADMIN, User
@@ -41,7 +41,11 @@ from fde_api.commercial.models import (
 )
 from fde_api.commercial.service import CommercialServiceError
 from fde_api.commercial.models import CommercialRevenueLedger
-from fde_api.dispatch.models import DeliveryPackage
+from fde_api.dispatch.models import (
+    DeliveryPackage,
+    DeliverySettlement,
+    DispatchSettlementAllocation,
+)
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Project
 
@@ -472,6 +476,50 @@ def record_service_settlement(
         raise _error(
             "ledger_project_mismatch", "科目行归属与结算项目不一致。", 409
         )
+    # T6 与 county 席位对齐：五席位明细在场 ⇒ 科目行收款人必须＝county 席位
+    # 收款人（城市服务伙伴拿的是 county 份额；张冠李戴 409 保持并细化到
+    # 席位）。无明细的存量行按旧口径放行（任务书 §7 数据兼容）。
+    if entry.delivery_settlement_id is not None:
+        stl_ids = [entry.delivery_settlement_id]
+    else:
+        stl_ids = [
+            s.id
+            for s in session.scalars(
+                select(DeliverySettlement).where(
+                    DeliverySettlement.package_id == entry_package.id
+                )
+            )
+        ]
+    alloc_count = (
+        session.scalar(
+            select(func.count())
+            .select_from(DispatchSettlementAllocation)
+            .where(DispatchSettlementAllocation.settlement_id.in_(stl_ids))
+        )
+        if stl_ids
+        else 0
+    )
+    if alloc_count:
+        county_payees = set(
+            session.scalars(
+                select(DispatchSettlementAllocation.payee_user_id).where(
+                    DispatchSettlementAllocation.settlement_id.in_(stl_ids),
+                    DispatchSettlementAllocation.seat_key == "county",
+                    DispatchSettlementAllocation.status == "paid",
+                )
+            )
+        )
+        entry_payee = (
+            entry.payee_user_id if entry.payee_user_id else entry.subject_user_id
+        )
+        if entry_payee is None or entry_payee not in county_payees:
+            raise _error(
+                "county_payee_mismatch",
+                "城市服务伙伴按项目结算必须引用 county 席位收款人的分成科目行"
+                "（五席位明细在场）。",
+                409,
+            )
+
     duplicate = session.scalars(
         select(RegionalServiceSettlement).where(
             RegionalServiceSettlement.ledger_entry_id == ledger_entry_id

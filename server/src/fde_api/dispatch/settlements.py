@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import and_, extract, func, or_, select
 from sqlalchemy.orm import Session
 
 from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
@@ -74,6 +74,14 @@ WITHHOLDING_BRACKETS: tuple[tuple[int, int | None, Decimal, Decimal], ...] = (
 # §7.4 公式常数：累计费用 = 累计收入 × 20%；累计减除费用 = 5000 元/月
 _EXPENSE_RATE = Decimal("0.20")
 _MONTHLY_DEDUCTION = Decimal(5000)
+
+# T6 票税分流（ADR-011 §4「机构主体（区域服务商）走进项票」）：池席位按主体
+# 类型二分——个人席位（拉单/交付/市县）走劳务报酬累计预扣；机构席位
+# （province＝区域服务商）走进项票路径，不进个人预扣基数，两者不得混算。
+# 判据按**席位**而非按 user：regional_partners 是机构代号行、无 users 关联，
+# 主体类型无法按收款人行判定（偏差登记见规则文件票税节）。
+_PERSONAL_SEAT_KEYS = ("lead", "delivery", "county")
+_INSTITUTIONAL_SEAT_KEYS = ("province",)
 
 
 def _money(value: Decimal) -> Decimal:
@@ -545,10 +553,21 @@ def compute_withholding(
     本期应预扣 = (累计收入 − 累计费用(收入×20%) − 累计减除(5000×月份数))
                  × 预扣率 − 速算扣除数 − 累计已预扣，下限 0。
 
-    累计口径 = 该交付方本自然年已到 accrued/payable/paid 的席位结算 +
-    本笔 current_amount；月份数 = 这些结算的验收月（含本月）去重计数。
+    累计口径（T6 扩到多收款主体）＝ 该收款人本自然年的**全部个人席位**收入
+    （五席位明细 lead/delivery/county 的 paid 行）＋ 无明细存量行的 delivery
+    列 ＋ 本笔 current_amount；月份数 = 这些收入的验收月（含本月）去重计数。
+    机构席位（province＝区域服务商）走进项票路径，**不进本基数**（分流不得
+    混算，ADR-011 §4）；同一结算内兼任多席位由 ``_payee_settlement_base``
+    在调用侧合计进 current_amount。
     """
     now = now or datetime.now(timezone.utc)
+    # 存量行（无五席位明细）按旧口径：seat_delivery_user_id 直接匹配（任务书
+    # §7 数据兼容）；NOT EXISTS 排除有明细的行，防与新层聚合双计。
+    legacy_alloc = (
+        select(DispatchSettlementAllocation.id)
+        .where(DispatchSettlementAllocation.settlement_id == DeliverySettlement.id)
+        .exists()
+    )
     past_rows = session.execute(
         select(
             DeliverySettlement.delivery_amount,
@@ -560,13 +579,61 @@ def compute_withholding(
             DeliverySettlement.seat_delivery_user_id == delivery_user_id,
             DeliverySettlement.status.in_(("accrued", "payable", "paid")),
             extract("year", DeliverySettlement.created_at) == now.year,
+            ~legacy_alloc,
         )
     ).all()
-    cumulative_income = Decimal(current_amount) + sum(
-        (row[0] for row in past_rows), Decimal(0)
+    # 新层（T6 多收款主体）：该收款人在**个人席位**上的全部已分配收入；
+    # province（机构主体）行不在列——进项票路径，不进劳务报酬基数。
+    seat_income = session.execute(
+        select(
+            DispatchSettlementAllocation.amount,
+            func.coalesce(
+                DeliverySettlement.acceptance_passed_at, DeliverySettlement.created_at
+            ),
+        )
+        .join(
+            DeliverySettlement,
+            DeliverySettlement.id == DispatchSettlementAllocation.settlement_id,
+        )
+        .where(
+            DispatchSettlementAllocation.payee_user_id == delivery_user_id,
+            DispatchSettlementAllocation.status == "paid",
+            DispatchSettlementAllocation.seat_key.in_(_PERSONAL_SEAT_KEYS),
+            DeliverySettlement.status.in_(("accrued", "payable", "paid")),
+            extract("year", DeliverySettlement.created_at) == now.year,
+        )
+    ).all()
+    # 累计已预扣 = 存量行 withholding_tax ＋ 新层里该收款人作为**交付席位
+    # 收款人**的结算预扣（预扣额记在结算行上，归属＝当次计提的交付收款人）。
+    seat_withheld_rows = session.execute(
+        select(DeliverySettlement.withholding_tax)
+        .join(
+            DispatchSettlementAllocation,
+            and_(
+                DispatchSettlementAllocation.settlement_id == DeliverySettlement.id,
+                DispatchSettlementAllocation.seat_key == "delivery",
+                DispatchSettlementAllocation.payee_user_id == delivery_user_id,
+                DispatchSettlementAllocation.status == "paid",
+            ),
+        )
+        .where(
+            DeliverySettlement.status.in_(("accrued", "payable", "paid")),
+            extract("year", DeliverySettlement.created_at) == now.year,
+        )
+    ).all()
+    cumulative_income = (
+        Decimal(current_amount)
+        + sum((row[0] for row in past_rows), Decimal(0))
+        + sum((row[0] for row in seat_income), Decimal(0))
     )
-    cumulative_withheld = sum((row[1] for row in past_rows), Decimal(0))
-    months = {row[2].month for row in past_rows} | {now.month}
+    cumulative_withheld = sum((row[1] for row in past_rows), Decimal(0)) + sum(
+        (row[0] for row in seat_withheld_rows), Decimal(0)
+    )
+    months = (
+        {row[2].month for row in past_rows}
+        | {row[1].month for row in seat_income}
+        | {now.month}
+    )
     taxable_base = max(
         Decimal(0),
         cumulative_income * (1 - _EXPENSE_RATE) - _MONTHLY_DEDUCTION * len(months),
@@ -578,6 +645,34 @@ def compute_withholding(
             full_tax = _money(taxable_base * rate) - quick
             return max(Decimal(0), _money(full_tax - cumulative_withheld))
     return Decimal(0)
+
+
+def _payee_settlement_base(
+    session: Session, settlement: DeliverySettlement, payee_user_id: str
+) -> Decimal:
+    """本结算内该收款人的**个人席位合计**（T6 多收款主体）：同一结算内兼任
+    lead/county 时一并进当期预扣基数；无明细的存量行回退 delivery 列
+    （任务书 §7 数据兼容）。机构席位（province）不在合计内——进项票路径。"""
+    alloc_count = session.scalar(
+        select(func.count())
+        .select_from(DispatchSettlementAllocation)
+        .where(DispatchSettlementAllocation.settlement_id == settlement.id)
+    )
+    if not alloc_count:
+        return Decimal(settlement.delivery_amount)
+    total = session.scalar(
+        select(
+            func.coalesce(
+                func.sum(DispatchSettlementAllocation.amount), Decimal(0)
+            )
+        ).where(
+            DispatchSettlementAllocation.settlement_id == settlement.id,
+            DispatchSettlementAllocation.payee_user_id == payee_user_id,
+            DispatchSettlementAllocation.status == "paid",
+            DispatchSettlementAllocation.seat_key.in_(_PERSONAL_SEAT_KEYS),
+        )
+    )
+    return Decimal(total or 0)
 
 
 def record_receipt_settlements(
@@ -700,7 +795,11 @@ def accrue_settlements_for_project(
                 withholding = compute_withholding(
                     session,
                     delivery_user_id=row.seat_delivery_user_id,
-                    current_amount=row.delivery_amount,
+                    # T6 多收款主体：本结算内该收款人的个人席位合计（兼任
+                    # lead/county 一并进当期基数；存量行回退 delivery 列）。
+                    current_amount=_payee_settlement_base(
+                        session, row, row.seat_delivery_user_id
+                    ),
                     now=passed_at,
                 )
             row.acceptance_passed_at = passed_at
@@ -750,8 +849,50 @@ def _linked_payment(session: Session, row: DeliverySettlement) -> Payment | None
     )
 
 
+def _require_input_invoices(session: Session, row: DeliverySettlement) -> None:
+    """T6 票税分流（ADR-011 §4）：机构主体（区域服务商＝province 席位）按项目
+    **向平台开进项票**——paid 的 province 席位必须先登记进项票凭证方可
+    payable。登记面＝G3 科目层 ``project_share`` 行（挂本结算＋source_uri/
+    content_hash 凭证指针＋指纹，红线原件不入库）；企业票（里程碑销项票）
+    校验不动（「不碰企业票」）。个人席位走预扣路径，本闸不咬（分流不得
+    混算）。"""
+    from fde_api.commercial.models import CommercialRevenueLedger
+
+    institutional = session.scalars(
+        select(DispatchSettlementAllocation).where(
+            DispatchSettlementAllocation.settlement_id == row.id,
+            DispatchSettlementAllocation.seat_key == "province",
+            DispatchSettlementAllocation.status == "paid",
+        )
+    ).all()
+    for alloc in institutional:
+        entry = session.scalar(
+            select(CommercialRevenueLedger).where(
+                CommercialRevenueLedger.subject_type == "project_share",
+                CommercialRevenueLedger.delivery_settlement_id == row.id,
+                CommercialRevenueLedger.source_uri.is_not(None),
+                CommercialRevenueLedger.content_hash.is_not(None),
+                or_(
+                    CommercialRevenueLedger.payee_user_id == alloc.payee_user_id,
+                    and_(
+                        CommercialRevenueLedger.payee_user_id.is_(None),
+                        CommercialRevenueLedger.subject_user_id == alloc.payee_user_id,
+                    ),
+                ),
+            )
+        )
+        if entry is None:
+            raise DispatchServiceError(
+                "input_invoice_required",
+                "发票前置校验未过：机构席位（区域服务商）尚未按项目登记进项票"
+                "（G3 project_share 科目行附凭证指针＋指纹）。",
+                422,
+            )
+
+
 def mark_payable(session: Session, *, actor: User, settlement_id: str) -> dict[str, Any]:
-    """accrued → payable：发票前置校验（§7.5——对应里程碑发票已登记）。"""
+    """accrued → payable：发票前置校验（§7.5——对应里程碑发票已登记）；
+    T6 起机构席位（区域服务商）另须按项目登记进项票（分流不得混算）。"""
     row = _load_settlement(session, settlement_id)
     if row.status != "accrued":
         raise DispatchServiceError(
@@ -764,6 +905,7 @@ def mark_payable(session: Session, *, actor: User, settlement_id: str) -> dict[s
         )
     # 五席位明细在场 ⇒ 缺任何一行即拒绝（空缺也显式记 0，不得省行）
     assert_allocations_complete(session, row.id)
+    _require_input_invoices(session, row)
     row.status = "payable"
     session.flush()
     record_event(

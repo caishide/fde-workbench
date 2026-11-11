@@ -122,6 +122,75 @@ expand_stale_offers` 接进 `expire_stale_offers` ⇒ 同城无人且已过 15 �
 **40/30/20/10**；`geo_remote`／`sort_key_onsite`／`sort_key_remote` 
 **一字未改**。本轮属缺陷修复、非规则重大调整 ⇒ 无需另发规则版本。
 
+## 7ter. 票／税／对账分流（T6 落地，**五主体下不得混算**）
+
+依据 ADR-011 §4（配套已裁决口径：开票主体／税／发票前置三行）＋ 任务书 §4-T6。
+本节把「谁向谁开什么票、谁按什么税口径、科目层金额引用谁」写成一节**可判定的分流规则**；
+工程实现见 `server/src/fde_api/dispatch/settlements.py`（`compute_withholding`／
+`_payee_settlement_base`／`_require_input_invoices`）与
+`server/src/fde_api/commercial/ledger_service.py`（`project_share` 分支）＋
+`server/src/fde_api/commercial/regional_service.py`（`record_service_settlement`）。
+
+### 7ter.1 两类主体、两条路径（分流判据按**席位**，不按收款人行）
+
+| 主体类型 | 席位键 | 路径 | 依据 |
+|---|---|---|---|
+| **个人主体** | `lead`／`delivery`／`county` | **劳务报酬累计预扣**（个人所得税代扣） | ADR-011 §4「税」行 |
+| **机构主体** | `province`（＝区域服务商） | **向平台开进项票**（按项目） | ADR-011 §4「开票主体」行 |
+
+> **判据按席位而非按 user**（偏差登记见《分账口径改造-文档偏差登记表-2026-11-10.md》）：
+> `regional_partners` 是**机构代号行**、无 `users` 关联 ⇒ 主体类型无法按「收款人行」
+> 判定；`province` 席位的收款人字段填的是区域服务商代号位。工程上以席位键二分
+> （`_PERSONAL_SEAT_KEYS = ("lead","delivery","county")`／
+> `_INSTITUTIONAL_SEAT_KEYS = ("province",)`）为**唯一**分流判据。
+> **两者不得混算**：机构份额不进个人劳务报酬累计基数；个人席位不因缺进项票被拦。
+
+### 7ter.2 个人主体：劳务报酬累计预扣（多收款主体）
+
+- 累计基数＝该收款人**本自然年的全部个人席位收入**（`lead`／`delivery`／`county`
+  三个席位的 `paid` 明细行）＋ 本笔当期基数 ＋ 无明细存量行（任务书 §7 数据兼容）；
+  **同一结算内兼任多席位**（lead＋delivery 同人）当期一并计入。
+- 累计已预扣取该收款人**作为交付席位收款人**的结算预扣（预扣额记在结算行上，
+  归属＝当次计提的交付收款人）。
+- 公式与档位一字不改：`WITHHOLDING_BRACKETS`（累计预扣法，§7.4 审计口径）；
+  **跨档位按跳档重算**（跳档后的当期税额大于前期税额，差额即当期预扣）。
+- **存量行**（无五席位明细）按旧口径取 `delivery_settlements.delivery_amount`，
+  与五席位明细行**互斥**（`NOT EXISTS` 排除），防双计。
+
+### 7ter.3 机构主体：进项票前置（payable 前置闸）
+
+- `province` 席位的 `paid` 明细行，在其结算转 `payable` 前，**必须**先登记
+  **进项票凭证**；未登记 ⇒ 422 `input_invoice_required`。
+- 登记载体＝G3 科目层 `project_share` 科目行，**须附凭证指针＋指纹**
+  （`source_uri` ＋ `content_hash`）——红线「门禁证据只存指针＋指纹」，原件不入库。
+- 科目行的收款主体必须与该 `province` 明细行的收款人一致（`payee_user_id`，
+  缺则取 `subject_user_id`）。
+- **不碰企业票**（里程碑销项票 `payments.invoice_no` 的既有校验一字未改）：
+  企业侧仍是平台公司统一收款、统一开票给企业。
+
+### 7ter.4 科目层对账：金额引用**五席位明细聚合**（引用不重算）
+
+- ADR-008 §2.5「项目分成只引用既有分账结果、**不重算**」语义**不变**；
+  变的是**引用的对象**：明细在场时，金额＝**该收款主体在本结算明细中已分配份额
+  的聚合**（不是旧四席位镜像列 `delivery_amount`）。
+- 明细在场 ⇒ 分成科目**必须指明收款主体**（缺 `subject_user_id`／`payee_user_id`
+  ⇒ 400 `project_share_payee_required`）；该主体在明细中**没有已分配份额**
+  ⇒ 409 `project_share_payee_not_allocated`（**空缺沉淀不产生分成科目**）。
+- **无明细的存量行**按旧口径取 `delivery_amount`（任务书 §7 数据兼容），
+  且 `basis` 不带 `allocation_source` 键——存量与新层**可辨**。
+- 科目行金额与聚合值不等 ⇒ 409 `amount_mismatch_settlement`（**引用不重算**的
+  守面：差一分钱也拒）。
+
+### 7ter.5 区域结算与 `county` 席位对齐（张冠李戴 409）
+
+- `regional_service_settlements`（G5 一单一结）引用的 `project_share` 科目行，
+  在**明细在场**时其收款人必须＝该结算的 **`county` 席位收款人**（城市服务伙伴
+  拿的是 county 份额）；否则 409 `county_payee_mismatch`。
+- 一个科目行至多关联一次（`ledger_entry_id` UNIQUE，一单一结）——
+  **既有 `ledger_project_mismatch` 反例保持**：科目行归属项目与结算项目不一致
+  仍 409。
+- 无明细的存量行按旧口径放行（不做席位对齐——数据兼容）。
+
 ## 8. 3980 席位订阅费边界（不被「成本自理」改写）
 
 - 3980 是**独立年费**，走 ADR-008 科目层 `seat_fee`，**不进 `delivery_settlements`、不进分账池、不从分成池二次扣**。

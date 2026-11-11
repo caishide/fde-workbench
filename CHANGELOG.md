@@ -2,6 +2,97 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — F 线 T6 轮：结算／税／票／对账回归（五主体下票税分流＋科目层改引用五席位明细聚合；**零迁移零新路由零新表**，2026-11-11）
+
+- **任务书 §4-T6**（ADR-011 §4 配套已裁决口径：开票主体／税／发票前置三行；T2–T5
+  依赖已满足；OWNER 判定问题按「按推荐执行＋留痕可推翻」先例进入本轮，推荐项＝
+  **进入 T6**，OWNER 明确选择「进入 T6（推荐）」）。本轮把 ADR-011 §4 的三行
+  配套口径落成**五主体下的可结算、可举证、可回归**实现：**票／税／对账分流，
+  两类主体两条路径，两者不得混算**。
+- **动作① 累计预扣扩到多收款主体**（`dispatch/settlements.py::compute_withholding`
+  ＋新原语 `_payee_settlement_base`）：旧形态只按 `seat_delivery_user_id` 单列
+  累计 ⇒ 同一收款人跨席位（lead／delivery／county）的年收入**分列不同基数**、
+  累计预扣漏算。新形态：累计基数＝该收款人**本自然年的全部个人席位 `paid`
+  明细行** ＋ 本笔当期基数；**同一结算内兼任多席位**当期一并计入
+  （`_payee_settlement_base`）。公式与档位**一字未改**
+  （`WITHHOLDING_BRACKETS` 累计预扣法，跨档按跳档重算）。**存量行**（无五席位
+  明细）按旧口径取 `delivery_amount`，且用 `NOT EXISTS` 与新层**互斥**⇒防双计。
+- **动作② 发票前置扩到新增收款主体＋票税分流**（新原语 `_require_input_invoices`，
+  接在 `mark_payable` 的既有校验之后）：`province` 席位的 `paid` 明细行在其结算
+  转 `payable` 前，**必须**先登记**进项票凭证**；未登记 ⇒ 422
+  `input_invoice_required`。凭证载体＝G3 科目层 `project_share` 行，**须附
+  `source_uri` ＋ `content_hash`**（红线：门禁证据只存指针＋指纹，原件不入库），
+  且科目行收款主体须与该 `province` 明细行收款人一致。**企业票不碰**——里程碑
+  销项票 `payments.invoice_no` 的既有校验一字未改（平台公司统一收款、统一开票
+  给企业；区域服务商／交付者／拉单方按分成**向平台开进项票**）。
+- **动作③ 科目层对账：金额改引用五席位明细聚合**（`commercial/ledger_service.py`
+  的 `project_share` 分支）：ADR-008 §2.5「项目分成只引用既有分账结果、**不重算**」
+  语义**不变**，变的是**引用的对象**——明细在场时金额＝**该收款主体在本结算明细中
+  已分配份额的聚合**，不再是旧四席位镜像列 `delivery_amount`。明细在场 ⇒ 主体
+  必填（缺 ⇒ 400 `project_share_payee_required`）；主体在明细中无已分配份额
+  ⇒ 409 `project_share_payee_not_allocated`（**空缺沉淀不产生分成科目**）；金额与
+  聚合值不等 ⇒ 409 `amount_mismatch_settlement`（引用不重算的守面，差一分也拒）。
+  **无明细存量行**按旧口径取 `delivery_amount`，且 `basis` 不带 `allocation_source`
+  键 ⇒ **存量与新层可辨**（任务书 §7 数据兼容）。**`ledger_project_mismatch`
+  反例保持**（科目行归属项目与结算项目不一致仍 409）。
+- **动作④ 区域结算与 `county` 席位对齐**（`commercial/regional_service.py::
+  record_service_settlement`）：`regional_service_settlements`（G5 一单一结）引用的
+  `project_share` 科目行，在**明细在场**时其收款人必须＝该结算的 **`county` 席位
+  收款人**（城市服务伙伴拿的是 county 份额）；否则 409 `county_payee_mismatch`。
+  一个科目行至多关联一次（`ledger_entry_id` UNIQUE，一单一结）——**既有
+  `ledger_project_mismatch` 409 保持**。无明细存量行按旧口径放行。
+- **分流判据按席位而非按 user**（偏差登记进《分账口径改造-文档偏差登记表》）：
+  `regional_partners` 是**机构代号行、无 `users` 关联** ⇒ 主体类型**无法按收款人行
+  判定**；工程上以席位键二分为**唯一**判据
+  （`_PERSONAL_SEAT_KEYS = ("lead","delivery","county")`／
+  `_INSTITUTIONAL_SEAT_KEYS = ("province",)`）。**两者不得混算**：机构份额不进个人
+  劳务报酬累计基数；个人席位不因缺进项票被拦（分流不得反向混算）。
+- **测试**：NEW `test_f_line_t6_tax_invoice_reconciliation.py` **12 例**（跨席位累计
+  跳档 690→1460／同一结算兼任当期合计 1059.60／机构席位不进基数 858／分流常量
+  闭集形状／**province 无进项票 422＋无凭证科目行仍拒＋附凭证过闸**／个人席位
+  不受进项票闸咬／**科目层金额引用明细聚合（按旧镜像列 409 ＋ 按聚合额 200）**／
+  主体未分配 409／主体缺省 400／**存量行旧口径保持**／**区域结算 county 对齐
+  （张冠李戴 409）**／存量行不做对齐）；既有 `test_five_seat_allocations.py` 的
+  `test_complete_allocations_allow_payable` 按 T6 语义改写（**先断言 422
+  `input_invoice_required`，再登记进项票后转绿**——新增负例与正例路径）。
+- **变异四连全红→字节级还原（sha256 终验一致）→绿**：**M13**（累计口径不按收款人
+  过滤＝按错主体累计 ⇒ **1 例红**：4820.00 ≠ 1460.00，跨主体收入并入本主体基数
+  把档位跳了）；**M13b**（当期基数 `_payee_settlement_base` 不按收款人过滤 ⇒
+  **3 例红**：2020.00／1516.00／3028.00 全部偏离）；**M14**（摘除
+  `mark_payable` 的进项票前置闸 ⇒ **2 例红**：T6 payable 闸用例＋T1 负例断言
+  「DID NOT RAISE」）；**M15**（科目层金额回退旧四席位镜像列 ⇒ **4 例红**：含
+  对账差额用例 `test_project_share_amount_references_allocation_aggregation`
+  「DID NOT RAISE」）。还原纪律＝**字节拷贝还原**（`shutil.copyfile` 回备份，
+  非 `git checkout --`、非字符串重建），还原后三文件 sha256 与备份**逐位一致**
+  （`settlements.py` `3d363912…`／`ledger_service.py` `e67c10be…`／
+  `regional_service.py` `29c5c94c…`）。
+- **实施期自查修正（记在案）**：①`record_revenue_entry` 返回
+  `{"entry":…, "changed":…}` **字典**而非模型 ⇒ 全部 `.amount`／`.basis` 访问改
+  `entry["entry"][…]`；②首版预扣恒为 0.00——`record_receipt_settlements` **建行时**
+  把当时的 `package.seat_delivery` 拷进结算行，事后改包不回填结算行 ⇒ 测试夹具须
+  **同时**补位包与结算行；③跨席位用例第二笔结算的交付收款人须回填到结算行
+  （否则预扣按错主体算）；④累计预扣档位**按跳档重算**（39800 应税所得跨 10% 档
+  ⇒ 3980−2520＝1460，**不是**初版误记的 1194）；⑤同结算兼任例 35320 应税所得
+  **仍在** 3% 档 ⇒ 1059.60（初版误改 1012 已回正）。
+- **口径（融合树现测，2026-11-11）**：**150 表**（本轮零新增表）/ **66 rev 单头
+  `a7c2f9e1b4d8`**（本轮零迁移，head 不变）/ **461 路由不变**（本轮零新路由）／
+  蓝图 **51** 不变 / `api_catalog` **94 ENTRIES** 不变（治理面不进 catalog）；
+  mypy **279 基线不变**（官方闸 `scripts/check-python-types.py` OK）；审计清单
+  重生成（JSON 461/51/150/66 **零变化** ⇒ **本轮零结构变化**，架构图口径无需
+  改动，防陈旧闸绿；route CSV 随上游新测试文件引用刷新）；pytest 终值以本 PR
+  CI 实测为准：终态融合树（fork/main `e93b8e6` ＝ 多客户 M3b 批次④ ＋ M3b 收口回填〔#337〕＋ AI 原生化 N3–N6 排期写入〔#333〕，两笔均纯文档零 pytest 增量，合并态）
+  **3070 收集 = 3063 passed + 7 skipped**〔★基线＝**3058 收集**（＝批次③ 合并树
+  CI 实测 3052 ＋ 上游 ④ +6）＋ 本轮 NEW 12 例逐位吻合；既有
+  `test_five_seat_allocations.py` 改写不增量〕。
+- **rebase 记录**：开工基点 `99aed4a`，实施期上游**十四度插队**（#323 诊断分数面／
+  #324 夜审 r7 桌面／#325 M3b 批次①-a／#327 F 线签闸复确认 → #328 批次①-b →
+  #329 夜审 r8／#330 外部闸／#331 批次② → #335 批次③／#332 诊断回填 → #336 → #333 N3–N6 排期写入 → #337 M3b 收口回填
+  〔均纯文档〕）⇒ **合并前 rebase 七次**至终态 `e93b8e6`（第六／七次仅 AGENTS 冲突〔第七次口径行整行取上游侧后重放 T6 段〕，CHANGELOG 自动合并；历次冲突均＝
+  **两侧内容全留**：我方 T6 节在前、上游批次④／③／②／r8 节全留，CHANGELOG 与
+  AGENTS 口径行按上游新文本重锚）；★**rebase 会作废已测基线**——rebase 前的
+  本地实测**一律不承袭**，全量回归在终态融合树上重跑，口径按新基线**现测**后
+  重写。
+
 ## [未发布] — AI 原生化 N3–N6 排期写入轮＋台账 v1.11（任务书 §14 四行「未开工→已排期」＋NEW §15 排期总表（N3a 首发⇒N3b ADR 并行⇒N3b⇒N3c⇒N4 观察轮⇒N6 小轮⇒N5 末位）；排期≠实施授权，D-4～D-8 按推荐缺省值无新业务闸，纯文档零代码，2026-11-11）
 
 蔡工交互拍板「先把排期写进台账/任务书，再按任务书逐一实施」后的排期登记轮（**登记＝排期，非实施授权**；每轮开工仍走既有流程：认领前查在途 PR→feature 分支→PR→CI 四绿→合并）：
