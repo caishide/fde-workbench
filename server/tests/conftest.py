@@ -452,6 +452,8 @@ def db_session(app) -> Session:
         INTERNAL_ORG_NAME,
         Org,
     )
+    # 多客户 M5-1：组织成员邀请表（org_id RESTRICT 引用 orgs）⇒ 清理序先于 orgs。
+    from fde_api.commercial.models import OrgMemberInvitation
     # 多客户工作平台 M2：注册生命周期行（user_id/reviewed_by 均 RESTRICT
     # 引用 users）——清理序必须先于 users。
     from fde_api.registration.models import UserRegistration
@@ -728,6 +730,8 @@ def db_session(app) -> Session:
         IndustryTemplateVersion,
         IndustryTemplate,
         ModuleCatalog,
+        # 多客户 M5-1：组织成员邀请表（org_id RESTRICT 引用 orgs）⇒ 先于 orgs 清理
+        OrgMemberInvitation,
         Org,
         # 多客户 M2：注册生命周期行（RESTRICT 引用 users，先于 users 清理）。
         UserRegistration,

@@ -30,8 +30,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -51,7 +53,9 @@ from fde_api.commercial.models import (
     EnterprisePaidOptionChoice,
     EnterpriseQuotaSubject,
     EnterpriseTriageDecision,
+    OrgMemberInvitation,
 )
+from fde_api.orgs.models import Org
 from fde_api.commercial.quota_service import (
     _lock_quota,
     normalize_subject_key,
@@ -274,6 +278,18 @@ def get_enterprise_space_view(
         for item in matched
         if project_access(actor, item).can_view
     ]
+    # 成员邀请面（M5-1）：本 org 成员或 admin 可见邀请清单；org 按 subject_key 反查。
+    invitations: list[dict[str, Any]] = []
+    org_row = session.scalar(select(Org).where(Org.subject_key == subject_key))
+    if org_row is not None:
+        try:
+            invitations = list_org_invitations(
+                session, actor=actor, org_id_raw=org_row.id
+            )
+        except CommercialServiceError:
+            # 非本 org 成员且非 admin（理论上本企业空间读面已 gating 到绑定账号/
+            # admin，此处兜底不泄露邀请面）
+            invitations = []
     return {
         "subject": {
             "subject_key": subject_key,
@@ -296,6 +312,8 @@ def get_enterprise_space_view(
             ),
             "advisor_follow_up": ADVISOR_FOLLOW_UP_NOTE,
         },
+        "invitations": invitations,
+        "org_id": org_row.id if org_row is not None else None,
         "registration_entries": registration_entries_view(),
     }
 
@@ -486,17 +504,269 @@ def serialize_choice(row: EnterprisePaidOptionChoice) -> dict[str, Any]:
     }
 
 
+# ── 企业组织成员邀请（M5-1）──────────────────────────────────────────────
+# 邀请是 org 归属面，不是第二套权限体系（红线 8）：接受邀请唯一副作用＝把受邀
+# 用户 users.org_id 置为本 org（归属维度，可见性由 project_org_scope_filter 既有
+# 谓词覆盖）。一次性令牌 + 邮箱绑定（sec 评审：邀请是社会工程攻击面）。
+ORG_INVITATION_HOURS = 72  # 邀请链接有效期（与注册验证令牌同量级，单一常量不落业务数值）
+_INVITE_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_invite_email(value: object) -> str:
+    """邀请目标邮箱：NFKC 归一化小写；格式宽松校验（与 auth 邮箱归一化同口径）。"""
+    if not isinstance(value, str) or not value.strip():
+        raise _error("invalid_request", "invited_email 必填。")
+    normalized = re.sub(r"\s+", "", value).strip().lower()
+    if len(normalized) > 255 or not _INVITE_EMAIL_RE.match(normalized):
+        raise _error("invalid_email", "invited_email 格式不正确。")
+    return normalized
+
+
+def _new_invite_token() -> tuple[str, str, datetime]:
+    """一次性邀请令牌：明文只回传一次（给邀请人生成链接），库内只存 sha256 指纹。"""
+    raw = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    expires = datetime.now(timezone.utc) + timedelta(hours=ORG_INVITATION_HOURS)
+    return raw, digest, expires
+
+
+def _org_or_404(session: Session, org_id_raw: object) -> Org:
+    if not isinstance(org_id_raw, str) or not org_id_raw:
+        raise _error("invalid_request", "org_id 必填。")
+    org = session.get(Org, org_id_raw)
+    if org is None:
+        raise _error("org_not_found", "组织不存在。", 404)
+    return org
+
+
+def _require_org_member(actor: User, org: Org) -> None:
+    """邀请人必须是该 org 成员（users.org_id == org.id）或 admin（平台能力）。"""
+    if actor.role == ROLE_ADMIN:
+        return
+    if actor.org_id != org.id:
+        raise _error(
+            "org_member_required",
+            "只有本组织成员或系统运维员可以邀请成员。",
+            403,
+        )
+
+
+def invite_org_member(
+    session: Session,
+    *,
+    actor: User,
+    org_id_raw: object,
+    invited_email: object,
+    request_id: object = None,
+) -> dict[str, Any]:
+    """发起组织成员邀请（返回一次性明文令牌，邀请人自行发送链接）。
+
+    邀请人＝本 org 成员（project_lead 等）或 admin。每 org 同邮箱至多一份
+    待接受邀请（部分唯一索引兜底；此处先友好 409）。令牌指纹入库，明文只回传一次。
+    """
+    org = _org_or_404(session, org_id_raw)
+    _require_org_member(actor, org)
+    email = _validate_invite_email(invited_email)
+    # 友好预检：已存在待接受邀请（同 org+邮箱）
+    pending = session.scalar(
+        select(OrgMemberInvitation).where(
+            OrgMemberInvitation.org_id == org.id,
+            OrgMemberInvitation.invited_email == email,
+            OrgMemberInvitation.accepted_at.is_(None),
+            OrgMemberInvitation.revoked_at.is_(None),
+        )
+    )
+    if pending is not None:
+        raise _error("invitation_already_pending", "该邮箱已有待接受的邀请。", 409)
+    raw, digest, expires = _new_invite_token()
+    invitation = OrgMemberInvitation(
+        org_id=org.id,
+        invited_email=email,
+        token_sha256=digest,
+        token_expires_at=expires,
+        created_by_user_id=actor.id,
+    )
+    session.add(invitation)
+    session.flush()
+    record_event(
+        session,
+        actor,
+        "org_member_invited",
+        actor,
+        {
+            "request_id": request_id if isinstance(request_id, str) else str(uuid4()),
+            "org_id": org.id,
+            "invited_email": email,
+            "invitation_id": invitation.id,
+        },
+    )
+    return {
+        "invitation_id": invitation.id,
+        "org_id": org.id,
+        "invited_email": email,
+        # 明文令牌仅此一次回传（邀请人据此拼装邀请链接外发）
+        "token": raw,
+        "expires_at": expires.isoformat(),
+    }
+
+
+def accept_org_member_invitation(
+    session: Session,
+    *,
+    actor: User,
+    raw_token: object,
+    request_id: object = None,
+) -> dict[str, Any]:
+    """接受邀请（明文令牌；接受即归属）。
+
+    安全闸门（sec 评审结论）：① 令牌必须存在且未被消费/撤销/过期；
+    ② actor.email 必须与 invited_email 归一化相等（令牌泄露只被目标账号消费）；
+    ③ actor 必须是平台身份（org_id IS NULL）——禁止把已归属别家 org 的账号拽过来。
+    """
+    if not isinstance(raw_token, str) or not raw_token.strip():
+        raise _error("invalid_request", "token 必填。")
+    digest = hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
+    invitation = session.scalar(
+        select(OrgMemberInvitation).where(OrgMemberInvitation.token_sha256 == digest)
+    )
+    if invitation is None:
+        raise _error("invitation_not_found", "邀请不存在或已失效。", 404)
+    now = datetime.now(timezone.utc)
+    if invitation.revoked_at is not None:
+        raise _error("invitation_revoked", "该邀请已被撤销。", 410)
+    if invitation.accepted_at is not None:
+        raise _error("invitation_already_accepted", "该邀请已被接受。", 409)
+    if invitation.token_expires_at is not None and invitation.token_expires_at < now:
+        raise _error("invitation_expired", "该邀请已过期。", 410)
+    actor_email = (actor.email or "").strip().lower()
+    if actor_email != invitation.invited_email:
+        raise _error(
+            "invitation_email_mismatch",
+            "接受邀请的账号邮箱与受邀邮箱不一致。",
+            403,
+        )
+    if actor.org_id is not None:
+        raise _error(
+            "already_in_org",
+            "当前账号已归属于某个组织，无法重复加入。",
+            409,
+        )
+    org = session.get(Org, invitation.org_id)
+    if org is None:
+        raise _error("org_not_found", "邀请所属组织不存在。", 404)
+    # g.current_user 在鉴权装饰器里已被 detach（装饰器关闭了取用户的 session），
+    # 此处必须在事务 session 内重新取回 actor 行再改属性，否则脱离会话的修改
+    # 不会被 flush/提交（M5-1 实测：分离的 actor 改 org_id 静默不落库）。
+    actor_user = session.get(User, actor.id)
+    if actor_user is None:
+        raise _error("actor_not_found", "当前账号不存在。", 404)
+    actor_user.org_id = org.id
+    invitation.accepted_by_user_id = actor.id
+    invitation.invited_user_id = actor.id
+    invitation.accepted_at = now
+    session.flush()
+    record_event(
+        session,
+        actor,
+        "org_member_invitation_accepted",
+        actor,
+        {
+            "request_id": request_id if isinstance(request_id, str) else str(uuid4()),
+            "org_id": org.id,
+            "invitation_id": invitation.id,
+        },
+    )
+    return serialize_org_invitation(invitation)
+
+
+def revoke_org_member_invitation(
+    session: Session,
+    *,
+    actor: User,
+    invitation_id_raw: object,
+    request_id: object = None,
+) -> dict[str, Any]:
+    """撤销待接受邀请（仅邀请人或 admin；已接受/已过期不可撤销）。"""
+    if not isinstance(invitation_id_raw, str) or not invitation_id_raw:
+        raise _error("invalid_request", "invitation_id 必填。")
+    invitation = session.get(OrgMemberInvitation, invitation_id_raw)
+    if invitation is None:
+        raise _error("invitation_not_found", "邀请不存在。", 404)
+    if invitation.accepted_at is not None:
+        raise _error("invitation_already_accepted", "已接受的邀请不可撤销。", 409)
+    if invitation.revoked_at is not None:
+        raise _error("invitation_already_revoked", "该邀请已被撤销。", 409)
+    if actor.role != ROLE_ADMIN and invitation.created_by_user_id != actor.id:
+        raise _error("org_member_required", "只有邀请人或系统运维员可以撤销邀请。", 403)
+    invitation.revoked_at = datetime.now(timezone.utc)
+    session.flush()
+    record_event(
+        session,
+        actor,
+        "org_member_invitation_revoked",
+        actor,
+        {
+            "request_id": request_id if isinstance(request_id, str) else str(uuid4()),
+            "org_id": invitation.org_id,
+            "invitation_id": invitation.id,
+        },
+    )
+    return serialize_org_invitation(invitation)
+
+
+def list_org_invitations(
+    session: Session, *, actor: User, org_id_raw: object
+) -> list[dict[str, Any]]:
+    """列出某 org 的全部邀请（pending/accepted/revoked 全量，按创建时间倒序）。
+
+    可见性：本 org 成员（users.org_id == org.id）或 admin。
+    """
+    org = _org_or_404(session, org_id_raw)
+    _require_org_member(actor, org)
+    rows = session.scalars(
+        select(OrgMemberInvitation)
+        .where(OrgMemberInvitation.org_id == org.id)
+        .order_by(OrgMemberInvitation.created_at.desc())
+    ).all()
+    return [serialize_org_invitation(r) for r in rows]
+
+
+def serialize_org_invitation(row: OrgMemberInvitation) -> dict[str, Any]:
+    state = "pending"
+    if row.revoked_at is not None:
+        state = "revoked"
+    elif row.accepted_at is not None:
+        state = "accepted"
+    return {
+        "id": row.id,
+        "org_id": row.org_id,
+        "invited_email": row.invited_email,
+        "invited_user_id": row.invited_user_id,
+        "created_by_user_id": row.created_by_user_id,
+        "state": state,
+        "accepted_by_user_id": row.accepted_by_user_id,
+        "accepted_at": row.accepted_at.isoformat() if row.accepted_at else None,
+        "revoked_at": row.revoked_at.isoformat() if row.revoked_at else None,
+        "expires_at": row.token_expires_at.isoformat() if row.token_expires_at else None,
+    }
+
+
 __all__ = [
     "ADVISOR_FOLLOW_UP_NOTE",
     "CommercialServiceError",
     "ENGAGEMENT_STATES",
+    "accept_org_member_invitation",
     "get_enterprise_space_view",
+    "invite_org_member",
+    "list_org_invitations",
     "paid_options",
     "record_advisor_note",
     "record_paid_option_choice",
     "record_triage_decision",
     "register_enterprise",
     "registration_entries_view",
+    "revoke_org_member_invitation",
     "serialize_choice",
+    "serialize_org_invitation",
     "serialize_triage_decision",
 ]

@@ -46,8 +46,12 @@ from fde_api.commercial.regional_service import (
     serialize_tier,
 )
 from fde_api.commercial.enterprise_service import (
+    accept_org_member_invitation,
     get_enterprise_space_view,
+    invite_org_member,
+    list_org_invitations,
     record_paid_option_choice,
+    revoke_org_member_invitation,
 )
 from fde_api.commercial.role_assignment_service import (
     assign_commercial_role,
@@ -512,6 +516,77 @@ def record_paid_option_choice_route(subject_key: str):
             actor=g.current_user,
             subject_key_raw=subject_key,
             option_key=payload.get("option_key"),
+            request_id=payload.get("request_id"),
+        )
+        return jsonify({"data": data, "error": None})
+
+
+# ── 企业组织成员邀请（M5-1）────────────────────────────────────────────────
+# 邀请是 org 归属面，不是第二套权限体系：接受邀请唯一副作用＝受邀用户归入本 org
+# （users.org_id 置为本 org，可见性由既有 project_org_scope_filter 覆盖）。
+
+
+@commercial_blueprint.post("/orgs/<org_id>/invitations")
+@require_auth
+def invite_org_member_route(org_id: str):
+    """发起组织成员邀请（返回一次性明文令牌，邀请人自行外发链接）。
+
+    邀请人＝本 org 成员（users.org_id == org_id）或 admin；每 org 同邮箱至多
+    一份待接受邀请。令牌明文仅此一次回传。
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    with db.session() as session, session.begin():
+        data = invite_org_member(
+            session,
+            actor=g.current_user,
+            org_id_raw=org_id,
+            invited_email=payload.get("invited_email"),
+            request_id=payload.get("request_id"),
+        )
+        return jsonify({"data": data, "error": None}), 201
+
+
+@commercial_blueprint.get("/orgs/<org_id>/invitations")
+@require_auth
+def list_org_invitations_route(org_id: str):
+    """列出某 org 的邀请清单（本 org 成员或 admin）。"""
+    with db.session() as session:
+        data = list_org_invitations(session, actor=g.current_user, org_id_raw=org_id)
+        return jsonify({"data": data, "error": None})
+
+
+@commercial_blueprint.post("/orgs/<org_id>/invitations/<invitation_id>/revoke")
+@require_auth
+def revoke_org_member_invitation_route(org_id: str, invitation_id: str):
+    """撤销待接受邀请（仅邀请人或 admin）。"""
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    with db.session() as session, session.begin():
+        data = revoke_org_member_invitation(
+            session,
+            actor=g.current_user,
+            invitation_id_raw=invitation_id,
+            request_id=payload.get("request_id"),
+        )
+        return jsonify({"data": data, "error": None})
+
+
+@commercial_blueprint.post("/orgs/invitations/accept")
+@require_auth
+def accept_org_member_invitation_route():
+    """接受邀请（明文令牌；接受即归属）。
+
+    安全闸门：令牌未失效 + actor.email == 受邀邮箱 + actor 为平台身份（org_id
+    为 NULL）；接受后 actor.org_id 置为邀请所属 org。令牌明文由邀请链接带参。
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    with db.session() as session, session.begin():
+        data = accept_org_member_invitation(
+            session,
+            actor=g.current_user,
+            raw_token=payload.get("token"),
             request_id=payload.get("request_id"),
         )
         return jsonify({"data": data, "error": None})
