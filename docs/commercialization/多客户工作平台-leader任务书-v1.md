@@ -314,8 +314,9 @@ orgs（新表，主体承载）
   - [x] M3c 越权套件骨架 ✅（`test_cross_tenant_isolation.py` 8 例绿＋1 例 `xfail(strict=True)` 待销号；变异两连：摘对象级 org 判定 ⇒ 7 红／摘 SQL org 谓词 ⇒ 3 红；随 PR #318 进 CI）
   - [ ] M3b 端点分批销号（4 批 ≤30 端点，批批 PR 附同批越权用例；批次 ① 含待 M0 补充 #6 `_project_scope` 收拢）
     - [x] 批次 ①（39 条＝①-a 24＋①-b 15）✅（①-a PR #325 squash 合并 `828557e`；①-b PR #328 squash 合并 `8cefc07`＝fork/main 顶；★销号范围＝盘点表现测 **236 全量**（任务书「122 写端点」是 M0 前先验，盘点表为准）；①-a CI 3010 收集＝3003+7 〔**rebase 前** PR 树值，已随 #323 插队作废〕／①-b CI **3025 收集 = 3018 passed + 7 skipped**〔run 42978834244；基线＝①-a 合并树实测 3019〕；★待 M0 补充 #6 `_project_scope` 第三套可见性规则随 ①-b 销号；**部署活体复验**（随批次② PR 回写）：三镜像从 `8cefc07` 干净树 rebuild（api `7df8c48cf795`／worker `5c8aee2f85bf`／scheduler `47f61cb5cf4b`，容器 `.Image` 逐位一致）＋`alembic upgrade head` 幂等 no-op（`a7c2f9e1b4d8 (head)`）＋活体 url_map 462 total/461 non-static ≡ 口径＋ready/live 200＋三容器 healthy＋`/app/migrations` 挂载回归本工作树（部署前指向他人工作树）；2026-11-11）
-    - [ ] 批次 ②（43 条 商业域）— PR #331（CI 跑测中；跨 org 留痕共享记录器单点接线＋R1 admin-only 保持＋R3 主体归属核验；NEW `test_m3b_batch2_commercial.py` 14 例；摘除式变异 4 红→还原→14 绿）
-    - [ ] 批次 ③（97 条 项目服务域）／批次 ④（57 条 特殊域与平台事实）— 未开工
+    - [x] 批次 ②（43 条 商业域）✅（PR #331 squash 合并 `7eb9a17`＝fork/main 顶；CI 四绿实测 **3039 收集 = 3032 passed + 7 skipped**〔run 42983140581；基线＝批次①-b 合并树 3025 ＋本轮 +14 逐位吻合〕；实改＝**共享事件记录器单点接线**（商业域 admin 代操作面零调用点改动即接线：跨企业代改 ⇒ `cross_org_` 前缀＋org 维度取被作用账号归属；平台身份目标事件名逐字节不变）；R1 admin-only 保持 12 条＋R3 主体归属 11 条＋读面核验；★机器判定纠正（mailing SNS＝服务间认证面、diagnostics＝公网免注册写面，由既有套件覆盖不重复造例）；NEW `test_m3b_batch2_commercial.py` 14 例；摘除式变异 4 红→还原→14 绿；邻域回归 99＋178 例全绿；2026-11-11）
+    - [ ] 批次 ③（97 条 项目服务域）— PR 批次③（CI 跑测中；实改＝**成员面跨 org 留痕接线**（规格 §3.4「成员跨企业授予」——共享记录器把项目成员行目标解析为其账号）；**可见性单一权威机械闸**（全仓禁自建 `ProjectMember` 可见性谓词＋白名单防腐化）；域级代表性核验八个项目读面；NEW `test_m3b_batch3_project_service.py` 13 例；变异两轴：摘成员面判定 ⇒ 留痕用例红／自建谓词 ⇒ 机械闸红）
+    - [ ] 批次 ④（57 条 特殊域与平台事实）— 未开工
 - [ ] M4：Redis/存储/队列/预算按主体隔离；主体级 `budget_blocked` 留痕
 - [ ] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过
 - [ ] M6：G3 验收清单过；计费名目有归属、无硬编码数值；席位反例用例过

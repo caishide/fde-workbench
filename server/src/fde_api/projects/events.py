@@ -125,14 +125,20 @@ def record_event(
     ``cross_org_`` 前缀且 ``org_id`` 取被作用账号归属——共享 recorder 单点
     收口，商业域 admin 代操作面（角色分层/席位/认证/培训/交付资格）零调用点
     改动即接线；平台身份目标判定恒 False ⇒ 存量事件名逐字节不变（零回归）。
+
+    M3b 批次③（规格 §3.4「成员跨企业授予」）：目标为**项目成员行**时同样解析出
+    其**账号**再判定——把别家企业账号授予项目成员（跨企业成员关系）⇒ 事件名带
+    ``cross_org_`` 前缀且 ``org_id`` 取**被作用账号归属**（被授予账号所在企业，
+    非项目归属——口径与批次②的账号类代操作一致）。
     """
     target_type = _TARGET_TYPES.get(type(target))
     if target_type is None:
         raise TypeError("Unsupported operation-event target")
     event_org_id: str | None = None
-    if isinstance(target, User) and is_cross_org_action(actor.org_id, target.org_id):
+    subject = _cross_org_subject(session, target)
+    if subject is not None and is_cross_org_action(actor.org_id, subject.org_id):
         event_type = f"cross_org_{event_type}"
-        event_org_id = target.org_id
+        event_org_id = subject.org_id
     event = OperationEvent(
         actor_user_id=actor.id,
         project_id=_project_id_for_target(session, target),
@@ -144,6 +150,21 @@ def record_event(
     )
     session.add(event)
     return event
+
+
+def _cross_org_subject(session: Session, target: EventTarget) -> User | None:
+    """取「被作用主体」用于跨 org 留痕判定。
+
+    - 目标本身是用户 ⇒ 该用户（批次②：账号类代操作面）；
+    - 目标是项目成员行 ⇒ 其**账号**（批次③：成员跨企业授予——规格 §3.4 明列）；
+    - 其余目标（项目本体／模板／目录／交付包…）⇒ None——它们的 org 维度由 M1
+      的归属戳监听器从 project 推导（``orgs/org_scope.py``），本函数不干预。
+    """
+    if isinstance(target, User):
+        return target
+    if isinstance(target, ProjectMember):
+        return session.get(User, target.user_id)
+    return None
 
 
 def _project_id_for_target(session: Session, target: EventTarget) -> str | None:

@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 多客户 M3b 批次③ 轮：项目服务域 97 端点（成员面跨 org 留痕接线＋可见性单一权威机械闸＋域级代表性核验；零迁移零新路由零新表零桌面，2026-11-11）
+
+- **销号范围**：《全局面盘点表》③ 项目服务域 97 条（80 条在 `/projects/*`＋meetings 5＋handover-packages 4＋transcript-drafts 3＋translator 2＋delivery-plans 1＋discovery 1＋task-center 1）全量销号。机器判定分布＝83 条「读面收敛核验」＋13 条「R1 admin-only 保持＋留痕核验」＋1 条「R3 主体归属校验」，**逐条人工复核后**：项目域既有行为按规格 §3.5「既有项目域行为本轮不变」保持原样（同项目无权＝403 `forbidden`、资源缺失＝资源级 404），本批**不改写**既有错误码；读面全部经 M3a 统一入口 `projects/permissions.py`（`project_access` 对象级／`visible_project_filter` SQL 谓词）——逐服务核验 8 个项目服务模块（version/draft/quote/payment/contract/gate/task/research）＋项目本体，均走统一入口。
+- **实改面＝成员面跨 org 留痕接线**（规格 §3.4 明列「成员跨企业授予」）：共享事件记录器 `projects/events.py::record_event` 的单点接线把**项目成员行**目标解析为其**账号**再判定——平台/他企业 admin 把**别家企业**账号授予项目成员（跨企业成员关系）⇒ 事件名带 `cross_org_` 前缀（`cross_org_project_member_added`）且 `operation_events.org_id` 取**被作用账号归属**（被授予账号所在企业，**不是**项目归属——口径与批次②的账号类代操作一致）。同企业内授予、平台身份账号授予 ⇒ 事件名逐字节不变（存量零回归；平台身份账号的事件 org 维度仍由 M1 归属戳监听器从 project 推导＝internal 桶）。
+- **机械闸＝「自建可见性谓词」全仓扫描**（把①-b 的教训固化为闸）：除 `projects/permissions.py` 外，任何函数都不得拿 `ProjectMember` 的字段构造**可见性谓词**（比较形态）——eager load（取数）与归属戳计算不算。全仓现测 4 处候选**逐条人工复核为假阳性**并入白名单（序列化成员行／归属戳计算／交付方身份标记／admin 改角色前的成员关系冲突检查）；白名单条目失效时闸同样转红（防白名单腐化）。
+- **域级代表性核验（拍板 2026-11-11 交互四项之②）**：跨企业**成员关系**场景（企业甲账号被平台授予企业乙项目的成员身份）——成员关系本身挡不住 org 维度，这才构成判别力。项目详情＋gates/quotes/payments/contracts/members/tasks/gantt 八个读面：跨企业成员一律 403/404，project_leader 正常 200（阳性对照）。
+- **测试**：NEW `test_m3b_batch3_project_service.py`；**摘除式变异**（两轴：摘 `record_event` 的成员面跨 org 判定 ⇒ 留痕用例转红；在服务里自建 ProjectMember 谓词替换统一入口 ⇒ 机械闸转红）⇒ 还原→全绿；邻域回归 M 线四套件＋`test_visibility_parity`＋项目服务域邻域用例全绿；mypy 官方闸 **279 零新增**；ruff 绿。
+- **口径**：零迁移零新路由零新表零新蓝图 ⇒ 结构口径不变（**461 路由／51 蓝图／150 表／66 rev 单头 `a7c2f9e1b4d8`**）；pytest 基线＝批次② 合并树 CI 实测值 ＋本轮增量（终值以本 PR CI 为准）。server 变更 ⇒ 合并后 rebuild 三镜像＋alembic（本轮零迁移，幂等 no-op）。
+
 ## [未发布] — 多客户 M3b 批次② 轮：商业域 43 端点（跨 org 留痕共享记录器单点接线＋admin-only 保持＋主体归属核验；零迁移零新路由零新表零桌面，2026-11-11）
 
 - **销号范围**：《全局面盘点表》② 商业域 43 条（27 写面＋16 读面）全量销号。**本批唯一实改面＝共享事件记录器单点接线**：`projects/events.py::record_event` 对「目标为**用户**且 actor 作用于**别家企业**账号」自动加 `cross_org_` 事件名前缀，并把 `operation_events.org_id` 取为被作用账号归属（规格 §3.4）。商业域 admin 代操作面（角色分层／席位激活／认证判定／交付资格／培训授予／培训撤销／首单扣费／兼任承载）**零调用点改动即接线**——AST 扫描商业包 41 处 `record_event`：仅 7 处目标为用户，其余 34 处目标为 actor 本身（平台身份 ⇒ 判定恒 False ⇒ 存量事件名逐字节不变）。
