@@ -297,8 +297,11 @@ def render_curve_md(
 
     lines.append("## 各 run 版本标签（双标签纪律）")
     lines.append("")
-    lines.append("| run | 时间 | eval_set_version | prompt_version | report 版本 | judge/rubric | 元验证闸 | 可作进化判定输入 |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append(
+        "| run | 时间 | eval_set_version | prompt_version | report 版本 | 数字闸版本 "
+        "| judge/rubric | 元验证闸 | 可作进化判定输入 |"
+    )
+    lines.append("|---|---|---|---|---|---|---|---|---|")
     for item in runs:
         run = item["run"]
         scores = item["scores"] or {}
@@ -308,12 +311,14 @@ def render_curve_md(
             "是" if usable is True else ("否（元验证未过）" if usable is False else "未评分")
         )
         lines.append(
-            "| {run} | {created} | `{ev}` | `{pv}` | `{rv}` | {judge} | {gate} | {usable} |".format(
+            "| {run} | {created} | `{ev}` | `{pv}` | `{rv}` | `{gate_ver}` "
+            "| {judge} | {gate} | {usable} |".format(
                 run=item["run_id"],
                 created=str(run.get("created_at") or "—"),
                 ev=str(run.get("eval_set_version") or item["run_id"]),
                 pv=str(run.get("prompt_version") or "—"),
                 rv=str(run.get("report_version") or "—"),
+                gate_ver=str(run.get("number_gate_version") or "—"),
                 judge=str(scores.get("judge_version") or "—"),
                 gate=str(meta.get("verdict") or "—"),
                 usable=usable_label,

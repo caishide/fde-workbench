@@ -30,9 +30,9 @@ from fde_api.diagnostics.prompts import (
 from fde_api.diagnostics.questionnaire import SLOT_BY_KEY
 from fde_api.diagnostics.report_contract import (
     ReportContractError,
-    allowed_number_tokens,
     assemble_report,
     parse_report_json,
+    sourced_number_tokens,
     validate_report_payload,
 )
 from fde_api.control.ai_server_client import execute_ai_prompt
@@ -145,12 +145,22 @@ def _diagnostic_model_override() -> dict[str, Any] | None:
     }
 
 
-def _call_model(*, actor_user_id: str, row: LeadDiagnosticSession) -> tuple[str, dict[str, Any]]:
-    """调 AI（单一入口 ``execute_ai_prompt``）。"""
+def _call_model(
+    *,
+    actor_user_id: str,
+    row: LeadDiagnosticSession,
+    repair_hint: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """调 AI（单一入口 ``execute_ai_prompt``）。
+
+    ``repair_hint``：契约拒收原因（curve 3 断点 D3）——第一次尝试被拒后回灌，
+    让第二次是**修复**而不是同提示词盲重抽。
+    """
     prompt = build_report_prompt(
         answers=dict(row.answers or {}),
         assessment=dict(row.assessment or {}),
         slot_labels=_slot_labels(dict(row.answers or {})),
+        repair_hint=repair_hint,
     )
     result = execute_ai_prompt(
         user_id=actor_user_id,
@@ -200,21 +210,26 @@ def handle_diagnostic_report(job) -> None:
         attempts = 0
         payload: dict[str, Any] | None = None
         model_info: dict[str, Any] = {}
+        repair_hint: str | None = None
         while True:
             attempts += 1
             try:
                 text, model_info = _call_model(
-                    actor_user_id=actor.id, row=row
+                    actor_user_id=actor.id, row=row, repair_hint=repair_hint
                 )
                 payload = validate_report_payload(
                     parse_report_json(text),
-                    allowed_numbers=allowed_number_tokens(row.answers, row.assessment),
+                    allowed_numbers=sourced_number_tokens(row.answers, row.assessment),
                 )
                 break
             except ReportContractError as error:
                 if attempts > CONTRACT_RETRY_LIMIT:
                     _fail_row(session, row, error.code, error.message)
                     return
+                # ★拒因回灌（curve 3 断点 D3）：第二次尝试必须看得见拒因，
+                # 否则「可修的违规」（删一个数字／改写／标待澄清）会被盲重抽
+                # 变成两次都不过 ⇒ 一个量词毙掉整份报告。
+                repair_hint = error.message
                 logger.warning(
                     "diagnostic report contract violation (attempt=%s code=%s)",
                     attempts,
