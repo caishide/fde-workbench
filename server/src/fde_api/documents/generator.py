@@ -47,7 +47,7 @@ from fde_api.documents.snapshots import build_document_snapshot
 from fde_api.extensions import db, object_storage
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.files.names import document_key, extension_of, safe_filename
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 DOCX_EXTENSION = ".docx"
@@ -271,7 +271,8 @@ def handle_document_generation(*, version_id: str) -> dict[str, Any]:
 
             try:
                 enqueue_outbox(
-                    session, "file.preview", file_version.id, {"version_id": file_version.id}
+                    session, "file.preview", file_version.id, {"version_id": file_version.id},
+                    subject_org=subject_org_of_project(session, document.project_id),
                 )
             except Exception:  # noqa: BLE001 - preview is best-effort, never fails generation
                 pass

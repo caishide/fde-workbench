@@ -32,7 +32,7 @@ from fde_api.files.names import (
     safe_filename,
     temporary_key,
 )
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.storage.base import StorageError, UploadedPart, normalize_parts
@@ -276,7 +276,8 @@ def complete_upload(
                     },
                 )
                 enqueue_outbox(
-                    session, "file.preview", version.id, {"version_id": version.id}
+                    session, "file.preview", version.id, {"version_id": version.id},
+                    subject_org=subject_org_of_project(session, project_file.project_id),
                 )
                 return {
                     "version_id": version.id,

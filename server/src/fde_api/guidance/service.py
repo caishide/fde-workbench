@@ -21,7 +21,7 @@ from fde_api.guidance.models import (
     ProjectPresurveySource,
     REDACTION_EVENT_TYPE,
 )
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.translator.models import TranslatorTranslation
@@ -77,7 +77,10 @@ def create_analysis(*, actor: User, project_id: str, source_file_version_id: str
             )
             session.add(analysis)
             session.flush()
-            enqueue_outbox(session, "project.presurvey.analyze", analysis.id, {"project_id": project.id})
+            enqueue_outbox(
+            session, "project.presurvey.analyze", analysis.id, {"project_id": project.id},
+            subject_org=subject_org_of_project(session, project.id),
+        )
             return serialize_analysis(analysis, source)
     finally:
         session.close()

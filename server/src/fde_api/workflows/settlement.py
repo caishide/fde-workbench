@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
 from fde_api.extensions import db
-from fde_api.jobs.outbox import enqueue_outbox, utcnow
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project, utcnow
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Project
 from fde_api.workflows.constants import (
@@ -294,4 +294,7 @@ def settle_approval_node(
                 "approval_id": approval.id,
             },
         )
-    enqueue_outbox(session, WORKFLOW_JOB_TYPE, run.id, {})
+    enqueue_outbox(
+        session, WORKFLOW_JOB_TYPE, run.id, {},
+        subject_org=subject_org_of_project(session, run.project_id),
+    )

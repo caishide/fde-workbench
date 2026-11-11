@@ -27,7 +27,7 @@ from fde_api.guidance.redaction import (
     SensitiveCredentialDetected,
     redact_text_detailed,
 )
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_user
 from fde_api.translator.jobs import TRANSLATOR_JOB_TYPE
 from fde_api.translator.models import TranslatorTranslation
 from fde_api.workbench.models import OperationEvent
@@ -122,7 +122,10 @@ def create_translation(*, actor: User, payload: Mapping[str, Any]) -> dict[str, 
                         changes={"stage": "input", "entries": entries},
                     )
                 )
-            enqueue_outbox(session, TRANSLATOR_JOB_TYPE, row.id, {"translation_id": row.id})
+            enqueue_outbox(
+                session, TRANSLATOR_JOB_TYPE, row.id, {"translation_id": row.id},
+                subject_org=subject_org_of_user(session, row.created_by_user_id),
+            )
         # 提交后再序列化：created_at 是 server_default，flush 后行内尚未回填。
         return serialize_translation(row)
     finally:

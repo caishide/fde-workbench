@@ -282,6 +282,7 @@ def register_cli(app: Flask) -> None:
                         _MAINTENANCE_TYPE,
                         f"daily-{_dt.now():%Y%m%d}",
                         {},
+                        subject_org=None,  # 平台运维作业（平台级）
                     )
                     _session.commit()
                     click.echo("dispatch-maintenance enqueued")

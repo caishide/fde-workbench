@@ -72,6 +72,51 @@ def _handle_service_error(error: AdminJobsServiceError):
     )
 
 
+def jobs_metering(*, actor: User) -> dict[str, Any]:
+    """按主体分组计量后台 job（M4 批次 C；admin 只读，治理面不进 api_catalog）。
+
+    任务书 §7-M4「队列 job 携带主体标签用于计量」的读面：按 ``org_id`` 分组
+    统计 active（pending/queued/running）与 terminal（终态）计数＋Redis 队列
+    深度。``org_id=None`` 单列为平台级组（与 org 平台身份语义同构）。计量面
+    非授权面：只读，不影响任何调度行为。
+    """
+    if actor.role != "admin":
+        raise _error("job_metering_forbidden", "队列计量面仅系统运维员可用。", 403)
+    from sqlalchemy import func, select
+
+    from fde_api.jobs.queue import ACTIVE_JOB_STATUSES, get_queue
+
+    with db.session() as session:
+        rows = session.execute(
+            select(
+                BackgroundJob.org_id,
+                BackgroundJob.status,
+                func.count(),
+            ).group_by(BackgroundJob.org_id, BackgroundJob.status)
+        ).all()
+    groups: dict[str | None, dict[str, int]] = {}
+    for org_id, status, count in rows:
+        bucket = groups.setdefault(org_id, {"active": 0, "terminal": 0})
+        if status in ACTIVE_JOB_STATUSES:
+            bucket["active"] += int(count)
+        else:
+            bucket["terminal"] += int(count)
+    listed = [
+        {"org_id": org_id, **counts}
+        for org_id, counts in sorted(
+            groups.items(), key=lambda item: (item[0] is not None, item[0] or "")
+        )
+    ]
+    from flask import current_app
+
+    queue_depth = len(get_queue()) if current_app.extensions.get("fde_api_redis") else None
+    return {
+        "groups": listed,
+        "queue_depth": queue_depth,
+        "active_statuses": list(ACTIVE_JOB_STATUSES),
+    }
+
+
 def cancel_job(*, actor: User, job_id: str) -> dict[str, Any]:
     """取消一个后台 job（admin，幂等；运行中不强杀，同事务收口三面：
     job 行 → 派生 outbox 事件 → operation_events 留痕）。"""
@@ -131,6 +176,13 @@ def cancel_job(*, actor: User, job_id: str) -> dict[str, Any]:
         )
         # status 用取消后的终态回显（view 在 mutate 前构建，不能透传旧值）
         return {**view, "status": "cancelled", "cancelled": True}
+
+
+@admin_jobs_blueprint.get("/metering")
+@require_auth
+def jobs_metering_route():
+    """按主体分组计量后台 job（M4 批次 C；admin 只读，治理面不进 api_catalog）。"""
+    return jsonify({"data": jobs_metering(actor=g.current_user), "error": None})
 
 
 @admin_jobs_blueprint.post("/<job_id>/cancel")

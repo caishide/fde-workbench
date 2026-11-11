@@ -23,7 +23,7 @@ from fde_api.documents.catalog import RESOURCE_TEMPLATES_DIR
 from fde_api.documents.models import DocumentTemplate, DocumentTemplateVersion
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.files.names import safe_filename
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.research.models import ProjectResearchExport, ProjectResearchForm, ProjectResearchFormRevision, ProjectResearchSubject
@@ -98,7 +98,10 @@ def request_research_export(*, actor: User, project_id: str, form_id: str) -> tu
         )
         session.add(export)
         session.flush()
-        enqueue_outbox(session, "research.export", export.id, {"export_id": export.id})
+        enqueue_outbox(
+            session, "research.export", export.id, {"export_id": export.id},
+            subject_org=subject_org_of_project(session, export.project_id),
+        )
         session.commit()
         return serialize_research_export(export, form.name), True
     except ResearchExportError:
@@ -193,7 +196,10 @@ def export_research_result(*, actor: User, project_id: str, form_id: str) -> dic
             for old in session.scalars(select(ProjectFileVersion).where(ProjectFileVersion.file_id == existing.id, ProjectFileVersion.id != version.id, ProjectFileVersion.status == "available")).all():
                 old.status = "deprecated"; old.deprecated_by_user_id = actor.id; old.deprecated_at = datetime.now(UTC); old.deprecation_reason = "已生成更新版本"
             try:
-                enqueue_outbox(session, "file.preview", version.id, {"version_id": version.id})
+                enqueue_outbox(
+                session, "file.preview", version.id, {"version_id": version.id},
+                subject_org=subject_org_of_project(session, existing.project_id),
+            )
             except Exception:  # noqa: BLE001 - preview failure must not block export
                 pass
             record_event(session, actor, "research_result_exported", existing, {"file_id": existing.id, "version_id": version.id, "subject_id": subject.id, "form_id": form.id})

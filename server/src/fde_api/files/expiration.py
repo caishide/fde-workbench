@@ -77,6 +77,7 @@ def _queue_cleanup_in_session(
         UPLOAD_CLEANUP_JOB_TYPE,
         upload_session.id,
         {"upload_session_id": upload_session.id},
+        subject_org=None,  # 平台清理作业（平台级）
     )
     return True
 
@@ -104,6 +105,7 @@ def expire_upload_session(
         UPLOAD_CLEANUP_JOB_TYPE,
         upload_session.id,
         {"upload_session_id": upload_session.id},
+        subject_org=None,  # 平台清理作业（平台级）
     )
     return True
 

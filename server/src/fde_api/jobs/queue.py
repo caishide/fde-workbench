@@ -49,12 +49,16 @@ def get_queue() -> JobQueue:
 
 
 def ensure_background_job(
-    session: Session, job_type: str, target_id: str
+    session: Session, job_type: str, target_id: str, *, subject_org: str | None
 ) -> BackgroundJob:
     """Return the existing active job for (job_type, target_id) or create one.
 
     A terminal job frees the slot, so a fresh event for the same target
     starts a new job rather than re-enqueueing a completed one.
+
+    M4 批次 C：``subject_org`` **keyword-only 必填**＝机械闸——主体标签来自
+    入队调用点的显式声明（经 outbox 事件传递）；``None``＝平台级。计量面
+    非授权面：标签不影响调度/权限行为。
     """
     existing = session.scalar(
         select(BackgroundJob)
@@ -67,7 +71,12 @@ def ensure_background_job(
     )
     if existing is not None:
         return existing
-    job = BackgroundJob(job_type=job_type, target_id=target_id, status="pending")
+    job = BackgroundJob(
+        job_type=job_type,
+        target_id=target_id,
+        status="pending",
+        org_id=subject_org,
+    )
     session.add(job)
     session.flush()
     return job

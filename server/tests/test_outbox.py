@@ -20,14 +20,14 @@ class _FailingQueue:
 
 
 def test_business_rollback_removes_outbox_event(db_session):
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     db_session.rollback()
 
     assert db_session.query(OutboxEvent).count() == 0
 
 
 def test_enqueue_outbox_persists_as_pending(db_session):
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     db_session.commit()
 
     event = db_session.query(OutboxEvent).one()
@@ -37,7 +37,7 @@ def test_enqueue_outbox_persists_as_pending(db_session):
 
 
 def test_dispatch_pending_marks_dispatched_and_enqueues_job(db_session):
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     db_session.commit()
     queue = _FakeQueue()
 
@@ -54,7 +54,7 @@ def test_dispatch_pending_marks_dispatched_and_enqueues_job(db_session):
 
 
 def test_dispatch_skips_events_not_yet_available(db_session):
-    event = enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    event = enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     event.available_at = datetime.now(UTC) + timedelta(hours=1)
     db_session.commit()
 
@@ -66,7 +66,7 @@ def test_dispatch_skips_events_not_yet_available(db_session):
 
 
 def test_dispatch_rolls_back_when_queue_enqueue_fails(db_session):
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     db_session.commit()
 
     with pytest.raises(RuntimeError, match="redis unavailable"):
@@ -78,8 +78,8 @@ def test_dispatch_rolls_back_when_queue_enqueue_fails(db_session):
 
 
 def test_dispatch_coalesces_same_target_into_one_active_job(db_session):
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
-    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"})
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
+    enqueue_outbox(db_session, "file.scan", "v1", {"version_id": "v1"}, subject_org=None)
     db_session.commit()
     queue = _FakeQueue()
 
@@ -94,10 +94,10 @@ def test_dispatch_coalesces_same_target_into_one_active_job(db_session):
 def test_mark_completed_settles_dispatched_events_for_job(db_session):
     """V3 T-J1（WB-DEF-9）：job 成功终态回写 outbox——同一 (topic, aggregate)
     派发出去的事件一起 completed；尚未派发的 pending 行不动（属于未来的派发）。"""
-    enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"})
-    enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"})
+    enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"}, subject_org=None)
+    enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"}, subject_org=None)
     dispatch_pending(db_session, _FakeQueue())
-    pending_later = enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"})
+    pending_later = enqueue_outbox(db_session, "file.scan", "v9", {"version_id": "v9"}, subject_org=None)
     db_session.commit()
 
     settled = mark_completed(db_session, "file.scan", "v9")
@@ -113,7 +113,7 @@ def test_mark_completed_settles_dispatched_events_for_job(db_session):
 
 def test_mark_failed_records_truncated_error(db_session):
     """V3 T-J1：失败终态把错误摘要截断到 2000 字落 outbox last_error。"""
-    enqueue_outbox(db_session, "file.scan", "v10", {"version_id": "v10"})
+    enqueue_outbox(db_session, "file.scan", "v10", {"version_id": "v10"}, subject_org=None)
     dispatch_pending(db_session, _FakeQueue())
     db_session.commit()
 

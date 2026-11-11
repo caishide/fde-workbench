@@ -27,12 +27,23 @@ class DispatchResult:
 
 
 def enqueue_outbox(
-    session: Session, topic: str, aggregate_id: str, payload: dict
+    session: Session,
+    topic: str,
+    aggregate_id: str,
+    payload: dict,
+    *,
+    subject_org: str | None,
 ) -> OutboxEvent:
     """Insert an outbox event in the caller's transaction.
 
     The event is flushed but never committed here, so it shares the
     business write's fate: a business rollback removes it too.
+
+    M4 批次 C（任务书 §7-M4「队列 job 携带主体标签用于计量」）：``subject_org``
+    **keyword-only 必填**＝机械闸——每个入队调用点必须显式声明主体：能解析
+    的传目标主体 org（通常＝项目的 ``org_id`` 或发起人 ``users.org_id``）；
+    平台面/匿名面/解析不出的**显式传 ``None``**（平台级，不静默）。计量面
+    非授权面：标签不影响任何调度/权限行为。
     """
     event = OutboxEvent(
         topic=topic,
@@ -41,10 +52,41 @@ def enqueue_outbox(
         status="pending",
         attempts=0,
         available_at=utcnow(),
+        subject_org=subject_org,
     )
     session.add(event)
     session.flush()
     return event
+
+
+def subject_org_of_project(session: Session, project_id: str | None) -> str | None:
+    """项目主体 org（M4 批次 C 计量标签）；项目不存在/无归属 ⇒ None（平台级）。"""
+    if not project_id:
+        return None
+    from fde_api.workbench.models import Project
+
+    project = session.get(Project, project_id)
+    return project.org_id if project is not None else None
+
+
+def subject_org_of_user(session: Session, user_id: str | None) -> str | None:
+    """账号主体 org（M4 批次 C 计量标签）；账号不存在/平台身份 ⇒ None。"""
+    if not user_id:
+        return None
+    from fde_api.auth.models import User
+
+    user = session.get(User, user_id)
+    return user.org_id if user is not None else None
+
+
+def subject_org_of_automation_task(session: Session, task: object) -> str | None:
+    """自动化任务主体 org：项目归属优先，无项目回创建者归属；都无 ⇒ None。"""
+    project_id = getattr(task, "project_id", None)
+    if project_id:
+        org = subject_org_of_project(session, project_id)
+        if org:
+            return org
+    return subject_org_of_user(session, getattr(task, "created_by_user_id", None))
 
 
 def dispatch_pending(
@@ -81,7 +123,9 @@ def dispatch_pending(
             )
             if claimed.rowcount != 1:
                 continue
-            job = ensure_background_job(session, event.topic, event.aggregate_id)
+            job = ensure_background_job(
+                session, event.topic, event.aggregate_id, subject_org=event.subject_org
+            )
             queue.enqueue(job.id)  # type: ignore[attr-defined]
             dispatched += 1
         session.commit()
