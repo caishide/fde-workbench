@@ -81,6 +81,7 @@
 - **现状：** 活库实测「接受/修改/拒绝」零承载事件（baseline-audit §H）。
 - **处置方向：** 在诊断/方案确认流上落采纳留痕（复用 operation_events，不建第二套事件体系）；首批真实 run 后供智能化评级复审（BP §1.3a 证据口径）。
 - **处置结果（2026-11-10 挂账清偿轮 1，`feat/commercial-gap15-adoption`）：** 埋点已落，零新表零迁移零新路由——①方案确认流**系统派生**：`solution_signoff_resolved`／`project_solution_archived` 事件在 AI 草稿方案（`generated_by='agent'`）上携带 `ai_draft` 派生块（generated_by/agent_run_id/modified_after_generation），`update_solution` 对 agent 方案首改即落 `source_json.ai_draft_modified` 戳（首改即定不翻回；人工方案零触碰、事件形状零漂移）；②诊断确认流**人工申报**：`complete_diagnosis` 可选 `ai_draft_adoption` ∈ accepted/modified/rejected 闭集（`AI_DRAFT_ADOPTION_OUTCOMES`），随 `commercial_quota_completed` 事件留痕、缺省不落键（向后兼容）。**数据仍待首批真实 run**——ADR-007 §2.5 复审触发器的「采纳率埋点有数」条件自本轮起具备承载；NEW `test_solution_ai_draft_adoption.py` 8 例＋quota 申报 3 例，变异三连全红→还原→绿。
+- **复审中间态（2026-11-11 挂账清偿收口轮现测，`fork/main` `a0b9ec3` 部署活库）**：ADR-007 §2.5 触发器两条件——①**agent_runs 非零＝已达成**（实 run **12**：`idempotency_key not like 'rehearsal:%'`，落库 2026-11-09，status＝completed 6／failed 3／timeout 2／succeeded_but_receipt_invalid 1；`fallback_level` 分布 L2×3、None×9）；②**采纳率埋点有数＝未达成**（`solution_signoff_resolved` 带 `ai_draft` 派生块＝**0**，`commercial_quota_completed` 带 `ai_draft_adoption`＝**0**，`guidance.draft_*`＝∅——12 条实 run 无一在方案确认流上产生采纳留痕，缺的是**首条采纳样本**而非样本量不足）。判定：触发器**半激活**，「默认人工确认」维持不放松；人工拍板侧已有对照信号（门禁 `gates` passed 6／failed 1／pending 11；`automation_approvals` approved 2）。**销号条件**：任一真实采纳/否决样本落 `operation_events` 即具备完整复审证据，按 BP §1.3a 证据口径复核智能化评级与确认点密度——数据到位即销号，无需再开轮。
 
 ## 缺口与 Goal 矩阵
 
