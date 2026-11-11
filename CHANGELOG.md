@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 多客户 M4 收口轮：四批证据链回写＋「按量付费 key」红线登记＋部署活体复验＋AGENTS 上游损伤修复（纯文档零代码零迁移零路由，2026-11-12）
+
+- **M4 四批全收口（任务书 §7-M4「全局面治理」，主体隔离四件套）**：批次 A PR #338 `ed41602`（Redis 13/13 键族归属核销，零生产代码；M0 判定 K3/K4/K5 现测纠正为核销）→ 批次 B PR #340 squash `5027fc4`（AI 预算主体＝企业 org：`orgs.ai_monthly_token_budget` 可空、未配置回落实例值；`subject_budget_exceeded` 主体级判定＋`ai_call_audits.status='budget_blocked'` 留痕；admin 双闸写面）→ 批次 C PR #344 squash `4313229`（`outbox_events.subject_org`＋`background_jobs.org_id` 存量 NULL=平台级零回填；`enqueue_outbox`/`ensure_background_job` keyword-only 主体声明编译闸；27 生产调用点接线——静态钉当场抓 solutions 两处；`GET /admin/jobs/metering` 计量读面，计量面非授权面不进 api_catalog）→ 批次 D PR #351 squash `fcc73b0`（NEW `storage/layout.py` 单一权威＋`FDE_STORAGE_LAYOUT` 五状态机出厂 legacy＋新键 `org/{org_id}/…`／`platform/…`——逻辑键不变＝DB 零键列迁移零回填；24 生产调用点接线——静态钉抓漏网 7 处；`flask storage-migrate-layout` 命令只交付不跑；host 票据 org 归属元数据；M0「签名键进程内随机」现测纠正为核销）。CI 链（合并树实测）：3073→3091→3097→3142 收集（PR #351 run 43058957925＝3135 passed + 7 skipped）。
+- **部署活体复验（七撞纪律）**：三镜像自 fde-wt-m4 工作树（＝`fcc73b0` 内容＋#349 融合树）build＋`up -d --force-recreate`；`alembic upgrade head` 真实升级 `c3f7b1d9e5a2 → e9b4f7c2a8d3（批次 C）→ c1d4e7f9a2b3（M5-1）`，容器内 `alembic current`＝`c1d4e7f9a2b3 (head)`；活体 url_map non-static **469** ≡ 口径；api `42d2d417e642…`／worker `6412cec8e818…`／scheduler `0bcb5d32ddee…` 容器 `.Image` 与构建产物逐位一致；ready/live **200**；四容器 healthy。★`fcc73b0` 自身 main run 被 push 取消（43065659966）——四绿证据取最新 main run（`abccfd1` 树，run 43068663545 rerun：pytest **3152 收集 = 3144 passed + 8 skipped**，含 L1 #360 插队 +10；首跑 server-tests 红＝`test_task_decomposition_preview_commit_idempotent` flake〔同树 #360 PR CI 两轮全绿〕，rerun 转绿）。
+- **红线登记：「AI 供应商只允许按量付费 key」**（GM 线联合排期 R2 行的 M4 实施语义收口）：`server/.env.example` AI 段注释落闸——按量付费 key（用量随调用增长、可被预算闸真实计量与拦截）才与 `subject_budget_exceeded` 的计量-拦截语义相容；包月/订阅制 key 无按量用量口径，接入即破坏全局面 AI 预算治理。同处顺带把 E7 预算注释从「按用户」校正为 M4 批次 B 语义（预算主体＝企业 org，orgs 列未配置回落实例值）。
+- **任务书 DoD 回写**：`docs/commercialization/多客户工作平台-leader任务书-v1.md` §14 M4 行 → [x]（四 PR 证据链＋部署活体证据）；盘点表 M4 销号追踪加收口行；GM 线联合排期草案 M4 行更新为「已收口＋红线已落」。
+- ★**顺带修复 AGENTS.md 上游锚点事故（#355 引入、#356 复利；本轮归位零内容丢失）**：#355 回填脚本把真「当前状态」标题行替换成残缺头「## 当前状态（.md — fde-workbench」并把文档头（brand＋红线＋常用命令＋工作流三节）整块重复插入；#356 在残缺锚点上复利（somwyn 段与红线子弹落进重复块）。本轮逐字节比对证实重复块＝纯拷贝＋somwyn 红线子弹（delta 1088 字符）⇒ 删除重复块、somwyn G8/G9 收口段归位真当前状态行、红线子弹归位正本红线节首、v0.3.0 行游离「）」修正；删除前断言 `dup_rest == somwyn_bullet + head_wo_title` 全等（零内容丢失可证）。
+- **结构口径**：本轮自身零迁移零新路由零新表零新蓝图（交付时点口径 469 路由／51 蓝图／151 表／69 rev 单头 `c1d4e7f9a2b3`＝abccfd1 树实测）；mypy **279 基线不变**；pytest 以 main run 实测为准（**3152 收集 = 3144 passed + 8 skipped**，run 43068663545，abccfd1 树，详见上）；桌面零改动不重打包；零迁移 ⇒ 无 alembic 动作（部署轮已升 `c1d4e7f9a2b3`）；★rebase 融合上游 #361/#362/#363 后，合并树口径随 T-11 #363（NEW 迁移 `d7e2f4a9c1b3`——alembic head 前移、诊断认领面进位）与 M5-3 #361（测试）重算，**终值以本 PR CI 为准**。
+
 ## [未发布] — 获客诊断第十八轮·T-11 线索模型与认领闸：四道机械闸＋三档归因＋台账行生成（迁移 d7e2f4a9c1b3 69→70 rev＋员工侧 5 路由，2026-11-12）
 
 诊断会话里留了资的企业，**谁来跟、归谁、算不算渠道带来的**必须**机械可判**（不靠人自觉、不靠口头约定、不靠事后翻台账对账）。
