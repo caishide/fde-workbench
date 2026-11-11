@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "c1d4e7f9a2b3"
-down_revision = "a7c2f9e1b4d8"
+down_revision = "e9b4f7c2a8d3"  # M4 批次 C（rebase 后现 head；原 a7c2f9e1b4d8 已分叉）
 branch_labels = None
 depends_on = None
 
