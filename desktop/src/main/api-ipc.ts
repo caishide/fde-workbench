@@ -7,6 +7,16 @@ import {
   type ApiResponse,
   type BridgeResult,
 } from "../shared/contracts"
+// CR-071（夜审 r8 设计稿推荐 A）：校验族提升 shared/api-safety.ts 纯函数单点，
+// 桌面 IPC 与 web 桥双消费同一原语；等价性静态钉防再漂移。
+import {
+  isAllowedMethod,
+  isAuthExcludedPath,
+  isBodySerializable,
+  isSafeApiPath,
+  serializeBodyString,
+  validateMultipartFileShape,
+} from "../shared/api-safety"
 
 interface ApiRequestHandlerOptions {
   apiBaseUrl: string
@@ -32,9 +42,6 @@ interface MultipartFileBody {
   }
 }
 
-const MAX_MULTIPART_FILE_BYTES = 100 * 1024 * 1024
-const MAX_MULTIPART_FIELDS = 20
-
 export type ApiRequestHandler = (
   input: unknown,
 ) => Promise<ApiResponse<unknown>>
@@ -45,10 +52,7 @@ interface RegisterApiIpcOptions {
   isTrustedSender(event: IpcMainInvokeEvent): boolean
 }
 
-const ALLOWED_METHODS = new Set<ApiMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"])
 const ALLOWED_KEYS = new Set(["path", "method", "accessToken", "body"])
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
-const PATH_TRAVERSAL = /(^|\/)\.{1,2}(\/|$)/
 const REDACTED = "[REDACTED]"
 
 export class ApiIpcError extends Error implements ApiErrorDto {
@@ -132,7 +136,7 @@ function validateRequest(
     Object.keys(value).some((key) => !ALLOWED_KEYS.has(key)) ||
     typeof value.path !== "string" ||
     typeof value.method !== "string" ||
-    !ALLOWED_METHODS.has(value.method as ApiMethod) ||
+    !isAllowedMethod(value.method) ||
     typeof value.accessToken !== "string" ||
     value.accessToken.length === 0 ||
     value.accessToken.length > 16_384
@@ -140,66 +144,43 @@ function validateRequest(
     throw invalidRequest()
   }
   const path = value.path
-  const queryIndex = path.indexOf("?")
-  const rawPathname = queryIndex === -1 ? path : path.slice(0, queryIndex)
-  const rawQuery = queryIndex === -1 ? "" : path.slice(queryIndex + 1)
-  let decodedPathname: string
-  let decodedQuery: string
+  let apiOrigin: string
   try {
-    decodedPathname = decodeURIComponent(rawPathname)
-    decodedQuery = decodeURIComponent(rawQuery)
+    apiOrigin = new URL(apiBaseUrl).origin
   } catch {
     throw invalidRequest()
   }
-  if (
-    !rawPathname.startsWith("/api/v1/") ||
-    !decodedPathname.startsWith("/api/v1/") ||
-    decodedPathname.includes("//") ||
-    path.includes("#") ||
-    path.includes("\\") ||
-    decodedPathname.includes("\\") ||
-    decodedQuery.includes("\\") ||
-    CONTROL_CHARACTERS.test(path) ||
-    CONTROL_CHARACTERS.test(decodedPathname) ||
-    PATH_TRAVERSAL.test(rawPathname) ||
-    PATH_TRAVERSAL.test(decodedPathname) ||
-    hasEncodedStructuralEscape(rawPathname, true) ||
-    hasEncodedStructuralEscape(rawQuery, false) ||
-    CONTROL_CHARACTERS.test(decodedQuery)
-  ) {
+  // 校验项 2+3+4+5（路径遍历/编码结构逃逸/控制字符，raw+decoded 双查）
+  // ＋校验项 8（origin 匹配）由 shared 原语 isSafeApiPath 一次判定，
+  // 与 web 桥 fde-web-bridge.ts 消费同一实现（等价性静态钉防漂移）。
+  if (!isSafeApiPath(path, apiOrigin)) {
     throw invalidRequest()
   }
-  const isPasswordVerification =
-    decodedPathname === "/api/v1/auth/verify-password" &&
-    value.method === "POST"
-  if (
-    /^\/api\/v1\/auth(?:\/|$)/i.test(decodedPathname) &&
-    !isPasswordVerification
-  ) {
+  // 校验项 2：auth 路径排除（verify-password 唯一例外）
+  if (isAuthExcludedPath(path, value.method)) {
     throw invalidRequest()
   }
   if (value.method === "GET" && value.body !== undefined) {
     throw invalidRequest()
   }
   if (value.body !== undefined) {
-    if (isRecord(value.body) && value.body.kind === "multipart_file") validateMultipartFileBody(value.body)
-    else serializeBody(value.body)
+    // 校验项 6＋7（shared 原语）：声称 multipart_file 的 body 必须过严格 schema
+    // （旧内联 validateMultipartFileBody 语义逐位保留——非法形状即拒，绝不落
+    // JSON 回环分支被当普通 body 放行）；其余 body 走可序列化回环。
+    if (isRecord(value.body) && value.body.kind === "multipart_file") {
+      if (validateMultipartFileShape(value.body) !== null) throw invalidRequest()
+    } else if (!isBodySerializable(value.body)) {
+      throw invalidRequest()
+    }
   }
   let finalUrl: URL
-  let apiOrigin: string
   try {
     finalUrl = new URL(path, `${apiBaseUrl}/`)
-    apiOrigin = new URL(apiBaseUrl).origin
   } catch {
     throw invalidRequest()
   }
-  if (
-    finalUrl.origin !== apiOrigin ||
-    !finalUrl.pathname.startsWith("/api/v1/") ||
-    PATH_TRAVERSAL.test(finalUrl.pathname)
-  ) {
-    throw invalidRequest()
-  }
+  // url 保留绝对形态（远程 apiBaseUrl 部署必需），isSafeApiPath 已断言
+  // finalUrl.origin === apiOrigin，此处归一结果逐位等价旧行为。
   return {
     url: finalUrl.toString(),
     method: value.method as ApiMethod,
@@ -208,26 +189,9 @@ function validateRequest(
   }
 }
 
-function validateMultipartFileBody(value: Record<string, unknown>): asserts value is MultipartFileBody & Record<string, unknown> {
-  if (!hasExactKeys(value, ["kind", "fields", "file"]) || value.kind !== "multipart_file" || !isRecord(value.fields) || !isRecord(value.file)) throw invalidRequest()
-  if (Object.keys(value.fields).length > MAX_MULTIPART_FIELDS) throw invalidRequest()
-  for (const [key, item] of Object.entries(value.fields)) {
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key) || typeof item !== "string" || item.length > 10_000 || CONTROL_CHARACTERS.test(item)) throw invalidRequest()
-  }
-  if (!hasExactKeys(value.file, ["field_name", "name", "type", "bytes"])) throw invalidRequest()
-  const { field_name: fieldName, name, type, bytes } = value.file
-  if (
-    typeof fieldName !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(fieldName)
-    || typeof name !== "string" || name.length < 1 || name.length > 255 || name === "." || name === ".." || /[/\\]/.test(name) || CONTROL_CHARACTERS.test(name)
-    || typeof type !== "string" || type.length > 255 || CONTROL_CHARACTERS.test(type)
-    || !(bytes instanceof Uint8Array) || bytes.byteLength > MAX_MULTIPART_FILE_BYTES
-  ) throw invalidRequest()
-}
-
 function isMultipartFileBody(value: unknown): value is MultipartFileBody {
   if (!isRecord(value) || value.kind !== "multipart_file") return false
-  validateMultipartFileBody(value)
-  return true
+  return validateMultipartFileShape(value) === null
 }
 
 function buildMultipartBody(value: MultipartFileBody): FormData {
@@ -238,33 +202,12 @@ function buildMultipartBody(value: MultipartFileBody): FormData {
   return body
 }
 
-function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
-  const allowed = new Set(keys)
-  return keys.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => allowed.has(key))
-}
-
-function hasEncodedStructuralEscape(
-  value: string,
-  rejectEncodedDots: boolean,
-): boolean {
-  if (/%(?:25|2f|3f|23|5c)/i.test(value)) {
-    return true
-  }
-  return rejectEncodedDots && /%2e/i.test(value)
-}
-
+// 传输层序列化（handler 内）：shared 原语产出字符串，此处翻译为
+// invalid_request（与旧内联版逐位等价；校验面已由 validateRequest 先行通过）。
 function serializeBody(body: unknown): string {
   try {
-    const serialized = JSON.stringify(body)
-    if (serialized === undefined) {
-      throw invalidRequest()
-    }
-    JSON.parse(serialized)
-    return serialized
-  } catch (error) {
-    if (error instanceof ApiIpcError) {
-      throw error
-    }
+    return serializeBodyString(body)
+  } catch {
     throw invalidRequest()
   }
 }
