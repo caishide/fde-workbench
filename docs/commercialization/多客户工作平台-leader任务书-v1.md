@@ -310,8 +310,8 @@ orgs（新表，主体承载）
 - [x] M1：orgs/归属/回填/审计维度；迁移对称；企业间项目不可见集成测试绿 ✅（PR #303 合并 `e7168e6`＝fork/main 顶，2026-11-11）
 - [x] M2：四入口注册 + 验证 + 状态机；审核制开关生效 ✅（PR #309 squash 合并 `058c543`＝fork/main 顶，main run 42928595126 四绿；迁移 `b8d4f6a2c9e7` 活体 head；三项拍板：部署闸关闭/个人主体+机构字段/G6 收拢委托；CI 2925 收集＝2918+7s；部署活体：闸关 404×4＋活库断言全过；便携版 r34；2026-11-11）
 - [ ] M3a/c/b：入口落地；越权套件先红后绿进 CI；盘点表 100% 销号（批批 PR 附用例）
-  - [x] M3a 入口落地 ✅（统一入口 SQL 下推＋org 谓词＋JWT 8 claim fail-closed；规格先行件 `docs/commercialization/multi-tenant/M3a-隔离入口与装饰器扩展规格-v1.md` 入库；2026-11-11）
-  - [x] M3c 越权套件骨架 ✅（`test_cross_tenant_isolation.py` 8 例绿＋1 例 `xfail(strict=True)` 待销号；变异两连：摘对象级 org 判定 ⇒ 7 红／摘 SQL org 谓词 ⇒ 3 红）
+  - [x] M3a 入口落地 ✅（统一入口 SQL 下推＋org 谓词＋JWT 8 claim 在场性 fail-closed；规格先行件 `docs/commercialization/multi-tenant/M3a-隔离入口与装饰器扩展规格-v1.md` 入库；PR #318 squash 合并 `1b6090b`＝fork/main 顶；PR CI 四绿 2970 收集＝2962+7s+1xf；部署活体：alembic `e5c9f2a7d4b6 (head)`＋url_map 461 non-static＋ready/live 200＋三镜像一致；2026-11-11）
+  - [x] M3c 越权套件骨架 ✅（`test_cross_tenant_isolation.py` 8 例绿＋1 例 `xfail(strict=True)` 待销号；变异两连：摘对象级 org 判定 ⇒ 7 红／摘 SQL org 谓词 ⇒ 3 红；随 PR #318 进 CI）
   - [ ] M3b 端点分批销号（4 批 ≤30 端点，批批 PR 附同批越权用例；批次 ① 含待 M0 补充 #6 `_project_scope` 收拢）
 - [ ] M4：Redis/存储/队列/预算按主体隔离；主体级 `budget_blocked` 留痕
 - [ ] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过
