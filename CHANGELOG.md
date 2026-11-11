@@ -2,6 +2,12 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 夜审挂账设计轮 r6（CR-056/057 桌面两挂点多方案设计稿＋主树 8 草稿文件抢救入库；纯文档零代码零迁移零路由，2026-11-11）
+
+- **CR-056/057 设计轮（破例先行出设计，触发条件未满足⇒不施工维持不变）**：蔡工 2026-11-11 交互式拍板「开设计轮（P2 两条 056/057）」——2026-11-10 拍板「维持挂账」不推翻，只把「多方案拍板」前置成文。NEW `docs/audit/夜审-CR056-CR057-多方案设计稿-2026-11-11.md`（取证基线 fork/main `4354cd2`，锚点现测）：**CR-056**（close-guard 在途写计数不覆盖 renderer 直连分片 PUT）现测 4 直连上传站在位＋3 只读 GET 显式排除面，推荐 **A′ 通知计数**（renderer 上传经 IPC 桥 `appUploadBegin/End` 计入 `activeMutations`＋4 站收拢 `upload-helper`＋静态钉防第 5 处上传面；方案 B 改走 IPC 桥＝百兆 blob 经 IPC 拷贝＋凭据面扩大否决；C renderer 自拦＝拦不住 Electron 主窗 close 事件链不可行）；**CR-057**（打包态 meta CSP connect-src 写死回环）现测三形态（index 写死/web `'self'` 正确/harness 正则先例），**裁定 B 运行时下发结构性失效**（浏览器 meta∧header CSP 取交集语义，main 侧 onHeadersReceived 无法删 meta 标签，只能更严），推荐 **A＋D 构建注入**（`build.extraMetadata` 单点补可选 `fdeOssHost` 键注入 connect-src＋部署形态×存储后端组合矩阵成文；C `https:` 通配＝数据外泄面扩大否决）；两条同轮实施预估一次便携版重打包。**owner＝蔡工，实施待拍板**。
+- **主树 8 个 untracked 草稿文件抢救入库**（主树 `D:/test/fde-workbench` 落后 fork/main 期间他线 ff 丢弃 12 个 tracked diff〔品牌定稿/README 私有化等，内容未随任何提交进入 fork〕，8 个 untracked 草稿幸存磁盘但未入 git，其中 **README:244 链接的 `对外试用部署方案-v1.md` 在 fork/main 上不存在＝死链**）：本 PR 将 8 件（对外试用部署方案 v1/v2〔v1 自标已废止留决策沿革〕＋实施任务书 v1/v2＋GPT建议.txt＋架构评估提示词-v1.md〔两份 11-07 评估报告的执行依据〕＋DSH 复评〔正本 11-05 已在仓〕＋多客户 zcode 提示词-正文.txt）补入 git。红线自检：零客户真实资料/零密钥/零第三方正文。
+- **活体部署挂账（归他线）**：活体停在 r5 收口 `a9c5e2d7b3f1`，fork/main 已推进 `e5c9f2a7d4b6`（#305/#309/#312 带 c8d2f6a4e9b1/b8d4f6a2c9e7/e5c9f2a7d4b6 三新迁移）⇒ 活体落后两新迁移，rebuild＋alembic＋活体三项复验归 F 线 T4/M2 owner 部署合同，本 PR 不代部署。
+- 口径：纯文档轮——server 零改动⇒无需 rebuild/alembic；桌面零改动⇒不重打包；pytest/mypy 零变化（终值随本 PR CI 复核）。
 ## [未发布] — 多客户工作平台 M3a/M3c 轮：统一隔离入口＋跨企业越权套件骨架（零迁移零新路由零新表零桌面，2026-11-11）
 
 任务书 §7-M3a/M3c ＋ ADR-M3 §2/§3；**规格先行**（ADR-M3 §2.4 强制：装饰器扩展行为规格必须先于任何批量改动入库）。

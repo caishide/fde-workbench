@@ -1,0 +1,401 @@
+我查到了这个仓库的最新 `main` 分支提交。先说一个重要判断：蔡工 FDE Workbench 已经不只是项目管理和 AI 助手工作台了，它正在形成“业务调研 → 本体建模 → 工作流执行 → Agent 产物 → 人工验收 → G1–G9 交付门禁”的交付闭环。
+
+所以，下一步不应该简单地再增加几个 Agent，也不应该马上照搬 `fde-v2` 的多智能体架构。更值得做的是：让系统能够根据客户材料和访谈结果，主动识别交付任务、生成可执行计划、调用受控工具完成工作，并把每一步结果转成可验证的交付证据。
+
+我看到的最新提交是 `7368094`，时间为 2026-11-07 14:47 UTC。它已经加入 ZCode CLI 契约解析层，但还没有接通宿主侧代理执行。这一点会直接影响后面的自动化路线。
+
+## 一、最新代码已经进展到什么程度？
+
+我检查了最新提交记录、`AGENTS.md`、V3 架构文档、实施台账，以及 Agent、本体、Workflow、访谈转写等核心模块。
+
+最新代码基线
+
+已读取
+
+# 7368094
+
+2026-11-07 · main · 最新提交 SHA 前缀
+
+# 107
+
+服务端业务表
+
+# 38
+
+数据库迁移 revision
+
+# 315
+
+服务端路由
+
+# 94
+
+API Catalog 条目
+
+# 2,116
+
+pytest 收集数（2,110 passed、6 skipped）
+
+# 927
+
+桌面端 vitest
+
+这些是仓库最新状态台账记录的数字，并非我在当前环境重新运行测试所得。正式发布仍应以合并后 CI 为准。
+
+[查看最新提交](https://github.com/caishide/fde-workbench/commit/73680946f4ef020aab39eb16cc093f3e5284e22b?utm_source=chatgpt.com) · [查看项目开发约束](https://github.com/caishide/fde-workbench/blob/main/AGENTS.md?utm_source=chatgpt.com)
+
+最值得注意的是：最近的开发已经不只是补功能，而是在建设一套可审计、可治理、可恢复的 Agent 执行体系。
+
+### 1. 客户调研已经有了转写草稿到正式纪要的路径
+
+最新 T-A9：
+
+- 增加 `transcript_drafts` 和 `interview_minutes`。
+- 本地 ASR 选型为 faster-whisper。
+- 转写内容先进入草稿区。
+- 草稿经过代号化和人工复核，客户确认三要素齐备后才能晋升为正式访谈纪要。
+- 草稿和正式纪要物理隔离，草稿有到期清理机制。
+
+核心代码：
+
+- `server/src/fde_api/transcripts/service.py`
+- `server/src/fde_api/transcripts/models.py`
+- `server/src/fde_api/transcripts/routes.py`
+- `desktop/src/renderer/src/transcripts/TranscriptDraftsPanel.tsx`
+
+这很重要，因为 FDE 的第一步不是写代码，而是把客户说的话转化成可靠的业务事实。
+
+[查看访谈转写模块](https://github.com/caishide/fde-workbench/tree/main/server/src/fde_api/transcripts?utm_source=chatgpt.com)
+
+### 2. Agent 已经有运行、工具和产物管理能力
+
+当前 Agent 相关代码：
+
+- `server/src/fde_api/agents/service.py`
+- `server/src/fde_api/agents/adapter.py`
+- `server/src/fde_api/agents/context.py`
+- `server/src/fde_api/agents/tools.py`
+- `server/src/fde_api/agents/models.py`
+- `server/src/fde_api/agents/receipt.py`
+- `desktop/src/renderer/src/agents/AgentsConsole.tsx`
+
+特别值得关注最新 T-B1：
+
+- `agent_artifacts` 增加 `derived_summary`。
+- 增加 `reviewed_by_user_id`、`reviewed_at`。
+- 新增产物人工接受和撤回操作。
+- Agent 产物原件仍然只保留文件指针和 SHA256，不把原件复制进数据库。
+- 可以统计 Agent 产物被人工接受的情况。
+
+这意味着系统开始有能力回答一个关键问题：
+
+Agent 生成的东西，究竟有多少真正被 FDE 工程师接受并用于交付？
+
+但还需要注意，人工接受率不等于交付质量。后面还要结合返工次数、客户验收结果和实际节省工时。
+
+[查看 Agent 模块](https://github.com/caishide/fde-workbench/tree/main/server/src/fde_api/agents?utm_source=chatgpt.com)
+
+### 3. Workflow 已经不是简单的自动化任务队列
+
+目前已有：
+
+- `server/src/fde_api/workflows/definition_service.py`
+- `server/src/fde_api/workflows/executor.py`
+- `server/src/fde_api/workflows/models.py`
+- `server/src/fde_api/workflows/routes.py`
+
+支持四种节点：
+
+| 节点               | 职责          |
+| ---------------- | ----------- |
+| `call`           | 确定性服务调用     |
+| `skill`          | 执行已发布 Skill |
+| `agent`          | AI 判断与生成    |
+| `human_approval` | 人工审批        |
+
+还具备：
+
+- DAG 环检测；
+- 节点依赖和输出校验；
+- Skill 版本固定；
+- 发布后不可变版本；
+- 幂等键；
+- 节点失败重试；
+- 中断恢复；
+- 取消；
+- 事务性 Outbox；
+- 工作流执行记录。
+
+尤其是 `definition_service.py` 的 DAG 校验和 `executor.py` 的恢复机制，已经具备相当不错的工程基础。
+
+[查看 Workflow 模块](https://github.com/caishide/fde-workbench/tree/main/server/src/fde_api/workflows?utm_source=chatgpt.com)
+
+### 4. 本体已经开始走向可治理，而不只是术语表
+
+现有：
+
+- `server/src/fde_api/ontology/models.py`
+- `server/src/fde_api/ontology/service.py`
+- `server/src/fde_api/ontology/routes.py`
+
+已覆盖术语、别名、关系类型注册和变更集。
+
+一个重要设计是：
+
+AI 生成的本体候选不能直接写入正式本体，必须通过 change_sets 提交、人工确认，再在事务中物化。
+
+还具备术语影响分析、关系类型状态管理等能力。
+
+但这里有一个值得继续改进的地方：目前术语与其他业务对象之间存在名字域关联的设计，而不是全部通过正式的 `term_id` 外键建立关联。后续要根据实际业务引用规模，评估是否需要增强稳定 ID 和数据血缘。
+
+[查看本体模块](https://github.com/caishide/fde-workbench/tree/main/server/src/fde_api/ontology?utm_source=chatgpt.com)
+
+## 二、我认为目前真正的瓶颈在哪里？
+
+我认为现在有三个问题，比继续增加 Agent 更重要。
+
+### 问题一：系统有执行能力，但缺少足够的真实交付运行数据
+
+这是我认为当前最重要的问题。
+
+从仓库的 P3 高级自主化立项文档看，最近一次状态检查记录：
+
+- `agent_runs = 0`
+- `workflow_runs = 0`
+
+这意味着系统虽然已经有了相当多的执行机制，但还没有足够的真实客户项目运行数据，无法可靠判断：
+
+- 哪些 Agent 真正有效？
+- 哪些 Skill 经常失败？
+- 哪些 Workflow 节点需要人工干预？
+- 哪些任务可以安全自动化？
+- Agent 是否真正节省了工程师时间？
+
+因此，下一步最应该做的不是继续扩展自主化，而是让系统进入真实项目试运行。
+
+建议：选择一个制造业客户交付场景，跑出第一批完整的真实 Workflow Run。
+
+### 问题二：Agent 的执行能力与 FDE 交付过程还没有完全形成自动闭环
+
+目前有 Agent、Skill、Workflow、产物和人工接受机制，但还需要进一步打通：
+
+客户材料 → 业务事实 → 本体 → 流程 → 实施任务 → Agent 执行 → 测试 → 验收 → 交付。
+
+尤其要让每个阶段的输出成为下一阶段可直接消费的结构化输入，而不是让工程师不断复制粘贴文档、重新向 Agent 解释上下文。
+
+### 问题三：缺少足够完整的交付结果评价体系
+
+现有 Agent 产物接受记录是一个很好的起点。
+
+但真正的 FDE 交付智能化，需要衡量的不只是 Agent 是否完成任务，还包括：
+
+- 工程师修改了多少；
+- 交付任务返工几次；
+- 生成的方案是否被采用；
+- 测试是否一次通过；
+- 客户是否验收；
+- 实际花费多少时间；
+- 最终节省了多少人工工作。
+
+否则系统会越来越会生成内容，却无法证明交付效率真的提升。
+
+## 三、接下来我建议建设的六项能力
+
+下面是我建议的 V3.1 演进路线。它以当前代码为基础，不再重复建设本体、Agent 或 Workflow。
+
+[Geospatial Data Analytics: Advancing Professional - intuitionlink.com](https://images.openai.com/static-rsc-4/yq44vq4zoNL0kZXS6w_U4_TMiKbFSByxiSmTm6cysNdwkHN1QlXraixzAnr4IxSFnwXZh_3XkbrW2O2zixR2ojf7uq58FYDA1oe9EeFwYgdw8VOFCXrtG3Uw9DRVJk-M_uArO8CQ7wfNqXpOl-HeToWWBr-bUbTWVAf5FlMd-5M?purpose=inline)
+
+1\. 智能客户访谈与业务分析 Agent
+
+优先级 P0
+
+- 访谈录音转写后自动整理业务流程。
+- 自动识别业务对象、岗位、系统、痛点和业务规则。
+- 发现访谈缺失项，自动生成下一轮追问。
+- 生成业务现状图、问题清单和待确认事项。
+
+代码落点：`transcripts/`、`research/`、`ontology/`。
+
+[AI Agents and Automation: Bridging the Gap Between Agent Patterns and Business Solutions | by Jingdong Sun | Medium](https://images.openai.com/static-rsc-4/-NdrOg4o1z4xEUBLmklMTwdMlXAUKk05WB5kTyKoMX0sN7oF__QXqTgZJ7QqJMoFR7cIG1eOB2wvD5EPT8NeZ32b1DvMHwEqxev6x5xnSW4TaChxDtraD1E8DWooWC9YaxB_XnKYpU1zpu7VXMAchyZYVVjNX_sSFH76Sx590Ao?purpose=inline)
+
+2\. 本体驱动的交付方案生成器
+
+优先级 P0
+
+- 从访谈和企业材料形成业务本体候选。
+- 识别实体、关系、状态机、业务规则。
+- 自动生成业务流程图和系统集成清单。
+- 将审核后的本体转换成技术方案、数据模型和实施任务。
+
+代码落点：`ontology/`、`solutions/`、`workflows/`。
+
+这里的关键不是再做一个知识图谱，而是建立 Ontology → Delivery Plan 的转换能力。
+
+[Module 1 Lesson 4: The n8n UI & Node Anatomy | ShShell.com](https://images.openai.com/static-rsc-4/b50n8JKrLB3mEZIfR-9L3BisC_zycsE9IDN-MqJ5nziVi0ZNt5UBuQoii9tiT881W7gOT9KQV8WCJ53Mx1P10FHNS4VI-4qHHjWATbOhta1YioTPwJWQNEKY3CL74oQ_1jqzkbQXPYhXyCc3zNTB4L6TH7M4ofafIEl9bomMtyg?purpose=inline)
+
+3\. FDE 交付流程自动编排器
+
+优先级 P0
+
+- 根据项目类型和已审核方案，自动生成 Workflow 草稿。
+- 自动拆分任务、依赖、责任人和验收标准。
+- 自动安排 Agent、Skill、人工审批节点。
+- 执行后自动汇总结果和门禁证据。
+
+代码落点：`workflows/`、`projects/gate_service.py`、`jobs/`。
+
+让 G1–G9 成为真正的执行和验收状态机，而不只是项目进度标签。
+
+[Blog | Zencoder – The AI Coding Agent](https://images.openai.com/static-rsc-4/4um5vLKHOvBeAovVMz2WH5mg4vBS0fp0zsRaxkzdaFVHtRnmlqhYzKVqHdCFiyu8QbhYY5aS5Mu7ragdn2AXy14aHFzuoaejD4i8lvxSjy8wNrRy3CTfEtPsqO8jXi0oXWb5XgghV8mO8TlVc6ZpeWkIZ_7sO12DONoDKmR2OIc?purpose=inline)
+
+4\. AI 工程实施 Agent
+
+优先级 P1
+
+- 读取已批准的技术方案和任务。
+- 生成代码实施任务书。
+- 调用 Codex / ZCode 等编码执行器。
+- 自动收集 diff、测试报告和交付物。
+- 工程师审核后才接受结果。
+
+代码落点：`agents/adapter.py`、`agents/zcode_contract.py`、`agents/service.py`、`agents/artifact_summary.py`。
+
+这是从“AI 帮助写方案”跨越到“AI 帮助真正交付软件”的关键。
+
+[How we reshaped our Test Pyramid - Contentsquare Engineering Blog](https://images.openai.com/static-rsc-4/8qMjr2XizOddSFG8AzRAPhvbbroYVYegaxmusbqJVDGkqNEBnRyFZBDeRtJ5rrFaDHAFiGkVSn2OHlPoiMR3ljCNEOMpJx9Cm3b-SywaA2mbTDiluWCsSvl700YlpKOQXocPJtU-8-VbpOasg90ZUs4qetRdMqs8pbgWxievqj4?purpose=inline)
+
+5\. 自动测试与交付质量评估 Agent
+
+优先级 P1
+
+- 根据需求和验收标准生成测试用例。
+- 自动检查功能覆盖率和证据完整性。
+- 对照需求、代码 diff 和测试结果。
+- 识别未完成事项和潜在风险。
+- 生成交付验收报告。
+
+代码落点：`agents/`、`workflows/`、`projects/gate_service.py`。
+
+这里建议 AI 负责发现问题，确定性规则负责验收，人工负责最终签字。
+
+[AI-Driven Unified Data Platform with Microsoft Fabric](https://images.openai.com/static-rsc-4/U5Ts-4urK9XI1QZOTUAtg4CCf5RAzMKefr7cHmN89RV2fD2Jp38qdAfjsBSF3NPx4F8GiuISCRU75WainR0Li-rTIsrtAJmnhpgWqjQbfM4MOI7csHmF_ym-gvSggnfpPud1yacgp0VShKspAG8Xx2v7gPJEr5IUwufQYV8l1lQ?purpose=inline)
+
+6\. FDE 交付经验学习系统
+
+优先级 P2
+
+- 统计 Agent / Skill 的使用、成功、失败和人工接受情况。
+- 识别高频重复任务。
+- 自动提出 Skill 改进草稿。
+- 对比不同项目的交付工时和返工。
+- 将已验证的经验沉淀为可复用模板。
+
+代码落点：`agents/`、`control/`、`documents/`、`projects/`。
+
+不建议自动修改正式 Skill；先生成建议，再走现有审核和发布流程。
+
+## 四、我最建议优先打通的一个场景
+
+考虑到你的主要目标是服务制造业 SMEs，我建议不要先做一个覆盖所有行业的通用 Agent。
+
+先把一个典型制造业客户的 FDE 交付流程跑通：
+
+## 制造业客户 FDE 自动交付闭环
+
+1. 客户资料导入
+
+   上传企业介绍、产品资料、组织结构、现有 SOP、系统截图等。
+2. AI 客户访谈
+
+   转写访谈、整理纪要、自动追问缺失信息。
+3. 业务本体构建
+
+   识别客户、订单、产品、生产、库存、报价、发货、售后等对象。
+4. 业务流程分析
+
+   识别现有流程、人工操作、系统断点和自动化机会。
+5. 解决方案生成
+
+   生成目标流程、系统架构、技术选型、投资预算和实施计划。
+6. 实施任务自动拆解
+
+   生成 Workflow、Agent、Skill 和工程任务草稿。
+7. AI 工程实施
+
+   调用编码 Agent、自动化工具和 API 执行获批任务。
+8. 自动测试与验收
+
+   生成测试报告、证据链和未完成事项。
+9. 交付与经验沉淀
+
+   生成交付文档、客户培训材料和可复用 Skill 候选。
+
+这里要特别强调：客户确认、方案批准、外部写入、发信、付款等操作仍然保留人工授权。你现在的安全设计是正确方向，不建议为了自动化率牺牲它。
+
+## 五、近期最值得处理的技术问题：ZCode 执行通道
+
+最新提交 `7368094` 有一个很值得关注的进展：
+
+新增 `server/src/fde_api/agents/zcode_contract.py`，已经实现：
+
+- 真实 CLI 参数构造；
+- `--resume` 会话续接参数；
+- `--json` 单对象汇总解析；
+- CLI 汇总结果到 Agent 事件的映射；
+- 测试夹具和契约测试。
+
+但它目前是纯函数契约层，没有真正 spawn ZCode，也没有接通宿主代理。
+
+当前方案已经确定走 A：Windows 宿主侧代理，而不是让 Linux Docker 容器直接运行宿主 CLI。
+
+我建议下一步严格按照现有台账推进：
+
+1. 取得 ZCode 商用条款书面确认。
+2. 完成宿主代理的最小安全执行闭环。
+3. 明确代理只服务于已授权的单次 Agent Run。
+4. 验证会话续接、产物指针、超时和终止回收。
+5. 进行真实机器联调和授权签核。
+6. 先在脱敏项目中试运行。
+
+目前 `adapter_missing` 仍然维持是合理的，不应为了让界面显示“已连接”而提前放开执行。
+
+参考：[ZCode 契约层](https://github.com/caishide/fde-workbench/blob/main/server/src/fde_api/agents/zcode_contract.py?utm_source=chatgpt.com)。
+
+## 六、未来 30 天我建议这样安排
+
+| 阶段    | 工作重点                  | 主要成果               |
+| ----- | --------------------- | ------------------ |
+| 第 1 周 | 选定一个真实试点项目，打通访谈和纪要    | 第一份真实业务访谈纪要        |
+| 第 2 周 | 本体、业务流程和方案生成          | 一套审核后的业务模型和方案      |
+| 第 3 周 | Workflow 编排与 Agent 执行 | 第一批真实 Workflow Run |
+| 第 4 周 | 测试、验收、统计和复盘           | 真实交付闭环及效果数据        |
+
+不要用增加多少 Agent、多少 Skill、多少工作流作为主要 KPI。建议先统计：
+
+- 一次完整交付需要人工介入多少次；
+- 自动生成产物的人工接受率；
+- 需求到方案的耗时；
+- 方案到实施任务的转化率；
+- 自动测试一次通过率；
+- 每个交付阶段的返工率；
+- 每个项目节省的人工工时。
+
+## 七、最终建议：现在不要急着开发更多功能
+
+我认为你的 Workbench 已经到了一个重要转折点：
+
+从“把 FDE 工作流程数字化”，转向“让 AI 真正承担 FDE 交付中的可验证工作”。
+
+现在应该优先验证三个闭环：
+
+1. 访谈 → 本体 → 业务方案：AI 能不能真正理解客户业务？
+2. 方案 → Workflow → Agent 执行：AI 能不能真正完成工程任务？
+3. 执行 → 测试 → 人工验收 → Skill 沉淀：AI 能不能持续提高下一次交付效率？
+
+这三个闭环比再引入一个多 Agent 框架更有价值。
+
+我的建议是先启动一个独立的 `goal-v3.1` 迭代，优先做真实试点，不要马上启动大规模架构重构。
+
+## 我建议下一步先做这件事
+
+我可以进一步把上面的建议转成一份\*\*《蔡工 FDE Workbench V3.1 智能交付自动化升级路线图与 Goal 实施任务书》\*\*，直接对照现有代码，拆成具体的文件、接口、数据表、测试和实施顺序，交给 ZCode 或 Codex 执行。

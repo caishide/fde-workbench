@@ -24,6 +24,10 @@
 
 | r5 | 夜审修复·迁移窗口批（CR-045/048/053/059 一个 additive 迁移窗口：五索引＋服务层两兜底＋热点拆分 host_receipt） | **已完成 2026-11-10**（变异 4/4 判别；PR #304 合并 `833ccbc`；迁移 `a9c5e2d7b3f1` 十五/十六度插队连改挂现 M1 之后 60→62 单头；活库现测四唯一面零重复先测后建；CI 双红两修＝quality approve UPDATE 发库顺序不确定〔uuid 主键字典序〕⇒ 退位循环后显式 flush 落库＋CI 无 .env 显式必填面；submit_host_receipt 拆 `agents/host_receipt.py`＝1886→1719 行预算内；audit 三件套重生成；CI 实测 2794 passed + 7 skipped） | CHANGELOG「夜审修复 r5」节 |
 
+| r6 | 夜审挂账设计轮·桌面两挂点（CR-056/057 破例先行出设计稿，零代码；蔡工 2026-11-11 交互式拍板「开设计轮」，触发条件未满足不施工维持不变） | **已完成 2026-11-11**（NEW docs/audit/夜审-CR056-CR057-多方案设计稿-2026-11-11.md：CR-056 现测 4 直连分片 PUT 在位＋3 只读 GET 排除面，推荐 A′ 通知计数＋helper 收拢＋静态钉；CR-057 现测 CSP 三形态〔index 写死回环/web 'self'/harness 先例〕＋裁定 B 运行时下发因 meta∧header CSP 交集语义结构性失效剔除，推荐 A＋D 构建注入＋形态矩阵成文；两挂账同轮实施预估一次便携版重打包；纯文档零代码零迁移） | 台账本节 |
+
+**部署挂账（归他线，不占 r 编号）**：活体部署现停在夜审 r5 收口点 `a9c5e2d7b3f1`（2026-11-10 三镜像＋alembic＋活体三项复验全绿）；fork/main 其后合入 #305/#309/#312（新迁移 c8d2f6a4e9b1/b8d4f6a2c9e7/e5c9f2a7d4b6，64 rev head e5c9f2a7d4b6）⇒ 活体落后 fork/main 两新迁移，**推进归改动线（F 线 T4/M2 owner）部署合同**（rebuild 三镜像＋alembic upgrade＋活体三项复验），本台账不代部署。
+
 ## 发现总表
 
 | 编号 | 级别 | 状态 | 一句话 | file:line | 轮次 |
@@ -82,8 +86,8 @@
 | CR-053 | P2 | **fixed（夜审 r5：两表部分唯一索引落地；实施期修正＝quality approve 退位循环前移〔autoflush 中间态撞索引实测 500〕；delivery publish 本就 supersede-先行）** | delivery_plans/test_plans 单点 approved/published 无部分唯一索引并发可双点永久共存（应用层退位 READ COMMITTED 互不可见） | plans/service.py:231 + quality/service.py:207 | 夜审r1 |
 | CR-054 | P2 | **fixed（夜审 r2，PR #289）** | discovery 审阅无行锁无 CAS 并发可击穿终态约定（guidance confirm_analysis 先例未沿用） | discovery/service.py:245/302 | 夜审r1 |
 | CR-055 | P3 | 观察挂账（原判 P1 被复核三重合取反证驳回；拍板 2026-11-10 维持＋挂触发条件） | quality 覆盖闸并集×双点退位——单调性为四重机制合取的隐式不变量；用例编辑/需求撤销通道立项时须补护栏钉 | quality/service.py:176-215 | 夜审r1 |
-| CR-056 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——renderer 直连分片上传真实场景出现时选型） | close-guard 在途写计数不覆盖 renderer 直连 fetch 分片 PUT（4 处上传面，100MB 级中途关窗零拦截）——多方案 | desktop/src/main/index.ts:184 | 夜审r1 |
-| CR-057 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——远程 https API/OSS 一等形态立项时一并裁决 CSP） | 打包态 meta CSP connect-src 写死回环（远程 https API/OSS 一等形态下文件二进制面静默阻断，半坏隐蔽态）——多方案 | desktop/src/renderer/index.html:7 | 夜审r1 |
+| CR-056 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——renderer 直连分片上传真实场景出现时选型；**2026-11-11 设计轮已出待拍板**） | close-guard 在途写计数不覆盖 renderer 直连 fetch 分片 PUT（4 处上传面，100MB 级中途关窗零拦截）——多方案；**设计稿＝docs/audit/夜审-CR056-CR057-多方案设计稿-2026-11-11.md 推荐 A′（通知计数＋静态钉）** | desktop/src/main/index.ts:184 | 夜审r1＋设计轮r6 |
+| CR-057 | P2 | 维持挂账（拍板 2026-11-10：挂触发条件——远程 https API/OSS 一等形态立项时一并裁决 CSP；**2026-11-11 设计轮已出待拍板**） | 打包态 meta CSP connect-src 写死回环（远程 https API/OSS 一等形态下文件二进制面静默阻断，半坏隐蔽态）——多方案；**设计稿同上一节 推荐 A＋D（构建注入＋形态矩阵成文；B 运行时下发因 meta/header CSP 交集语义结构性失效剔除）** | desktop/src/renderer/index.html:7 | 夜审r1＋设计轮r6 |
 | CR-058 | P2 | **fixed（夜审 r3）** | web 桥版本 "0.3.0-web" 硬编码第三版本源（测试钉钉字面量自身，列车推进必然漂移） | fde-web-bridge.ts:286 | 夜审r1 |
 | CR-059 | P2 | **fixed（夜审 r5：ix_agent_tool_calls_run 落地；产物侧由 uq_agent_artifacts_run_storage_ref 前导列覆盖，独立 ix 冗余不另建）** | agent_artifacts/agent_tool_calls 的 run_id FK 无索引（详情页必经查询，活库现测仅 pkey）——涉迁移可合并窗口 | agents/service.py:357/1103 | 夜审r1 |
 | CR-060 | P2 | **fixed（夜审 r2，PR #289）** | api_catalog plugins desc 声称「需密码确认」实现全链无（高估安全失实，payload 闭集结构上不可能收密码） | control/api_catalog.py:29-30 | 夜审r1 |
@@ -604,7 +608,7 @@
 - **CR-053 [P2→挂账]**：plans/quality 部分唯一索引缺失——涉迁移（delivery_plans 按 `WHERE status='published'`，复核员校正原建议）；合并迁移窗口。
 - **CR-054 [P2→r2 修]**：discovery 审阅无行锁——两处 get 加 with_for_update（沿 guidance confirm_analysis 先例）+测试。
 - **CR-055 [P3 观察挂账]**：quality 覆盖闸隐式不变量——原判 P1 驳回记录完整在报告 §四；消解条件=用例编辑/需求撤销通道立项时补护栏钉。**拍板 2026-11-10：维持观察挂账**（触发条件同消解条件，不提前施工）。
-- **CR-056/057 [P2→挂账]**：桌面多方案组（直传计数/CSP 动态化）拍板。
+- **CR-056/057 [P2→挂账]**：桌面多方案组（直传计数/CSP 动态化）拍板。**2026-11-11 设计轮已出（r6，纯文档待拍板）**：推荐 056＝A′ 通知计数（renderer 上传经 IPC 桥 begin/end 事件计入 activeMutations＋4 站收拢 upload-helper＋静态钉防第 5 处上传面）；057＝A＋D 构建注入（`build.extraMetadata` 单点补 `fdeOssHost` 可选键注入 connect-src＋部署形态×存储后端组合矩阵成文；B 运行时下发因 meta∧header CSP 交集语义剔除留痕）。设计稿＝`docs/audit/夜审-CR056-CR057-多方案设计稿-2026-11-11.md`；实施＝蔡工拍板后开桌面轮（与 056 合并一次便携版重打包）。
 - **CR-058/063/068/070/073/075/076/077/078/079 [→r3 修]**：卫生批——web 桥版本单源化/可见性对账测试/confirm_term docstring/web 桥 lcsc 白名单/LCSC 业务错误透传/恒真断言清理/不可取消钉加宽/__init__ docstring 去产品名/口径配方 AST 化/.env.example 补两行注释键。
 - **CR-059 [P2→挂账]**：两 FK 索引——涉迁移合并窗口。
 - **CR-061..CR-074 [P3→挂账]**：疑点组——逐条消解条件见报告 §四/§六（host-poll 族 061 与 CR-048 同批；064/066/067/072 权限语义拍板；069 bridge 错误映射；071 web 桥校验族设计轮；074 涉迁移文件禁区）。
