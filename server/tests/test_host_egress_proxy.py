@@ -272,7 +272,7 @@ def test_run_without_gate_leaves_proxy_env_absent() -> None:
     assert "NO_PROXY" not in env
 
 
-def test_run_timeout_still_carries_audit_and_stops_gate() -> None:
+def test_run_completes_gate_stopped_and_audit_field_present() -> None:
     gate = HostEgressGate(["api.z.ai"])
     spawner = RecordingSpawner(FakeProc(stdout=_SUMMARY, returncode=0))
     result = run_host_channel(_ctx(), _SETTINGS, output_scanner=FakeScanner(), spawner=spawner, egress_gate=gate)
