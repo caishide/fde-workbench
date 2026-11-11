@@ -7,8 +7,11 @@
 2. 接单与结算引用 snapshot_hash（争议仲裁看到的是「当时那一版」）。
 3. 每次状态迁移写 OperationEvent（P0-6 白名单已注册 delivery_package 目标）。
 
-onsite_required 派生（§4.6 + goal-r3 留注⑥）：schedule 文本含
-现场/到场/驻场/驻点 关键词即真——关键词启发式，规则化随 P1-2 场景引擎收口。
+onsite_required 三态语义（**F 线 T5 就近硬闸加固**）：旧版按 schedule 文本
+含现场/到场/驻场/驻点 关键词派生——关键词启发式，漏写即同城硬闸整体失效
+（ADR-011 §5-D）。新版：默认**到场型**（FDE 交付项目默认 True），**仅显式
+标记纯远程才 False**；关键词派生降级为「字段为空（未设置）时的兜底」。
+判定唯一权威原语＝``resolve_onsite_required``。
 """
 
 from __future__ import annotations
@@ -26,7 +29,11 @@ from fde_api.auth.models import User
 from fde_api.dispatch.access import grant_package_access
 from fde_api.dispatch.channel_guard import ChannelGuardError, ensure_package_channel
 from fde_api.dispatch.errors import DispatchServiceError
-from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
+from fde_api.dispatch.models import (
+    DeliveryPackage,
+    DispatchOffer,
+    resolve_onsite_required,
+)
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.solutions.models import ProjectSolution
@@ -110,7 +117,15 @@ def _snapshot_payload(
 
 
 def _derive_onsite_required(schedule: str) -> bool:
+    """四关键词派生（现场／到场／驻场／驻点）——**F 线 T5 后降级为兜底**。
+
+    旧形态下这是 ``onsite_required`` 的唯一来源 ⇒ 方案文本漏写即同城硬闸
+    整体失效（ADR-011 §5-D）。新形态下它只回答「字段为空（未设置）时该
+    兜底成什么」，且**新建包的默认语义是 True**（见
+    ``models.resolve_onsite_required``）——本函数不再是默认判据。
+    """
     return any(keyword in (schedule or "") for keyword in _ONSITE_KEYWORDS)
+
 
 
 def _generate_package_code(session: Session, project: Project, round_no: int) -> str:
@@ -170,10 +185,20 @@ def create_package(
     quote_id: str,
     dispatch_mode: str = "assign",
     onsite_visits: int | None = None,
+    onsite_required: bool | None = None,
 ) -> DeliveryPackage:
-    """draft 落库（§2.5 draft 行：方案+项目+报价要素齐备才可建）。"""
+    """draft 落库（§2.5 draft 行：方案+包/报价要素齐备才可建）。
+
+    **F 线 T5**：`onsite_required` 接受显式值——``None``（缺省）＝ 未设置，
+    读侧兜底按「FDE 交付项目默认到场型」判 True；``False`` ＝ **显式标记
+    纯远程型**（唯一进入远程加权序的入口）。四关键词派生不再是默认判据。
+    """
     if dispatch_mode not in ("assign", "claim"):
         raise DispatchServiceError("invalid_request", "dispatch_mode 必须是 assign/claim。")
+    if onsite_required is not None and type(onsite_required) is not bool:
+        raise DispatchServiceError(
+            "invalid_request", "onsite_required 必须是布尔值（缺省＝未设置）。"
+        )
     if actor.role not in ("admin", "project_lead"):
         raise DispatchServiceError(
             "verifier_role_required", "只有平台侧（admin/project_lead）可建交付包。", 403
@@ -212,7 +237,7 @@ def create_package(
         # 经 matching.override_required_level 人工覆盖（必填 reason + 留痕）
         required_modules=module_ids,
         required_industry=industry,
-        onsite_required=_derive_onsite_required(solution.schedule),
+        onsite_required=onsite_required,
         onsite_visits=onsite_visits,
     )
     session.add(package)
@@ -283,9 +308,14 @@ def publish_package(
     published_at = datetime.now(timezone.utc)
     package.published_at = published_at
     package.published_by_user_id = actor.id
-    package.onsite_required = package.onsite_required or _derive_onsite_required(
-        solution.schedule
-    )
+    # F 线 T5：显式 False（纯远程型）**不得**被关键词派生推回 True——
+    # 旧写法 ``package.onsite_required or _derive(...)`` 正是这个 bug 的来源
+    # （显式标记纯远程在发布时被静默改写成到场型）。改为：仅当字段为空
+    # （未设置）才按四关键词兜底落库，冻结进快照。
+    if package.onsite_required is None:
+        package.onsite_required = resolve_onsite_required(
+            package, schedule=solution.schedule
+        )
     package.required_modules = module_ids
     package.required_industry = industry
     package.snapshot_hash = compute_snapshot_hash(

@@ -114,10 +114,14 @@ class DeliveryPackage(Base, TimestampMixin):
     required_level: Mapped[str | None] = mapped_column(String(2))
     required_modules: Mapped[list[Any] | None] = mapped_column(JSON)
     required_industry: Mapped[str | None] = mapped_column(String(64))
-    # §4.6：onsite_required 从 ProjectSolution.schedule 派生后落库
-    onsite_required: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
-    )
+    # §4.6（**F 线 T5 就近硬闸加固**）：onsite_required 三态语义——
+    #   None ＝ **未设置**（新建包默认落 NULL）⇒ 读侧兜底按「FDE 交付项目
+    #   默认到场型」判 True（方案文本漏写关键词不再让同城硬闸整体失效）；
+    #   True  ＝ 显式到场型；False ＝ **仅此一种情况**是纯远程型（显式标记）。
+    #   旧版四关键词派生降级为「字段为空时的兜底」（发布时落库，见
+    #   ``packages.resolve_onsite_required``）——存量行已按旧语义回填，
+    #   行为零变更。**权重（stage_b_weights 40/30/20/10）本轮不动。**
+    onsite_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     onsite_visits: Mapped[int | None] = mapped_column(Integer)
     # §9.2 显示义务：交付方席位 40% 对应金额——发布时按当时报价快照物化冻结
     # （交付包 API 禁 join quotes，§9.2 纪律①，金额只能来自本列；goal-r3 留注⑥）
@@ -153,6 +157,43 @@ class DeliveryPackage(Base, TimestampMixin):
     # low→standard / medium→high 映射自动带入 run.difficulty（T4 免手报）；
     # high=不派发给智能体（协同声明前置禁入）。
     difficulty: Mapped[str | None] = mapped_column(String(8))
+
+
+# 旧派生规则的四关键词（现场／到场／驻场／驻点）——**F 线 T5 后降级为兜底**。
+# 旧形态下 onsite_required 由此派生 ⇒ 方案文本漏写即同城硬闸整体失效
+# （ADR-011 §5-D）；新形态下它只回答「字段为空（未设置）时兜底成什么」。
+_ONSITE_KEYWORDS = ("现场", "到场", "驻场", "驻点")
+
+
+def resolve_onsite_required(
+    package: DeliveryPackage, *, schedule: str | None = None
+) -> bool:
+    """到场型判定的**唯一权威原语**（F 线 T5 就近硬闸加固，ADR-011 §5-D）。
+
+    三态语义：
+
+    - ``package.onsite_required is not None``（已设置）⇒ 显式值，
+      **原样采用**（``False`` 是纯远程型的唯一来源，不得被任何派生改写）。
+    - ``package.onsite_required is None``（未设置）⇒ **True**——
+      「FDE 交付项目默认到场型」。
+
+    ``schedule`` 参数的作用**仅是历史语义的兜底**：当关键词**命中**时
+    确认「到场型」（与旧派生一致）；**未命中**时**不**据此判为纯远程——
+    否则「方案文本漏写关键词」又会让硬闸整体失效，正是本轮要修的缺陷。
+    未命中 ⇒ 仍按默认到场型（True）。
+
+    本原语放在 ``models.py``（零 dispatch 内部依赖）而非 ``packages.py``
+    ——后者被 ``access.py`` 反向依赖，放这里会成环。读侧（matching／
+    simulator／access）一律走本函数，避免各处各写一套判定而产生口径漂移。
+    **权重与地理分档逻辑不在本函数内**（stage_b_weights 本轮不动）。
+    """
+    if package.onsite_required is not None:
+        return bool(package.onsite_required)
+    if schedule is not None and any(
+        keyword in (schedule or "") for keyword in _ONSITE_KEYWORDS
+    ):
+        return True
+    return True
 
 
 class DispatchOffer(Base, TimestampMixin, VersionedMixin):

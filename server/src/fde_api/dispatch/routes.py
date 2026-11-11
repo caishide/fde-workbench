@@ -105,6 +105,14 @@ def create_package_route():
         type(onsite_visits) is not int or onsite_visits < 0
     ):
         return error_response("invalid_request", "onsite_visits 必须是非负整数。", 400)
+    # F 线 T5：onsite_required 显式载荷 —— 缺省＝未设置（读侧默认到场型）；
+    # **仅 False 是显式标记纯远程型**（旧形态全仓零写入口，本字段是
+    # 「仅显式标记」得以可达的唯一入口）。非布尔一律 400，不静默纠正。
+    onsite_required = payload.get("onsite_required")
+    if onsite_required is not None and type(onsite_required) is not bool:
+        return error_response(
+            "invalid_request", "onsite_required 必须是布尔值（缺省＝未设置）。", 400
+        )
     session = db.session()
     try:
         with session.begin():
@@ -115,6 +123,7 @@ def create_package_route():
                 quote_id=str(payload["quote_id"]),
                 dispatch_mode=str(payload.get("dispatch_mode") or "assign"),
                 onsite_visits=onsite_visits,
+                onsite_required=onsite_required,
             )
             result = _whitelist_payload(session, package)
         return jsonify({"data": result, "error": None}), 201

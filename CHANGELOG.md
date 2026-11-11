@@ -2,6 +2,66 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — F 线 T5 轮：就近硬闸加固（**不提权**；迁移 `a7c2f9e1b4d8`，2026-11-11）
+
+- **任务书 §4-T5 ＋ §12 就近专项**（ADR-011 §5-D；T2 依赖已满足；OWNER 判定问题
+  按「按推荐执行＋留痕可推翻」先例进入本轮，推荐项＝进入 T5，T4 轮 AskUserQuestion
+  未获答复）。**核查后撤回「就近只有 10% 权重、需提权」的前判**——到场型本就是
+  硬闸（`allowed_geo_tier` 首轮只同城、`sort_key_onsite` 以 tier 为字典序一级键），
+  `geo_remote` 只作用远程型；真实缺口在派生判定与扩圈调度两处。三件套：
+  1. **到场型默认 True，仅显式标记纯远程才 False**（`delivery_packages.
+onsite_required` 三态化）：旧形态按 `ProjectSolution.schedule` 四关键词（现场／到场／
+     驻场／驻点）**派生** ⇒ 方案文本漏写即**同城硬闸整体失效**，只剩 10% 软权重；
+     新形态 `NULL`＝未设置（读侧兜底判 True）／`True`＝显式到场型／`False`＝**仅此
+     一种**是纯远程型。四关键词派生降级为「字段为空时的兜底」，**未命中关键词不再据此
+     判为纯远程**（这正是本轮要修的缺陷本身）。**存量行按旧派生规则回填**（命中⇒
+     True／未命中⇒False）⇒ **存量行为逐位零变更**（存量远程型包不被误加围栏），
+     新语义只作用于新建/后续写入。判定唯一权威原语＝`dispatch.models.
+resolve_onsite_required`（放 `models.py` 而非 `packages.py`——后者被 `access.py` 
+     反向依赖，放那里成环）；读侧 matching／simulator／access 一律走它。**写入口**＝
+     既有创建路由 `POST /api/v1/dispatch/packages` 的 `onsite_required` 载荷（旧形态
+     全仓**零写入口**，「仅显式标记」不可达）⇒ **零新路由**。
+  2. **15 分钟逐级自动扩圈**：`radius_expand_wait_minutes=15`（`system_configuration.
+py:69`，§6.2 唯一权威表）**定义但无调度消费** ⇒ 新增 `dispatch.offer_service.
+expand_stale_offers` 并接进 `expire_stale_offers`：**同城无人且已过 15 分钟 ⇒ 自动
+     重发**（`dispatch_round+1` ＝ 扩圈一档：同城→同省→邻接都市圈→全国）。包行锁
+     （`SELECT … FOR UPDATE`，G2/G3 行锁范式）防并发双推；状态机唯一迁移保幂等；
+     留痕事件 `dispatch_offer_expanded`；`run_maintenance` 作业结果增报 
+`radius_expanded_packages`。**全国档门槛保持不动**：`allowed_geo_tier`（`matching.
+py:98-105`）在 round≥4 且报价非旗舰档时封顶 tier2 ⇒ 非旗舰档**不会**扩到全国
+     （「旗舰档＋客户书面确认」由既有逻辑守住，本轮**未改 `matching.py` 的分档规则**）。
+  3. **权重未变**（任务书 §12 动作 3）：`stage_b_weights` 维持 **40/30/20/10**；
+`geo_remote`／`sort_key_onsite`／`sort_key_remote` **一字未改**。本轮属缺陷修复、
+     非规则重大调整 ⇒ 无需另发规则版本（上线前初始基线已含该权重）。**CHANGELOG 
+     明确登记「权重未变」**。
+- **实施期自查修正（记在案）**：①发布时兜底逻辑写成 `package.onsite_required or 
+  _derive(...)` ⇒ **显式标记纯远程会被静默改写回到场型**（旧 bug 的真正来源），改
+  为仅当字段为空才兜底；②`resolve_onsite_required` 首版把「关键词未命中」判为纯远程
+  ⇒ **又让硬闸整体失效**（与本轮目标相反），改为未命中亦判到场型；③扩圈候选过滤
+  首版含 `published`/`offered` ⇒ 自动扩圈后对已 published 的包**二次 publish**（状态机
+  拒绝 409），收窄为仅 `expired`/`rejected`；④模拟器原在 `expire_stale_offers` 之后
+  **手工**再 publish 一次 ⇒ 与自动扩圈**重复重发**，加轮次推进检测后跳过。
+- **测试**：NEW `test_f_line_t5_onsite_hard_gate.py` **17 例**（默认 True／显式 False 
+  保持／显式 True 保持／发布冻结快照／发布兜底落库／**跨省候选在到场包不中签＝M12 
+  守面**／同城候选胜跨省／**显式 False 仍走远程加权序＝既有远程型断言保护**／非布尔
+  载荷 400／**未满 15 分钟不推进**／**过 15 分钟推进一档＋事件留痕**／逐级链／
+  **非旗舰不扩全国**／远程型不参与扩圈／幂等／**权重未变钉 40/30/20/10**／常量 15 分钟
+  未变）；迁移钉 HEAD `a7c2f9e1b4d8`、65→**66**。
+- **变异两连全红→字节级还原（sha256 终验一致）→绿**：**M12**（`onsite_required` 恒置 
+  False ⇒ **8 例红**）；**M12b**（摘除 `expire_stale_offers` 里的扩圈接线 ⇒ **4 例红**）。
+  ★**变异判别力本身要验收**（获客诊断轮 M8 无判别力同款教训复现并当场修正）：M12b 
+  **首版无判别力**（17 例全绿）——扩圈用例直接调 `expand_stale_offers` 原语、
+  **绕过了真正的接线点**；改经调度入口 `expire_stale_offers` 调用后转红。
+- 口径（融合树现测）：**150 表**（本轮零新增表）/ **66 rev 单头 `a7c2f9e1b4d8`**（挂 T4 
+  `e5c9f2a7d4b6` 之后保单头）/ **461 路由不变**（本轮零新路由——`onsite_required` 
+  挂既有创建路由载荷）/ 蓝图 51 不变 / api_catalog 94 不变（治理面不进 catalog）；
+  mypy **279 基线不变**；ruff 绿；审计清单重生成（JSON 461/51/150/66）；架构图口径
+  **无需改动**（表/路由/蓝图数未变，防陈旧闸绿）。pytest 终值以本 PR CI 为准
+  （本轮 NEW +17；融合基线**现测** 2979 收集〔当前 tip `1b6090b` 含 M3a〕＋17 ＝ **2996 收集**，逐位吻合；**不承袭** M3a 轮 CI 实测 2970——该轮时点值）。
+- server 变更 ⇒ 合并后 rebuild 三镜像＋`alembic upgrade head`（本迁移挂 T4 
+  `e5c9f2a7d4b6` 之后，合并后真实升级 `e5c9f2a7d4b6 → a7c2f9e1b4d8`）；桌面零改动
+  不重打包。
+## [未发布] — 多客户工作平台 M3a/M3c 轮：统一隔离入口＋跨企业越权套件骨架（零迁移零新路由零新表零桌面，2026-11-11）
 ## [未发布] — 诊断生成器数字溯源纪律轮（number-gate-v2 口径重界定＋prompt-v2 对齐＋拒因回灌；零迁移零路由零蓝图，2026-11-11）
 
 curve 2 真机归因（生成 3/6，余 3 例统一 `report_unsourced_number`）的修复轮：**被判无源的三个字面是「一个」「一套」「两套」——全都不是编造的业务数字**；根因在数字闸的口径与机制，不在模型。

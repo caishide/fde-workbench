@@ -22,7 +22,11 @@ from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
 from fde_api.dispatch.errors import DispatchServiceError
-from fde_api.dispatch.models import DeliveryPackage, PackageAccess
+from fde_api.dispatch.models import (
+    DeliveryPackage,
+    PackageAccess,
+    resolve_onsite_required,
+)
 from fde_api.solutions.models import ProjectSolution
 from fde_api.workbench.models import Project
 
@@ -165,7 +169,8 @@ def serialize_package_whitelist(
         "business_category": solution.business_category,
         "client_code": project.enterprise_code,
         "client_city": segments[2] if len(segments) == 3 else None,
-        "onsite_required": package.onsite_required,
+        # F 线 T5：NULL（未设置）⇒ 读面按默认到场型呈现 True。
+        "onsite_required": resolve_onsite_required(package),
         "onsite_visits": package.onsite_visits,
         "deadline": project.planned_end_date.isoformat()
         if project.planned_end_date

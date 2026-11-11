@@ -38,13 +38,17 @@ from fde_api.dispatch.models import (
     DispatchOffer,
     DispatchRuleVersion,
     FdeProfile,
+    resolve_onsite_required,
 )
 from fde_api.dispatch.offer_service import (
     accept_offer,
     decline_offer,
     expire_stale_offers,
 )
-from fde_api.dispatch.packages import create_package, publish_package
+from fde_api.dispatch.packages import (
+    create_package,
+    publish_package,
+)
 from fde_api.dispatch.rules import active_rule_version
 from fde_api.dispatch.settlements import seat_shares_for
 from fde_api.solutions.models import ProjectSolution
@@ -103,7 +107,10 @@ def _rank_readonly(
 ) -> dict[str, Any]:
     """只读 Stage A/B（与 match_package 同管线，不落 offer）。"""
     passed, rejected = _stage_a(session, package, quote)
-    scenario = "onsite" if package.onsite_required else "remote"
+    # F 线 T5：到场型判定走唯一权威原语（NULL＝未设置⇒默认到场型）。
+    scenario = (
+        "onsite" if resolve_onsite_required(package) else "remote"
+    )
     if not passed:
         return {
             "scenario": "C",
@@ -524,6 +531,7 @@ def run_simulation(
             if taken:
                 break
             session.flush()
+            round_before = package.dispatch_round
             expired = expire_stale_offers(
                 session, now=datetime.now(timezone.utc) + timedelta(hours=25)
             )
@@ -531,6 +539,12 @@ def run_simulation(
             if expired == 0 or round_no >= max_rounds:
                 break
             # 重派：expired → published（radius 随轮次推进，§4.7）
+            # F 线 T5：expire_stale_offers 内已接线「15 分钟逐级自动扩圈」
+            # ⇒ 自动扩圈可能已把包推回 published 且轮次+1；此时**不得**再
+            # 手工重发（重复重发会被状态机拒绝）。已自动扩圈则跳过。
+            if package.dispatch_round > round_before:
+                session.flush()
+                continue
             publish_package(
                 session, actor=admin, package_id=package.id, candidate_user_ids=()
             )
