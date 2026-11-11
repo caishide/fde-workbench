@@ -14,5 +14,7 @@
 - [x] 任务 0：worktree `D:/test/fde-wt-skilllib`（分支 skill-library-batch1 ← fork/main 现值 `c97eedf`）＋三条核对复跑（2 过 1 偏差，见 BLOCKED.md 置顶）
 - [x] 任务 1：LICENSE-AUDIT.md 完成（5 源逐行实读；**卡01 许可降级偏差见 BLOCKED.md 置顶**：远端 LICENSE 实读＝自定义非商业许可≠卡内 MIT 登记，全批按仅抽象借鉴＋署名执行；卡12 镜像 LICENSE＝MIT 但限原创内容，仍按仅抽象执行）。验收 grep -c "|"＝7 ≥ 5 ✓
 - [x] 任务 2：SKILL-01～05 五份完成（1583–1885 字/份 ≤6000，四节固定）。防抄：每份 3 句×≥15 字片段对源 grep 15/15 零命中＋15 字滑窗对 9 个源文件全扫 CLEAN（曾抓到 4 处署名行书名连续重合，已收窄写法归零）；验收 ls=5 ✓、来源对照循环无输出 ✓、反向验证红（MISSING 打印）→绿（无输出）✓
-- [ ] 任务 3：README.md＋commit --no-verify＋push fork＋PR＋CI 四 job 全绿
-- [ ] 完成条件三条终审并贴实测输出
+- [x] 任务 3：README.md（清单＋用途＋录入指引＋批量声明）完成；commit `9b4f1d5`（--no-verify）push fork 成功；**PR #359**（https://github.com/caishide/fde-workbench/pull/359，base main）；CI 首轮四 job 全绿（desktop／secrets-scan／server-tests／pseudonymization 各 ×2 runs＝push＋PR 双事件全 SUCCESS，2026-11-12 gh api 全读 check-runs 核实）
+- [x] 完成条件三条终审：①`git log --oneline fork/main..skill-library-batch1` 非空（9b4f1d5）＋PR 链接已贴对话 ✓ ②任务 2 两条验收输出＝5 与无输出 ✓（对话留痕） ③禁词 grep（诊断案例集|fde-skills）对 SKILL-*.md＋README 零命中、对 docs/skill-library/ 全目录同样零命中 ✓
+- [x] 本笔为交付后台账回填（PROGRESS 终态），随 PR #359 第二笔提交入库
+
