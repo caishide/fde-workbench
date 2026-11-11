@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -46,6 +47,9 @@ from fde_api.guidance.redaction import (
 )
 
 _RATE_WINDOW_SECONDS = 24 * 3600
+
+# 留资「区域」字段长度上限（T-11：R4 本区域认领的判定基准）
+MAX_REGION_CHARS = 120
 
 
 class DiagnosticsServiceError(Exception):
@@ -103,6 +107,16 @@ def hash_share_token(token: str) -> str:
     的链接）。两者指纹域也分开——任一泄漏都不越界。
     """
     return hashlib.sha256(f"fde-diagnostics-share-v1:{token}".encode("utf-8")).hexdigest()
+
+
+def subject_fingerprint(contact: str) -> str:
+    """主体指纹（T-11 自认领判定用）：sha256(域分隔 ＋ 规范化联系方式)。
+
+    **明文不入库**——库里只有指纹（与匿名令牌/IP 假名同款手法）。规范化口径
+    ＝去空白 ＋ 小写（比对口径，不改写留资行里的原文）。
+    """
+    normalized = re.sub(r"\s+", "", (contact or "").strip().lower())
+    return hashlib.sha256(f"fde-diagnostics-subject-v1:{normalized}".encode("utf-8")).hexdigest()
 
 
 def resolve_ai_actor(session: Any) -> Any:
@@ -426,6 +440,16 @@ def capture_lead(token: str, contact: dict[str, Any]) -> LeadDiagnosticSession:
     name = (name or "").strip()
     if len(name) > 80:
         raise _error("invalid_contact", "联系人过长。", 400)
+    # 区域（T-11）：R4 区域合作商**仅可认领本区域线索**——判定基准必须是
+    # 线索自己的区域。**可空**＝线索未登记区域 ⇒ R4 认领 fail-closed 拒
+    # （无法判定本区域即不许认领）；R2 创业者不按区域分，不受影响。
+    region = contact.get("region")
+    if region is not None and not isinstance(region, str):
+        raise _error("invalid_region", "区域必须是字符串。", 400)
+    region = (region or "").strip()
+    if len(region) > MAX_REGION_CHARS:
+        raise _error("invalid_region", "区域名称过长。", 400)
+    region = region or None
 
     token_sha = hash_token(token)
     enforce_session_quota(token_sha)
@@ -444,6 +468,9 @@ def capture_lead(token: str, contact: dict[str, Any]) -> LeadDiagnosticSession:
             raise _error("first_screen_required", "请先完成首屏测算。", 409)
         enforce_ip_daily_limit(row.created_ip_hash)
         row.lead_contact = payload
+        # 主体指纹（T-11 自认领判定）：**只存指纹**，明文仍在留资行里
+        row.subject_fingerprint = subject_fingerprint(reach)
+        row.region_name = region
         session.commit()
         return row
 

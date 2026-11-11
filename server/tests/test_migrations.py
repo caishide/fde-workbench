@@ -94,7 +94,9 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 #          ＋来源，additive；ADR-011 §3.8；十七度插队改挂 M2 b8d4f6a2c9e7 之后保单头）
 # F 线 T5：onsite_required 三态化（列改可空＋存量按旧派生规则回填；
 #          ADR-011 §5-D 就近硬闸加固；权重 stage_b_weights 40/30/20/10 不动）
-HEAD_REVISION = "c1d4e7f9a2b3"
+# 获客诊断 T-11：lead_diagnostic_claims 认领单表（新增）＋线索行加
+#          subject_fingerprint / region_name 两列（additive；保单头）
+HEAD_REVISION = "d7e2f4a9c1b3"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1153,8 +1155,9 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + 多客户 M4 批次 B org AI 月度预算加列 c3f7b1d9e5a2（挂 T5 之后保单头）之后 = 67；
     # + 多客户 M4 批次 C 队列主体标签 e9b4f7c2a8d3（挂批次 B 之后保单头）之后 = 68；
     # + 多客户 M5-1 组织成员邀请 c1d4e7f9a2b3（改挂批次 C 之后保单头）之后 = 69；
+    # + 获客诊断 T-11 认领闸 d7e2f4a9c1b3（改挂 M5-1 之后保单头）之后 = 70；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 69
+    assert len(known) == 70
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical
