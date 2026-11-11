@@ -316,3 +316,172 @@ def test_write_and_sha256_roundtrip(tmp_path: Path) -> None:
     assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
     digest = eval_lib.file_sha256(path)
     assert len(digest) == 64 and digest == eval_lib.file_sha256(path)
+
+
+# ── 分数面可判定性（分布读数规则） ───────────────────────────────────
+
+
+def _run_item(
+    run_id: str,
+    *,
+    prompt: str = "diagnostic-report-prompt-v2",
+    gate: str = "number-gate-v2",
+    exam: str = "2026-11-11",
+    judge: str = "rubric-v0.2",
+    meta_fixture: str = "meta-v0.2",
+    usable: bool = True,
+    case_totals: dict[str, float] | None = None,
+    anchor_totals: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    anchors = [
+        {"anchor_id": "A1", "total": (anchor_totals or {}).get("A1", 100), "status": "evaluated"},
+        {"anchor_id": "A2", "total": (anchor_totals or {}).get("A2", 80), "status": "evaluated"},
+    ]
+    return {
+        "run_id": run_id,
+        "run": {
+            "run_id": run_id,
+            "eval_set_version": exam,
+            "prompt_version": prompt,
+            "number_gate_version": gate,
+        },
+        "scores": {
+            "judge_version": judge,
+            "usable_as_evolution_evidence": usable,
+            "meta_gate": {
+                "verdict": "pass" if usable else "fail",
+                "meta_fixture_version": meta_fixture,
+                "anchors": anchors,
+            },
+            "cases": {
+                cid: {"total": total, "status": "evaluated"}
+                for cid, total in (case_totals or {}).items()
+            },
+        },
+    }
+
+
+def test_comparable_key_distinguishes_every_axis() -> None:
+    base = _run_item("r1")
+    assert eval_lib.comparable_key(base) == eval_lib.comparable_key(_run_item("r2"))
+    for mutate in (
+        lambda item: item["run"].__setitem__("eval_set_version", "2026-11-12"),
+        lambda item: item["run"].__setitem__("prompt_version", "diagnostic-report-prompt-v1"),
+        lambda item: item["run"].__setitem__("number_gate_version", "number-gate-v1"),
+        lambda item: item["scores"].__setitem__("judge_version", "rubric-v0.1"),
+    ):
+        changed = _run_item("r1")
+        mutate(changed)
+        assert eval_lib.comparable_key(changed) != eval_lib.comparable_key(base)
+
+
+def test_distribution_stats_sample_deviation() -> None:
+    stats = eval_lib.distribution_stats([78, 70, 74])
+    assert stats == {"n": 3, "mean": 74.0, "min": 70.0, "max": 78.0, "range": 8.0, "stdev": 4.0}
+
+
+def test_distribution_stats_singleton_and_empty() -> None:
+    stats = eval_lib.distribution_stats([77])
+    assert stats["n"] == 1 and stats["stdev"] is None and stats["range"] == 0.0
+    with pytest.raises(SystemExit):
+        eval_lib.distribution_stats([])
+
+
+def test_score_distributions_filters_unusable_and_groups_by_four_axes() -> None:
+    runs = [
+        _run_item("ev2", case_totals={"card-a": 72}, anchor_totals={"A2": 84}),
+        _run_item("ev3", case_totals={"card-a": 70}, anchor_totals={"A2": 80}),
+        # 另一生成器轴：逐卡另组，锚点同 judge 轴仍合并
+        _run_item(
+            "2026-11-11",
+            prompt="diagnostic-report-prompt-v1",
+            gate="",
+            case_totals={"card-a": 77},
+            anchor_totals={"A2": 77},
+        ),
+        # 元验证不过：分数不得作判定输入 ⇒ 分布处处排除
+        _run_item("bad", usable=False, case_totals={"card-a": 100}, anchor_totals={"A2": 100}),
+    ]
+    summary = eval_lib.score_distributions(runs)
+    assert summary["rule_id"] == "delta-noise-band-2026-11-11"
+    assert set(summary["case_groups"]) == {
+        "2026-11-11|diagnostic-report-prompt-v2|number-gate-v2|rubric-v0.2",
+        "2026-11-11|diagnostic-report-prompt-v1||rubric-v0.2",
+    }
+    main_group = summary["case_groups"][
+        "2026-11-11|diagnostic-report-prompt-v2|number-gate-v2|rubric-v0.2"
+    ]
+    assert main_group["runs"] == ["ev2", "ev3"]
+    assert main_group["cases"]["card-a"] == {
+        "n": 2, "mean": 71.0, "min": 70.0, "max": 72.0, "range": 2.0, "stdev": 1.4,
+    }
+    # 锚点纯 judge 噪声：跨生成器合并（77/84/80 三点），meta-fail 的 100 被排除
+    anchor_group = summary["anchor_groups"]["rubric-v0.2|meta-v0.2"]
+    assert anchor_group["runs"] == ["2026-11-11", "ev2", "ev3"]
+    assert anchor_group["anchors"]["A2"]["n"] == 3
+    assert anchor_group["anchors"]["A2"]["min"] == 77.0
+    assert anchor_group["anchors"]["A2"]["max"] == 84.0
+
+
+def test_score_distributions_excludes_error_and_voided_rows() -> None:
+    runs = [
+        _run_item("ev2", case_totals={"card-a": 72}, anchor_totals={"A2": 84}),
+        _run_item("ev3", case_totals={"card-a": 70}, anchor_totals={"A2": 80}),
+    ]
+    # 模拟 provider 限流窗口：ev3 的该行 judge error（total=0 是无数据不是 0 分）
+    runs[1]["scores"]["cases"]["card-a"]["status"] = "error"
+    # 锚点被复述作废：分数不构成能力证据 ⇒ 同样排除
+    runs[1]["scores"]["meta_gate"]["anchors"][1]["parroting_suspected"] = True
+    summary = eval_lib.score_distributions(runs)
+    assert summary["excluded_rows"] == {"case_rows": 1, "anchor_rows": 1}
+    group = summary["case_groups"][
+        "2026-11-11|diagnostic-report-prompt-v2|number-gate-v2|rubric-v0.2"
+    ]
+    assert group["cases"]["card-a"]["n"] == 1 and group["cases"]["card-a"]["mean"] == 72.0
+    assert summary["anchor_groups"]["rubric-v0.2|meta-v0.2"]["anchors"]["A2"]["n"] == 1
+
+
+def test_decidable_delta_readings_strict_beyond_noise_band() -> None:
+    ref = eval_lib.distribution_stats([70, 72, 74])  # 极差 4
+    new = eval_lib.distribution_stats([60, 64, 68])  # 极差 8 ⇒ 噪声带=8
+    assert eval_lib.noise_width(ref, new) == 8.0
+    assert eval_lib.noise_width(ref, {"n": 1, "range": 99.0}) == 4.0  # n=1 无宽度不参与
+    assert eval_lib.decidable_delta(-9.0, ref, new)["decidable"] is True
+    within = eval_lib.decidable_delta(8.0, ref, new)  # 恰等于带宽 ⇒ 噪声域（严格大于）
+    assert within["decidable"] is False and within["reason"] == "within_noise"
+    assert eval_lib.decidable_delta(5.0, ref, new)["decidable"] is False
+
+
+def test_decidable_delta_insufficient_data_below_min_runs() -> None:
+    thin = eval_lib.distribution_stats([70, 90])  # n=2 < 3：再大的差也没资格判
+    verdict = eval_lib.decidable_delta(50.0, thin)
+    assert verdict["decidable"] is None
+    assert verdict["reason"] == "insufficient_data"
+
+
+def test_render_distribution_md_carries_rules_and_tables() -> None:
+    runs = [
+        _run_item("ev2", case_totals={"card-a": 72}, anchor_totals={"A2": 84}),
+        _run_item("ev3", case_totals={"card-a": 70}, anchor_totals={"A2": 80}),
+        _run_item("ev4", case_totals={"card-a": 68}, anchor_totals={"A2": 71}),
+    ]
+    text = eval_lib.render_distribution_md(eval_lib.score_distributions(runs))
+    assert "delta-noise-band-2026-11-11" in text
+    assert "纯 judge 噪声" in text
+    assert "不校准任何通过线" in text
+    assert "四轴全同才同组" in text
+    assert "`2026-11-11|diagnostic-report-prompt-v2|number-gate-v2|rubric-v0.2`" in text
+    assert "✅ 达最小样本" in text
+    for needle in ("| card-a | 3 | 70.0 | 68.0 | 72.0 | 4.0", "| A2 | 3 | 78.3 | 71.0 | 84.0 |"):
+        assert needle in text
+
+
+def test_render_distribution_md_flags_thin_group_and_empty() -> None:
+    thin = eval_lib.score_distributions([_run_item("ev2", case_totals={"card-a": 72})])
+    assert thin["min_runs"] == 3
+    text = eval_lib.render_distribution_md(thin)
+    assert "n<3（insufficient_data）" in text
+    assert eval_lib.render_distribution_md(eval_lib.score_distributions([])).startswith(
+        "# 诊断评测·分数面分布"
+    )
+    assert "尚无可用分布" in eval_lib.render_distribution_md(eval_lib.score_distributions([]))

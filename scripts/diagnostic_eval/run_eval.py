@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -332,7 +333,9 @@ def cmd_judge(args: argparse.Namespace) -> int:
         print(f"meta_gate={meta_gate['verdict']}", flush=True)
 
         scored: dict[str, Any] = {}
-        for case_id in wanted:
+        for index, case_id in enumerate(wanted):
+            if args.card_delay_seconds and index:
+                time.sleep(args.card_delay_seconds)  # 共享配额环境节流：评分卡间隔
             report_path = run_out / str(cases_meta[case_id].get("report_file") or "")
             report = (eval_lib.load_json(report_path) or {}).get("report") or {}
             card = eval_lib.load_card(root, case_id)
@@ -408,6 +411,15 @@ def main() -> int:
     jud = sub.add_parser("judge", help="元验证闸 + 逐卡评分（评分档案落真相层）")
     jud.add_argument("--run", required=True)
     jud.add_argument("--cases", default="", help="逗号分隔子集（缺省=已就绪全量）")
+    jud.add_argument(
+        "--card-delay-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "评分卡之间的间隔秒数（共享 AI 配额环境的节流；缺省 0＝无间隔原行为）。"
+            "评分调用比生成调用快得多，无间隔连发易触发 provider 限流（2026-11-11 实录）。"
+        ),
+    )
 
     cur = sub.add_parser("curve", help="聚合全部 run 渲染版本化曲线文档")
     cur.add_argument("--doc-number", type=int, required=True)
