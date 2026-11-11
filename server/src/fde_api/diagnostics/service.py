@@ -463,7 +463,7 @@ def request_report(token: str) -> LeadDiagnosticSession:
     闸也是**成本闸**（免注册白烧 AI token 的代价远高于留资转化）。
     """
     from fde_api.diagnostics.jobs import DIAGNOSTIC_REPORT_JOB_TYPE
-    from fde_api.jobs.outbox import enqueue_outbox
+    from fde_api.jobs.outbox import enqueue_outbox  # noqa: PLC0415
 
     token_sha = hash_token(token)
     enforce_session_quota(token_sha)
@@ -494,6 +494,7 @@ def request_report(token: str) -> LeadDiagnosticSession:
             topic=DIAGNOSTIC_REPORT_JOB_TYPE,
             aggregate_id=row.id,
             payload={},
+            subject_org=None,  # 公网匿名面：无 org 归属（平台级）
         )
         session.commit()
         return row

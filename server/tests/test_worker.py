@@ -18,7 +18,7 @@ class _Queue:
 
 def _job_from_outbox(db_session, topic: str, target: str) -> BackgroundJob:
     """走真实派发链造 job：enqueue → dispatch（outbox 行随派发改 dispatched）。"""
-    enqueue_outbox(db_session, topic, target, {"target": target})
+    enqueue_outbox(db_session, topic, target, {"target": target}, subject_org=None)
     db_session.commit()
     dispatch_pending(db_session, _Queue())
     return db_session.query(BackgroundJob).one()

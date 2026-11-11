@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from fde_api.control.models import AutomationApproval, AutomationTask, AutomationTaskRun
 from fde_api.extensions import db
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_automation_task
 
 
 _INTERVAL = re.compile(r"^(\d{1,6})([mhd])$")
@@ -85,7 +85,8 @@ def dispatch_due_automations(*, now: datetime | None = None, limit: int = 100) -
                     )
                     session.add(run)
                     session.flush()
-                    enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id})
+                    enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id},
+                                subject_org=subject_org_of_automation_task(session, task))
                     dispatched += 1
                 task.last_run_at = scheduled_for
                 task.next_run_at = next_schedule_time(kind=task.schedule_kind, expression=task.schedule_expression, timezone=task.timezone, after=scheduled_for) if task.schedule_kind != "once" else None

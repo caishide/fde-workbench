@@ -74,6 +74,11 @@ class OutboxEvent(Base, TimestampMixin):
         UTCDateTime(), nullable=False, server_default=UTC_TIMESTAMP_SQL
     )
     last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 多客户 M4 批次 C（任务书 §7-M4「队列 job 携带主体标签用于计量」）：入队
+    # 调用点显式声明的主体 org（``enqueue_outbox`` keyword-only 必填＝机械闸，
+    # 未登记/平台面显式传 ``None``＝平台级，与 ``org_id=NULL`` 平台身份语义同构）。
+    # dispatch 单点复制到 ``BackgroundJob.org_id``。
+    subject_org: Mapped[str | None] = mapped_column(String(36))
 
 
 class BackgroundJob(Base, TimestampMixin, VersionedMixin):
@@ -89,11 +94,15 @@ class BackgroundJob(Base, TimestampMixin, VersionedMixin):
         UniqueConstraint("active_key", name="uq_background_jobs_active_key"),
         Index("ix_background_jobs_status_available", "status", "available_at"),
         Index("ix_background_jobs_job_type_target", "job_type", "target_id"),
+        # M4 批次 C：主体标签计量读面（按 org 分组统计）。
+        Index("ix_background_jobs_org_id", "org_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     job_type: Mapped[str] = mapped_column(String(80), nullable=False)
     target_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    # 多客户 M4 批次 C：主体标签（计量面，非授权面）——``None``=平台级。
+    org_id: Mapped[str | None] = mapped_column(String(36))
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending", server_default="pending"
     )

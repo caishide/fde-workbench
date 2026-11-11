@@ -64,10 +64,10 @@ def _job_with_outbox(db_session, *, status: str = "queued", **kwargs):
     """造 job + 同键两条 outbox 事件（一条 dispatched 一条 pending）。"""
     topic = kwargs.pop("job_type", "file.scan")
     target = kwargs.pop("target_id", f"t-{uuid4().hex[:8]}")
-    enqueue_outbox(db_session, topic, target, {"n": 1})
+    enqueue_outbox(db_session, topic, target, {"n": 1}, subject_org=None)
     db_session.commit()
     dispatch_pending(db_session, _Queue())  # 事件1→dispatched，job 落 pending
-    enqueue_outbox(db_session, topic, target, {"n": 2})
+    enqueue_outbox(db_session, topic, target, {"n": 2}, subject_org=None)
     db_session.commit()  # 事件2 留 pending
     job = db_session.query(BackgroundJob).filter_by(job_type=topic, target_id=target).one()
     job.status = status

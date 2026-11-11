@@ -81,6 +81,7 @@ def start_execution(*, actor: User, operation: str, payload: object) -> dict[str
                 "ai.execute",
                 execution_id,
                 {"execution_id": execution_id},
+                subject_org=actor.org_id,
             )
     finally:
         session.close()

@@ -246,4 +246,9 @@ def test_cleanup_job_uses_existing_outbox_and_active_job_dedup(db_session, clien
     )
     assert job is not None
     assert queue.enqueued == [job.id]
-    assert ensure_background_job(db_session, UPLOAD_CLEANUP_JOB_TYPE, session_id).id == job.id
+    assert (
+        ensure_background_job(
+            db_session, UPLOAD_CLEANUP_JOB_TYPE, session_id, subject_org=None
+        ).id
+        == job.id
+    )

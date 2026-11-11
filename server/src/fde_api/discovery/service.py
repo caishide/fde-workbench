@@ -138,9 +138,15 @@ def create_extraction(actor, project_id: str, payload: dict[str, Any]) -> dict[s
             "discovery_extraction_created",
             {"source_type": source_type, "source_id": source_id},
         )
-        from fde_api.jobs.outbox import enqueue_outbox
+        from fde_api.jobs.outbox import (  # noqa: PLC0415
+            enqueue_outbox,
+            subject_org_of_project,
+        )
 
-        enqueue_outbox(session, "project.discovery.extract", extraction.id, {})
+        enqueue_outbox(
+            session, "project.discovery.extract", extraction.id, {},
+            subject_org=subject_org_of_project(session, project_id),
+        )
         session.commit()
         return {**serialize_extraction(extraction), "created": True}
     finally:
@@ -198,9 +204,15 @@ def rerun_extraction(actor, extraction_id: str) -> dict[str, Any]:
             session, actor.id, extraction.project_id, EXTRACTION_EVENT_TARGET, extraction.id,
             "discovery_extraction_rerun", {},
         )
-        from fde_api.jobs.outbox import enqueue_outbox
+        from fde_api.jobs.outbox import (  # noqa: PLC0415
+            enqueue_outbox,
+            subject_org_of_project,
+        )
 
-        enqueue_outbox(session, "project.discovery.extract", extraction.id, {})
+        enqueue_outbox(
+            session, "project.discovery.extract", extraction.id, {},
+            subject_org=subject_org_of_project(session, extraction.project_id),
+        )
         session.commit()
         return serialize_extraction(extraction)
     finally:

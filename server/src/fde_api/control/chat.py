@@ -16,7 +16,7 @@ from fde_api.control.dsh_runtime import DSHRuntimeError
 from fde_api.control.service import ControlServiceError
 from fde_api.errors import error_response
 from fde_api.extensions import db
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_user
 from fde_api.workbench.models import TimestampMixin, new_uuid, Project
 from fde_api.projects.permissions import project_access
 
@@ -160,7 +160,7 @@ def create_turn(*, user: User, payload: dict, source="desktop", enqueue=True):
         session.flush()
         conversation.updated_at = datetime.now(UTC)
         if enqueue:
-            enqueue_outbox(session, "ai.chat", turn.id, {})
+            enqueue_outbox(session, "ai.chat", turn.id, {}, subject_org=subject_org_of_user(session, user.id))
         return _turn(turn)
 
 

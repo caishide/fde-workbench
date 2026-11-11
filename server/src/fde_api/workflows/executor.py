@@ -66,7 +66,7 @@ from sqlalchemy.orm import Session
 
 from fde_api.auth.models import User
 from fde_api.extensions import db
-from fde_api.jobs.outbox import enqueue_outbox, utcnow
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project, utcnow
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.workbench.models import Project
@@ -280,7 +280,10 @@ def start_run(
     )
     # 事务性 outbox：worker 的 dispatch_pending 把它变成 background_jobs 里的
     # workflow.run（ensure_background_job 的单活守卫天然防重复投递）
-    enqueue_outbox(session, WORKFLOW_JOB_TYPE, run.id, {})
+    enqueue_outbox(
+        session, WORKFLOW_JOB_TYPE, run.id, {},
+        subject_org=subject_org_of_project(session, run.project_id),
+    )
     session.flush()
     return run, True
 
@@ -389,7 +392,10 @@ def resume_run(*, actor: User, project_id: str, run_id: str) -> dict[str, Any]:
         run.status = "running"
         run.error = None
         record_event(session, actor, "workflow_run_resumed", run, {"reset_nodes": reset})
-        enqueue_outbox(session, WORKFLOW_JOB_TYPE, run.id, {})
+        enqueue_outbox(
+        session, WORKFLOW_JOB_TYPE, run.id, {},
+        subject_org=subject_org_of_project(session, run.project_id),
+    )
         return {"run": serialize_run(run, nodes), "reset_nodes": reset}
 
 

@@ -26,7 +26,7 @@ from fde_api.files.service import (
     _get_project_for_upload,
     _get_project_viewable,
 )
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 
 #: Formats that can be previewed directly without a conversion pass.
 _DIRECT_PREVIEW_EXTENSIONS = frozenset(
@@ -227,6 +227,7 @@ def request_preview_regeneration(
                 "file.preview",
                 version.id,
                 {"version_id": version.id, "requested_by_user_id": actor.id},
+                subject_org=subject_org_of_project(session, version.project_file.project_id),
             )
             session.flush()
             return {"preview_status": "pending"}

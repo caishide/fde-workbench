@@ -25,7 +25,10 @@ from fde_api.control.access import (
 from fde_api.control.models import AutomationApproval, AutomationTask, AutomationTaskRun, ChannelBinding
 from fde_api.control.knowledge import snapshot_for_run
 from fde_api.extensions import db
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import (
+    enqueue_outbox,
+    subject_org_of_automation_task,
+)
 from fde_api.projects.permissions import visible_project_filter
 from fde_api.projects.service import ProjectServiceError
 from fde_api.projects.task_service import batch_assign_project_tasks_in_session
@@ -300,7 +303,8 @@ def submit_wechat_command(*, payload: dict[str, Any]) -> dict[str, Any]:
             session.add(run)
             binding.last_seen_at = now
             session.flush()
-            enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id})
+            enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id},
+                            subject_org=subject_org_of_automation_task(session, task))
             return {
                 "task": _serialize_automation_task(task, can_run=False),
                 "run": _serialize_automation_run(run),
@@ -505,7 +509,8 @@ def request_automation_run(*, user: User, task_id: str, idempotency_key: str | N
             )
             session.add(run)
             session.flush()
-            enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id})
+            enqueue_outbox(session, "automation.execute", run.id, {"run_id": run.id},
+                            subject_org=subject_org_of_automation_task(session, task))
             return _serialize_automation_run(run)
     finally:
         session.close()

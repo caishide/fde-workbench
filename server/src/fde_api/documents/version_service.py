@@ -38,7 +38,7 @@ from fde_api.extensions import db, object_storage
 from fde_api.files.models import ProjectFile, ProjectFileVersion
 from fde_api.files.names import document_key, extension_of, safe_filename
 from fde_api.files.service import create_direct_file_version
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.workbench.models import Project, ProjectMember
@@ -173,6 +173,7 @@ def online_revise_document(
                 "document.generate",
                 version.id,
                 {"version_id": version.id, "document_id": document.id},
+                subject_org=subject_org_of_project(session, document.project_id),
             )
 
             document.current_version_id = version.id

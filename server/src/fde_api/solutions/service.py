@@ -24,7 +24,7 @@ from fde_api.documents.snapshots import build_document_snapshot, DocumentSnapsho
 from fde_api.extensions import db
 from fde_api.files.models import BUSINESS_CATEGORIES
 from fde_api.guidance.models import PresurveyIntake, ProjectGuidanceAnalysis
-from fde_api.jobs.outbox import enqueue_outbox
+from fde_api.jobs.outbox import enqueue_outbox, subject_org_of_project
 from fde_api.meetings.models import ReviewMeeting, ReviewMeetingMinutes
 from fde_api.projects.events import record_event
 from fde_api.research.models import ProjectResearchForm, ProjectResearchFormRevision, ProjectResearchSubject
@@ -794,7 +794,11 @@ def export_sow(*, actor: User, project_id: str, solution_id: str, payload: dict[
         session.add(version)
         session.flush()
         session.add(DocumentGenerationJob(document_version_id=version.id, status="queued"))
-        enqueue_outbox(session, "document.generate", version.id, {"version_id": version.id, "document_id": document.id})
+        enqueue_outbox(
+            session, "document.generate", version.id,
+            {"version_id": version.id, "document_id": document.id},
+            subject_org=subject_org_of_project(session, document.project_id),
+        )
         document.current_version_id = version.id
         document.version += 1
         export = existing or ProjectSolutionExport(solution_id=solution.id, solution_version=solution.version, document_id=document.id, document_version_id=version.id)
@@ -827,7 +831,14 @@ def _retry_failed_export(session: Session, export: ProjectSolutionExport):
     if not jobs or any(job.status in {"failed", "cancelled"} for job in jobs):
         version.generation_error = ""
         session.add(DocumentGenerationJob(document_version_id=version.id, status="queued"))
-        enqueue_outbox(session, "document.generate", version.id, {"version_id": version.id, "document_id": export.document_id})
+    document_for_org = session.get(ProjectDocument, export.document_id)
+    if document_for_org is None:
+        return
+    enqueue_outbox(
+        session, "document.generate", version.id,
+        {"version_id": version.id, "document_id": export.document_id},
+        subject_org=subject_org_of_project(session, document_for_org.project_id),
+    )
 
 
 # ---------------------------------------------------------------------------
