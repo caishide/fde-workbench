@@ -313,6 +313,9 @@ orgs（新表，主体承载）
   - [x] M3a 入口落地 ✅（统一入口 SQL 下推＋org 谓词＋JWT 8 claim 在场性 fail-closed；规格先行件 `docs/commercialization/multi-tenant/M3a-隔离入口与装饰器扩展规格-v1.md` 入库；PR #318 squash 合并 `1b6090b`＝fork/main 顶；PR CI 四绿 2970 收集＝2962+7s+1xf；部署活体：alembic `e5c9f2a7d4b6 (head)`＋url_map 461 non-static＋ready/live 200＋三镜像一致；2026-11-11）
   - [x] M3c 越权套件骨架 ✅（`test_cross_tenant_isolation.py` 8 例绿＋1 例 `xfail(strict=True)` 待销号；变异两连：摘对象级 org 判定 ⇒ 7 红／摘 SQL org 谓词 ⇒ 3 红；随 PR #318 进 CI）
   - [ ] M3b 端点分批销号（4 批 ≤30 端点，批批 PR 附同批越权用例；批次 ① 含待 M0 补充 #6 `_project_scope` 收拢）
+    - [x] 批次 ①（39 条＝①-a 24＋①-b 15）✅（①-a PR #325 squash 合并 `828557e`；①-b PR #328 squash 合并 `8cefc07`＝fork/main 顶；★销号范围＝盘点表现测 **236 全量**（任务书「122 写端点」是 M0 前先验，盘点表为准）；①-a CI 3010 收集＝3003+7 〔**rebase 前** PR 树值，已随 #323 插队作废〕／①-b CI **3025 收集 = 3018 passed + 7 skipped**〔run 42978834244；基线＝①-a 合并树实测 3019〕；★待 M0 补充 #6 `_project_scope` 第三套可见性规则随 ①-b 销号；**部署活体复验**（随批次② PR 回写）：三镜像从 `8cefc07` 干净树 rebuild（api `7df8c48cf795`／worker `5c8aee2f85bf`／scheduler `47f61cb5cf4b`，容器 `.Image` 逐位一致）＋`alembic upgrade head` 幂等 no-op（`a7c2f9e1b4d8 (head)`）＋活体 url_map 462 total/461 non-static ≡ 口径＋ready/live 200＋三容器 healthy＋`/app/migrations` 挂载回归本工作树（部署前指向他人工作树）；2026-11-11）
+    - [ ] 批次 ②（43 条 商业域）— PR #331（CI 跑测中；跨 org 留痕共享记录器单点接线＋R1 admin-only 保持＋R3 主体归属核验；NEW `test_m3b_batch2_commercial.py` 14 例；摘除式变异 4 红→还原→14 绿）
+    - [ ] 批次 ③（97 条 项目服务域）／批次 ④（57 条 特殊域与平台事实）— 未开工
 - [ ] M4：Redis/存储/队列/预算按主体隔离；主体级 `budget_blocked` 留痕
 - [ ] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过
 - [ ] M6：G3 验收清单过；计费名目有归属、无硬编码数值；席位反例用例过
