@@ -71,6 +71,21 @@ const space = {
     advisor_follow_up: "如有疑问请联系顾问。",
   },
   registration_entries: {},
+  org_id: null,
+  invitations: [],
+  diagnosis: {
+    state: "available",
+    completed_at: null,
+    all_completed: false,
+    deliverables: [
+      { key: "diagnosis_report", label: "企业问题诊断报告", done: false },
+      { key: "process_analysis", label: "业务流程初步分析", done: false },
+      { key: "ai_opportunity_list", label: "AI 应用机会清单", done: false },
+      { key: "implementation_plan", label: "建议实施方案", done: false },
+      { key: "project_tier_budget", label: "预计项目等级与预算区间", done: false },
+      { key: "next_steps", label: "下一步实施建议", done: false },
+    ],
+  },
 }
 
 function mockSpaceBridge(apiRequest: ReturnType<typeof vi.fn>) {
