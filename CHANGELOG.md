@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 N1 挂账销项轮＋台账 v1.10（G7 重交回环推进：success.md 定稿活库代录 claim（指针+sha256，原件永不入库）＋G7/G8/G9 门禁材料收集清单落仓＋T-A10 排期销项；G-07 CLOSED 维持、G-01 OPEN 重交推进中，纯文档＋活库门禁代录，2026-11-11）
+
+蔡工交互拍板四项（①T-A10 排期到下一实施轮／②容器栈 rebuild 维持挂账归部署归属方不越权／③G7 重交＝出材料清单供收集／④G8/G9＝出材料准备清单）后的挂账销项轮：
+
+- **G7 重交回环推进（活库写动作，admin 代录留痕）**：`submit_gate_evidence`（服务层写路径，非直接 UPDATE）把宿主真实件 **success.md 定稿**（`fdeops://engagements/somwyn/.fde/success.md`，S1/S2 切片已签收口径，self-acceptance 声明在件内原样保留）claim 进 G7「success.md 定稿」清单项——G7 `failed rev2 → evidence`（**3/4 claimed**：options 文档/Eval 计划＝重跑三 agent 产物强映射，success.md 定稿＝本轮真实件代录；「B 试点章程定稿」缺项**如实不 claim**＝不虚挂）。`gate_evidence_submitted` 事件 actor=admin @2026-11-11 03:01 UTC 留痕可推翻；**拍板仍归 `pilot.reviewer`**（提交人≠拍板人 `gate_decider_conflict` 硬闸；B 章程到齐后 4/4 claimed ⇒ 重拍 pass/fail，AI 不代拍不造假）。
+- **B 试点章程框架草稿**：宿主 `gates/G7-B试点章程-框架草稿-待定稿.md`（抽自 decisions/context/success/delivery 既有事实；【待补】＝蔡工定稿＋客户书面确认记录；**不提交门禁**——无真实材料不 claim）。
+- **NEW `docs/architecture/AI原生化N1门禁材料收集清单-v1.md`（仓内材料清单 doc，本轮交付物）**：G7×4＋G8×3＋G9×5 逐项「要什么/谁出/放哪/指纹纪律/提交＋拍板通道」；推进顺序 **G7 pass→G8 三态（proceed/pivot/stop）→G9 拍⇒G-01 CLOSED**；红线前置＝门禁证据只存 source_uri 指针+sha256（原件留宿主）、AI 代提交不代拍不代造。
+- **T-A10 排期销项**：backlog 行 PROPOSED→「✅ 排期已拍板（下一实施轮）」——**排期销项≠实施授权**；进程空间（宿主裸跑全量＋容器态降级）与实施授权随下一桌面轮拍板，不预设。
+- **容器栈 rebuild 维持挂账**：owner＝部署归属方（fde-wt-v31p2 会话），本会话**不越权执行**；仅活体核对（活库 `alembic_version`＝`e5c9f2a7d4b6 (head)`＝fork/main `4354cd2`（#312 F 线 T4）单头、三容器 healthy、`/api/v1/health/ready` 200、url_map 461 非静态路由——部署态与 fork/main 一致，**无待升级迁移**，rebuild 挂账＝镜像代码同步非迁移缺口）。
+- **判据状态**（台账 **v1.10**）：G-07 维持 **CLOSED**（判据两段 v1.8 已全行使，重交回环不重开结论）；G-01 维持 **OPEN**（重交回环推进中；G8/G9 待真实交付期材料，`decide_gate` 无证据 409 `invalid_gate_state` 机械封死不代拍）。同步面：台账 v1.10（修订记录＋G-01 行重交现状＋「N1 挂账销项轮」附注）＋复盘 §11＋任务书 §13 #14/§14 N1 行＋backlog T-A10 状态＋AGENTS bullet。零代码零迁移零路由（活库一次门禁提交＝代录写动作，非代码变更）；无 rebuild／无 alembic／无重打包。
+
 ## [未发布] — F 线 T5 轮：就近硬闸加固（**不提权**；迁移 `a7c2f9e1b4d8`，2026-11-11）
 
 - **任务书 §4-T5 ＋ §12 就近专项**（ADR-011 §5-D；T2 依赖已满足；OWNER 判定问题
