@@ -134,6 +134,7 @@ def test_confirmed_attribution_pays_owner(db_session):
         actor=admin,
         seat_payees=_payees(None, payees["delivery"], payees["county"], None),
         vacant_reasons={"province": "no_province_partner"},
+        confirm_password=INITIAL_PASSWORD,  # T4：空缺人工确认双闸
     )
     by_seat = {row.seat_key: row for row in rows}
     assert by_seat["lead"].payee_user_id == owner.id

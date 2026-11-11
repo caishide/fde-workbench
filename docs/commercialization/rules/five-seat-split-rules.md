@@ -75,7 +75,7 @@ T       = 该项目里程碑实收回款（payments.received_amount，不重算�
 
 1. **显式记 0，不得省略席位行**——空缺席位金额显式 0、行必在。
 2. **平台吸收**该份额，金额等式闭环（沉淀额＝池 × 份数/100），Σ 恒＝T。
-3. **原因码 ＋ admin 人工确认**（ADR-007 admin 门＋密码双闸）——**系统不得自动推断「谁没干活」**。
+3. **原因码 ＋ admin 人工确认**（ADR-007 admin 门＋密码双闸，**T4 已落闸**：`allocate_five_seats`/`allocate_five_seats_with_lead_attribution` 对调用方显式指定的 `vacant_reasons` 强制 admin＋`confirm_password`，限流同款）——**系统不得自动推断「谁没干活」**。**豁免**＝T3 解析器派生的 lead `no_sourcer`（§6-2 企业自来：零商机行 ⇒ 无拉单方，是**结构性派生事实**而非人工判定）。
 4. `operation_events` 逐动作留痕（带 request_id，**密码不落事件**），记录原因码、份额、吸收金额、确认人。
 
 ## 6. 拉单确权（接 ADR-009，不造第二套）
@@ -85,11 +85,11 @@ T       = 该项目里程碑实收回款（payments.received_amount，不重算�
 3. **归属确认后企业自行注册不转移归属**（ADR-009 §2.5 反例用例既有，T3 复用不重造）。
 4. `protection_period_days` 本期 unset ⇒ 归属争议走线下，撬单风险**显式挂账**（任务书 L-2／D-10），**不得编天数**。
 
-## 7. 兼任与验收
+## 7. 兼任与验收（T4 落地）
 
 1. `lead` 与 `delivery` **可为同一 `payee_user_id`**（本平台允许兼任；份额与职能履行绑定，不设统一封顶）。
-2. **自拉自交项目的验收人恒为平台**：项目 `acceptance_passed_at` 的写入路径排除 `payee_user_id` 本人（目标态新增反例用例：本人验收 403）。
-3. 兼任承载走新建 `commercial_role_assignments`（一人多角色，附生效区间与来源），**不动 `users.role`**（ADR-001 保护清单）；`commercial_entitlements.commercial_role` 单值保留为「主角色」兼容读面，不删列。
+2. **自拉自交项目的验收人恒为平台**（T4 已落）：`acceptance_passed_at` 唯一写咽喉 `projects.payment_service.mark_acceptance_passed` 排除席位收款人本人（交付席位＝`DeliveryPackage.seat_delivery`；拉单席位＝已确认归属 owner，与 T3 `resolve_lead_seat` 同一谓词）⇒ 403 `self_acceptance_forbidden`（反例用例：本人验收 403）。市县/省级收款人在分配时才产生，验收时刻无从辨认，由 G8 拍板权限尺（manage 门）共同守。
+3. 兼任承载表 `commercial_role_assignments` **已建**（T4 迁移 `e5c9f2a7d4b6`，挂 T2 `c8d2f6a4e9b1` 之后保单头）：一人多角色（一人多行并存），附生效区间（`valid_from`/`valid_until` 可空＝长期，窗口倒挂 400＋DB CHECK 兜底）与来源（书面依据指针＋sha256 指纹）；同角色区间重叠 409 `role_assignment_overlap`（行锁＋重叠判定）；写入＝关键流转（admin＋密码双闸，CR-047 限流同款）；**不动 `users.role`**（ADR-001 保护清单）；`commercial_entitlements.commercial_role` 单值保留为「主角色」兼容读面（兼任**永不回写**主角色列），不删列。治理面不进 api_catalog。
 
 ## 8. 3980 席位订阅费边界（不被「成本自理」改写）
 

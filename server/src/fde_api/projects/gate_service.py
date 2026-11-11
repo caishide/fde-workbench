@@ -565,9 +565,20 @@ def decide_gate(
             # （draft → accrued 双条件之二；无交付包项目零感知）。
             acceptance: dict[str, Any] | None = None
             if gate.gate_key == "G8" and result == "pass":
-                from fde_api.projects.payment_service import mark_acceptance_passed
+                from fde_api.projects.payment_service import (
+                    PaymentServiceError,
+                    mark_acceptance_passed,
+                )
 
-                acceptance = mark_acceptance_passed(session, actor, project.id)
+                try:
+                    acceptance = mark_acceptance_passed(session, actor, project.id)
+                except PaymentServiceError as error:
+                    # F 线 T4：验收咽喉的结构排除（本人验收 403
+                    # self_acceptance_forbidden）原样透传为门禁错误——
+                    # 不得 500 化（decide 事务随异常回滚，零写入）。
+                    raise GateServiceError(
+                        error.code, error.message, error.status
+                    ) from error
                 changes["acceptance_marked"] = acceptance
             record_event(session, actor, "gate_decided", gate, changes)
             session.flush()
