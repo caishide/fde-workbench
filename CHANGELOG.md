@@ -2,7 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 诊断报告生成器修复轮（REPORT_MAX_TOKENS 16000 标定＋诊断模型槽位显式化＋rubric v0.2 复述条款重界定；零迁移零路由零蓝图，2026-11-11）
+
+curve 1 真机归因（#307/#308）的修复轮：生成 0/6 全灭（`ai_output_truncated` ×3＋截断残 JSON ×2＋无源数字 ×1）＋元验证闸 fail（A1 顶格 100 越带＋同源复述误发）。
+
+- **预算标定**：`REPORT_MAX_TOKENS` 6000→16000（`diagnostics/jobs.py`）——推理模型思考与正文共用预算（V31-P1 实测纪律），同端点 judge 通道 16000 双连过实测＋MiniMax-M3.1-Flash 硬顶 16384 贴顶而不过；「×2 预留」已被证伪不加码。
+- **诊断模型槽位显式化**（opt-in）：`FDE_DEEPSEEK_DIAGNOSTIC_REPORT_MODEL` 设值即整体接管模型选择（缺省空＝零行为变更沿用偏好解析链——curve 1 归因确认该链工作正常；此前诊断静默借用行业模板槽位）；设值却缺端点/密钥 ⇒ fail-closed `report_model_slot_incomplete`（不静默回落，防「设了没生效」被掩盖）。`.env.example` 注解注明键名家族（与 judge 键不同族：本键带 DEEPSEEK 段）。
+- **rubric v0.2**（curve 1 元验证 fail 断点的版本化修订）：复述失效条款重界定——v0.1 判据「≥4 条问题实质与句式高度重合」与①维「按参考材料关键问题给分」结构性混淆（报告与参考材料同出一访谈时实质收敛是构造性的），v0.2 只认**逐字级连续转写**＋明示同源豁免；四维/判定带/一票否决零变化。真相层元验证夹具升 **meta-v0.2**（A1 期望带 78–98→78–100：已验收真实交付四维顶格不是异常信号，「rubric 泄漏」检测移交 X3 注入反例与 A2 下限护栏；v0.1 原件留存）；`run_eval.py` 夹具名常量化＋`meta_fixture_version` 断点字段落 scores。
+- **curve 2 重跑（真机）**：**元验证闸首过 pass**（A1=100 带内且 parroting=False——v0.2 条款正确豁免同源收敛，judge 摘要明确推理「不构成照抄」；A2=77 带内；反例 X1–X4 全拒评 4/4）⇒ `usable_as_evolution_evidence=True`＝**首个可作进化判定输入的曲线点**。生成 3/6（截断归零：`ai_output_truncated` ×3→0；余 3 例统一 `report_unsourced_number`——失败性质从「预算截断」转为「数字溯源纪律」，归生成器后续轮）；逐卡 datawhale-023=**86 pass**／009=**77 conditional**／somwyn=**60 hard_fail**。曲线文档 `docs/audit/诊断评测-评分曲线-2.md`（双版本断点标注）；指纹登记同步（rubric-v0.md `98053cd9…`→`76a73168…`；新增元验证夹具-v0.2.json `a1bb861e…`）。
+- **测试 +7**：预算标定钉／槽位四态（缺省 None／设值接管／缺凭证 fail-closed／provider 由 base_url 单点命名）／端到端接线钉×2〔缺省＋设值态——首版接线钉只有缺省态，摘接线变异无判别力（两路同为 None），补设值态钉后转红〕／rubric v0.2 断点钉（版本常量＋同源豁免句在场＋旧判据句移除）；**变异四连全红→还原→绿**（预算回退 6000／接线摘除／槽位静默回落／版本回退＋豁免句摘除）。本地私有库串行全量 **2869 passed + 7 skipped**（0:37:22 exit 0）；**CI 实测 2879 passed + 7 skipped**（PR #311 run 42928261849，融合 #309 M2/#310 T3 后树）；mypy 279 基线不变。部署活体三验绿：alembic `b8d4f6a2c9e7`（含 #309 新迁移，本轮零迁移）／三镜像同刻且容器镜像 ID 一致／`/ready` 200＋url_map **459**（+8 归 #309，本轮零路由）。
+
 ## [未发布] — 多客户工作平台 M2 四入口统一注册轮（NEW registration/ 包＋users 注册列＋user_registrations 表；迁移 `b8d4f6a2c9e7` 63→64 rev（十三度插队改挂 F 线 T2 `c8d2f6a4e9b1` 之后保单头），+8 路由 +1 蓝图，桌面 email 字段＋便携版 r34，2026-11-11）
+
 
 任务书 §7-M2 + ADR-M2 §2/ADR-M4；**本仓第二个公网免注册写面**（诊断线同款 fail-closed 纪律）。
 
