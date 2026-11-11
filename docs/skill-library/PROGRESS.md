@@ -77,4 +77,5 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 4 份 SKILL-06～09 全在 `docs/skill-library/batch-2/`，来源 5 件 fdestack 技能（MIT，快照与远端复核见 batch-2/LICENSE-AUDIT.md）；形态升级为**可执行技能**（正文指示 AI 工具动作循环＋写明人机边界）。
 - 防抄：3 句×≥15 字 grep＋15 字滑窗对 5 源文件全扫＋英文 ≥15 字符片段抽查；**标识符豁免口径**（命中须为来源对照表声明标识符子串，其余命中即失败）登记于 LICENSE-AUDIT.md；禁词（诊断案例集|fde-skills|Frank）对 SKILL-*.md＋README 零命中。
 - 录入：合并后走已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能，一技能一版本。
+- **已入库（2026-11-12 实测）**：PR #369 squash `719497d`＝fork/main 顶（CI 4 job × 双事件 8 runs 全绿，server-tests 13m39s/14m3s）后执行导入——POST 全 201、4 条 id（`70e1d096`／`af9d275a`／`c3062589`／`f7ca0eaa`）、正文逐字节一致＋服务端结构化指纹逐位一致（ALL MATCH: True）、batch-1 五条与公共 14 条未受影响、容器临时文件清零；详见 batch-2/README「已入库状态」。台账回填随本节同批入库。
 

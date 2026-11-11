@@ -22,3 +22,11 @@ batch-1 五件是**方法论型**技能（AI 只起草与核对）；本批四�
 ## 录入
 
 合并后由助理按已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能；一技能一版本；`required_capabilities` 空数组；manifest 沿 batch-1 形状（`source`=batch-2／独立重写声明／许可账／使用时机／人机边界／引用指针）。
+
+## 已入库状态（2026-11-12，经授权代录）
+
+- 落点：桌面端 **扩展页 → 个人技能**，owner＝admin（`8b29bd77-4f98-40b5-a339-698c22e5f627`），scope=personal，status=published，current_version=1；写入走与 UI 保存同一条正式接口 `POST /api/v1/extensions/skills/personal`，未直写库、未建/改会话；
+- 4 条 id：`customer-context-brief`＝`70e1d096…`、`poc-retro-learnings`＝`af9d275a…`、`value-narrative-draft`＝`c3062589…`、`cross-project-triage`＝`f7ca0eaa…`；
+- 校验（实测）：`POST` 全 201；`GET /api/v1/skills?scope=personal` 列表 9 条（batch-1 五条未受影响），本批 4 条正文字符数 1267／1296／1108／990 与本仓 md 逐位一致；`GET /api/v1/skills/<id>/document` 的 `body` 与本仓 md 逐字节一致（sha256 相同）且服务端 `content_sha256`（结构化指纹）与本地按服务端算法复算值逐位一致，`ALL MATCH: True`；库内 `skill_definitions`／`skill_versions` 行 9+9 一致，公共技能 14 条未变；
+- 容器内临时文件（载荷/执行器/报告）已 `docker exec -u root rm -f` 清零；临时脚本留本机临时目录未入库；
+- 后续新版本由蔡工在桌面端亲手录（一人一版本）。
