@@ -2,6 +2,19 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断第十八轮·T-11 线索模型与认领闸：四道机械闸＋三档归因＋台账行生成（迁移 d7e2f4a9c1b3 69→70 rev＋员工侧 5 路由，2026-11-12）
+
+诊断会话里留了资的企业，**谁来跟、归谁、算不算渠道带来的**必须**机械可判**（不靠人自觉、不靠口头约定、不靠事后翻台账对账）。
+
+- **四道闸（机械执行，测试钉死）**：①**认领窗口 90 天**过期即拒（窗口是机制不是提示）；②**一线一线**——同线索已有未决认领 ⇒ 拒（未决申请锁住线索）；③**R4 仅本区域**——区域不符 ⇒ 拒，线索**未登记区域** ⇒ **fail-closed 拒**（无法判定本区域即不许认领，不许"先认了再说"）；④**同主体自诊自认领** ⇒ **自动 C 档零转化费**（**降档，不拒单**——自认领本身合法，只是没有转化费；拒了等于把"自诊企业"的线索挤出池子）。**claimed ≠ accepted**：申请只落 `pending`（**不改线索状态**），**平台接受（admin）才生效**——线索转 `claimed`、落档位、出台账行；驳回**不改**线索状态（线索仍可被他人认领）。
+- **三档归因（P-2：比例只落结构不落数）**：A 渠道报备（`source_type='partner'`）／B 认领转化／C 平台留存；转化费口径只落 `none`（C 档零转化费）／`pending_pricing`（A/B 比例待 T-16 价格轮）——**无任何比例/金额字段**（静态钉：认领单与线索表两模型全列扫 `rate/ratio/percent/commission/amount/fee_rate` 零命中）。
+- **自认领信号三枚（只记命中信号，不存可比对明文）**：`ip`（认领请求 IP 假名 == 线索 IP 假名）／`contact`（认领方账号邮箱指纹 == 线索主体指纹）／`subject`（认领方声明的联系方式指纹 == 线索主体指纹）。
+- **不建平行 CRM（P-3）**：真相层仍是 `D:\test\FDE\leads.md`（九字段 ＋ 9 态 ＋ 回访触发日）；服务端**只生成待落账台账行**（代号化九字段——**联系方式/姓名/企业真实名一律不出现**）并留在库里，**服务端不碰真相层文件**（容器里没有真相层，也不该有）；落账由**宿主侧脚本** `scripts/lead_ledger_append.py` 完成（只插不改、幂等、原子写、**找不到登记表 ⇒ fail-closed**——不猜位置），行指纹与落账时刻入库。
+- **落地面**：NEW `server/src/fde_api/diagnostics/claim_service.py`（闸＋归因＋台账行生成）＋ NEW `lead_routes.py`（员工侧 JWT 面 5 路由：线索池／申请／详情／接受／驳回，**接受与驳回皆 admin 专属**；线索池投影**不含联系方式与姓名**）＋ NEW 表 `lead_diagnostic_claims`（25 列；CHECK 钉死「pending ⇒ 无 decided_at/无档位/无台账号」「accepted ⇒ 必带台账号＋台账行」「非 accepted ⇒ 不得带台账号」「R4 ⇒ 必须声明区域」；唯一约束 `(ledger_date, ledger_seq)` ＋ `ledger_line_no` ⇒ 并发靠 IntegrityError 重算，**只**在含 `uq_lead_diagnostic_claims_ledger` 时重试，其它完整性错误**如实抛出**——不吞错）＋ 线索行加两列 `subject_fingerprint`（主体指纹，**明文不入库**）／`region_name`（R4 判定基准；可空＝未登记区域 ⇒ fail-closed）＋ 迁移 `d7e2f4a9c1b3`（挂 M5-1 之后，**单头 69→70**，零播种）。**部署闸先于鉴权**：诊断面未启用 ⇒ **404**（不确认面存在）。
+- **台账行映射（不臆造）**：来源 direct→自有／channel→协会活动／partner→渠道伙伴；行业←`org.industry`；联系人角色←`biz.decision_maker`；痛点一句话←`ctx.free_text`（截 40 字）；**资格五问得分＝「待填」**（资格判定是人的动作）；下一步动作+日期＝「认领跟进 <认领日>」；①状态＝「诊断中」；③回访触发日＝「认领窗口到期 → <窗口到期日>」；④资料索引＝「诊断会话-<8位短码>」。线索号 `L-<YYYYMMDD>-<两位序号>`——**本地日**＋8h 固定偏移，不用 UTC 日界（UTC 日界会把夜里的认领记到前一天，与人工台账对不上）。
+- **测试与变异**：NEW `server/tests/test_diagnostics_lead_claims.py` **30 例全绿**（含**落账脚本列序防漂移钉**＋插行位置＋fail-closed＋竖线转义）；**变异五连全红→还原→绿**（M1 摘窗口闸／M2 摘一线一线／M3 摘 R4 区域闸／M4 摘自认领信号／M5 摘 C 档降档——每个 mutant 变异后转红、**文件拷贝还原**后定向复测全绿，还原后源文件 sha256 逐位一致）；诊断域＋迁移＋清单同步钉回归 **131 例全绿**；官方 ruff 闸绿、官方 mypy 闸绿（**279 基线不变**）。
+- **结构口径与合并部署**：路由 469→**474**／蓝图 51→**52**／表 151→**152**／迁移 69→**70**（单头 `d7e2f4a9c1b3`）；审计清单三件套重生成＋archify 图纸口径同步（图纸防陈旧闸绿）；桌面端零改动不重打包。PR **#363** CI 四 job 全绿（server-tests **3174 passed + 8 skipped**）→ squash 合并 `f367fcb`；**部署活体复验**（从 `f367fcb` 干净树重建，生产项目名 `fde-workbench`）：三镜像 rebuild（api `e7e779d431f0`／worker `1b3408cb77fc`／scheduler `5b256eedfcab`）后容器 `.Image` 与构建产物**逐位一致**；`alembic upgrade head` **真实升级 `c1d4e7f9a2b3 → d7e2f4a9c1b3`**，容器内 `alembic current`＝`d7e2f4a9c1b3 (head)`；活体 `url_map` **474 non-static** ≡ 本轮口径；**部署闸默认关 ⇒ 活体 404 而非 403**；`/ready` 200＋`/live` 200；活库新表 25 列在位。**文档口径剥离出 PR**——AGENTS/CHANGELOG/任务书三文件随本证据 PR 合并后另起回填 PR（沿 T-10a #282 先例）。
+
 ## [未发布] — 多客户 M5 轮：企业组织成员邀请面＋三档分流入口＋六项判据聚合（迁移 c1d4e7f9a2b3 68→69 rev＋桌面分流面板，2026-11-11/12）
 
 - **M5-1 组织成员邀请面（PR #349）**：NEW 迁移 `c1d4e7f9a2b3`（68→69 rev，`org_member_invitations` 表）；邀请/列表/撤销/接受四端点（`POST/GET /api/v1/commercial/orgs/<org_id>/invitations`、`POST .../<invitation_id>/revoke`、`POST /api/v1/commercial/orgs/invitations/accept`）。**一次性令牌＋邮箱绑定**（sec 评审：邀请是社会工程攻击面）——令牌明文只回传一次、库内只存 sha256 指纹；接受时强制 `actor.email == invited_email` 且 actor 为平台身份（`org_id IS NULL`）；**邀请是 org 归属面不是第二套权限体系**（红线 8）：接受邀请唯一副作用＝`users.org_id` 置为本 org，可见性由既有 `project_org_scope_filter` 覆盖，零平行权限表。企业空间读面透出 `org_id` ＋邀请清单；桌面端企业空间页 NEW「成员邀请」面板（发送邀请/一次性令牌展示/邀请清单/接受邀请）。
