@@ -7,6 +7,13 @@
 - **DSH 对外交付物行动清单 v1（🟡 待拍板前置件——非立项、非成稿、不代表任何决策）**：把「DSH 封装成智能体底座交付各客户」的主张转成 OWNER 可拍板的书面决策件前置。①**拆清三件被混谈的事**：内部执行层（已裁决 `dsh_enabled=False` 走 zcode 宿主代理——不翻案）／对外交付物形态（四份既有决策均不覆盖＝本轮唯一对象）／底层许可与安全责任（Q11 未销号＝前置闸）。②现状证据分级 A/B/C：「直接否决」不成立（无决策覆盖），「直接开工」同样不成立（对外部署方案 v2 已拍板 `DSH false` 基线）；原始需求出处（A1）未确认＝B 级依据不得升 A。③**A1–A9 行动清单**（授权动作 A5 法务／A7 客户书面／A9 OWNER 拍板不可代做；当前可执行仅 A1/A2/A3/A8 纯文档）＋六项验收判据（①客户资料零外传、②H1–H13/N1–N7 不放宽＝一票否决）＋失败退回 `DSH=false`＋zcode 宿主代理现成态。专项评估草案待立项，本件只登记行动与待确认项。
 - **商业化复核轮台账补记（「补账并入随轮 PR」纪律的抢救落地）**：`docs/commercialization/phase-status.md` 回填「复核轮：三项挂账现测＋交互式复确认」节——该轮在已删除的工作树 `fde-wt-g1`（分支 `docs/commercial-recheck-3parked`，基线 `e93b8e6`）完成，台账留痕未随轮落库即工作树销毁，本轮补记。三项挂账交互复确认**全维持原裁决**：§17 商业数值维持 unset（fail-closed，预写默认值判红）／§1.8 体验上限消费维持归 V3.2 simulation 域／GAP-15 维持半激活（缺首条采纳样本，任一真实采纳留痕落 `operation_events` 即自动销号）。**复测现测（本轮落账前重跑）**：桌面 typecheck 双 tsconfig 零报错＋`enterprise-register`/`enterprise-space` 双文件 **10/10 passed**——台账声称数字逐位吻合。
 - 口径：纯文档零代码零迁移零路由零桌面——pytest/vitest/mypy 全不变，无需 rebuild/alembic/重打包。
+=======
+## [未发布] — AI 原生化 N3b G-03 DAG ADR 设计轮（三拍板落 ADR：节点类型闭集不扩展／AI 产物返件式草稿零落库／与确定性编译器并列双来源闸唯一；纯文档零代码零迁移零路由，2026-11-11）
+
+- **ADR 落盘（NEW `docs/architecture/AI原生化N3b-DAG-AI起草ADR-v1.md`；任务书 §15 序 2，台账 v1.14）**：蔡工交互拍板三问——①**节点闭集不扩展**（维持 `call/skill/agent/human_approval` 四值；`models.py:27` 定义侧＋`constants.py:50` 执行侧守卫双锚不动；附契约推荐项「AI 起草图须含 ≥1 human_approval 节点」留痕可推翻）；②**返件式草稿零落库**（本体轮 NEW 路由 `generate-ai-draft` 只返回草稿 DAG＋validate 干跑明细；人工采纳走既有 create_definition〔can_manage，draft 态〕→ publish_definition〔admin，D-2〕；契约失败重试一次 409 `ai_draft_contract_failed`，**全程业务域零写入**——事件与 ai_call_audits 照常留痕）；③**并列双来源、闸唯一**（`draft-from-plan` 零 AI 缺省腿零改动＝本体轮 DoD③ 承重墙；AI 增强腿同输入域两稿可比人工择优；三道 validate 干跑〔AI 预检→create_definition 复验→publish 复验〕＋两道人工闸，AI 无任何旁路）。
+- **机制面沿 N3a 先例零新发明**：`execute_ai_prompt` 单一入口（purpose=`workflow_dag_draft`＋prompt_version=`workflow-dag-prompt-v1`）＋NEW `WORKFLOW_DAG_DRAFT_SYSTEM_PROMPT` 进 J-1 白名单＋输出端兜底脱敏（词典故障 fail-closed／凭据串拒绝）＋`workflow_dag_ai_drafted` 事件（携 dag_sha256/node_count，**不带 DAG 全文**）。
+- **口径零变化**：纯文档轮——路由 462／蓝图 51／表 150／66 rev 单头 `a7c2f9e1b4d8` 均不动；pytest/vitest 零增量；无需重建镜像/alembic/重打包。
+- **随轮三同步**：台账 v1.14（修订记录＋G-03 行注记「ADR 已拍板、本体轮待开工」）＋任务书（§13 复核 #18／§15 序 2 已落／§N3b 范围 bullet ADR 指针）＋AGENTS bullet。判据状态不变：G-03 OPEN（消解判据＝完整链实施，本体轮 §15 序 3 交付时复测）；G-01 OPEN 重交推进中（材料收集照 v1.10 清单）、G-07 CLOSED 维持。
 
 ## [未发布] — 夜审挂账实施轮 r9（CR-071 web 桥校验族按 r8 设计稿推荐 A 落地：校验族提升 NEW shared/api-safety.ts 纯函数单点＋桌面 api-ipc 重构引用＋web 桥六缺口全封＋等价性静态钉；纯桌面零迁移零路由零服务端，2026-11-11）
 
