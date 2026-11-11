@@ -50,6 +50,23 @@ def org_scope_org_ids(user: User) -> list[str] | None:
     return [org_id, INTERNAL_ORG_ID]
 
 
+def is_enterprise_org_id(org_id: str | None) -> bool:
+    """企业 org 判定——非空且**非平台内部桶**（M3b 批次 ① 留痕触发面口径）。"""
+    return org_id is not None and org_id != INTERNAL_ORG_ID
+
+
+def is_cross_org_action(actor_org_id: str | None, resource_org_id: str | None) -> bool:
+    """跨 org 写动作判定（M3b 拍板 2026-11-11：**企业 org 之间才算**）。
+
+    触发面：目标资源归属**企业 org** 且 ≠ actor 归属 org。平台内部桶是平台
+    身份的大本营（存量用户全是平台身份、日常立项都落桶内）——不算跨 org，
+    否则试点期每次日常写动作都产生事件（审计噪声）。
+    """
+    if not is_enterprise_org_id(resource_org_id):
+        return False
+    return resource_org_id != actor_org_id
+
+
 def org_scope_allows(user: User, resource_org_id: str | None) -> bool:
     """actor 能否作用在 ``resource_org_id`` 归属的资源上。
 
