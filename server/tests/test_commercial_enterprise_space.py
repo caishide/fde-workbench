@@ -45,6 +45,7 @@ from fde_api.commercial.models import (
     DIAGNOSIS_PROJECT_TIERS,
     ENTERPRISE_TRIAGE_TIERS,
     FREE_DIAGNOSIS_DELIVERABLES,
+    FREE_DIAGNOSIS_DELIVERABLE_LABELS,
     REGISTRATION_ENTRIES,
     CommercialEntitlement,
     EnterpriseFreeQuota,
@@ -766,3 +767,31 @@ def test_g6_metadata_adds_exactly_two_tables_and_no_permission_tables() -> None:
 
 def test_migration_column_on_subject_exists() -> None:
     assert "problem_description" in EnterpriseQuotaSubject.__table__.columns
+
+def test_space_view_aggregates_six_deliverable_criteria(client, settings, db_session):
+    """企业空间读面须聚合六项交付物完成判据：键集=G2 权威、状态来自 quota.deliverables、全真才 all_completed。"""
+    ent_client, uscc = _enterprise_client(client, settings, db_session)
+    ent_client.post(f"/api/v1/commercial/enterprise-quota/{uscc}/start", json={})
+    view = ent_client.get(_space_url(uscc))
+    assert view.status_code == 200, view.get_data(as_text=True)
+    diag = view.json["data"]["diagnosis"]
+    assert diag["state"] in ("granted", "in_progress")
+    assert diag["all_completed"] is False
+    assert [d["key"] for d in diag["deliverables"]] == list(FREE_DIAGNOSIS_DELIVERABLES)
+    assert all(d["done"] is False for d in diag["deliverables"])
+    assert diag["deliverables"][0]["label"] == FREE_DIAGNOSIS_DELIVERABLE_LABELS[
+        FREE_DIAGNOSIS_DELIVERABLES[0]
+    ]
+
+
+def test_space_view_diagnosis_all_completed_after_confirm(
+    client, admin_client, settings, db_session
+):
+    ent_client, uscc = _completed_subject(client, admin_client, settings, db_session)
+    view = ent_client.get(_space_url(uscc))
+    assert view.status_code == 200, view.get_data(as_text=True)
+    diag = view.json["data"]["diagnosis"]
+    assert diag["state"] == "completed"
+    assert diag["all_completed"] is True
+    assert all(d["done"] is True for d in diag["deliverables"])
+    assert diag["completed_at"] is not None

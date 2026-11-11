@@ -215,6 +215,17 @@ FREE_DIAGNOSIS_DELIVERABLES = (
     "next_steps",  # 下一步实施建议
 )
 
+# 六项交付物人类可读标签（单一权威，与 FREE_DIAGNOSIS_DELIVERABLES 同序同闭集；
+# 标签仅呈现用，非完成判据——判据仍是「六键全真」，ADR-004 §1.5）。
+FREE_DIAGNOSIS_DELIVERABLE_LABELS = {
+    "diagnosis_report": "企业问题诊断报告",
+    "process_analysis": "业务流程初步分析",
+    "ai_opportunity_list": "AI 应用机会清单",
+    "implementation_plan": "建议实施方案",
+    "project_tier_budget": "预计项目等级与预算区间",
+    "next_steps": "下一步实施建议",
+}
+
 # AI 草稿采纳申报闭集（GAP-15 采纳率埋点，ADR-007 §2.5 复审触发器的前置承载；
 # 申报值域封闭枚举——完成诊断时由交付咨询环节人工申报，缺省=未申报）
 AI_DRAFT_ADOPTION_OUTCOMES = ("accepted", "modified", "rejected")
@@ -1374,3 +1385,75 @@ class EnterprisePaidOptionChoice(Base, TimestampMixin):
         String(36), ForeignKey("users.id", ondelete="RESTRICT")
     )
     advisor_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class OrgMemberInvitation(Base, TimestampMixin):
+    """企业组织成员邀请（M5-1；一次性令牌 + 邮箱绑定 + 接受即归属）。
+
+    设计裁决（M5-1 规格 v1 §1–§2）：
+
+    - **邀请是 org 归属面，不是第二套权限体系**（红线 8 复述）：接受邀请唯一
+      副作用＝把受邀用户 ``users.org_id`` 置为本 org（归入归属维度，可见性由
+      ``project_org_scope_filter`` 既有谓词覆盖）。本表零平行权限字段、零角色
+      授予——org 内角色仍由 ``project_members`` 在项目级决定。
+    - **一次性令牌**：明文只出现在邀请链接里，库中只存 sha256 指纹
+      （``token_sha256``，64 位 hex）；重发即轮换（新行或旧行覆写指纹⇒旧链接
+      失效）。指纹唯一防碰撞。
+    - **邮箱绑定（sec 评审：邀请是社会工程攻击面）**：接受时强制
+      ``actor.email == invited_email``（NFKC 归一化后相等），令牌泄露也只
+      能被目标邮箱账号消费；actor 必须是平台身份（``org_id IS NULL``），
+      禁止把已归属别家 org 的账号拽过来。
+    - **状态机**：pending（``accepted_at/revoked_at`` 均 NULL）→ 终态
+      accepted（``accepted_at`` 落戳）或 revoked（邀请人/admin 撤销，
+      ``revoked_at`` 落戳）。过期＝``token_expires_at`` 已过但仍 pending，
+      接受时判 410。三者互斥，CHECK 联锁保证。
+    - **每 org 同邮箱至多一份待接受邀请**（部分唯一索引 ``accepted_at IS NULL
+      AND revoked_at IS NULL``）——避免重复邀同一邮箱刷屏；已接受/已撤销的不限。
+    """
+
+    __tablename__ = "org_member_invitations"
+    __table_args__ = (
+        CheckConstraint(
+            "token_sha256 IS NULL OR char_length(token_sha256) = 64",
+            name="ck_org_member_invitations_token_sha256",
+        ),
+        # 三态互斥：accepted/revoked 至多一个落戳（pending＝两者皆 NULL）
+        CheckConstraint(
+            "(accepted_at IS NULL) OR (revoked_at IS NULL)",
+            name="ck_org_member_invitations_terminal_mutex",
+        ),
+        # 一次性令牌指纹唯一（明文只走链接）；与 user_registrations 同形态。
+        UniqueConstraint("token_sha256", name="uq_org_member_invitations_token"),
+        # 每 org 同邮箱至多一份待接受邀请（重复邀请刷屏防护）。
+        Index(
+            "uq_org_member_invitations_pending",
+            "org_id",
+            "invited_email",
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND revoked_at IS NULL"),
+        ),
+        Index("ix_org_member_invitations_org", "org_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("orgs.id", ondelete="RESTRICT"), nullable=False
+    )
+    # 邀请目标邮箱（NFKC 归一化小写存储；接受时与 actor.email 严格相等校验）。
+    invited_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 接受后回填：实际接受邀请的用户（与 invited_email 归一化相等）。
+    invited_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    # 一次性令牌指纹（64 位 hex）；明文只出现在邀请链接。
+    token_sha256: Mapped[str | None] = mapped_column(String(64))
+    token_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # 邀请人（org 内成员 / admin）
+    created_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    accepted_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
