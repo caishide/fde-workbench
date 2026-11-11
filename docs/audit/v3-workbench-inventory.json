@@ -2,9 +2,9 @@
  "route_count": 461,
  "blueprint_count": 51,
  "table_count": 150,
- "revision_count": 65,
+ "revision_count": 66,
  "heads": [
-  "e5c9f2a7d4b6"
+  "a7c2f9e1b4d8"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -49,6 +49,12 @@
    "add_column_tables": [
     "agent_runs"
    ]
+  },
+  "a7c2f9e1b4d8": {
+   "file": "a7c2f9e1b4d8_onsite_required_nullable.py",
+   "down_revision": "e5c9f2a7d4b6",
+   "create_tables": [],
+   "add_column_tables": []
   },
   "a7f3c1e9d5b2": {
    "file": "a7f3c1e9d5b2_presurvey_intake.py",

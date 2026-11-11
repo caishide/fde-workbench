@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session
 from fde_api.dispatch.cities import claim_gate_status, package_client_city
 from fde_api.dispatch.disputes import run_l0_reconciliation
 from fde_api.dispatch.models import DeliveryPackage, DeliverySettlement, Dispute, DispatchOffer
-from fde_api.dispatch.offer_service import actor_system, expire_stale_offers
+from fde_api.dispatch.offer_service import (
+    actor_system,
+    expire_stale_offers,
+    expand_stale_offers,
+)
 from fde_api.dispatch.packages import publish_package
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Payment
@@ -187,11 +191,14 @@ def run_maintenance(session: Session, *, now: datetime | None = None) -> dict[st
     """维护任务体（worker handler 调用）：超时释放 + C7 混合转换 + 留存扫描
     + T+30 对账。转换排在释放之后——同一节拍内「响应窗判死 → 开闸转 claim」。"""
     expired = expire_stale_offers(session, now=now)
+    # F 线 T5 动作②：扩圈计数单独上报（expire_stale_offers 内已接线，此处为幂等空转的第二次调用）。
+    expanded = expand_stale_offers(session, now=now)
     c7 = convert_stale_assign_to_claim(session, now=now)
     retention = retention_scan(session, now=now)
     reconciliation = run_l0_reconciliation(session, now=now)
     return {
         "expired_offers": expired,
+        "radius_expanded_packages": expanded,
         "c7_conversion": c7,
         "retention": retention,
         "t30_reconciliation": reconciliation,

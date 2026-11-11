@@ -28,6 +28,7 @@ from fde_api.dispatch.models import (
     DeliveryPackage,
     DispatchOffer,
     FdeProfile,
+    resolve_onsite_required,
 )
 from fde_api.dispatch.packages import transition_package
 from fde_api.dispatch.rules import active_rule_version
@@ -174,9 +175,9 @@ def _stage_a(
 
     client_city = _client_city(session, package)
     city_index = _city_index()
-    allowed_tier = (
-        allowed_geo_tier(package, quote) if package.onsite_required else 3
-    )
+    # F 线 T5：到场型判定走唯一权威原语（NULL＝未设置⇒默认到场型）。
+    onsite_required = resolve_onsite_required(package)
+    allowed_tier = allowed_geo_tier(package, quote) if onsite_required else 3
     passed: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     b1_excluded = _declined_earlier_rounds(session, package)
@@ -197,7 +198,7 @@ def _stage_a(
         cap = _capacity_cap(profile)
         a4 = in_hand < cap
         tier = scoring.geo_tier(profile.home_city, client_city, city_index)
-        a5 = (not package.onsite_required) or tier <= allowed_tier
+        a5 = (not onsite_required) or tier <= allowed_tier
         # §6.5 新人保护期（C10）：前 N 单（DISPATCH_CONSTANTS）只推同城——
         # 新人候选强制的不是门槛淘汰而是「同城化围栏收紧」（超时不惩罚、
         # 不写响应率档案；推送范围按新人口径收紧）。
@@ -275,7 +276,8 @@ def match_package(
     rule["_required_industry"] = package.required_industry
 
     passed, rejected = _stage_a(session, package, quote)
-    scenario = "onsite" if package.onsite_required else "remote"
+    # F 线 T5：到场型判定走唯一权威原语（NULL＝未设置⇒默认到场型）。
+    scenario = "onsite" if resolve_onsite_required(package) else "remote"
     if not passed:
         # 场景 C：不自动派，通知交付总监（事件全量留痕，§4.4）
         record_event(

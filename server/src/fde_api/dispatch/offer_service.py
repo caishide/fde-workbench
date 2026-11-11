@@ -27,7 +27,11 @@ from sqlalchemy.orm import Session
 from fde_api.auth.models import User
 from fde_api.dispatch.cities import claim_gate_status
 from fde_api.dispatch.errors import DispatchServiceError
-from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
+from fde_api.dispatch.models import (
+    DeliveryPackage,
+    DispatchOffer,
+    resolve_onsite_required,
+)
 from fde_api.dispatch.packages import (
     handover_accepted_member,
     transition_package,
@@ -381,6 +385,128 @@ def _maybe_reject_package(
         transition_package(session, actor=actor, package_id=package_id, action="reject")
 
 
+def _expansion_wait_start(
+    session: Session, package: DeliveryPackage
+) -> datetime | None:
+    """本轮「无人应答」的等待起点：本轮最后一条 offer 的终结时刻。
+
+    取 offer 的 ``responded_at``（终结时刻）；无 offer（从未发出或本轮
+    零候选）时回落到包的 ``updated_at``。返回 None 表示无法判定起点
+    ⇒ 不推进（**不猜时间**）。
+    """
+    row = session.execute(
+        select(DispatchOffer.responded_at, DispatchOffer.offered_at)
+        .where(
+            DispatchOffer.package_id == package.id,
+            DispatchOffer.dispatch_round == package.dispatch_round,
+        )
+        .order_by(DispatchOffer.updated_at.desc())
+        .limit(1)
+    ).first()
+    if row is not None:
+        return row[0] or row[1]
+    return package.updated_at
+
+
+def expand_stale_offers(session: Session, *, now: datetime | None = None) -> int:
+    """同城无人 → 按 15 分钟逐级自动扩圈（F 线 T5 动作②）。
+
+    逐级链由既有 ``dispatch_round`` 驱动（``allowed_geo_tier``：
+    round1 同城／round2 同省／round3 邻接都市圈／round4 全国）——
+    本函数只负责「该推进时推进一档」，**不改分档规则、不改权重**。
+
+    推进条件（三者同时成立）：
+
+    1. 包已到场型且本轮**无活 offer、无接受者**（无人应答）；
+    2. 距等待起点 ≥ ``radius_expand_wait_minutes``（§6.2 唯一权威表）；
+    3. 本轮尚未到全国档上限（``dispatch_round < 4``）——全国档另需旗舰档
+       ＋客户书面确认，由 ``allowed_geo_tier`` 既有逻辑守住，本函数
+       **不绕过**。
+
+    并发：包行锁（``SELECT … FOR UPDATE``）防并发双推；状态机唯一迁移
+    （expired → published）保证幂等。**权重（stage_b_weights 40/30/20/10）
+    本函数零改动。**
+    """
+    now = now or datetime.now(timezone.utc)
+    wait_minutes = int(DISPATCH_CONSTANTS["radius_expand_wait_minutes"])
+    if wait_minutes <= 0:
+        return 0
+
+    # 候选包：到场型 + 本轮无人应答（expired/rejected 或 offered 但无活 offer）
+    # 候选包：**仅「本轮无人应答且包已判死」态**（expired／rejected）。
+    # published／offered 是「本轮仍在进行」态——把它们纳入会在自动扩圈
+    # 之后对已 published 的包二次 publish（状态机拒绝 409）。
+    candidates = session.scalars(
+        select(DeliveryPackage).where(
+            DeliveryPackage.dispatch_status.in_(("expired", "rejected"))
+        )
+    ).all()
+    expanded = 0
+    for package in candidates:
+        # 行锁：同一包并发推进只允许一个执行者（G2/G3 行锁范式）。
+        locked = session.scalar(
+            select(DeliveryPackage.id)
+            .where(DeliveryPackage.id == package.id)
+            .with_for_update()
+        )
+        if locked is None:
+            continue
+        session.refresh(package)
+        # ① 仅到场型需要就近扩圈（远程型本就不设地理围栏，扩圈无意义）。
+        if not resolve_onsite_required(package):
+            continue
+        # ② 本轮不得有活 offer 或已接受者。
+        live = session.scalar(
+            select(DispatchOffer.id)
+            .where(
+                DispatchOffer.package_id == package.id,
+                DispatchOffer.dispatch_round == package.dispatch_round,
+                DispatchOffer.status.in_(("offered", "accepted")),
+            )
+            .limit(1)
+        )
+        if live is not None:
+            continue
+        # ③ 轮次上限：round4 已是全国档（且另需旗舰档＋书面确认）。
+        if package.dispatch_round >= 4:
+            continue
+        # ④ 等待时长闸：未满 15 分钟不推进。
+        wait_start = _expansion_wait_start(session, package)
+        if wait_start is None:
+            continue
+        waited = now - wait_start
+        if waited < timedelta(minutes=wait_minutes):
+            continue
+        # ⑤ 重发（round+1 ⇒ 扩圈一档；radius 随轮次推进）。
+        from fde_api.dispatch.packages import publish_package
+
+        before_round = package.dispatch_round
+        before_radius = package.redispatch_radius_km
+        publish_package(
+            session,
+            actor=actor_system(session),
+            package_id=package.id,
+            candidate_user_ids=(),
+        )
+        expanded += 1
+        record_event(
+            session,
+            actor_system(session),
+            "dispatch_offer_expanded",
+            package,
+            {
+                "reason": "radius_expand_wait_elapsed",
+                "from_round": before_round,
+                "to_round": package.dispatch_round,
+                "from_radius_km": before_radius,
+                "to_radius_km": package.redispatch_radius_km,
+                "waited_minutes": int(waited.total_seconds() // 60),
+                "radius_expand_wait_minutes": wait_minutes,
+            },
+        )
+    return expanded
+
+
 def expire_stale_offers(session: Session, *, now: datetime | None = None) -> int:
     """超时释放（jobs/请求路径惰性触发均可）：过时限的 offered → expired；
     包无活 offer → expired/reject 迁移（§2.5 响应超时路径）。"""
@@ -425,6 +551,9 @@ def expire_stale_offers(session: Session, *, now: datetime | None = None) -> int
         )
         if live is None:
             transition_package(session, actor=actor_system(session), package_id=package.id, action="expire")
+    # F 线 T5 动作②：同城无人且已过 radius_expand_wait_minutes ⇒
+    # 自动重发（dispatch_round+1 ＝ 扩圈一档）。详见 expand_stale_offers。
+    expand_stale_offers(session, now=now)
     return expired
 
 

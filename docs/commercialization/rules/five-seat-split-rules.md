@@ -91,6 +91,37 @@ T       = 该项目里程碑实收回款（payments.received_amount，不重算�
 2. **自拉自交项目的验收人恒为平台**（T4 已落）：`acceptance_passed_at` 唯一写咽喉 `projects.payment_service.mark_acceptance_passed` 排除席位收款人本人（交付席位＝`DeliveryPackage.seat_delivery`；拉单席位＝已确认归属 owner，与 T3 `resolve_lead_seat` 同一谓词）⇒ 403 `self_acceptance_forbidden`（反例用例：本人验收 403）。市县/省级收款人在分配时才产生，验收时刻无从辨认，由 G8 拍板权限尺（manage 门）共同守。
 3. 兼任承载表 `commercial_role_assignments` **已建**（T4 迁移 `e5c9f2a7d4b6`，挂 T2 `c8d2f6a4e9b1` 之后保单头）：一人多角色（一人多行并存），附生效区间（`valid_from`/`valid_until` 可空＝长期，窗口倒挂 400＋DB CHECK 兜底）与来源（书面依据指针＋sha256 指纹）；同角色区间重叠 409 `role_assignment_overlap`（行锁＋重叠判定）；写入＝关键流转（admin＋密码双闸，CR-047 限流同款）；**不动 `users.role`**（ADR-001 保护清单）；`commercial_entitlements.commercial_role` 单值保留为「主角色」兼容读面（兼任**永不回写**主角色列），不删列。治理面不进 api_catalog。
 
+## 7bis. 就近硬闸加固（T5 落地，**不提权**）
+
+依据 ADR-011 §5-D ＋ 任务书 §4-T5／§12。**核查后撤回「就近只有 10% 权重、
+需提权」的前判**——到场型本就是硬闸，真实缺口在派生判定与扩圈调度两处。
+
+1. **到场型默认 True，仅显式标记纯远程才 False**（`delivery_packages.
+onsite_required` 三态化，迁移 `a7c2f9e1b4d8`，挂 T4 `e5c9f2a7d4b6` 之后
+保单头）：
+   - 旧形态按 `ProjectSolution.schedule` 四关键词（现场／到场／驻场／驻点）
+     **派生** ⇒ 方案文本漏写即**同城硬闸整体失效**，只剩 `geo_remote=10` 
+     的软权重；
+   - 新形态：`NULL`＝未设置（读侧兜底判 **True**）／`True`＝显式到场型／
+     `False`＝**仅此一种**是纯远程型（须显式标记，写入口＝既有创建路由的 
+     `onsite_required` 载荷）；四关键词派生降级为「字段为空时的兜底」，
+     **未命中关键词不再据此判为纯远程**；
+   - **存量行按旧派生规则回填**（命中⇒True／未命中⇒False）⇒ 存量行为
+     **逐位零变更**（存量远程型包不被误加围栏），新语义只作用于新建/后续写入；
+   - 判定唯一权威原语＝`dispatch.models.resolve_onsite_required`（读侧
+     matching／simulator／access 一律走它，避免口径漂移）。
+2. **15 分钟逐级自动扩圈**（`radius_expand_wait_minutes=15`，§6.2 唯一权威表；
+本轮只加**调度消费方**，常量值不变）：`dispatch.offer_service.
+expand_stale_offers` 接进 `expire_stale_offers` ⇒ 同城无人且已过 15 分钟 ⇒
+自动重发（`dispatch_round+1` ＝ 扩圈一档：同城→同省→邻接都市圈→全国）；
+包行锁防并发双推，状态机唯一迁移保幂等，留痕事件 `dispatch_offer_expanded`。
+3. **全国档门槛保持不动**：`allowed_geo_tier` 在 round≥4 且报价非旗舰档时
+封顶 tier2 ⇒ 非旗舰档**不会**扩到全国（「旗舰档＋客户书面确认」由既有逻辑
+守住，本轮未改 `matching.py` 的分档规则）。
+4. **权重未变**（任务书 §12 动作 3）：`stage_b_weights` 维持 
+**40/30/20/10**；`geo_remote`／`sort_key_onsite`／`sort_key_remote` 
+**一字未改**。本轮属缺陷修复、非规则重大调整 ⇒ 无需另发规则版本。
+
 ## 8. 3980 席位订阅费边界（不被「成本自理」改写）
 
 - 3980 是**独立年费**，走 ADR-008 科目层 `seat_fee`，**不进 `delivery_settlements`、不进分账池、不从分成池二次扣**。
