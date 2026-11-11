@@ -9,6 +9,7 @@ from sqlalchemy import select
 from fde_api.auth.models import User
 from fde_api.control.models import UserAIAccessGrant
 from fde_api.extensions import db
+from fde_api.orgs.isolation import is_platform_identity
 from fde_api.projects.permissions import project_access
 from fde_api.workbench.models import Project
 
@@ -108,6 +109,17 @@ def effective_ai_access(user: User) -> tuple[str, str]:
     if grant is not None:
         return grant.access_level, "explicit"
     return DEFAULT_ACCESS_BY_ROLE.get(user.role, "disabled"), "role_default"
+
+
+def is_platform_operator(user: User) -> bool:
+    """平台管理操作者＝**平台身份** ＋ system_operator AI 档（M3b 批次 ①-a）。
+
+    R1 平台私有／R2 目录写的管理面只认平台身份（``orgs/isolation.py``）——
+    企业身份即使被显式授予 ``system_operator`` AI 档也不得操作平台模型、
+    供应商、公共目录与插件审批（盘点表维度 2 处置建议「admin-only 保持」的
+    org 维度落点；admin 经 ``effective_ai_access`` 恒为 system_operator）。
+    """
+    return is_platform_identity(user) and effective_ai_access(user)[0] == "system_operator"
 
 
 def capabilities_for_level(level: str) -> list[str]:
