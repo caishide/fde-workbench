@@ -12,6 +12,7 @@ from fde_api.control.models import UserAIAccessGrant
 from fde_api.control.service import ControlServiceError
 from fde_api.errors import error_response
 from fde_api.extensions import db
+from fde_api.orgs.isolation import is_cross_org_action
 from fde_api.workbench.models import OperationEvent
 
 management_blueprint = Blueprint("extension_management", __name__, url_prefix="/api/v1")
@@ -121,5 +122,16 @@ def save_user_ai_access(user_id):
         else:
             grant.access_level, grant.granted_by_user_id = payload["level"], g.current_user.id
             grant.reason = "管理员在用户管理中分配"
-        session.add(OperationEvent(actor_user_id=g.current_user.id, target_type="user_ai_access", target_id=user_id, event_type="ai_access.updated", changes={"before": before, "after": payload["level"]}))
+        # M3b 批次 ①-a（规格 §3.4）：admin 代改**别家企业**账号的 AI 授权＝跨 org
+        # 写动作——事件带 ``cross_org_`` 前缀且 org 维度取被作用账号归属；平台
+        # 身份目标（存量主路径）保持原事件名零回归。
+        cross_org = is_cross_org_action(g.current_user_org_id, user.org_id)
+        session.add(OperationEvent(
+            actor_user_id=g.current_user.id,
+            org_id=user.org_id if cross_org else None,
+            target_type="user_ai_access",
+            target_id=user_id,
+            event_type="cross_org_ai_access.updated" if cross_org else "ai_access.updated",
+            changes={"before": before, "after": payload["level"]},
+        ))
         return _data({"user_id": user_id, "level": payload["level"], "label": ACCESS_LABELS[payload["level"]]})

@@ -11,7 +11,7 @@ from flask import current_app
 from sqlalchemy import func, or_, select
 
 from fde_api.auth.models import ROLE_ADMIN, User
-from fde_api.control.access import effective_ai_access
+from fde_api.control.access import is_platform_operator
 from fde_api.control.models import PluginCatalogSync, PluginPackage, UserAIAccessGrant
 from fde_api.control.service import ControlServiceError
 from fde_api.extensions import db
@@ -22,8 +22,9 @@ _PACKAGE = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
 
 
 def sync_dsh_market(*, user: User, http: requests.Session | None = None) -> dict[str, Any]:
-    level, _ = effective_ai_access(user)
-    if level != "system_operator":
+    # M3b 批次 ①-a：插件目录同步写平台私有表（plugin_catalog_syncs 等）——
+    # 只认平台身份（企业身份即使持 system_operator AI 档也不可）。
+    if not is_platform_operator(user):
         raise ControlServiceError("forbidden", "只有系统运维员可以同步插件目录。", 403)
     return _sync_dsh_market(actor=user, http=http)
 

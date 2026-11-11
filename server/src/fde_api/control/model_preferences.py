@@ -15,7 +15,7 @@ from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from fde_api.auth.models import Base, User
-from fde_api.control.access import effective_ai_access
+from fde_api.control.access import effective_ai_access, is_platform_operator
 from fde_api.control.service import ControlServiceError
 from fde_api.extensions import db
 from fde_api.workbench.models import TimestampMixin, VersionedMixin, new_uuid
@@ -94,7 +94,8 @@ def save_model_preference(*, user: User, payload: dict[str, Any]) -> dict[str, A
     scope = payload["scope"]
     if scope not in {"personal", "public"}:
         raise ControlServiceError("invalid_model", "模型范围无效。", 400)
-    if scope == "public" and effective_ai_access(user)[0] != "system_operator":
+    if scope == "public" and not is_platform_operator(user):
+        # M3b 批次 ①-a：公共模型配置是平台共享面——写只认平台身份。
         raise ControlServiceError("forbidden", "只有管理员可以管理公共模型。", 403)
     for name, length in (("name", 160), ("provider", 80), ("model", 160)):
         if not isinstance(payload[name], str) or not payload[name].strip() or len(payload[name]) > length:
@@ -113,7 +114,7 @@ def save_model_preference(*, user: User, payload: dict[str, Any]) -> dict[str, A
         if payload.get("id") and item is None:
             raise ControlServiceError("not_found", "模型配置不存在。", 404)
         if item is not None:
-            if not ((item.owner_user_id == user.id and item.scope == "personal") or (item.scope == "public" and effective_ai_access(user)[0] == "system_operator")) or item.scope != scope:
+            if not ((item.owner_user_id == user.id and item.scope == "personal") or (item.scope == "public" and is_platform_operator(user))) or item.scope != scope:
                 raise ControlServiceError("forbidden", "无权修改此模型配置。", 403)
             if payload.get("version") != item.version:
                 raise ControlServiceError("stale_version", "配置已被更新，请重新打开后再保存。", 409)
@@ -147,7 +148,7 @@ def delete_model_preference(*, user: User, preference_id: str, expected_version:
             raise ControlServiceError("not_found", "模型配置不存在。", 404)
         if expected_version is not None and item.version != expected_version:
             raise ControlServiceError("stale_version", "模型配置已经变化，请重新确认删除。", 409)
-        if not ((item.owner_user_id == user.id and item.scope == "personal") or (item.scope == "public" and effective_ai_access(user)[0] == "system_operator")):
+        if not ((item.owner_user_id == user.id and item.scope == "personal") or (item.scope == "public" and is_platform_operator(user))):
             raise ControlServiceError("forbidden", "无权删除此模型配置。", 403)
         session.delete(item)
         return {"id": preference_id, "deleted": True}

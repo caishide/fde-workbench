@@ -277,18 +277,14 @@ def test_cross_tenant_chat_conversation_denied(client, db_session, settings, cro
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3b 待销号：平台身份对**别家企业**账号的写动作必须落 cross_org_ 留痕"
-    "（《M3a 规格》§3.4）——改造完成即 XPASS，严格模式强制摘标记",
-)
 def test_cross_org_write_action_leaves_audit_event(
     client, db_session, settings, cross_org_world
 ):
     """平台身份改**别家企业**账号的 AI 授权 ⇒ 必须留痕（``cross_org_`` 前缀事件）。
 
-    现状：admin 代改他人授权只落 ``ai_access.updated`` 事件（无跨 org 语义）
-    ⇒ 本用例红——M3b 批次 ① 改造后转绿，届时摘掉 ``xfail`` 标记。
+    M3b 批次 ①-a 已销号（save_user_ai_access 落 ``cross_org_ai_access.updated``；
+    ``is_cross_org_action`` 拍板口径＝企业 org 之间），``xfail(strict=True)``
+    标记随改造同 PR 摘除（机械闸：XPASS 即判红）。
     """
     admin = make_user(db_session, "admin")
     user_b = cross_org_world["user_b"]

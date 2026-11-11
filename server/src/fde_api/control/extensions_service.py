@@ -13,7 +13,14 @@ from sqlalchemy.orm import joinedload
 
 from fde_api.auth.models import User
 from fde_api.auth.passwords import verify_password
-from fde_api.control.access import ACCESS_RANK, CAPABILITY_REQUIREMENTS, capabilities_for_level, effective_ai_access
+from fde_api.control.access import (
+    ACCESS_RANK,
+    CAPABILITY_REQUIREMENTS,
+    capabilities_for_level,
+    effective_ai_access,
+    is_platform_operator,
+)
+from fde_api.orgs.isolation import is_cross_org_action
 from fde_api.control.models import (
     AIModelConfig,
     AIProviderConfig,
@@ -157,7 +164,8 @@ def save_public_skill(
     HTTP 面不传 → 公共 Skill 一律落 draft 走治理工作流（T-S1）。
     """
     level, _ = effective_ai_access(user)
-    if level != "system_operator":
+    if not is_platform_operator(user):
+        # M3b 批次 ①-a：公共 Skill 目录是 R2 平台共享面——写只认平台身份。
         raise ControlServiceError("forbidden", "只有管理员可以发布公共 Skill。", 403)
     if initial_status is not None and initial_status not in SKILL_STATUSES:
         raise ControlServiceError("invalid_skill", "Skill 参数无效。", 400)
@@ -747,6 +755,22 @@ def decide_plugin_change(*, user: User, request_id: str, payload: dict[str, Any]
             change.reviewed_at = now
             change.decision_reason = payload["reason"].strip()
             change.version += 1
+            if is_cross_org_action(user.org_id, change.target_user.org_id):
+                # M3b 批次 ①-a（规格 §3.4）：平台身份审批**别家企业**账号的插件
+                # 变更＝跨 org 写动作，必须留痕（事件 org 维度＝被作用账号归属；
+                # 同事务提交——审批中途失败则事件一并回滚）。
+                session.add(OperationEvent(
+                    actor_user_id=user.id,
+                    org_id=change.target_user.org_id,
+                    target_type="plugin_change_request",
+                    target_id=change.id,
+                    event_type="cross_org_plugin_change.decided",
+                    changes={
+                        "decision": payload["decision"],
+                        "action": change.action,
+                        "target_user_id": change.target_user_id,
+                    },
+                ))
             if payload["decision"] == "reject":
                 change.status = "rejected"
                 return _serialize_plugin_request(change)
@@ -854,8 +878,10 @@ def _plugin_capabilities(plugin: PluginPackage) -> list[str]:
 
 
 def _require_system_operator(user: User, message: str) -> None:
-    level, _ = effective_ai_access(user)
-    if level != "system_operator":
+    # M3b 批次 ①-a：平台管理面（R1 平台私有＋R2 目录写＋插件审批）只认
+    # **平台身份**——企业身份即使被授予 system_operator AI 档也不得操作
+    # （fail-closed；admin 经 effective_ai_access 恒为 system_operator 不变）。
+    if not is_platform_operator(user):
         raise ControlServiceError("forbidden", message, 403)
 
 
@@ -869,7 +895,9 @@ def _serialize_skill(skill: SkillDefinition, user: User) -> dict[str, Any]:
         "status": skill.status,
         "current_version": skill.current_version_number,
         "published_at": skill.published_at.isoformat() if skill.published_at else None,
-        "can_edit": (skill.scope == "personal" and skill.owner_user_id == user.id) or (skill.scope == "public" and effective_ai_access(user)[0] == "system_operator"),
+        # M3b 批次 ①-a：公共 Skill 的管理权（can_edit）只认平台身份——
+        # 企业身份即使持 system_operator AI 档也不能经 PATCH 下架公共技能。
+        "can_edit": (skill.scope == "personal" and skill.owner_user_id == user.id) or (skill.scope == "public" and is_platform_operator(user)),
     }
 
 
