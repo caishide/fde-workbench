@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断第十九轮·T-12 线索池控制台：桌面线索池页＋认领申请＋admin 裁定队列＋服务端认领单列表读面（NEW `leads/LeadPoolPage`＋`GET /api/v1/diagnostics/leads/claims`；+1 路由 476→477 零迁移，2026-11-12）
+
+- **这一轮解决什么**：T-11 把认领闸做成了服务端机械闸，但员工在桌面端没有可用的操作面——线索池看不见、认领没法发起、admin 的 accept/reject 端点没有任何 UI 可达（认领单 ID 是 UUID，无从发现）。本轮补齐整个闭环。
+- **桌面（NEW `leads/LeadPoolPage.tsx`，路由 `#leads`＋导航「线索池」）**：认领身份选择（R2 创业者看全部未认领线索／R4 区域合作商只看本区域，区域必填客户端预检）；池卡片只显示代号化字段（行业／规模／区域／痛点一句话／报告状态／窗口倒计时——服务端投影本就不含联系方式与姓名）；认领申请弹层（`subject_key` 自认领识别＋留言；提交后就地回执「待平台接受」；409 闸错误〔窗口过期／一线一线／区域不符／无区域 fail-closed〕弹层内就地呈现）；admin 裁定面与 `require_role("admin")` 同构（pending 队列＋认领人账号名＋自认领信号＋裁定备注＋接受/驳回〔驳回走确认弹窗〕）；非 admin 只见「我的认领申请」；404＝诊断面未启用 ⇒ 引导文案。任务书旧句「认领 → 一键转 presurvey 项目」是 P-6 拍板前旧语义——服务端尚无认领→项目转化端点，页面不臆造，转化留待后续轮。
+- **服务端（NEW `GET /api/v1/diagnostics/leads/claims`，零迁移 +1 路由）**：两段可见性同一路由——admin＝全量裁定队列，非 admin＝只看自己的申请（`claimant_user_id == actor.id`）；`status` 闭集过滤 `pending/accepted/rejected/all`（非法值 400）；`limit` 封顶 200；投影＝认领单＋线索摘要（**代号化**，不含联系方式与姓名）＋认领人**账号名**（username 是账号体系字段，不是真实姓名）；`gate_first` 404 先于鉴权；`auth.models.User` 函数内懒导入（包环冻结闸纪律）。
+- **测试与验证**：服务端 NEW 4 例 ⇒ 认领套件 **34 例全绿**；诊断域回归 **106 例绿**；ruff 绿；官方 mypy 闸 **279 基线不变**。桌面 NEW `lead-pool.test.tsx` **12 例**（形状守卫／窗口倒计时纯函数／R4 区域预检／POST 载荷断言／就地回执／409 弹层呈现／404 引导／admin accept 载荷／非 admin 无裁定面／驳回确认流）；typecheck 绿；`test:desktop` 全量 **93 文件 1045 例全绿**（1033 基线+12）。结构口径：路由 476→**477**／蓝图 52／表 152／70 rev 单头 `d7e2f4a9c1b3`（零迁移）；审计清单三件套重生成＋archify candidate.json 同步（防陈旧闸绿）。
+- **合并与交付**：PR **#368**——★插队实录：#367（N3b 本体轮 +2 路由 474→476）在途合并 ⇒ rebase（冲突=inventory JSON＋candidate.json，取上游后由 extractor 按代码重生成=477）→ CI run 43119919454 四 job 全绿（server-tests 实测 **3205 收集 = 3197 passed + 8 skipped**＝N3b 合并树 3201 收集 + 本轮 4）→ squash 合并 SHA **`abea9c2`**。**部署活体三验（七撞纪律）**：从 `abea9c2` 干净树 `D:/test/fde-wt-deploy-t12` rebuild 三镜像（api `e3c615aa36c5`／worker `fab55cd49063`／scheduler `161970aa2b93`，三容器 `.Image` 与构建产物**逐位一致**）＋容器内 `alembic current`＝`d7e2f4a9c1b3 (head)`（零迁移头位不变）＋活体 `url_map` **477** non-static ≡ 口径＋claims 路由闸关 **404**（先于鉴权）＋ready/live 200。**便携版 r37**（asar sha256 `c14fdeb43551fbfa…`；本轮独有英文 marker 字节命中：`lead-pool-decision` ×3／`lead-pool-submitted` ×2／`/api/v1/diagnostics/leads/claims` ×2——vite 转义非 ASCII，探针用英文标识的既定配方）。
+- **挂账／下一轮**：**T-15 渠道接线**（R4 专属链接携带渠道链接 ID ⇒ 归因自动落 `source_type`，零手工记账）；**T-16 价格轮**落 A/B 档转化费比例（`pending_pricing` 结构已就位，比例待价格轮才落数）；认领→presurvey 项目转化端点待后续轮（服务端语义就位后桌面一键接）；F3 认领续翻待领导拍板。
+
 ## [未发布] — 交付案例学习闭环 L1 实施轮：真相层导入卡 → 训练场摄取管线（转换器 NEW `scripts/simulation/import_cases.py`＋污染单向阀静态钉＋首批 4 包清单；pytest +10；零迁移零路由零蓝图零桌面零生产代码改动，2026-11-12）
 
 蔡工 2026-11-12「开L1」授权后按设计稿 §5-L1 行落地缺口一——知识层交付案例 → 训练场场景库的摄取管线；并把污染单向阀从「设计裁定」升级为机械静态钉（校验判别力本身已验收）。
