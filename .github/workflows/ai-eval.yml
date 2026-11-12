@@ -53,7 +53,7 @@ jobs:
         env:
           FDE_DEEPSEEK_API_KEY: ${{ secrets.FDE_DEEPSEEK_API_KEY }}
         run: |
-          python scripts/ai_eval/run_opportunity_eval.py --output ai-eval-report.json
+          server/.venv/bin/python scripts/ai_eval/run_opportunity_eval.py --output ai-eval-report.json
 
       - name: Upload uplift report
         if: always()
