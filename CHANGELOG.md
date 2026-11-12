@@ -11,6 +11,7 @@
 - **N1 已授权**（`D4-D7推进包` §2 表三格落值）：授权人＝首个 run 发起人＝**蔡工**；试点窗口 **2026-11-12 ~ 11-19**（7 天，30d 上限内）；授权签字＝**蔡工 / 2026-11-12**。台账 §12 待补清单／§12.1 填写指引／§11.4 状态覆盖行同步。**首个 run 的发起动作本身仍须蔡工在系统内亲手执行**（H4；Agent 不代发起、不造运行证据）。
 - **N3 五问已拍**（§3 表落值）：A 轨任务封闭集＝**仅 pilot-001 编码 run**；产出物＝**run 产物目录内代码/diff/文档产物 + `--json` 汇总**；确认人＝**蔡工**；降级只读白名单＝**`READ_ONLY_TOOLS` 全量 13 个**；失败语义＝**`degraded=true` 留痕**。E8 定义齐备、**实施另待排期轮**（不随拍自动开工）。
 - **N2 签核完成 2026-11-13**（检查单两表真机全 PASS：版本钉定 0.17.1 与钉定值一致、冒烟 `--json` 单对象汇总形状与夹具一致、故障态明确失败码且零半成品、回退路径可用；蔡工授权留痕，证据 sha256 落检查单回填表，原件只留本地）。剩余人工项仅 1：**D7** 阈值（`approval_rows=0` 禁预支，复审轮拍板）。
+- **N2 实测带出两条实施级事实（已回写 `v3-backlog.md` T-Z1 段，供接线轮直接取用）**：① provider 覆盖开关＝`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` + `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` **成对**设置（`FDE_CONFIG_DIR` 实测无效）；② `-p` **无 `--model` 开关**，默认模型选择持久化在 `~/.zcode/cli/config.json` 的 `defaultModelSelection` 键，**该键缺失即 EXIT=1「Select a model before sending a message」** ⇒ 宿主代理必须校验该键在场，缺失即明确失败并留痕、不得静默重试。
 ## [未发布] — AI 原生化 N5 实施轮：G-02——AI 发起 run 受控提议通道（propose→人工密码确认→落 run；零迁移零新路由＝485/52/153/73 口径不变；api_catalog 96→98，2026-11-12）
 
 任务书 §15 序 7 末位（蔡工授权链「继续实施N4和N5」；差距台账 v1.20 G-02 CLOSED）。★**安全评审必跑（DoD⑤）**：code-review 技能已迁移外部插件 ⇒ 以同等严格度对 diff 只读逐面评审（12 面；AI 审查不执行被审代码）——**发现 C 项真缺口当场闭合**（agents.run_start 的 project_id 在 body，票据 scope 检查原只覆盖 path 参数 ⇒ `_require_run_start_scope_binding` propose+confirm 双侧补齐）。

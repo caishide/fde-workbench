@@ -1,10 +1,9 @@
 <div align="center">
   <img src="desktop/src/renderer/src/assets/logo-caigong-fde.svg" width="112" alt="蔡工FDE智能交付系统 Logo" />
   <h1>蔡工FDE智能交付系统</h1>
-  <p>面向 Forward Deployed Engineer 团队的开源智能交付工作台</p>
+  <p>面向 Forward Deployed Engineer 团队的智能交付工作台（内部私有项目，不对外开源）</p>
   <p>
     <img src="https://img.shields.io/badge/version-v0.3.0-2d7dd2" alt="版本 v0.3.0" />
-    <img src="https://img.shields.io/badge/license-MIT-22a06b" alt="MIT 许可证" />
     <img src="https://img.shields.io/badge/desktop-Windows%20x64%20%7C%20macOS%20arm64-555b6e" alt="Windows x64 与 macOS arm64 构建配置" />
     <img src="https://img.shields.io/badge/release-source%20only-f59e0b" alt="仅源码发布" />
   </p>
@@ -32,10 +31,10 @@
 | AI 功能 | 基础功能无需 AI Key；模型及其他外部集成由管理员分别配置 |
 
 > [!IMPORTANT]
-> 本仓库是清理后的开源发行版，不包含生产数据库、客户资料、运行日志、对象存储文件、访问凭据、安装包或发布备份。门禁证据在工作台中只保存 `source_uri` 指针和 sha256 指纹，真实证据文件始终留在项目工作目录，不进仓库。
+> 本仓库为内部私有工程快照，不包含生产数据库、客户资料、运行日志、对象存储文件、访问凭据、安装包或发布备份。门禁证据在工作台中只保存 `source_uri` 指针和 sha256 指纹，真实证据文件始终留在项目工作目录，不进仓库。
 
 > [!WARNING]
-> **商用前请独立核验。**本项目以 *vibe coding*（AI 辅助快速开发）方式构建。开源发布不代表已经完成全面的安全审计、合规评估、性能压测或生产级验收，也不保证适用于特定业务。商用、对外服务或处理真实客户数据前，请审查源码及依赖，并验证权限隔离、数据安全、文件处理、模型输出、备份恢复和升级迁移；同时完成适用的法律与行业合规评估。不要直接将默认配置或初始管理员凭据用于生产。
+> **商用前请独立核验。**本项目以 *vibe coding*（AI 辅助快速开发）方式构建。本项目不因代码可见而代表已完成全面安全审计、合规评估、性能压测或生产级验收，也不保证适用于特定业务。商用、对外服务或处理真实客户数据前，请审查源码及依赖，并验证权限隔离、数据安全、文件处理、模型输出、备份恢复和升级迁移；同时完成适用的法律与行业合规评估。不要直接将默认配置或初始管理员凭据用于生产。
 
 ## 主要能力
 
@@ -241,7 +240,7 @@ worker / scheduler 不监听端口，光看「容器 Up」看不出循环是否�
 - PostgreSQL、Redis、OSS 使用独立最小权限账号；Redis 不发布宿主端口（compose 默认不发布）。
 - 本地文件存储目录（容器卷 `fde_storage`）、数据库和管理员配置密文必须一起备份。
 - 桌面安装包默认连接 `http://127.0.0.1:8010`。远程部署时，在打包前修改 `desktop/package.json` 的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。**启用 OSS 直连存储（`storage_backend=oss`）时，打包前再补 `build.extraMetadata.fdeOssHost`（OSS 主机，可带或不带 `https://`）——它经构建注入进打包态 CSP 的 `connect-src`（CR-057），漏配则文件二进制面（renderer 直连 signed URL 的上传/下载/预览）被 CSP 静默阻断（半坏隐蔽态）**。形态×存储对齐表：本地回环+local（缺省，零变化）／远程 HTTPS API+local（signed URL 经服务端同源或反代下发）／远程 HTTPS API+OSS（须补 `fdeOssHost`）。`fdeOssHost` 缺省省略＝本地形态零行为变化。
-- 开源版没有内置更新中心；版本升级由部署者通过代码发布、数据库迁移和重新打包完成。
+- 当前版本没有内置更新中心；版本升级由部署者通过代码发布、数据库迁移和重新打包完成。
 - **让别人从公网登录的受控试用**：见 [对外受控试用部署方案 v1.0](docs/deployment/对外试用部署方案-v1.md)——覆盖 HTTPS 反向代理、客户端重新打包、账号分发与回收、数据红线及上线验收清单。本文件仍是部署命令的唯一权威，该方案只写对外场景的增量与边界，不复制命令。
 
 ## 换机迁移清单
@@ -346,4 +345,4 @@ compose.yaml 后端全栈编排（redis / api / worker / scheduler）
 
 ## 参与贡献与许可
 
-贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。代码采用 [MIT License](LICENSE)；项目名称、Logo 和第三方商标不因代码许可而自动授予商标使用权。第三方依赖遵循其各自许可证。
+贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。本仓库为内部私有项目，未对外声明代码许可；项目名称、Logo 和第三方商标不因内部协作而自动授予商标使用权。第三方依赖遵循其各自许可证。
