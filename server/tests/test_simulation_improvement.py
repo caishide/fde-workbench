@@ -1,13 +1,18 @@
-"""失败分析与改进提案（G5）。
+"""失败分析与改进提案（G5；N4 G-11 语义收口）。
 
 钉住六条纪律：
 
 1. **失败分类与根因**：低分判据/硬性失败 ⇒ 发现 + 根因候选 + 证据引用；
 2. **置信度三档**：confirmed / likely / hypothesis；
 3. **只有 confirmed 根因能生成提案**（疑似根因先人工复核）；
-4. **状态机止于 approved**——提案表**无 publish/apply 状态与列**；
-5. **服务层零生产写路径**——生产模块对改进提案的引用必须为零（静态钉）；
-6. **审批需 project_lead/admin + 密码确认 + 理由**；审批 ≠ 发布。
+4. **状态机 draft→in_review→approved→published**——``published`` 仅经
+   ``release_channel``（发布/回滚受控记账可回滚）；发布状态只许住
+   ``release_json`` 一列（散列发布列禁名单原样保留）；
+5. **只许经发布通道写**（N4 改语义，不删钉）——全仓 ``ImprovementProposal``
+   引用面 ⊆ {models, improvement_service, release_channel}；发布/回滚/工单
+   函数只许住 release_channel 且必须带密码闸＋admin 判定；
+6. **审批需 project_lead/admin + 密码确认 + 理由**；审批 ≠ 发布（发布另走
+   release_channel：admin＋密码＋回归计划在案）。
 """
 from __future__ import annotations
 
@@ -361,7 +366,7 @@ def test_approval_requires_password_and_reason(lead):
     assert wrong_password.status_code == 403
 
 
-def test_approval_ends_at_approved_with_no_publish_path(lead):
+def test_approval_ends_at_approved_without_publishing(lead):
     run = _run_and_evaluate(lead)
     analysis = lead.post(f"/api/v1/simulation/runs/{run['id']}/analyze").get_json()["data"]
     finding_ids = [item["id"] for item in analysis["items"]]
@@ -378,16 +383,19 @@ def test_approval_ends_at_approved_with_no_publish_path(lead):
     data = response.get_json()["data"]
     assert data["status"] == "approved"
     assert data["decided_by_user_id"] == lead.user.id
-    # 状态机**止于** approved：没有 published/applied 之类的状态
-    assert data["status"] in ("approved", "rejected")
+    # 审批 ≠ 发布：decide 后停 approved（release=None）；发布须另走
+    # release_channel 受控通道（admin＋密码＋回归计划在案）。
+    assert data["status"] == "approved"
+    assert data["release"] is None
 
 
 # ---------------------------------------------------------------------------
-# 「只提案不落地」的静态钉
+# 「只许经发布通道写」的静态钉（N4 改语义，不删钉）
 # ---------------------------------------------------------------------------
 
 
 def test_proposal_table_has_no_publish_or_apply_column():
+    """发布状态只许住 ``release_json`` 一列；散列发布列禁名单原样保留（N4）。"""
     columns = {column.name for column in ImprovementProposal.__table__.columns}
     assert not columns & {
         "published_at",
@@ -397,36 +405,58 @@ def test_proposal_table_has_no_publish_or_apply_column():
         "applied_by_user_id",
         "apply_status",
     }
-    assert {"status", "target_json", "current_version", "proposed_version"} <= columns
+    assert {"status", "target_json", "current_version", "proposed_version", "release_json"} <= columns
 
 
-def test_no_production_module_writes_improvement_proposals():
-    """生产模块（``fde_api`` 下除 ``simulation`` 外）对改进提案**零引用**。
+def test_improvement_proposal_reference_surface_is_closed():
+    """全仓 ``ImprovementProposal`` 引用面 ⊆ {models, improvement_service,
+    release_channel}（N4 新语义：生产模块要动提案只能走发布通道单点）。
 
-    这是「只提案不落地」的最强静态钉：若将来有人从生产面写提案或落地提案，
-    本用例立刻转红。
+    任何新文件出现提案引用（直接构造/写状态/绕开通道）即转红。
     """
     package_root = SERVER_ROOT / "src" / "fde_api"
+    allowed = {
+        Path("simulation") / "models.py",
+        Path("simulation") / "improvement_service.py",
+        Path("simulation") / "release_channel.py",
+        # 回归验证面只读消费（G6：跑回归时读提案 override_json，非状态写）。
+        Path("simulation") / "regression_service.py",
+    }
     offenders: list[str] = []
     for path in sorted(package_root.rglob("*.py")):
         relative = path.relative_to(package_root)
-        if relative.parts[0] == "simulation":
-            continue
         text = path.read_text(encoding="utf-8", errors="replace")
         if "improvement_proposals" in text or "ImprovementProposal" in text:
-            offenders.append(str(relative))
-    assert offenders == [], f"生产模块引用了改进提案：{offenders}"
+            if relative not in allowed:
+                offenders.append(relative.as_posix())
+    assert offenders == [], f"提案引用面泄漏（要动提案只能经 release_channel）：{offenders}"
 
 
-def test_improvement_service_has_no_publish_function():
-    """服务层**不提供**发布/落地函数（静态 AST 钉）。"""
-    from fde_api.simulation import improvement_service
-
-    tree = ast.parse(Path(improvement_service.__file__).read_text(encoding="utf-8"))
-    names = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    forbidden = {"publish", "apply", "release", "deploy", "publish_proposal"}
-    assert not names & forbidden, f"改进服务出现发布类函数：{names & forbidden}"
+def test_release_functions_live_only_in_release_channel_with_gates():
+    """发布/回滚/工单函数只许住 ``release_channel``，且该模块必须带密码闸
+    ＋admin 判定（N4 新语义：发布闸有测试钉——比照 decide 密码确认范式）。"""
+    package_root = SERVER_ROOT / "src" / "fde_api"
+    forbidden_names = {"release_proposal", "rollback_release", "create_review_ticket"}
+    owners: dict[str, set[str]] = {}
+    for path in sorted(package_root.rglob("*.py")):
+        relative = path.relative_to(package_root)
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        hits = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in forbidden_names
+        }
+        if hits:
+            owners[relative.as_posix()] = hits
+    # 服务层三函数必须全住 release_channel；routes.py 只许有两条薄路由包装
+    # （无工单路由——工单只经 CLI 评估器产生）。
+    assert set(owners) <= {"simulation/release_channel.py", "simulation/routes.py"}, owners
+    assert owners["simulation/release_channel.py"] == forbidden_names
+    assert "create_review_ticket" not in owners.get("simulation/routes.py", set())
+    channel_text = (package_root / "simulation" / "release_channel.py").read_text(
+        encoding="utf-8"
+    )
+    # 发布/回滚闸的源级证据：密码确认 + admin 判定必须在通道模块内。
+    assert "verify_password" in channel_text
+    assert 'role != "admin"' in channel_text

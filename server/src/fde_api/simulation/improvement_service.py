@@ -1,11 +1,15 @@
-"""改进提案服务（G5，G1 §10.3/§10.4）。
+"""改进提案服务（G5，G1 §10.3/§10.4；N4 G-11 语义收口）。
 
-**「只提案不落地」的强制落点（P8）**：
-1. 提案表**没有** publish / apply 状态与字段——状态机止于 ``approved``；
-2. 本服务**不提供**任何写生产 Prompt / Skill / Workflow / 本体的函数；
-3. 发布指引只是**文本**（``target_ref`` + ``change_summary`` + ``proposed_version``），
-   人工在 V3.1 的治理面自行实施；
-4. 静态钉：生产模块对 ``improvement_proposals`` / 本服务的引用必须为零。
+**「只提案，落地只许经发布通道记账」的强制落点（P8，N4 改语义不删钉）**：
+1. 提案状态机 ``draft → in_review → approved → published``——``published``
+   **只许**由 ``release_channel`` 写入（发布/回滚都是受控记账，可回滚）；
+2. 本服务**不提供**任何写生产 Prompt / Skill / Workflow / 本体的函数；发布/
+   回滚也不触碰正文（N4 边界「不自动上线提示词改动」——正文仍由人工在治理
+   面实施，``target_ref`` + ``change_summary`` + ``proposed_version`` 只是文本）；
+3. 静态钉（N4 新语义）：全仓 ``ImprovementProposal`` 引用面 ⊆
+   {models, improvement_service, release_channel}——生产模块要动提案只能走
+   ``release_channel`` 单点；
+4. 复审工单（G-14）的写入执行点也在 ``release_channel.create_review_ticket``。
 
 **只有 confirmed 根因能生成提案**——``likely`` / ``hypothesis`` 根因进人工复核
 队列，不自动变成「改进项」（否则会把猜测当结论）。
@@ -31,8 +35,9 @@ from fde_api.simulation.models import (
 )
 from fde_api.simulation.service import ScenarioServiceError, _require_level
 
-# 提案状态机：draft → in_review → approved | rejected（**止于 approved**）
-PROPOSAL_STATUSES = ("draft", "in_review", "approved", "rejected")
+# 提案状态机：draft → in_review → approved → published | rejected
+# （published 仅经 release_channel；回滚 published → approved）
+PROPOSAL_STATUSES = ("draft", "in_review", "approved", "rejected", "published")
 # 提案可指向的改进对象（只提案，不落地）
 PROPOSAL_TARGET_KINDS = (
     "prompt",
@@ -82,6 +87,7 @@ def _serialize_finding(row: SimulationFinding) -> dict[str, Any]:
 
 
 def _serialize_proposal(row: ImprovementProposal) -> dict[str, Any]:
+    release = dict(row.release_json or {})
     return {
         "id": row.id,
         "proposal_key": row.proposal_key,
@@ -98,6 +104,7 @@ def _serialize_proposal(row: ImprovementProposal) -> dict[str, Any]:
         "regression_plan": dict(row.regression_plan_json or {}),
         "override_json": dict(row.override_json or {}),
         "status": row.status,
+        "release": release or None,
         "decided_by_user_id": row.decided_by_user_id,
         "decided_at": row.decided_at,
         "note": row.note,
@@ -201,7 +208,7 @@ def analyze_run(*, actor: User, run_id: str) -> dict[str, Any]:
 
 
 def create_proposal(*, actor: User, payload: dict[str, Any]) -> dict[str, Any]:
-    """由失败发现生成改进提案（**只提案，不落地**）。"""
+    """由失败发现生成改进提案（**只提案；落地只许经发布通道记账**）。"""
     _require_level(actor)
     finding_ids = payload.get("finding_ids")
     if not isinstance(finding_ids, list) or not finding_ids:
@@ -386,7 +393,8 @@ def decide_proposal(
 ) -> dict[str, Any]:
     """审批提案：approve / reject。
 
-    **审批 ≠ 发布**——approved 之后仍**没有**任何自动落地路径（G1 §10.4）。
+    **审批 ≠ 发布**——approved 之后发布须经 ``release_channel`` 受控通道
+    （admin＋密码＋回归计划在案＋审计＋可回滚；N4 G-11）。
     需 project_lead/admin + **当前账号密码确认**（比照 `control/api_actions` 范式）。
     """
     _require_level(actor)

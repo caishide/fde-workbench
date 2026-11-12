@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     ai_quality_route_summary_uri: str = ""
     # 质量分下限（缺省 0.8＝交付效果评测协议 v0 PASS 截断口径）。
     ai_quality_route_min_score: float = 0.8
+    # N4/G-14 指标越限→提示词复审工单（metrics/review_tickets.py）：出厂闸默认
+    # 关＝永不自动建单；规则 JSON 空＝无规则。工单是 draft 提案（零生产写），
+    # 人工复核后才走既有审批/发布链——动作是「工单」，不是自动改提示词。
+    ai_review_ticket_enabled: bool = False
+    # 复审规则 JSON 数组文本：[{"metric":"<v31 指标 id>","op":"<|<=|>|>=",
+    #   "threshold":<数值>,"prompt_ref":"<prompt_registry 注册键>"}]
+    # 未知指标/未知注册键/非法 op 在评估时 422 fail-closed（不静默跳过）。
+    ai_review_ticket_rules: str = ""
     # goal-d9：翻译器管道（文本 JSON 提炼）。goal-d13 拍板：provider 切 kimi
     # 槽位（kimi-k3，Moonshot OpenAI 兼容端点），客户端仍走通用文本 JSON 栈。
     # T6 高成本 run 前评审（goal-d11，总纲 §2.2 T6）：拟用 agent 的

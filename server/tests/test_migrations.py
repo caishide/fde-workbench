@@ -98,7 +98,9 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 #          subject_fingerprint / region_name 两列（additive；保单头）
 # 获客诊断 T-16：fee_basis 闭集换值 pending_pricing→ratio_applied（CHECK
 #          drop+recreate；零数据迁移——两部署 pending_pricing 行数均为零）
-HEAD_REVISION = "f2a7c4e9b6d3"
+# AI 原生化 N4（G-11）：improvement_proposals 加 release_json 列＋status
+#          闭集扩 published（受控发布通道；发布/回滚状态唯一承载列）
+HEAD_REVISION = "b5d9e2f4a7c1"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1160,8 +1162,9 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + 获客诊断 T-11 认领闸 d7e2f4a9c1b3（挂 M5-1 之后保单头）之后 = 70；
     # + 获客诊断 T-15 渠道链接 a3e8c2f6b9d4（挂 T-11 之后保单头）之后 = 71；
     # + 获客诊断 T-16 价格轮 f2a7c4e9b6d3（挂 T-15 之后保单头）之后 = 72；
+    # + AI 原生化 N4 发布通道 b5d9e2f4a7c1（挂 T-16 之后保单头）之后 = 73；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 72
+    assert len(known) == 73
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical

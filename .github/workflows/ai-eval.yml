@@ -1,0 +1,64 @@
+# AI 原生化 N4（G-10）：机会识别 golden set 真模型评测——**非必需观察轮**。
+#
+# 形态（任务书 D-6 缺省「先作非必需观察轮，攒够样本再转必需」）：
+# - 独立 workflow，**不进 PR 门禁**（四必需 job 仍在 ci.yml，AGENTS 口径行不
+#   变）；任何 verdict（pass/below_pass_line/insufficient_data）都不算失败，
+#   报告即证据。
+# - 触发：手动 dispatch ＋ 每周一 03:00 UTC ＋ AI 提示词/发现面/golden 夹具
+#   变更的 push。**每次 PR 不跑**（成本判据：单次 ≈ 9 次模型调用 ≈ 3 万
+#   token 量级；按量付费下成本可忽略，但观察轮没必要每次 PR 烧）。
+# - 凭据：secrets.FDE_DEEPSEEK_API_KEY（★供应商红线：只允许按量付费 key，
+#   禁止包月/订阅制——无按量用量口径即破坏预算治理）。未配置 ⇒ harness 产
+#   insufficient_data 报告（不编造分数），job 保持绿。
+# - 报告：artifact `ai-eval-report`（90 天）；报告只带提示词 sha256 指纹，
+#   正文一字节不落盘（N6 纪律）。
+name: ai-eval
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+  push:
+    paths:
+      - "server/src/fde_api/ai/**"
+      - "server/src/fde_api/discovery/**"
+      - "server/tests/fixtures/ai/**"
+      - "scripts/ai_eval/**"
+
+concurrency:
+  group: ai-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  opportunity-eval:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: server/requirements.lock
+
+      - name: Install server dependencies (runtime only)
+        working-directory: server
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.lock
+
+      - name: Run opportunity golden-set eval (observation only)
+        env:
+          FDE_DEEPSEEK_API_KEY: ${{ secrets.FDE_DEEPSEEK_API_KEY }}
+        run: |
+          python scripts/ai_eval/run_opportunity_eval.py --output ai-eval-report.json
+
+      - name: Upload uplift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-report
+          path: ai-eval-report.json
+          retention-days: 90
