@@ -2,6 +2,19 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断第二十轮·T-15 渠道接线：渠道链接注册表＋服务端 partner 归因推导＋桌面渠道链接管理面板（NEW `diagnostics/channel_links.py`＋3 路由 477→480＋迁移 `a3e8c2f6b9d4` 70→71，2026-11-12）
+
+- **这一轮解决什么**：T-11 立了三档归因（A 渠道报备／B 认领转化／C 平台留存），但 **A 档的来源凭证此前没有任何产生机制**——`source_type='partner'` 只能由客户端声明，等于「谁说自己带来的就记谁的」；T-15 补上**渠道链接 ID 体系**：平台发链接 → 渠道方把链接标识带进来 → 服务端**机械推导**归因，零手工记账（P-2）。
+- **核心语义三条**（服务端 NEW `server/src/fde_api/diagnostics/channel_links.py`）：①**A 档不接受客户端声明**——`source_type='partner'` 一律 400 `partner_source_forbidden`，渠道报备归因**只能**由有效渠道链接 token 服务端推导（谁发链接谁才是凭证唯一来源）；②**token 明文只此一次**（创建响应返回，库里只有 sha256 指纹，沿匿名会话令牌同尺；清单投影无明文无指纹）；③**fail-closed 降档而非拦单**——`channel_ref` 命中在用链接 ⇒ 落 `partner` 且 `channel_ref` 记链接行 UUID；未命中／已过期／已停用 ⇒ **降档 `direct`** 且 ref **原样留痕**（**不拦真实线索**——渠道方带旧链接来也不该把人挡在门外；审计链不因降档而断）。停用是**软撤**：历史 partner 行不回滚（归因在**会话创建时刻**定格）。
+- **`channel` 免费名目语义零变化**：协会活动这类免费名目仍由客户端声明＋自由文本 ref，仍 400 `channel_ref_required`——本轮只把 **A 档**收进凭证体系，不动另外两档。
+- **服务端 3 个 admin 专属路由**（部署闸先于鉴权：闸关 ⇒ **404 不是 403**；`require_role("admin")`）：`POST /api/v1/diagnostics/leads/channel-links`（201，明文 token 一次）、`GET .../channel-links`（清单含归因线索数，**零明文零指纹**）、`POST .../channel-links/<id>/deactivate`（软撤，幂等；不存在 ⇒ 404 `channel_link_not_found`）。
+- **数据模型**：NEW 表 `lead_diagnostic_channel_links`（迁移 `a3e8c2f6b9d4`，70→71 单头，父＝T-11 `d7e2f4a9c1b3`）——`token_sha256` 唯一索引＋64 位 CHECK；`is_active`／`deactivated_at` CHECK 钉「停用必有时刻」；`created_by_user_id` FK `users` SET NULL；**零外键指向 `projects`**（沿 T-10a 隔离纪律：线索≠项目）。
+- **桌面 NEW `leads/ChannelLinksPanel.tsx`**（admin 专属，接在线索池页）：生成专属链接（区域/备注可选）→ **明文 token 就地呈现一次**（「我已保存，关闭」后不再可见）＋ `…?channel_ref=<token>` 拼接提示；清单显示 区域／备注／**归因线索 N 条**（渠道方对账可见）／在用徽标；停用走确认弹窗，回执「已停用：新线索不再按该链接归因，历史归因保持不变。」；非 admin 不可见（与 `require_role("admin")` 同构）。
+- **测试与验证**：服务端 NEW `test_diagnostics_channel_links.py` **13 例**（admin-only 401/403/200／闸先于鉴权 404／token 只此一次＋库里只有 sha256＋清单无明文无指纹／payload 校验／有效链接机械 partner 且 ref=链接 UUID／stale ⇒ direct 且 ref 原样留痕／partner 声明 400／channel 名目语义不变／停用后新会话 direct＋历史 ["partner","direct"] 定格＋幂等／未知 link 404／lead_count 累计／零 FK 指向 projects／零比例字段）＋改写 3 处既有用例（新契约）＋诊断域回归 **191 例绿**；ruff 绿；mypy **279 基线不变**。桌面 NEW `channel-links.test.tsx` **9 例**（形状守卫／清单渲染／空清单与加载失败／404 闸引导／创建 token 呈现与关闭后消失／创建失败就地报错／停用确认流／停用取消不打服务端／admin 可见性）＋typecheck 绿＋`test:desktop` 全量 **1054 例**（1045 基线+9）。
+- **结构口径**：路由 477→**480**／蓝图 52／表 152→**153**／70→**71 rev** 单头 `a3e8c2f6b9d4`；`api_catalog` **94 ENTRIES 不变**（三个渠道链接路由属诊断域治理面，不进 catalog——沿 T-10a/T-12 先例）；审计清单三件套重生成＋archify candidate.json 同步（防陈旧闸绿）。
+- **合并与交付**：PR **#375**（分支 `feat/diag-channel-links`）——★文档剥离（AGENTS/CHANGELOG/任务书三文件不进证据 PR，随合并后另起回填 PR——沿 T-10a #282／T-10b #301／T-11 #366／T-12 #370 先例）→ CI run 43134830915 四 job 全绿（server-tests 实测 **3218 收集 = 3210 passed + 8 skipped**＝T-12 合并树 3205 + 本轮 13 逐位吻合）→ squash **`b6092b2`**。**部署活体三验（七撞纪律）**：从 `b6092b2` 干净树 `D:/test/fde-wt-deploy-t15` rebuild 三镜像（api `43a15e4ed8ec`／worker `6ba25983950c`／scheduler `c5058544dc4d`，三容器 `.Image` 与构建产物**逐位一致**）＋`alembic upgrade head` 真实升级 `d7e2f4a9c1b3 → a3e8c2f6b9d4 (head)`＋活体 `url_map` **480** non-static ≡ 口径＋诊断面闸关 **404**（先于鉴权；渠道链接路由同样 404）＋ready/live 200＋活库新表 9 列在位且外键仅 `users`。**便携版 r38**（asar sha256 `2a4a5e90fafe934825fd40c97a694f1bfebefe1a0d075436384cc67ea7ac8c2e`；本轮独有英文 marker 字节命中：`channel-links-token` ×4／`channel-links-panel` ×2／`/api/v1/diagnostics/leads/channel-links` ×1——★探针须用 **python 字节计数**，asar 内超长 marker 在 `grep -a` 下会假阴性）。
+- **挂账／下一轮**：**T-16 价格轮**落 A/B 档转化费比例（`pending_pricing` 结构已就位）；**T-14 官网诊断入口**（内容飞轮的上游，网站侧待开）；**任务书 T-15 交付物第二项「复盘内容／内容飞轮」本轮未做**（本轮只落渠道链接 ID 体系）；**D-4 地方诊断服务商入围资质**＝线下业务动作待蔡工拍板；认领→presurvey 项目转化端点待后续轮。
+
 ## [未发布] — 获客诊断第十九轮·T-12 线索池控制台：桌面线索池页＋认领申请＋admin 裁定队列＋服务端认领单列表读面（NEW `leads/LeadPoolPage`＋`GET /api/v1/diagnostics/leads/claims`；+1 路由 476→477 零迁移，2026-11-12）
 
 - **这一轮解决什么**：T-11 把认领闸做成了服务端机械闸，但员工在桌面端没有可用的操作面——线索池看不见、认领没法发起、admin 的 accept/reject 端点没有任何 UI 可达（认领单 ID 是 UUID，无从发现）。本轮补齐整个闭环。
