@@ -12,12 +12,12 @@
 ④ **同主体自诊自认领** ⇒ **自动 C 档零转化费**（**不是拒**：自认领本身合法，
    只是没有转化费；拒了等于把"自诊企业"的线索挤出池子）。
 
-**三档归因（P-2）**——**比例只落结构不落数**：
+**三档归因（P-2 ＋ T-16 价格轮）**——**比例只在配置面，模型列零比例零金额**：
 
 | 档 | 含义 | 判定 | 转化费口径 |
 |---|---|---|---|
-| A | 渠道报备 | 线索来自区域合作商专属链接（``source_type='partner'``） | ``pending_pricing`` |
-| B | 认领转化 | 有平台接受的认领且线索非渠道报备来 | ``pending_pricing`` |
+| A | 渠道报备 | 线索来自区域合作商专属链接（``source_type='partner'``） | ``ratio_applied``（缺省 20%，见配置面） |
+| B | 认领转化 | 有平台接受的认领且线索非渠道报备来 | ``ratio_applied``（缺省 10%，见配置面） |
 | C | 平台留存 | 无有效认领，**或**同主体自诊自认领 | ``none`（零转化费） |
 
 **不建平行 CRM**（P-3）：本模块不建流水线表，**真相层仍是本地台账**
@@ -243,11 +243,14 @@ def _auto_tier(lead: LeadDiagnosticSession, claim: LeadDiagnosticClaim) -> str:
 
 
 def _fee_basis(tier: str) -> str:
-    """转化费口径（结构）：C 档零转化费；A/B 比例待价格轮落数。
+    """转化费口径（结构）：C 档零转化费；A/B 按平台配置比例计（T-16 落数）。
 
-    闭集取自 ``models.FEE_BASES``（**不落任何比例/金额**——P-2）。
+    比例数值只在配置面（``Settings.diagnostics_fee_ratio_tier_a/b``，env
+    ``FDE_DIAGNOSTICS_FEE_RATIO_TIER_A/B`` 可调）——模型列零比例零金额字段
+    （静态钉不变）；认领单投影也不携带比例数字（dispatch 域「报价/收款明细
+    不出响应」同款纪律）。闭集取自 ``models.FEE_BASES``。
     """
-    basis = "none" if tier == "C" else "pending_pricing"
+    basis = "none" if tier == "C" else "ratio_applied"
     assert basis in FEE_BASES, basis
     return basis
 

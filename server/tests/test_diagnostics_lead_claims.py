@@ -8,7 +8,8 @@
 - **R4 仅本区域**：区域不符 ⇒ 拒；线索**未登记区域** ⇒ **fail-closed 拒**
   （无法判定本区域即不许认领）；
 - **同主体自诊自认领** ⇒ **自动 C 档零转化费**（降档，不拒单）；
-- **比例不落数**（P-2）：只落 A/B/C 三档结构 ＋ ``none/pending_pricing``；
+- **比例不落数**（P-2）：只落 A/B/C 三档结构 ＋ ``none/ratio_applied``
+  （T-16 价格轮：比例数值只在配置面，模型列零比例零金额）；
 - **不建平行 CRM**（P-3）：台账行是**代号化九字段**，真相层仍是本地
   ``leads.md``；服务端**不碰真相层文件**；
 - **线索 ≠ 项目**：认领单与线索表**零外键指向 projects**。
@@ -232,7 +233,7 @@ def test_accept_is_what_makes_the_claim_effective(diag_client, db_session, setti
     data = response.get_json()["data"]
     assert data["status"] == "accepted"
     assert data["attribution_tier"] == "B"
-    assert data["fee_basis"] == "pending_pricing"
+    assert data["fee_basis"] == "ratio_applied"
     assert re.fullmatch(r"L-\d{8}-\d{2}", data["ledger_line_no"])
 
     row = db_session.scalars(
@@ -434,7 +435,7 @@ def test_partner_reported_lead_is_tier_a(diag_client, db_session, settings):
     ).get_json()["data"]
     accepted = _accept(diag_client, admin_headers, claim['id'], {"decision_note": "渠道报备线索"}).get_json()["data"]
     assert accepted["attribution_tier"] == "A"
-    assert accepted["fee_basis"] == "pending_pricing"
+    assert accepted["fee_basis"] == "ratio_applied"
 
 
 def test_manual_tier_override_requires_reason(diag_client, db_session, settings):
@@ -654,7 +655,11 @@ def test_claim_tables_have_no_foreign_key_to_projects():
 
 
 def test_claim_model_exposes_no_ratio_field():
-    """**比例不落数**（P-2）：认领单与线索表都没有任何比例/金额字段。"""
+    """**比例不落数**（P-2＋T-16）：认领单与线索表都没有任何比例/金额字段。
+
+    T-16 价格轮后比例数值住在配置面（``Settings.diagnostics_fee_ratio_*``），
+    不进模型列——本钉只扫**列名**，配置面字段不在扫描域，原样保留。
+    """
     banned = ("rate", "ratio", "percent", "commission", "amount", "fee_rate")
     for model in (LeadDiagnosticSession, LeadDiagnosticClaim):
         for column in model.__table__.columns:

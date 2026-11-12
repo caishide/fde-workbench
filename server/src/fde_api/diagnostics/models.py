@@ -73,10 +73,15 @@ CLAIM_STATUSES = ("pending", "accepted", "rejected", "withdrawn")
 # 三档归因（P-2：A 渠道报备 / B 认领转化 / C 平台留存）——**比例不落数**。
 ATTRIBUTION_TIERS = ("A", "B", "C")
 
-# 转化费口径（**结构**，不是比例）：
+# 转化费口径（**结构**）：
 #   none = 零转化费（C 档：平台留存 / 同主体自诊自认领）
-#   pending_pricing = 比例待价格轮（T-16）落数
-FEE_BASES = ("none", "pending_pricing")
+#   ratio_applied = 按平台配置比例计（A/B 档）——比例数值只在配置面
+#     （``Settings.diagnostics_fee_ratio_tier_a/b``，T-16 价格轮落数），
+#     模型列零比例零金额字段。
+# 历史：``pending_pricing``（比例待价格轮）随 T-16 价格轮落定**退役**——
+#     主部署闸关期间零认领、轻部署库全新，零存量行，CHECK 同步换值
+#     （迁移 f2a7c4e9b6d3）。
+FEE_BASES = ("none", "ratio_applied")
 
 # 同主体自诊自认领的**信号集**（P-6：同 IP / 联系方式 / 主体指纹）。
 # 只记「哪个信号命中」，不记可比对的明文。
@@ -290,9 +295,9 @@ class LeadDiagnosticClaim(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending", server_default="pending"
     )
-    # 三档归因（接受时落；比例不落数）
+    # 三档归因（接受时落；比例只在配置面，模型列零比例零金额——T-16）
     attribution_tier: Mapped[str | None] = mapped_column(String(4))
-    # 转化费口径（结构）：none=零转化费 / pending_pricing=比例待价格轮
+    # 转化费口径（结构）：none=零转化费 / ratio_applied=按配置比例计（T-16）
     fee_basis: Mapped[str | None] = mapped_column(String(20))
     # 同主体自诊自认领判定结果（命中信号清单；**自动 C 档零转化费**）
     self_claim: Mapped[bool] = mapped_column(
