@@ -20,11 +20,16 @@ if str(_SCRIPT_DIR) not in sys.path:
 import run_distributions  # noqa: E402
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]  # scripts/simulation/ → 本仓根
+
+
 def _refuse_inside_repo(out_path: Path) -> None:
+    # 对比本仓根路径（L1 转换器同款守卫）——不能按「祖先链有 .git」判，
+    # 真相层自带 .git（知识库自身是仓）会误伤。
+    repo = _REPO_ROOT.resolve()
     root = out_path.resolve().parent
-    for p in (root, *root.parents):
-        if (p / ".git").exists():
-            raise SystemExit(f"输出落在本仓内，拒绝（真相层专用）：{out_path.resolve()}")
+    if root == repo or repo in root.parents:
+        raise SystemExit(f"输出落在本仓内，拒绝（真相层专用）：{out_path.resolve()}")
 
 
 def main() -> int:

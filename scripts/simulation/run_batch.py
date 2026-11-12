@@ -26,18 +26,16 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-_REPO_MARKERS = (".git", "pyproject.toml", "package.json")
+_REPO_ROOT = Path(__file__).resolve().parents[2]  # scripts/simulation/ → 本仓根
 
 
 def _refuse_inside_repo(out_dir: Path) -> None:
+    # 对比本仓根路径（L1 转换器同款守卫）——不能按「祖先链有 .git」判，
+    # 真相层自带 .git（知识库自身是仓）会误伤。
+    repo = _REPO_ROOT.resolve()
     root = out_dir.resolve()
-    for marker in _REPO_MARKERS:
-        if (root / marker).exists() or any((p / marker).exists() for p in root.parents):
-            continue
-    # 逐级向上找仓库标记；命中即拒（判卷基准与场景正文永不进仓）。
-    for p in (root, *root.parents):
-        if (p / ".git").exists():
-            raise SystemExit(f"输出目录落在本仓内，拒绝（真相层专用）：{root}")
+    if root == repo or repo in root.parents:
+        raise SystemExit(f"输出目录落在本仓内，拒绝（真相层专用）：{root}")
 
 
 def _http(method: str, url: str, *, token: str, body: dict | None = None):
