@@ -3,6 +3,17 @@
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
 
+## [未发布] — 获客诊断 T-14a 轮：官网诊断入口（本仓访客面）——免注册访客 UI「政策补贴测算」＋分享只读页＋桥契约扩展（X-Diagnostic-Token 头＋空 accessToken 公开面；桌面变更·服务端零改动零迁移零路由＝480/52/153/71 口径不变，2026-11-12）
+
+任务书 T-14 上半：**承载体＝本仓访客界面**（桌面 renderer 与 web 发行形态共用 `main.tsx→App`），外部入口名「政策补贴测算」（P-1）；未登录直达 `#diagnostics`。服务端零改动（9 条匿名诊断路由已覆盖全流程）；**官网（fde-ops）侧公开部署属 D-3 业务决策 ⇒ 挂账 T-14b**。
+
+- **桥契约扩展（访客面的两道缺口）**：`ApiRequestOptions` 增可选 `headers`（**允许名单只有 `X-Diagnostic-Token`**——匿名会话令牌持有即权，只走请求头不入 URL）；**空 `accessToken`＝公开面**（免注册请求，桥据此不下发 `Authorization` 头）；NEW `shared/api-safety.ts` **校验项 9** `validateCustomHeaders`（允许名单／取值字符集 token_urlsafe ≤128／数量上界 4＝纵深防御；authorization/cookie/content-type 等可改写身份语义的头一律拒绝）；双桥（`main/api-ipc.ts`＋`fde-web-bridge.ts`）消费同一原语，header 值进 redact secrets 集；**等价性静态钉扩样**：NEW `HEADER_SAMPLES` 18 条（双侧判定恒同，漂移必红）＋公开面行为钉（空令牌零 Authorization＋自定义头透传；非空令牌 Bearer 零回归）。
+- **NEW `diagnostics/PublicDiagnosticPage`**：intro → 首屏 5 题 → 纯规则测算卡（定性档位＋原文/解读双层＋免责声明，无分数无金额——P-2/R-1 纪律）→ 可选 13 题深度诊断（show_if 条件显隐、只提交本轮槽位）→ 留资（**consent 客户端硬闸**，服务端 400 兜底）→ 202 受理 →3s 轮询 ready/failed（100 次上限）→ 完整报告三层渲染 → 分享链接（hash 路由、**明文只此一次**）；`channel_ref` 只透传**不臆造 source_type**——partner 归因由服务端按渠道注册表推导（T-15）；**部署闸 404 ⇒ 「暂未开放」不猜原因**。
+- **NEW `diagnostics/PublicDiagnosticSharePage`**：只读摘要层（结论／第一步／政策机会／闭环存在性，**无自填原文无联系方式**——留资闸不被分享链接绕过，D-2）；404 ⇒ 「链接已失效」。路由 `#diagnostics`＋`#diagnostics/share/<token>`（token_urlsafe 形态闭集校验，非法形态回落 projects不确认路由）；未登录公开分支渲染（与 enterprise-register 同构）。
+- **测试**：vitest **1079 = 1054+25** 全绿（等价性 +6＋访客界面组件 10 例＋导航 +9）；typecheck 绿；rebase 融合 #374/#377/#381/#382（上游 40 文件零 desktop 交集，桌面套件结果承继）。
+- **合并与部署**：PR #384 CI 四绿（run 43155323702；server-tests 实测 **3313 收集 = 3305 passed + 8 skipped**〔含上游插队服务器新例 95，归上游轮口径〕）→ squash `d092c2e`＝fork/main 顶；服务端零改动 ⇒ **活体 E0 复验**（不 rebuild 不 alembic）：alembic `a3e8c2f6b9d4 (head)` 不变／url_map **480** 不变／ready·live 200／诊断闸关 **404 而非 403**。
+- **桌面交付**：便携版 **r39**（asar sha256 `d13f3b95d67b0cf2…`；本轮独有英文 marker 字节命中：`public-diagnostics` ×8／`public-diagnostics-share` ×4／`x-diagnostic-token` ×3／`diag-consent` ×3／`/api/v1/diagnostics/questionnaire` ×1）；★secrets-scan 首跑红＝桩令牌 `diag_tok-…` 取值熵过generic-api-key 阈值 ⇒ 换低熵桩值（断言语义不变，复跑绿）。
+
 ## [未发布] — 多客户 M6 轮：商业计量面按 org 隔离接线（NEW `commercial/org_read_scope.py`＋六个商业域读面接线＋NEW `test_m6_commercial_org_isolation.py` 20 例；零迁移零新表零新列零新路由；结构就绪·待授权，2026-11-12）
 
 多客户 M6 =「商业计量结构落地」的**多租户接线轮**——G2/G3 商业计量结构已由 G 线交付并收口，本轮**不重建计费逻辑**，补的是此前唯一剩下的缺口：**商业域读面的 org 归属隔离**（此前只有「admin 全量／本人」两档，`org_scope_allows` 在 commercial 包零实调用）。
