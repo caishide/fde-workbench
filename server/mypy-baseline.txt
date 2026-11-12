@@ -34,8 +34,6 @@ src/fde_api/bridge/sync.py:union-attr: Item "..." of "..." has no attribute "...
 src/fde_api/bridge/sync.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/bridge/sync.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/control/ai_server_client.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
-src/fde_api/control/automation_jobs.py:arg-type: Argument "..." to "..." of "..." has incompatible type "..."; expected "..."
-src/fde_api/control/automation_jobs.py:arg-type: Argument N to "..." has incompatible type "..."; expected "..."
 src/fde_api/control/builtin_skills.py:var-annotated: Need type annotation for "..."
 src/fde_api/control/chat.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/control/chat.py:union-attr: Item "..." of "..." has no attribute "..."

@@ -55,6 +55,10 @@ class AuthorizedClient:
     def patch(self, *args, **kwargs):
         return self.client.patch(*args, headers=self.headers, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        # 2026-11-13 E11：凭据管理面带 DELETE 路由，封装类补齐对应方法。
+        return self.client.delete(*args, headers=self.headers, **kwargs)
+
 
 @pytest.fixture
 def authorized_client_factory(client, db_session, settings):
