@@ -45,6 +45,17 @@ VALID_LAYERS = ("deterministic", "model")
 SCENARIO_GROUP_KEYS = ("scenario_version", "rubric_version", "adapter_mode")
 ANCHOR_GROUP_KEYS = ("rubric_version", "evaluator_version")
 
+# 训练场 run 终态词表（server/src/fde_api/simulation/models.py::RUN_STATUSES）——
+# 成功终态是 ``completed``（**没有** ``succeeded``）。写错词表 ⇒ 成功 run 被当失败，
+# 分布读数全空（真机批跑撞出来的缺陷，已按服务端词表校正）。
+RUN_STATUS_SUCCESS = "completed"
+
+# 无分数的评估 verdict —— 这些行**不是 0 分，是无数据**：
+# - hard_fail：硬性失败（终局判定，不是连续分数）
+# - inconclusive：规则层「结论不可靠」（未核验占比过高）
+# - unavailable：模型层未产分（provider 未配置 / 调用失败 / 输出不合契约）
+NO_SCORE_VERDICTS = frozenset({"hard_fail", "inconclusive", "unavailable"})
+
 
 def _axis(record: dict[str, Any], key: str) -> str:
     """取轴值（缺版本标签记空串——缺标签本身就是不可比信号）。"""
@@ -52,18 +63,65 @@ def _axis(record: dict[str, Any], key: str) -> str:
     return str(record.get(key) or evaluation.get(key) or "")
 
 
-def _layer_score(record: dict[str, Any], layer: str) -> float | None:
-    """取某层分数；行缺失 / verdict=hard_fail / 分数缺 ⇒ None（无数据）。"""
-    layers = (record.get("evaluation") or {}).get("layers") or {}
+def _layer_row(record: dict[str, Any], layer: str) -> dict[str, Any]:
+    """取某层的评估行；同层多评估器（model:stub / model:server）取**所测层行**。
+
+    记录里的 layers 按 ``evaluator_id`` 索引（同一 run 上 model:stub 与
+    model:server 可并存，见服务端 evaluator.py 的分层落行）——故取层时按
+    evaluator_id 定位，取不到再退回层名兜底。
+    """
+    evaluation = record.get("evaluation") or {}
+    layers = evaluation.get("layers") or {}
+    if not isinstance(layers, dict):
+        return {}
+    ids = evaluation.get("layer_evaluator_ids") or {}
+    wanted = str(ids.get(layer) or "") if isinstance(ids, dict) else ""
+    wanted = wanted or str(evaluation.get("layer_evaluator_id") or "")
+    if wanted:
+        row = layers.get(wanted)
+        # 校验层标签——「所测层的评估器」不能串到别的层上去。
+        if isinstance(row, dict) and (not row.get("layer") or row.get("layer") == layer):
+            return row
+    for row in layers.values():
+        if isinstance(row, dict) and str(row.get("layer") or "") == layer:
+            return row
     row = layers.get(layer)
-    if not isinstance(row, dict):
+    return row if isinstance(row, dict) else {}
+
+
+def _layer_score(record: dict[str, Any], layer: str) -> float | None:
+    """取某层分数；行缺失 / 无分数 verdict / 分数缺 ⇒ None（无数据）。"""
+    row = _layer_row(record, layer)
+    if not row:
         return None
-    if str(row.get("verdict") or "") == "hard_fail":
+    if str(row.get("verdict") or "") in NO_SCORE_VERDICTS:
         return None
     score = row.get("total_score")
     if not isinstance(score, (int, float)) or isinstance(score, bool):
         return None
     return float(score)
+
+
+def _layer_axis(record: dict[str, Any], layer: str) -> tuple[str, str]:
+    """取所测层的 (rubric_version, evaluator_version)——层感知轴。
+
+    同一 run 上模型层可能同时存在 ``model:stub`` 与 ``model:server`` 两个
+    评估器行；锚点组轴若只看顶层 evaluator_version，两者会被并进同一组，
+    等于把两种评估器的分数混算成一条噪声带。
+    """
+    row = _layer_row(record, layer)
+    rubric = str(row.get("rubric_version") or "")
+    evaluator_id = str(row.get("evaluator_id") or "")
+    if not rubric or not evaluator_id:
+        evaluation = record.get("evaluation") or {}
+        rubric = rubric or str(evaluation.get("rubric_version") or "")
+        if not evaluator_id:
+            evaluator_id = str(evaluation.get("evaluator_id") or "")
+            if not evaluator_id:
+                # 顶层 evaluator_version 形如 "rules@rubric-v1" ⇒ 取评估器段。
+                evaluator_id = str(evaluation.get("evaluator_version") or "").split("@")[0]
+    evaluator_version = f"{evaluator_id}@{rubric}" if evaluator_id or rubric else ""
+    return rubric, evaluator_version
 
 
 def collect_distributions(
@@ -94,7 +152,7 @@ def collect_distributions(
             excluded["failed_runs"] += 1
             continue
         run_failed = (
-            str(record.get("status") or "") != "succeeded"
+            str(record.get("status") or "") != RUN_STATUS_SUCCESS
             or record.get("error")
             or bool(record.get("degraded"))
         )
@@ -107,15 +165,20 @@ def collect_distributions(
         if run_failed or score is None:
             continue
 
+        rubric_version, evaluator_version = _layer_axis(record, layer)
         if scenario_key in anchor_set:
-            group_key = "|".join(_axis(record, key) for key in ANCHOR_GROUP_KEYS)
+            group_key = "|".join([rubric_version, evaluator_version])
             group = anchor_groups.setdefault(group_key, {"runs": [], "scores": []})
             run_id = str(record.get("run_id") or "")
             if run_id and run_id not in group["runs"]:
                 group["runs"].append(run_id)
+            # 锚点取样：同一 fixed run 可反复评估（服务端重评＝更新同一行），
+            # 每轮读数都是**一个**评估侧噪声样本 ⇒ 按记录追加，不按 run 去重。
             group["scores"].append(score)
         else:
-            group_key = "|".join(_axis(record, key) for key in SCENARIO_GROUP_KEYS)
+            group_key = "|".join(
+                [_axis(record, "scenario_version"), rubric_version, _axis(record, "adapter_mode")]
+            )
             group = scenario_groups.setdefault(
                 group_key, {"runs": [], "scenario_scores": {}}
             )

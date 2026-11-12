@@ -6,9 +6,14 @@
 到**真相层** ``--out-dir``（拒绝仓内输出）；分数与轴值入行，场景正文与判卷
 基准零落盘（仓库侧只存汇总＋指针＋sha256，沿 E-2 先例）。
 
-锚点模式（``--anchor``）：指名场景按「固定输入＋固定 agent 配置」跑——首个
-run 正常创建执行，后续 run 走 ``retry``（attempt+1、seed 不变 ⇒ 输入逐字节
-同源），得分差异＝纯评估侧噪声。
+锚点模式（``--anchor``）：指名场景按「固定输入＋固定 agent 配置」跑——**只建
+一个 run**（固定 seed、固定产物），随后对**同一个 run 反复 evaluate N 轮**，
+每轮取一次评估报告＝一个评估侧噪声样本。服务端同 (run, 层, 评估器, 规则
+版本) 重评是**更新该行**而非追加，故 N 轮覆盖同一行、读数逐轮独立。
+
+（为何不用 ``retry``：服务端 ``retry_run`` 只允许 failed/timeout/cancelled 的
+run 重试，completed 的 run 一律 409「只有失败/超时/取消的运行可重试」——锚点
+取样改走「同一 fixed run 反复评估」。）
 
 鉴权：``--token-file`` 读容器内签发的 JWT（15 分钟有效期；签发配方见
 V3.1 试点操作配方——create_app(Settings()) app context 内
@@ -27,6 +32,15 @@ import urllib.request
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]  # scripts/simulation/ → 本仓根
+
+# 训练场 run 终态词表（server/src/fde_api/simulation/models.py::RUN_STATUSES）——
+# 成功终态是 ``completed``（**没有** ``succeeded``）。写错词表 ⇒ 成功 run 当失败、
+# 评估永不触发（本轮真机批跑撞出来的缺陷，已按服务端词表校正）。
+RUN_STATUS_SUCCESS = "completed"
+
+# 评估层 → 评估器 id（服务端 evaluator.py）：规则层 ``rules``，模型层 ``model:<mode>``。
+DETERMINISTIC_EVALUATOR = "rules"
+MODEL_EVALUATOR_PREFIX = "model:"
 
 
 def _refuse_inside_repo(out_dir: Path) -> None:
@@ -104,15 +118,6 @@ def _run_once(base: str, token: str, scenario: dict, *, adapter: str, seed: int)
     return resp.get("data") or {}
 
 
-def _retry_once(base: str, token: str, run_id: str) -> dict:
-    status, resp = _http("POST", f"{base}/simulation/runs/{run_id}/retry", token=token)
-    if status != 201:
-        raise SystemExit(
-            f"retry 失败 http={status} {json.dumps(resp.get('error') or resp, ensure_ascii=False)[:300]}"
-        )
-    return resp.get("data") or {}
-
-
 def _evaluate(base: str, token: str, run_id: str, model_mode: str) -> None:
     status, resp = _http(
         "POST",
@@ -135,31 +140,51 @@ def _evaluation_report(base: str, token: str, run_id: str) -> dict:
     return resp.get("data") or {}
 
 
-def _normalize_report(report: dict) -> dict:
-    """把评估报告规约成记录行形状：{rubric_version, evaluator_version, layers:{}}。"""
+def _normalize_report(report: dict, model_mode: str = "stub", layer: str = "model") -> dict:
+    """把评估报告规约成记录行形状。
+
+    **按 evaluator_id 索引层行**（不是层名）——同一 run 上模型层可同时存在
+    ``model:stub`` 与 ``model:server`` 两行（服务端按评估器分行落库），按层名
+    索引会让后写的覆盖先写的 ⇒ 两种评估器的分数互相污染。
+
+    ``layer_evaluator_id`` 记下**所测层**对应的评估器 id，供分布库做层感知
+    轴取值（锚点组轴＝rubric_version × 评估器版本）。
+    """
     layers_out: dict[str, dict] = {}
-    rubric_version = ""
-    evaluator_version = ""
+    by_layer: dict[str, list[dict]] = {}
     raw_layers = report.get("layers")
     if isinstance(raw_layers, list):
         for row in raw_layers:
             if not isinstance(row, dict):
                 continue
-            name = str(row.get("layer") or "")
-            layers_out[name] = {
+            evaluator_id = str(row.get("evaluator_id") or "")
+            layer_name = str(row.get("layer") or "")
+            layers_out[evaluator_id or layer_name] = {
+                "layer": layer_name,
                 "total_score": row.get("total_score"),
                 "verdict": row.get("verdict"),
-                "evaluator_id": row.get("evaluator_id"),
+                "evaluator_id": evaluator_id,
                 "rubric_version": row.get("rubric_version"),
             }
-            if name == "deterministic":
-                rubric_version = str(row.get("rubric_version") or "")
-                evaluator_version = (
-                    f"{row.get('evaluator_id')}@{row.get('rubric_version')}"
-                )
+            by_layer.setdefault(layer_name, []).append(layers_out[evaluator_id or layer_name])
+
+    picked = None
+    if layer == "model":
+        # 模型层：优先取与请求模式对应的评估器（model:server / model:stub）。
+        for row in by_layer.get("model", []):
+            if str(row.get("evaluator_id") or "") == f"{MODEL_EVALUATOR_PREFIX}{model_mode}":
+                picked = row
+                break
+    if picked is None:
+        candidates = by_layer.get(layer) or []
+        picked = candidates[0] if candidates else None
+
+    rubric_version = str((picked or {}).get("rubric_version") or "")
+    evaluator_id = str((picked or {}).get("evaluator_id") or "")
     return {
         "rubric_version": rubric_version,
-        "evaluator_version": evaluator_version,
+        "evaluator_version": f"{evaluator_id}@{rubric_version}" if evaluator_id or rubric_version else "",
+        "layer_evaluator_id": evaluator_id,
         "layers": layers_out,
     }
 
@@ -194,35 +219,45 @@ def main() -> int:
 
     existing_lines = jsonl_path.read_text(encoding="utf-8").splitlines() if jsonl_path.exists() else []
     records = [json.loads(line) for line in existing_lines if line.strip()]
-    done_keys = {(r.get("scenario_key"), r.get("seed"), r.get("attempt")) for r in records}
+    # 幂等键含**评估轮次**：锚点同一 run 反复评估 ⇒ (场景, run, 轮次) 才是唯一样本。
+    done_keys = {
+        (r.get("scenario_key"), r.get("run_id"), r.get("eval_round")) for r in records
+    }
 
     for scenario_key in args.scenario:
         scenario = _resolve_active_scenario(base, token, scenario_key)
         is_anchor = scenario_key in anchors
         print(f"[scenario] {scenario_key} id={scenario['id']} v={scenario.get('version')} anchor={is_anchor}")
-        anchor_run_id = None
+        anchor_run = None
         for i in range(args.runs_per_scenario):
             if is_anchor:
-                # 锚点：首个 run 建+执行；后续走 retry（attempt+1，seed 不变）。
-                if anchor_run_id is None:
-                    run = _run_once(base, token, scenario, adapter=args.adapter, seed=args.seed)
-                    anchor_run_id = run.get("id")
-                else:
-                    run = _retry_once(base, token, anchor_run_id)
+                # 锚点：只建**一个** run（输入固定＋agent 配置固定），随后对同一
+                # run 反复 evaluate——每轮读数＝一个评估侧噪声样本。
+                if anchor_run is None:
+                    anchor_run = _run_once(
+                        base, token, scenario, adapter=args.adapter, seed=args.seed
+                    )
+                run = anchor_run
+                eval_round = i + 1
             else:
-                run = _run_once(base, token, scenario, adapter=args.adapter, seed=args.seed + i)
-            identity = (scenario_key, run.get("seed"), run.get("attempt"))
+                # 逐场景：换 seed 换产物（mock 适配器按 seed 取样）⇒ 读生成侧方差。
+                run = _run_once(
+                    base, token, scenario, adapter=args.adapter, seed=args.seed + i
+                )
+                eval_round = 1
+            run_id = str(run.get("id") or "")
+            identity = (scenario_key, run_id, eval_round)
             if identity in done_keys:
-                print(f"  [skip] run 已在册 {run.get('run_key')}")
+                print(f"  [skip] 已在册 {run.get('run_key')} round={eval_round}")
                 continue
             status = str(run.get("status") or "")
-            if status == "succeeded":
-                _evaluate(base, token, str(run["id"]), args.model_mode)
-                report = _evaluation_report(base, token, str(run["id"]))
+            if status == RUN_STATUS_SUCCESS:
+                _evaluate(base, token, run_id, args.model_mode)
+                report = _evaluation_report(base, token, run_id)
             else:
                 report = {}
             record = {
-                "run_id": run.get("id"),
+                "run_id": run_id,
                 "run_key": run.get("run_key"),
                 "scenario_key": scenario_key,
                 "scenario_id": scenario.get("id"),
@@ -232,18 +267,21 @@ def main() -> int:
                 "adapter_mode": run.get("adapter_mode") or args.adapter,
                 "seed": run.get("seed"),
                 "attempt": run.get("attempt"),
+                "eval_round": eval_round,
                 "status": status,
                 "error": run.get("error"),
                 "degraded": False,
-                "evaluation": _normalize_report(report),
+                "evaluation": _normalize_report(report, args.model_mode),
             }
             records.append(record)
             done_keys.add(identity)
             with jsonl_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            score = (record["evaluation"].get("layers") or {}).get(args.model_mode if args.model_mode == "server" else "model") or {}
+            score = (
+                record["evaluation"].get("layers") or {}
+            ).get(record["evaluation"].get("layer_evaluator_id") or "") or {}
             print(
-                f"  [run] {run.get('run_key')} status={status} "
+                f"  [run] {run.get('run_key')} round={eval_round} status={status} "
                 f"model_total={score.get('total_score')} verdict={score.get('verdict')}"
             )
             time.sleep(0.2)

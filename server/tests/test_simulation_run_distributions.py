@@ -29,11 +29,14 @@ sys.modules.setdefault("simulation_run_distributions", run_distributions)
 _spec.loader.exec_module(run_distributions)
 
 
+_INHERIT = object()
+
+
 def _record(
     run_id: str,
     scenario_key: str,
     *,
-    status: str = "succeeded",
+    status: str = "completed",
     error: dict | None = None,
     degraded: bool = False,
     scenario_version: int = 2,
@@ -42,13 +45,45 @@ def _record(
     evaluator_version: str = "rules-evaluator@rubric-v1",
     total: float | None = 80.0,
     verdict: str = "pass",
+    eval_round: int = 1,
+    model_evaluator_id: str = "model:server",
+    model_total: object = _INHERIT,
+    model_verdict: object = _INHERIT,
 ) -> dict:
+    """合成一条批跑记录行（形状对齐 ``run_batch.py`` 真实产出）。
+
+    状态词表用服务端真值 ``completed``（``models.py::RUN_STATUSES``）——
+    写 ``succeeded`` 会让全部真实记录被判失败（真机批跑撞出的缺陷）。
+    层行按 ``evaluator_id`` 索引（同一 run 上 model:stub 与 model:server 可并存）。
+    ``total``/``verdict`` 默认两层同值；``model_total``/``model_verdict`` 缺省继承，
+    显式给值可只改模型层（用于 unavailable 等「本层无分数」场景）。
+    """
+    m_total = total if model_total is _INHERIT else model_total
+    m_verdict = verdict if model_verdict is _INHERIT else model_verdict
     layers: dict = {}
-    if status == "succeeded" and not degraded:
-        row: dict = {"total_score": total, "verdict": verdict, "evaluator_id": evaluator_version.split("@")[0]}
+    if status == "completed" and not degraded:
+        row: dict = {
+            "layer": "deterministic",
+            "total_score": total,
+            "verdict": verdict,
+            "evaluator_id": evaluator_version.split("@")[0],
+            "rubric_version": rubric_version,
+        }
         if total is None:
             row.pop("total_score")
-        layers = {"deterministic": dict(row), "model": dict(row)}
+        model_row: dict = {
+            "layer": "model",
+            "total_score": m_total,
+            "verdict": m_verdict,
+            "evaluator_id": model_evaluator_id,
+            "rubric_version": rubric_version,
+        }
+        if m_total is None:
+            model_row.pop("total_score")
+        layers = {
+            str(row["evaluator_id"]): dict(row),
+            str(model_row["evaluator_id"]): dict(model_row),
+        }
     return {
         "run_id": run_id,
         "run_key": f"{scenario_key}:normal:v{scenario_version}:seed42:a1:cfg0",
@@ -59,12 +94,18 @@ def _record(
         "adapter_mode": adapter_mode,
         "seed": 42,
         "attempt": 1,
+        "eval_round": eval_round,
         "status": status,
         "error": error,
         "degraded": degraded,
         "evaluation": {
             "rubric_version": rubric_version,
             "evaluator_version": evaluator_version,
+            "layer_evaluator_id": model_evaluator_id,
+            "layer_evaluator_ids": {
+                "deterministic": str(evaluator_version.split("@")[0]),
+                "model": model_evaluator_id,
+            },
             "layers": layers,
         },
     }
@@ -127,14 +168,15 @@ def test_anchor_groups_merge_within_axes_split_across_axes():
     records = [
         _record("a1", "ANCHOR-1", total=80.0),
         _record("a2", "ANCHOR-1", total=82.0),
-        # 换评估器版本 ⇒ 另一组（锚点可跨 run 合并、不可跨轴合并）。
+        # 换规则版本 ⇒ 另一组（锚点可跨 run 合并、不可跨轴合并）。
         _record("a3", "ANCHOR-1", total=90.0, evaluator_version="rules-evaluator@rubric-v2", rubric_version="rubric-v2"),
     ]
     summary = run_distributions.collect_distributions(records, anchor_keys=["ANCHOR-1"])
     groups = summary["anchor_groups"]
-    assert set(groups) == {"rubric-v1|rules-evaluator@rubric-v1", "rubric-v2|rules-evaluator@rubric-v2"}
-    assert groups["rubric-v1|rules-evaluator@rubric-v1"]["anchor_scores"]["anchor"]["n"] == 2
-    assert groups["rubric-v2|rules-evaluator@rubric-v2"]["anchor_scores"]["anchor"]["n"] == 1
+    # 锚点轴＝规则版本 × **所测层**的评估器版本（层感知：model 层取 model:server）。
+    assert set(groups) == {"rubric-v1|model:server@rubric-v1", "rubric-v2|model:server@rubric-v2"}
+    assert groups["rubric-v1|model:server@rubric-v1"]["anchor_scores"]["anchor"]["n"] == 2
+    assert groups["rubric-v2|model:server@rubric-v2"]["anchor_scores"]["anchor"]["n"] == 1
 
 
 def test_anchor_keys_subset_routing():
@@ -252,3 +294,74 @@ def test_render_summary_md_contains_rule_and_tables():
     assert run_distributions.RULE_ID in text
     assert "insufficient_data" in text
     assert "failed_runs=0 / score_rows=0 / anchor_rows=0" in text
+
+
+# ---------------------------------------------------------------------------
+# 真机批跑撞出的三条缺陷（回归钉——每条钉一个真实缺陷）
+# ---------------------------------------------------------------------------
+
+
+def test_completed_status_counts_and_legacy_succeeded_does_not():
+    """状态词表：服务端真值是 ``completed``（models.py::RUN_STATUSES）。
+
+    写 ``succeeded`` ⇒ 成功 run 被判失败 ⇒ 分布读数全空（真机首跑缺陷①）。
+    """
+    ok = run_distributions.collect_distributions([_record("r1", "S-A")])
+    assert ok["scenario_groups"]["2|rubric-v1|mock"]["scenario_scores"]["S-A"]["n"] == 1
+    assert ok["excluded_rows"]["failed_runs"] == 0
+    bad = run_distributions.collect_distributions(
+        [_record("r2", "S-A", status="succeeded")]
+    )
+    assert bad["excluded_rows"]["failed_runs"] == 1
+    assert "2|rubric-v1|mock" not in bad["scenario_groups"]
+
+
+def test_unavailable_model_row_is_no_data_not_zero():
+    """模型层未产分（provider 缺失/调用失败/输出不合契约）⇒ verdict=unavailable。
+
+    那不是 0 分，是**无数据**——拿 0.0 进分布会污染噪声带（真机首跑缺陷③）。
+    """
+    records = [
+        _record("r1", "S-A", model_total=0.0, model_verdict="unavailable"),
+        _record("r2", "S-A"),
+    ]
+    summary = run_distributions.collect_distributions(records)
+    group = summary["scenario_groups"]["2|rubric-v1|mock"]
+    assert group["scenario_scores"]["S-A"]["n"] == 1
+    assert summary["excluded_rows"]["score_rows"] == 1
+    assert summary["excluded_rows"]["failed_runs"] == 0
+
+
+def test_anchor_same_run_repeated_evaluation_yields_n_samples():
+    """锚点取样：同一 fixed run 反复评估 ⇒ 每轮一个评估侧噪声样本。
+
+    服务端 ``retry_run`` 不许重试 completed 的 run（409），故锚点走「反复
+    evaluate 同一 run」——同 run_id 的多轮读数必须**各算一个样本**（真机缺陷②）。
+    """
+    records = [
+        _record("run-1", "ANCHOR-1", total=80.0 + i, eval_round=i + 1)
+        for i in range(3)
+    ]
+    summary = run_distributions.collect_distributions(records, anchor_keys=["ANCHOR-1"])
+    group = summary["anchor_groups"]["rubric-v1|model:server@rubric-v1"]
+    assert group["anchor_scores"]["anchor"]["n"] == 3
+    assert group["runs"] == ["run-1"]
+
+
+def test_anchor_axis_is_layer_aware():
+    """层感知锚点轴：同一 run 上 model:stub 与 model:server 是两个评估器。
+
+    不按 evaluator_id 区分 ⇒ 两种评估器的分数并进一条噪声带（真机缺陷③）。
+    """
+    stub = _record("run-1", "ANCHOR-1", model_evaluator_id="model:stub", total=80.0)
+    server = _record("run-1", "ANCHOR-1", model_evaluator_id="model:server", total=82.0)
+    summary = run_distributions.collect_distributions([stub, server], anchor_keys=["ANCHOR-1"])
+    assert set(summary["anchor_groups"]) == {
+        "rubric-v1|model:stub@rubric-v1",
+        "rubric-v1|model:server@rubric-v1",
+    }
+    # 读规则层 ⇒ 评估器轴取规则层评估器（不串到 model 上）。
+    det = run_distributions.collect_distributions(
+        [stub, server], anchor_keys=["ANCHOR-1"], layer="deterministic"
+    )
+    assert set(det["anchor_groups"]) == {"rubric-v1|rules-evaluator@rubric-v1"}
