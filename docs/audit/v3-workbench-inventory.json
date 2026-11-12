@@ -1,10 +1,10 @@
 {
- "route_count": 483,
+ "route_count": 485,
  "blueprint_count": 52,
  "table_count": 153,
- "revision_count": 72,
+ "revision_count": 73,
  "heads": [
-  "f2a7c4e9b6d3"
+  "b5d9e2f4a7c1"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -146,6 +146,14 @@
    "add_column_tables": [
     "project_tasks",
     "projects"
+   ]
+  },
+  "b5d9e2f4a7c1": {
+   "file": "b5d9e2f4a7c1_improvement_release_channel.py",
+   "down_revision": "f2a7c4e9b6d3",
+   "create_tables": [],
+   "add_column_tables": [
+    "improvement_proposals"
    ]
   },
   "b5d9e3f7a1c6": {

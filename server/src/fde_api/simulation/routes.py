@@ -18,6 +18,7 @@ from fde_api.simulation import (
     evaluator,
     improvement_service,
     regression_service,
+    release_channel,
     run_service,
     service,
 )
@@ -364,6 +365,36 @@ def decide_proposal(proposal_id):
     """审批提案（approve/reject）——**审批 ≠ 发布**。"""
     try:
         data = improvement_service.decide_proposal(
+            actor=g.current_user, proposal_id=proposal_id, payload=_payload()
+        )
+    except service.ScenarioServiceError as error:
+        return error_response(error.code, error.message, error.status, error.detail or None)
+    return _data(data)
+
+
+@simulation_blueprint.post("/proposals/<proposal_id>/release")
+@require_auth
+def release_proposal(proposal_id):
+    """发布提案（N4 G-11 受控发布通道：admin＋密码＋回归计划在案；可回滚）。
+
+    **发布 ≠ 自动落地**：只动提案状态与 release_json（受控记账面），生产
+    提示词/Skill/本体正文零触碰——正文改动仍由人工在治理面实施。
+    """
+    try:
+        data = release_channel.release_proposal(
+            actor=g.current_user, proposal_id=proposal_id, payload=_payload()
+        )
+    except service.ScenarioServiceError as error:
+        return error_response(error.code, error.message, error.status, error.detail or None)
+    return _data(data)
+
+
+@simulation_blueprint.post("/proposals/<proposal_id>/rollback")
+@require_auth
+def rollback_release(proposal_id):
+    """回滚已发布提案（published → approved；原发布字段保留，审计链不断）。"""
+    try:
+        data = release_channel.rollback_release(
             actor=g.current_user, proposal_id=proposal_id, payload=_payload()
         )
     except service.ScenarioServiceError as error:

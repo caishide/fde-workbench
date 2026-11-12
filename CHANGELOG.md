@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 N4 实施轮：G-10/G-11/G-14——评测观察轮＋受控发布通道＋指标复审工单（评测回流闭环三件结构面全落；迁移 72→73＝485/52/153/73，2026-11-12）
+
+任务书 §15 序 5（蔡工显式授权「继续实施N4和N5」；差距台账 v1.19 三条 CLOSED）。差距台账三条：G-10「golden set 不连真实模型；CI 无 AI 评测 job」／G-11「模拟实验室改进链止于 approved，无发布通道」／G-14「metrics v31 七指标无任何自动消费方」。★N4 前提现测注记维持留痕：活库零真实 draft 样本 ⇒ ai-eval 首跑预计 `insufficient_data`——这是协议 v0 的诚实语义（不编造分数），报告即证据，不是缺陷。
+
+- **NEW `simulation/release_channel.py`（受控发布/回滚单一写入点，G-11）**：发布三闸（admin 角色闸＋密码+note 确认闸〔`verify_password`〕＋approved 态闸）＋`regression_plan_json` 非空闸（409 `details.required=regression_plan`）⇒ `status=published`＋`release_json` 留痕＋`OperationEvent simulation.proposal_released`；回滚恢复 approved＋`release_json.rollback` 嵌套留痕、原发布字段保留。迁移 `b5d9e2f4a7c1`：`improvement_proposals` 加 `release_json` JSON 列＋CHECK 换五值（含 `published`）。**静态钉换代不删钉**：改进域三钉由「止于 approved 零写入」改写为「只许经发布通道写发布面」（引用面闭集＋owners 闭集＋routes 禁接工单写入）。
+- **NEW `metrics/review_tickets.py`（指标越限→提示词复审工单，G-14）**：出厂默认关（`FDE_AI_REVIEW_TICKET_ENABLED`）＋规则闭集校验 fail-closed（未知指标／非法 op／threshold 非数值／prompt_ref 不在 N6 注册表全拒）＋`insufficient_data` 永不判越限（不编造）＋严格比较＋同日幂等指纹；越限 → draft 提案工单（`target={kind:prompt,ref}`＋`finding_codes=[metrics_v31_breach]`）——**动作是工单不是自动改提示词**；`flask evaluate-review-tickets` CLI。
+- **NEW `scripts/ai_eval/run_opportunity_eval.py`＋`.github/workflows/ai-eval.yml`（CI eval 非必需观察轮，G-10）**：交付效果评测协议 v0——离线腿 23 例 oracle 重放（重放不匹配＝环境坏⇒insufficient）＋真模型腿 9 例（citation 6＋pseudonym 3；结构/格式/上限 14 例纯离线零烧费）；uplift 截断不四舍五入、PASS 线 0.8 未校准、incidents 一票封顶；三道 `insufficient_data` 闸（oracle 重放失败／凭据缺席／真模型腿 error——error 行不是 0 分、是无数据）。独立 workflow **不进 ci.yml 四必需 job**：dispatch＋每周一 03:00 UTC＋AI 面 push 触发；凭据缺席 job 保持绿；报告 artifact 90 天；成本≈9 次调用/3 万 token 量级（跑频按此现算；★供应商红线：只允许按量付费 key）。
+- **测试 NEW 三文件 27 例**：`test_simulation_release_channel.py` 10 例＋`test_metrics_review_tickets.py` 9 例＋`test_ai_eval/test_opportunity_eval_harness.py` 8 例。**变异六连全红→try/finally 强制还原→绿**（M1 admin 闸／M2 回滚恢复／M3 密码闸／M4 越限判定／M5 出厂默认闸／M6 评测凭据闸）；广域回归 20 文件 271 passed；ruff 绿；mypy 官方闸 279 基线不变。
+- **明确不做（任务书边界机械承载）**：不把 eval 设必需门禁（阈值未校准）／不删静态钉（改语义）／不自动上线提示词改动（工单制）。
+
+口径：路由 **483→485**（+2：release/rollback 两人工治理面，不进 api_catalog，96 ENTRIES 不变）／蓝图 52／表 153／**72→73 rev** 单头 `b5d9e2f4a7c1`；route CSV +2 行；archify architecture 图重生成＋preview 整页实拍＋图纸防陈旧闸绿。四特征④复评维持 2-1-2-1 不虚升（结构面齐；真实行使待 CI 配凭据出首份非 insufficient 报告＋首提案真实走通道）。
+
 ## [未发布] — 交付案例学习闭环 L2 批跑器节流旗标轮：run_batch NEW `--call-interval-seconds`（底册挂账改进位落地；缺省 0.2 零行为变化；scripts 层零生产代码改动·零迁移零路由零蓝图＝483/52/153/72 口径不变，2026-11-12）
 
 底册挂账改进位落地：`scripts/simulation/run_batch.py` 评估轮间隔由固定 0.2s 改为 `--call-interval-seconds`（float，缺省 0.2＝既有行为零变化；负值 SystemExit 拒绝）——相邻两次评估调用间隔可调，对限流敏感的 provider 建议加大（诊断线同名旗标先例，仅评测进程侧，生产零改动）。测试 NEW 3 例（缺省 0.2 逐轮透传／旗标值 1.5 逐轮透传／负值拒绝），本地 importlib 直调新 3 例＋锚点/幂等既有钉共 6 例全绿，全量以本 PR CI 实测为准；底册改进位行同步改为已落地。模型层重跑（底册挂账①）随后以 `--call-interval-seconds 20` 节流执行。

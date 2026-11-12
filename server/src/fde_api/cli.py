@@ -438,6 +438,33 @@ def register_cli(app: Flask) -> None:
         finally:
             session.close()
 
+    @app.cli.command("evaluate-review-tickets")
+    def evaluate_review_tickets_command() -> None:
+        """指标越限 → 提示词复审工单（N4 G-14；闸与规则见 FDE_AI_REVIEW_TICKET_*）。
+
+        出厂闸默认关＝永不建单；规则 JSON 空＝无规则。工单是 draft 提案
+        （经 release_channel 唯一写入点，零生产写），人工复核后走既有审批/
+        发布链。每规则每 UTC 日至多一张（指纹幂等）。规则面错误（坏 JSON/
+        未知指标/未注册 prompt_ref）非零退出——开闸却配坏规则是运维错误，
+        不静默吞。
+        """
+        import json as _json
+
+        from fde_api.metrics.review_tickets import TicketRuleError, evaluate_metric_review_tickets
+
+        session = db.session()
+        try:
+            summary = evaluate_metric_review_tickets(session)
+        except TicketRuleError as error:
+            raise click.ClickException(
+                f"{error.code}: {error.message}"
+            ) from None
+        finally:
+            session.close()
+        click.echo(_json.dumps(summary, ensure_ascii=False, indent=2))
+        if summary.get("created"):
+            click.echo(f"review tickets created: {summary['created']}")
+
 
 def _reconcile_jobs(queue: object) -> None:
     """One reconciliation sweep; never allowed to kill the worker loop."""

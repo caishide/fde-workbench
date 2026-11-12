@@ -355,19 +355,22 @@ class SimulationFinding(Base, TimestampMixin):
 
 
 class ImprovementProposal(Base, TimestampMixin):
-    """改进提案（G5）——**只提案，不落地**。
+    """改进提案（G5）——**只提案，落地只许经受控发布通道记账**（N4 G-11）。
 
-    状态机止于 ``approved``：**没有** publish / apply 状态，也**没有**任何指向
-    生产配置的写列（``target_json`` 只是**文本指针**，由人工在 V3.1 的治理面
-    自行实施）。这��「改进先过评估与回归、再经人工审批、最后才发布」的分闸
-    在数据层的落点。
+    状态机 ``draft → in_review → approved → published``（``published`` 仅由
+    ``simulation/release_channel.py`` 单点写入；回滚 ``published → approved``）。
+    **发布 ≠ 自动落地**（N4 边界「不自动上线提示词改动」）：发布/回滚只动
+    本行状态与 ``release_json``（受控、审计、可回滚的记账面），生产提示词 /
+    Skill / 本体**正文零触碰**——``target_json`` 仍是**文本指针**，正文改动
+    由人工在治理面实施；提示词正文不入库（N6 纪律）。「改进先过评估与回归、
+    再经人工审批、最后才经发布通道」的分闸在数据层的落点。
     """
 
     __tablename__ = "improvement_proposals"
     __table_args__ = (
         UniqueConstraint("fingerprint", name="uq_improvement_proposals_fingerprint"),
         CheckConstraint(
-            "status IN ('draft', 'in_review', 'approved', 'rejected')",
+            "status IN ('draft', 'in_review', 'approved', 'rejected', 'published')",
             name="ck_improvement_proposals_status",
         ),
         Index("ix_improvement_proposals_status", "status"),
@@ -401,6 +404,11 @@ class ImprovementProposal(Base, TimestampMixin):
     )
     decided_at: Mapped[str | None] = mapped_column(String(32))
     note: Mapped[str | None] = mapped_column(Text)
+    # 发布/回滚状态唯一承载列（N4 G-11；b5d9e2f4a7c1）：
+    # {released_at, released_by_user_id, released_version, release_note,
+    #  rollback:{rolled_back_at, rolled_back_by_user_id, rollback_note}|None}。
+    # NULL=未发布；散列发布列（published_at/apply_status 等）被静态钉禁列。
+    release_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class RegressionSuite(Base, TimestampMixin):
