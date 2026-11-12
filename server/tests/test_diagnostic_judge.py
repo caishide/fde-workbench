@@ -314,7 +314,7 @@ class _StubClient:
         self._responses = list(responses)
         self.calls: list[dict[str, Any]] = []
 
-    def complete_json(self, *, messages: Any, request_id: str, purpose: str, max_tokens: int) -> str:
+    def complete_json(self, *, messages: Any, request_id: str, purpose: str, prompt_version: str = "", max_tokens: int) -> str:
         self.calls.append({"request_id": request_id, "purpose": purpose})
         item = self._responses.pop(0)
         if isinstance(item, Exception):
@@ -432,7 +432,7 @@ class _AnchorStubClient:
     def __init__(self, payloads: dict[str, str]) -> None:
         self._payloads = dict(payloads)
 
-    def complete_json(self, *, messages: Any, request_id: str, purpose: str, max_tokens: int) -> str:
+    def complete_json(self, *, messages: Any, request_id: str, purpose: str, prompt_version: str = "", max_tokens: int) -> str:
         case_id = str(request_id).rsplit("diagnostic-judge-", 1)[-1]
         return self._payloads[case_id]
 

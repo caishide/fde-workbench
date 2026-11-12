@@ -10,7 +10,7 @@
 - **NEW `ai/model_routing.py`（质量路由 fail-safe 薄缝）**：`resolve_quality_route` 四道闸（出厂默认关／摘要指针空或不可读或坏 JSON／无该 purpose 行或形状不合法／分数<0.8）任一不满足恒 None＝沿用既有模型解析链；`execute_ai_prompt` 链序钉死「显式 model_override ＞ 质量路由 ＞ 人工偏好」。任务书 N6「明确不做」机械承载：不自动改提示词内容、不在无评测数据时自动切模型、提示词正文不入库（只存版本＋指纹）。
 - **执行点全接线**：6 处既有版本标签改注册表 re-export＋3 处新增版本常量＋complete_json 调用点 prompt_version 补齐（industry 单漏斗拆 keyword-only 双版本参）；config 三键（默认关/空/0.8）＋`.env.example` 注释态；ai_call_audits 按 prompt_version 归因自此覆盖全部 12 提示词面。
 - **四类机械钉 NEW `test_prompt_registry.py` 15 例**：指纹耦合钉（改正文不升版本⇒红）／AST 全常量必注册双向≡（Constant/JoinedStr/BinOp）／出厂默认安全钉／fail-safe 矩阵×8／链序源钉。**变异四连全真红→还原绿**（红判定要求 AssertionError 在场，区分环境错与真红）。
-- **测试与口径**：定向回归 21 文件 322 passed；mypy 279 基线不变；ruff 绿；零迁移零路由零蓝图零桌面 ⇒ 结构口径全不变（483 路由/52 蓝图/153 表/71 rev `a3e8c2f6b9d4`/96 ENTRIES）；提示词正文一字未动（12 指纹现算零漂移）。PR #397 CI 四绿（run CI_RUN_TBD）。
+- **测试与口径**：定向回归 21 文件 322 passed；mypy 279 基线不变；ruff 绿；零迁移零路由零蓝图零桌面 ⇒ 结构口径全不变（483 路由/52 蓝图/153 表/71 rev `a3e8c2f6b9d4`/96 ENTRIES）；提示词正文一字未动（12 指纹现算零漂移）。PR #397 CI 四绿（run 号随合并后收口回填补录）。
 - **四特征④复评（DoD③，留痕可推翻）**：评分维持 2-1-2-1——④要件两件已落（N2 指纹＋N6 版本注册）＋真模型评估数据在库，但评估数据尚无自动消费方（CI eval＋发布通道＝N4）⇒ 按「分数只在回流闭环达成时上行」纪律不虚升，④上行复评挂 N4 落地轮。
 - **N4 前提现测注记**：活库 ai_call_audits 六 purpose 零 draft 类、operation_events 零 ai_drafted 事件 ⇒「N3a 出真实样本后」现测不成立，N4 维持已排期（§15 序 5）。
 
