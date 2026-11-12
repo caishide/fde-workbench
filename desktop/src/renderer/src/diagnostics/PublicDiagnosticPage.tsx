@@ -286,6 +286,12 @@ export function PublicDiagnosticPage() {
           <p className="eyebrow">{BRAND_NAME} · 政策补贴测算</p>
           <h1>诊断服务暂未开放</h1>
           <p>该服务正在部署准备中，暂未对外开放。开放后可免注册使用。</p>
+          <p>
+            {/* 闸关时也要能看见示例报告——示例页是静态展示面，不依赖诊断服务开闸。 */}
+            <a className="secondary-button diag-sample-entry" href="#diagnostics/sample">
+              先看示例报告
+            </a>
+          </p>
         </header>
       </section>
     )

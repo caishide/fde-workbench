@@ -429,6 +429,16 @@ describe("获客诊断访客界面（公开面）", () => {
     expect(await screen.findByRole("heading", { name: "诊断服务暂未开放" })).toBeVisible()
     expect(calls.find((item) => item.path.endsWith("/sessions"))).toBeUndefined()
   })
+
+  it("闸关时仍给示例报告入口（示例页是静态展示面，不依赖诊断服务开闸）", async () => {
+    routeError("GET /api/v1/diagnostics/questionnaire", 404, "not_found", "")
+    const user = userEvent.setup()
+    render(<PublicDiagnosticPage />)
+    await user.click(await screen.findByRole("button", { name: "开始测算" }))
+    expect(await screen.findByRole("heading", { name: "诊断服务暂未开放" })).toBeVisible()
+    const entry = screen.getByRole("link", { name: "先看示例报告" })
+    expect(entry).toHaveAttribute("href", "#diagnostics/sample")
+  })
 })
 
 describe("分享只读页（公开面摘要层）", () => {
