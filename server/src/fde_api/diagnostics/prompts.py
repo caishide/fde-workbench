@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fde_api.ai.prompt_registry import version_of
 from fde_api.diagnostics.policy_data import (
     POLICY_ENTRIES,
     POLICY_INTERPRETATION,
@@ -35,7 +36,8 @@ REPORT_VERSION = "diagnostic-report-v1"
 # v2（2026-11-11 curve 3 断点）：R-4 条款口径与 number-gate-v2 对齐
 # （数字来源＝问卷答案＋政策引文；现状层必检／处方层计数周期免检），
 # 并新增「重试修复」段——契约失败时拒因回灌，让第二次尝试能修而不是盲重抽。
-REPORT_PROMPT_VERSION = "diagnostic-report-prompt-v2"
+# N6/G-13：标签唯一权威＝ai/prompt_registry.py（正文改动必同步注册表升版本）。
+REPORT_PROMPT_VERSION = version_of("fde_api.diagnostics.prompts", "DIAGNOSTIC_REPORT_SYSTEM_PROMPT")
 
 # AI 调用用途（G-16 归因；purpose 是开放字符串，DB 侧只约束非空与长度）
 REPORT_PURPOSE = "diagnostic_report"

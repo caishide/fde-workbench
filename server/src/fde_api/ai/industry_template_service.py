@@ -11,6 +11,8 @@ from sqlalchemy import select
 
 from fde_api.ai.deepseek import DeepSeekClient, DeepSeekError
 from fde_api.ai.industry_template_prompt import (
+    CHAT_PROMPT_VERSION,
+    GENERATION_PROMPT_VERSION,
     build_chat_messages,
     build_generation_messages,
 )
@@ -45,7 +47,12 @@ def chat_about_template(*, actor: User, payload: object, on_event: Callable[[dic
     except AIContractError as error:
         raise _contract_error(error) from error
     catalog = _active_catalog()
-    raw = _call_ai(build_chat_messages(history, catalog), request_id="industry-chat", on_event=on_event)
+    raw = _call_ai(
+        build_chat_messages(history, catalog),
+        request_id="industry-chat",
+        on_event=on_event,
+        prompt_version=CHAT_PROMPT_VERSION,
+    )
     try:
         return parse_chat_decision(raw)
     except AIContractError:
@@ -88,6 +95,7 @@ def generate_project_configuration(*, actor: User, payload: object, on_event: Ca
             generation_messages,
             request_id=f"industry-generate-{generation_id}-{attempt + 1}",
             on_event=on_event,
+            prompt_version=GENERATION_PROMPT_VERSION,
         )
         try:
             validate_generated_template(
@@ -127,10 +135,17 @@ def cancel_generation(*, actor: User, generation_id: str) -> dict[str, bool]:
     return {"cancelled": True}
 
 
-def _call_ai(messages: list[dict[str, str]], *, request_id: str, on_event: Callable[[dict[str, str]], None] | None = None) -> dict[str, Any]:
+def _call_ai(
+    messages: list[dict[str, str]],
+    *,
+    request_id: str,
+    on_event: Callable[[dict[str, str]], None] | None = None,
+    prompt_version: str,
+) -> dict[str, Any]:
     try:
         return _client().complete_json(messages=messages, request_id=request_id, on_event=on_event,
-                                      purpose="industry_template_generate")
+                                      purpose="industry_template_generate",
+                                      prompt_version=prompt_version)
     except DeepSeekError as error:
         status = {
             "ai_service_not_configured": 503,

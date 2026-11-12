@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     # 单模型端点必须填端点实际在售的模型名（默认族值 deepseek-v4-pro 在不售
     # 它的端点上会 400）。
     deepseek_diagnostic_report_model: str = ""
+    # N6/G-13 按评测质量路由模型（fail-safe 薄缝，ai/model_routing.py）：出厂闸
+    # 默认关＝永不切换（任务书 N6「不在无评测数据时自动切模型」）；摘要指针空/
+    # 文件不可读/无该 purpose 行/分数低于下限，四道闸任一不满足都沿用既有解析链。
+    ai_quality_route_enabled: bool = False
+    # N4 CI eval 产出的按 purpose 模型质量摘要（本地 JSON 指针，原件不入仓）。
+    ai_quality_route_summary_uri: str = ""
+    # 质量分下限（缺省 0.8＝交付效果评测协议 v0 PASS 截断口径）。
+    ai_quality_route_min_score: float = 0.8
     # goal-d9：翻译器管道（文本 JSON 提炼）。goal-d13 拍板：provider 切 kimi
     # 槽位（kimi-k3，Moonshot OpenAI 兼容端点），客户端仍走通用文本 JSON 栈。
     # T6 高成本 run 前评审（goal-d11，总纲 §2.2 T6）：拟用 agent 的

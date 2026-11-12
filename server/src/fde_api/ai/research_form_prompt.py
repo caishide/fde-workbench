@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fde_api.ai.prompt_registry import version_of
+
 
 SYSTEM_PROMPT = """你是 FDE 行业模板的调研表设计助手。你只能输出一个 JSON 对象，不得输出 Markdown。
 你要根据当前行业模板、已选模块、已有调研表和用户的可选要求，生成一份新的、可直接人工修改的调研表。
@@ -20,6 +22,10 @@ single_choice 和 multi_choice 的 options 必须包含非空且不重复的 cho
 问题要服务于 FDE 识别客户目标、业务流程、数据现状、AI 机会、约束与验收标准，避免无用的通用问题堆砌。
 用语纪律：所有面向读者的表述使用平实中文，不得使用行业黑话或缩略行话（如「A端/B端/C端」「赋能」「抓手」「闭环」「颗粒度」等）；确需使用专业术语时，在该词后用括号补一句平实中文解释。
 不要在最终答案中解释设计过程，立即输出完整 JSON，并在输出前确认 JSON 已正常闭合。"""
+
+
+# N6/G-13：版本标签唯一权威＝ai/prompt_registry.py（此处只 re-export）。
+PROMPT_VERSION = version_of("fde_api.ai.research_form_prompt", "SYSTEM_PROMPT")
 
 
 def build_research_form_messages(context: dict[str, Any]) -> list[dict[str, str]]:

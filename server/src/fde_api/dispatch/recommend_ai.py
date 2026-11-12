@@ -29,6 +29,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from fde_api.ai.prompt_registry import version_of
 from fde_api.auth.models import User
 from fde_api.control.ai_server_client import execute_ai_prompt
 from fde_api.control.dsh_runtime import DSHRuntimeError
@@ -48,7 +49,8 @@ from fde_api.system_configuration import DISPATCH_CONSTANTS
 from fde_api.workbench.models import Project, Quote
 
 # 提示词版本（N2 归因纪律；提示词正文改动必须升版本）。
-RECOMMEND_PROMPT_VERSION = "dispatch-recommend-prompt-v1"
+# N6/G-13：标签唯一权威＝ai/prompt_registry.py（正文改动必同步注册表升版本）。
+RECOMMEND_PROMPT_VERSION = version_of("fde_api.dispatch.recommend_ai", "DISPATCH_RECOMMENDATION_SYSTEM_PROMPT")
 # 审计 purpose（ai_call_audits NOT NULL CHECK；≤60 字自由文本域）。
 RECOMMEND_PURPOSE = "dispatch_recommendation"
 # AI 可见候选上限（建议腿可见面截断边界，ADR §8 预授权风格）——规则腿
