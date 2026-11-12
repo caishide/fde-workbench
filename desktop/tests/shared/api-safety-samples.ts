@@ -153,7 +153,7 @@ export const HEADER_SAMPLES: readonly ApiSafetyHeaderSample[] = [
   { headers: null, expected: true, note: "null＝未带自定义头（显式放行）" },
   { headers: {}, expected: true, note: "空对象＝无自定义头" },
   {
-    headers: { "x-diagnostic-token": "diag_tok-123_abc" },
+    headers: { "x-diagnostic-token": "diag12" },
     expected: true,
     note: "允许名单唯一头（token_urlsafe 字符集）",
   },

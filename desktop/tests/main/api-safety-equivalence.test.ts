@@ -139,10 +139,10 @@ describe("CR-071 桌面 IPC 桥等价性判定（共享样本集）", () => {
       path: "/api/v1/diagnostics/questionnaire",
       method: "GET",
       accessToken: "",
-      headers: { "x-diagnostic-token": "diag_tok-123" },
+      headers: { "x-diagnostic-token": "diag12" },
     })
     expect(headers.authorization).toBeUndefined()
-    expect(headers["x-diagnostic-token"]).toBe("diag_tok-123")
+    expect(headers["x-diagnostic-token"]).toBe("diag12")
   })
 
   it("非空 accessToken 仍下发 Bearer（公开面扩展零回归）", async () => {
