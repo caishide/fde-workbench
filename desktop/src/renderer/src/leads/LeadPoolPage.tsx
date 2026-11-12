@@ -4,6 +4,7 @@ import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
 import { useConfirm } from "../common/ConfirmProvider"
 import { Modal } from "../components/ui"
+import { ChannelLinksPanel } from "./ChannelLinksPanel"
 
 /** 获客诊断 T-12：线索池控制台（任务书 §3 T-12）。
  *
@@ -521,6 +522,8 @@ export function LeadPoolPage() {
           </li>
         ))}
       </ul>
+
+      {isAdmin ? <ChannelLinksPanel /> : null}
 
       {dialog ? (
         <Modal
