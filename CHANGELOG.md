@@ -15,6 +15,7 @@
 - **明确不做（任务书边界机械承载）**：不解除 15min 窗／不让 AI 直接执行／提议不可批量确认／不改宿主通道五边界／接管与重试动作永不收编（目录钉 `agents.run_takeover`/`run_retry` 零命中）。
 
 口径：**零迁移零新表零新 Flask 路由**（两条 ENTRIES 指向既有发起路由）＝485 路由/52 蓝图/153 表/73 rev 单头 `b5d9e2f4a7c1` 全不变；**api_catalog ENTRIES 96→98**；宿主人工通道与 automation_approvals 面零变化。
+**合并与活体复验（2026-11-13）**：PR #407 squash `6f90147`（树哈希零漂移＝`4f4a19d^{tree}` ≡ `6f90147^{tree}`）；PR head CI 四绿（server-tests **3473 passed + 8 skipped**＝3457 基线 + 16 新例逐位吻合；首轮撞两枚既有只读钉已换代后二轮全绿）；main push run **43262153263** 四 job 全绿（server-tests **3473 passed + 8 skipped** 逐位吻合）。活体复验全绿：三镜像 rebuild（api `7ad54e94891a`／worker `714b98224cbc`／scheduler `8300d9aa8842`，容器 `.Image` 与构建产物逐位一致）＋`alembic current`＝`b5d9e2f4a7c1 (head)`（零迁移 no-op）＋`url_map` **485 non-static** ≡ 口径＋ready/live 200＋活体 CATALOG **ENTRIES 98**、两 run_start 确认类（confirmation=True/risk=3）在位。
 
 ## [未发布] — AI 原生化 N4 实施轮：G-10/G-11/G-14——评测观察轮＋受控发布通道＋指标复审工单（评测回流闭环三件结构面全落；迁移 72→73＝485/52/153/73，2026-11-12）
 
