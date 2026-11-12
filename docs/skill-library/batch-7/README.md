@@ -31,3 +31,15 @@
 - 一技能一版本；`required_capabilities` 传空数组（可执行型卡不声明工具能力，正文用平台既有工具面动作）。
 - manifest 形状：`entrypoint`／`format`／`source`／`batch`＝"batch-7"／`rewrite`／`license_ledger`（指向本目录 LICENSE-AUDIT.md）／`use_boundaries`（when_to_use＋human_boundary）／`references`（required_reading＋authoritative_sources）／`form`／`knowledge_discipline`。
 - 正文直接粘贴本批对应 md 全文，key 用上表的 key。
+
+## 已入库状态（2026-11-12 实测）
+
+- PR：[#391](https://github.com/caishide/fde-workbench/pull/391) 已 squash 合并（`6733124`），CI 8 check-runs 全绿（API check-runs 终审）。
+- 代录：已授权代录通道（2026-11-12 蔡工口径延续）3 条全部 `POST /api/v1/extensions/skills/personal` 成功（HTTP 201，一技能一版本 v1）：
+  - `customer-acceptance-review` → id `049be454-034f-4c20-916a-bb19b4b630b3`
+  - `delivery-retrospective-review` → id `57f46376-e452-4a61-a97a-20d13289b2bf`
+  - `poc-production-transition` → id `fe919d7c-8c1f-4e5b-a015-e3465f84f341`
+- 双校验 **ALL MATCH**：①服务端结构化指纹 `content_sha256`（规范化 JSON 的 sha256）与本地载荷重算逐位一致；②`GET /skills/<id>/document` 回读正文与本批 md 文件逐字节一致（3859／3826／4124 B，body sha256 逐位一致）。
+- 库内核验：`skill_definitions` scope=personal 23→**26** 行（三条均 published v1），`scope=public` **14** 行未变。
+- 容器清场：`/tmp/ks7*` 已清零，`/api/v1/health/ready` 复探 200。
+- 台账回填随本节同批入库（PROGRESS.md batch-7 节已入库 bullet）。
