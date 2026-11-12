@@ -910,7 +910,7 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 
 ## 交付案例学习闭环登记（2026-11-11，来源：设计稿 `docs/audit/交付案例学习闭环-三缺口设计稿-2026-11-11.md`，PR #350）
 
-### T-L0 交付案例学习闭环（案例摄取管线＋交付线可判定读数＋agent 知识片段接线）— **L1 已实施（PR #360 → `f2f8c86`，2026-11-12）＋L2/L3 待开工**（§6 四项拍板＝按推荐执行＋留痕可推翻；本行销「L1 摄取管线」，L2 读数／L3 lessons 接线未开工）
+### T-L0 交付案例学习闭环（案例摄取管线＋交付线可判定读数＋agent 知识片段接线）— **L1/L2/L3 全部已实施（PR #360 `f2f8c86`／PR #374 `ecba5c0`／PR #377 `8b858d7`，2026-11-12）**（§6 四项拍板＝按推荐执行＋留痕可推翻；L1 摄取管线＋L2 分布读数＋L3 lessons 接线全销；L2 模型层评估侧噪声带挂账——MiniMax Token Plan 配额外部闸，消解条件见 ✅ L2 节）
 - 目标：把「学习交付案例 → 交付能力提升」从诊断线（已实证：生成 0/6→3/6→6/6）扩展到训练场与 agent 上下文。三缺口与推荐/否决方案全量见设计稿 §2；本行只登记状态与拍板入口。
 - 现测事实锚（2026-11-11，fork/main `49c14e4`）：训练场摄取存储面已预留（`SimulationScenario.source_kind='import'`＋`import_scenarios` 路由 `simulation/routes.py:136`＋三视图泄漏自检 `scenarios/loader.py:82-88`）；agent 知识片段段预留未接线（`render_masked_context` 支持、唯一调用点 `agents/service.py:390` 硬编码空元组）；污染钉扫描面＝`server/src/fde_api`＋`server/seeds`＋`desktop/src`＋fixtures（`test_diagnostic_eval_contamination.py:37-41`），`scripts/` 在面外。
 - 待拍板四项（设计稿 §6）：①Goal 线归属（推荐独立 L 线，勿并入 N 线）②首批案例源（推荐 somwyn 复盘代号化＋FDE-case-library 抽象重写 2 例〔MIT 已核〕＋诊断案例集复用 1 例验证单向阀）③污染单向阀裁定（推荐确认：判卷基准进训练场 judge 参考面、禁止流向诊断生成器＋静态钉）④lessons 来源边界（推荐允许展示面提炼，判卷基准侧永不进）。
@@ -925,7 +925,26 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - 验收证据：转换器实跑 4/4 包过闸；pytest +10 全绿（含真相层实卡验收 1 例，卡不在场显式 skip 不静默绿）；变异三连全红→还原→绿（M1 摘 attribution 闸／M2 摘泄漏自检／M3 诊断面注入 simulation 导入，各恰一钉红，还原后 `diagnostics/service.py` 字节级无残留）；既有污染钉 7 钉复跑全绿。
 - 拍板留痕：设计稿 §6 四项未获逐项答复，按「按推荐执行＋留痕可推翻」先例记默认立场（①独立 L 线 ②首批三类来源照单 ③单向阀确认＋静态钉 ④L3 才消费 lessons 来源边界），记录于 `docs/audit/交付案例学习闭环-L1任务书-2026-11-12.md`。
 
-**本轮未做（授权边界内）**：L2 锚点场景＋分布读数、L3 `lessons.json` 接线均未开工（排期≠实施授权，待蔡工另行放行）；导入与激活两步由蔡工在桌面/API 人工执行。
+**本轮未做（授权边界内）**：L2 锚点场景＋分布读数、L3 `lessons.json` 接线均未开工（排期≠实施授权，待蔡工另行放行）；导入与激活两步由蔡工在桌面/API 人工执行（✅ 已由蔡工 2026-11-12 完成：4 包 draft v1＋active v2）。
+#### ✅ T-L0 L2 实施轮（2026-11-12，状态：**已实施并合并**——PR #374 → `ecba5c0`，CI 4 job 全绿；合并树 main run 43151465600 实测 3261 收集 = 3253 passed + 8 skipped）
+
+**落地实现**：
+
+- 批跑器 NEW `scripts/simulation/run_batch.py`：生产 HTTP 面真机批跑（`POST /simulation/runs`→execute→evaluate→`GET /runs/<id>/evaluation`）；JSONL 落真相层（仓内输出即拒）；锚点模式＝只建一个 run 对同一 run 反复 evaluate N 轮（服务端同 (run,层,评估器,规则版本) 重评更新该行；`retry_run` 对 completed 恒 409）；API 前缀归一（蓝图 `url_prefix=/api/v1/simulation`）。
+- 分布读数库 NEW `scripts/simulation/run_distributions.py`＋底册 CLI NEW `scripts/simulation/summarize_run_distributions.py`：规则 `delta-noise-band-simulation-2026-11-12`（非校准阈值）；复用 `scripts/diagnostic_eval/eval_lib.py` 单一真身；三条机械不变量（失败/缺分 run 是无数据不是 0 分；无分数态 verdict〔hard_fail/inconclusive/unavailable〕排除；n<2 不编造 stdev）；层行按 evaluator_id 索引；锚点轴层感知（rubric × 所测层评估器）。
+- 真机撞出三条 API 语义缺陷逐条修复＋32 例钉（18 分布库＋14 批跑器）：①状态词表 completed（服务端源码正则取真值钉）②锚点同 run 反复 evaluate＋eval_round 进幂等键③unavailable 排除＋evaluator_id 索引＋层感知锚点轴。变异三连全红→字节级还原→复绿。
+- 真机首读（真相层 `训练场分布读数/l2-anchor-20261112/`）：锚点 IMP-SOMWYN-E2E 1 run×3 轮＋逐场景 IMP-DW015-TRADE-DOCS 3 seed＝6 run 全 completed；规则层底册首条 **decidable**（Δ=0.1＞带 0.0，n 3/3）＋锚点极差 0.0＝锚点机制实证；**模型层被外部闸拦**（MiniMax Token Plan 配额耗尽，错误码 2056）6 行 unavailable 全按无数据排除——**L2 验收部分达成**：模型层评估侧噪声带挂账，消解条件＝配额恢复（OWNER 账户决策）后归档 runs.jsonl→重签 JWT→重跑 fresh。
+- 部署活体：rebuild 三镜像逐位一致＋容器内 alembic `a3e8c2f6b9d4` (head) no-op＋url_map 480；★⑦出站闸两键 T-15 接管丢失当轮补回（容器 env 验证）＋`FDE_DEEPSEEK_SIMULATION_EVALUATION_MODEL` 槽位键在位。
+- 指纹与读法边界：NEW `docs/audit/训练场分布读数-L2底册-1.md`（真相层原件指针＋全量 sha256）。
+
+#### ✅ T-L0 L3 实施轮（2026-11-12，状态：**已实施并合并**——PR #377 → `8b858d7`＝fork/main tip，CI 4 job 全绿）
+
+**落地实现**：
+
+- NEW `server/seeds/lessons.json`（10 条 SOP-only 静态经验条目：id/capability_tags/text/source_ref/sha256）＋NEW `server/src/fde_api/agents/lessons.py`（`load_entries` 装载 fail-closed／`select_lessons` 纯函数＝能力腿＋可选行业过滤＋top_k/max_chars／`knowledge_snippets_for` 运行时软失败回落空片段）＋`agents/service.py::_render_context` 接线（原硬编码空元组＝水源接通）；配置三键 `agent_lessons_enabled/top_k/max_chars`（`.env.example` 同步）。
+- 内容纪律静态钉 NEW `server/tests/test_lessons_wiring.py` 11 例（schema 闭集／逐条 sha256 一致——改 text 必留 diff／答案字段词汇零命中／能力域闭集）。
+- ★CI 真红与裁决：初版种子含 4 条诊断展示面提炼条目 ⇒ 污染钉 N2/N3 真红（2 failed/3206 passed）；以评测集污染隔离红线为准（展示产物目录不得被生成器检索路径引用 ⇒ lessons.json 禁进），种子收敛 SOP-only（text 未改指纹不变）；「双来源」拍板让位机械闸、留痕可推翻。
+- 活体验证：容器内 10 条装载＋tier=agent.module.acceptance 非空选中 LESS-SOP-008。
 
 ### T-M7 商机数据归属权与区域服务商（M7-1 轮）— **结构就绪·待授权**（2026-11-12）
 
