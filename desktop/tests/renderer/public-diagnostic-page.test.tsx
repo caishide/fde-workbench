@@ -256,6 +256,12 @@ describe("获客诊断访客界面（公开面）", () => {
     expect(sessionCall?.body).toEqual({})
   })
 
+  it("首屏带「先看示例报告」入口（只读样例页，不采集访客信息）", async () => {
+    render(<PublicDiagnosticPage />)
+    const link = await screen.findByRole("link", { name: "先看示例报告" })
+    expect(link).toHaveAttribute("href", "#diagnostics/sample")
+  })
+
   it("首屏必填预检：缺必填不上传，提示缺的题", async () => {
     const user = userEvent.setup()
     render(<PublicDiagnosticPage />)

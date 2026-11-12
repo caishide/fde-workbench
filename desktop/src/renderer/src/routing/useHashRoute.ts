@@ -17,6 +17,8 @@ export type AppRoute =
   | { kind: "enterprise-register" }
   /** 获客诊断 T-14a：免注册访客界面（公开面；未登录也可进入）。 */
   | { kind: "public-diagnostics" }
+  /** 工具内示例报告页（公开面；只读样例，不采集访客信息）。 */
+  | { kind: "public-diagnostics-sample" }
   /** 分享只读页：share token 是只读凭证（可入 URL；与写令牌权限域分开）。 */
   | { kind: "public-diagnostics-share"; shareToken: string }
   | { kind: "enterprise-space" }
@@ -75,6 +77,8 @@ export function parseHashRoute(hash: string): AppRoute {
   // 获客诊断 T-14a 公开面：分享令牌字符集与长度上界同 token_urlsafe 形态
   // （非法形态不确认路由存在——回落 projects，与既有解析失败口径一致）。
   if (hash === "#diagnostics") return { kind: "public-diagnostics" }
+  // 工具内示例报告（只读样例；无参数、无令牌）
+  if (hash === "#diagnostics/sample") return { kind: "public-diagnostics-sample" }
   const diagSharePrefix = "#diagnostics/share/"
   if (hash.startsWith(diagSharePrefix)) {
     const rawToken = hash.slice(diagSharePrefix.length)
@@ -176,6 +180,7 @@ export function routeHash(route: AppRoute): string {
     case "commercial-ops": return "#commercial-ops"
     case "enterprise-register": return "#enterprise-register"
     case "public-diagnostics": return "#diagnostics"
+    case "public-diagnostics-sample": return "#diagnostics/sample"
     case "public-diagnostics-share": return `#diagnostics/share/${encodeURIComponent(route.shareToken)}`
     case "enterprise-space": return "#enterprise-space"
     case "task-center": return "#task-center"

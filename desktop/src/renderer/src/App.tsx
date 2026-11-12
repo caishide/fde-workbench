@@ -35,6 +35,7 @@ import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
 import { EnterpriseRegisterPage } from "./commercial/EnterpriseRegisterPage"
 import { EnterpriseSpacePage } from "./commercial/EnterpriseSpacePage"
 import { PublicDiagnosticPage } from "./diagnostics/PublicDiagnosticPage"
+import { PublicDiagnosticSamplePage } from "./diagnostics/PublicDiagnosticSamplePage"
 import { PublicDiagnosticSharePage } from "./diagnostics/PublicDiagnosticSharePage"
 import { TranslatorPortalPage } from "./translator/TranslatorPortalPage"
 import { LeadPoolPage } from "./leads/LeadPoolPage"
@@ -72,6 +73,7 @@ function AuthenticatedApp() {
   // 获客诊断 T-14a：免注册诊断与分享页同属公开面（服务端部署闸默认关）。
   if (status === "unauthenticated" || !user) {
     if (route.kind === "public-diagnostics") return <PublicDiagnosticPage />
+    if (route.kind === "public-diagnostics-sample") return <PublicDiagnosticSamplePage />
     if (route.kind === "public-diagnostics-share") {
       return <PublicDiagnosticSharePage shareToken={route.shareToken} />
     }
@@ -111,6 +113,7 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "commercial-ops") return <CommercialOpsPage />
   if (route.kind === "enterprise-register") return <EnterpriseRegisterPage />
   if (route.kind === "public-diagnostics") return <PublicDiagnosticPage />
+  if (route.kind === "public-diagnostics-sample") return <PublicDiagnosticSamplePage />
   if (route.kind === "public-diagnostics-share") {
     return <PublicDiagnosticSharePage shareToken={route.shareToken} />
   }
