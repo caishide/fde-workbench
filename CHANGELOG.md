@@ -13,6 +13,12 @@
 - **测试与口径**：定向回归 21 文件 322 passed；mypy 279 基线不变；ruff 绿；零迁移零路由零蓝图零桌面 ⇒ 结构口径全不变（483 路由/52 蓝图/153 表/71 rev `a3e8c2f6b9d4`/96 ENTRIES）；提示词正文一字未动（12 指纹现算零漂移）。PR #397 CI 四绿（run 号随合并后收口回填补录）。
 - **四特征④复评（DoD③，留痕可推翻）**：评分维持 2-1-2-1——④要件两件已落（N2 指纹＋N6 版本注册）＋真模型评估数据在库，但评估数据尚无自动消费方（CI eval＋发布通道＝N4）⇒ 按「分数只在回流闭环达成时上行」纪律不虚升，④上行复评挂 N4 落地轮。
 - **N4 前提现测注记**：活库 ai_call_audits 六 purpose 零 draft 类、operation_events 零 ai_drafted 事件 ⇒「N3a 出真实样本后」现测不成立，N4 维持已排期（§15 序 5）。
+## [未发布] — 获客诊断 T-16 轮：价格轮——转化费比例落配置面（fee_basis 换值 ratio_applied；迁移 71→72＝483/52/153/72，2026-11-12）
+
+蔡工拍板④（按推荐执行＋留痕可推翻）：转化费＝比例制——A 渠道报备缺省 20%、B 认领转化缺省 10%（C 平台留存零转化费，不走比例）。**比例数值只在配置面**：NEW `Settings.diagnostics_fee_ratio_tier_a/b`（Decimal，ge=0 le=1 越界启动即炸——挡「填 20 想表达 20%」笔误），env `FDE_DIAGNOSTICS_FEE_RATIO_TIER_A/B` 可调；模型列零比例零金额字段（T-11 静态钉原样保留）、认领单投影键闭集钉死（比例数字不进任何响应）、台账行十二列零变化。fee_basis 结构值换值 `pending_pricing`（待价格轮）退役→`ratio_applied`（按平台配置比例计；结算时点政策由运营口径承载）；迁移 `f2a7c4e9b6d3`（挂 `a3e8c2f6b9d4` 保单头）CHECK drop+recreate，**零存量行**＝主部署诊断闸关期间零认领＋轻部署库全新，无数据迁移。桌面标签 `ratio_applied`→「转化费按平台比例计」（不带数字）。测试 NEW `test_diagnostics_fee_pricing.py` 14 例（defaults 钉／env 覆写／越界四例含边界含端点／闭集钉〔退役值不得复活〕／迁移静态钉／_fee_basis 映射／投影闭集钉／台账零变化）＋**变异三连红→还原→绿**（M1 默认值漂移 0.25/0.15 ⇒ defaults 钉红；M2 摘 ge/le ⇒ 越界四例红；M3 写回 pending_pricing ⇒ 映射钉＋CHECK 违规 10 例红；还原 sha256 逐位一致）；诊断域回归 83 例绿＋claims 34 例绿；mypy 279 基线不变；官方 ruff 绿。
+
+PR #398 squash `fa2ebf8`；活体部署三验全绿（七撞纪律）：三镜像从 `fa2ebf8` 干净树 rebuild（api `3b32d852b9fa`／worker `d0ba33de0a0a`／scheduler `11df7862c94a`，容器 `.Image` 与构建产物逐位一致）＋`alembic upgrade head` 真实升级 `a3e8c2f6b9d4 → f2a7c4e9b6d3 (head)`＋活体 `url_map` **483** ≡ 口径＋**活库 CHECK 新闭集 `('none','ratio_applied')` 在位**＋容器配置面读数 tier_a=0.20/tier_b=0.10＋诊断闸默认关 404＋ready/live 200。便携版 **r42**（asar sha256 `754931c478dad5b659324ae007afb44548804692f502127caeb7a5feb6627063`；英文探针 `ratio_applied` 命中／`pending_pricing` 缺席；★r41 已被并发线 16:33 消耗，序号交付时点现测顺延；★主树 release/win-unpacked.tmp 被句柄锁死 ⇒ 按 r9 配方换 detached worktree @ `fa2ebf8` 打包）。
+
 
 ## [未发布] — 获客诊断 T-13′ 轮：工具内示例报告页（E-3 前半）——静态 ReportDoc＋展示面角标＋「非实时诊断结果」声明＋stage 中文映射＋闸关示例入口；随轮部署替换 app.fde18.com（零后端生产代码改动·零迁移·零路由＝483/52/153/71 口径不变，2026-11-12）
 
