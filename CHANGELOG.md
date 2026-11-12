@@ -2,6 +2,19 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 获客诊断 T-13′ 轮：工具内示例报告页（E-3 前半）——静态 ReportDoc＋展示面角标＋「非实时诊断结果」声明＋stage 中文映射＋闸关示例入口；随轮部署替换 app.fde18.com（零后端生产代码改动·零迁移·零路由＝483/52/153/71 口径不变，2026-11-12）
+
+任务书 T-13 行的开放单元＝E-3 拍板顺序前半「先工具内示例报告」（展示面直接服务获客；网站内容页归 T-14b）。**展示面例外（评测集污染隔离红线）第一次机械落地**：示例页可消费公开案例整理／脱敏交付素材，但角标＋声明强制、生成器检索面零引用。
+
+- **静态 ReportDoc 两则**（NEW `desktop/src/renderer/src/diagnostics/sampleReport.ts`）：datawhale-001（制造业经验传承——3 条政策 `official_text` 逐字对齐 `policy_data.py`，`our_reading` 按服务端 `_policy_opportunity` 拼装口径）＋somwyn（外贸获客——`policy.opportunities: []`，报告如实呈现「未匹配到政策条目」，不硬凑）；**无分数无评级无金额**（真相层 report_demo 的 41/100、32/100 一律不搬）；角标「示例案例 · 据公开案例整理」／「脱敏真实交付 · 代号化」＋页面「示例内容 · 非实时诊断结果」声明。
+- **`ReportView` 抽取复用**（NEW，自 `PublicDiagnosticPage` 原样抽出）：渲染零变化＋**stage 中文映射**（识别/定位/处置/回写；闭集外原样透传）——修服务端 `LOOP_STAGES` 英文代号直出中文报告的展示缺陷，活体报告页与分享页两处一并接 `stageLabel`。
+- **NEW `PublicDiagnosticSamplePage`**（路由 `#diagnostics/sample`，未登录公开分支可渲染）：案例切换（aria-pressed）＋meta 卡（角标/标题/摘要/出处/note）＋「去做测算」；诊断页 intro 与**闸关早返回分支**两处「先看示例报告」入口——闸关时访客也能看见示例（静态展示面不依赖开闸）。
+- **机械闸** NEW `server/tests/test_diagnostic_sample_surface.py` 5 钉：角标常量逐字＋被用／无「生成于」（活体语义不混入示例面）／无分数·评分词·金额·百分比限闭集 {20%,30%,60%}／**生成器检索面（`fde_api/diagnostics`＋`server/seeds`）零示例引用**＝展示产物不进生成器检索路径／路由双向接线计数 ≥2；**变异 5/5 红→字节级还原→绿**（S5 首版「出现过一次」式断言无判别力，改计数断言后转红）；污染钉扫 `desktop/src` 零命中。
+- **测试**：桌面 NEW 样例页 12 例＋导航 +2＋诊断页 +2 ⇒ vitest **1100 = 1084+16**（96 文件全量 exit 0；1084＝T-14a 记录值 1079＋N3c agents-console +5）＋typecheck 绿；服务端 +5 ⇒ CI 实测 **3339 收集 = 3331 passed + 8 skipped**（PR run 43183542727；＝N3c 融合树 3334+5 逐位吻合）；mypy 279 基线不变。
+- **口径**：零后端生产代码改动（+1 纯静态服务端测试文件）、零迁移、零路由、零表 ⇒ **483 路由／52 蓝图／153 表／71 rev 单头 `a3e8c2f6b9d4`／`api_catalog` 96 ENTRIES 全不变**。
+- **交付与部署**：便携版 **r41**（asar sha256 `9a7f4214…`；marker `public-diagnostics-sample` ×4／`diag-sample-badge` ×2／「先看示例报告」×2／`diag-sample-notice` ×6）；web 发行形态 `build:web` 产物 marker 全命中。**部署替换 app.fde18.com（蔡工 2026-11-12 授权「弄好没问题再部署替换」）**：三备份先行（staged diff＋静态站 tar＋PG dump → 服务器 `/root/fde-backup-20261112-T13`）→ checkout `5c252e1` → rebuild 三镜像（api `7e953f2…`／worker `b43126…`／scheduler `f58ba7…`，容器 `.Image` 与构建产物逐位一致）→ **alembic 真实升级 `d5f9a3c7e1b4 → a3e8c2f6b9d4 (head)`**（活体从 2026-11-10 版一次跨 20 迁移；★旧 api 容器泄漏连接 idle in transaction 1 天持锁阻塞 ALTER，terminate idle 持有者解堵）→ web-dist 上传替换静态站（vhost 零改动，旧目录 `.bak-T13` 可回滚）。**七点验证全绿**：url_map 484 total/**483 non-static** ≡ 口径；容器内 alembic `a3e8c2f6b9d4 (head)`；镜像 ID 逐位一致；app `/`·ready·live 200；**闸关 404 而非 403**（diagnostics＋registration 双面——D-3 前不进主部署红线维持）；官网 fde18.com `/`·`/blog/`·`/services/` 200 零扰动；样例页 marker 经 HTTPS 端到端命中。合并后 main run 43188889108（`5c252e1`）四 job 全绿。
+- **下一轮候选**：T-14b 官网案例内容页（E-3 后半，等 D-3 拍板）、T-16 价格轮（等 D-5＋MVP 数据）。
+
 ## [未发布] — AI 原生化 N3c 实施轮：G-06 AI 派单推荐（返件式）＋G-15 桌面跨 run 编排面＋T-A10 产物内容读取面
 
 - **这一轮解决什么**：任务书 §15 序 4——BP §1.3a L3 定义里的「AI 参与派单推荐」缺通道（差距台账 G-06）；「人管理 Agent」缺跨 run 呈现面（G-15）；复核人被迫离开桌面看产物原件（backlog T-A10，N1 人工链实弹暴露）。三件同轮合批，四项交互拍板留痕可推翻（match-ai 独立路由返件式／decision 纯事件端点／AgentsConsole 升级编排面／T-A10 合批）。
