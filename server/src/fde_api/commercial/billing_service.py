@@ -31,6 +31,11 @@ from fde_api.auth.models import ROLE_ADMIN, User
 from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
 from fde_api.auth.passwords import verify_password
 from fde_api.commercial.ledger_service import insert_revenue_entry
+from fde_api.commercial.org_read_scope import (
+    VIS_SAME_ORG,
+    VIS_SELF,
+    resource_visibility,
+)
 from fde_api.commercial.models import (
     DEDUCTION_METHODS,
     DEDUCTION_METHODS_IMPLEMENTED,
@@ -522,9 +527,19 @@ def serialize_certification_record(row: CommercialCertificationRecord) -> dict[s
 def list_certification_records(
     session: Session, *, actor: User, user_id: str
 ) -> dict[str, Any]:
-    """认证记录读面（本人或 admin）。"""
+    """认证记录读面（本人或 admin）。
+
+    **M6 org 隔离接线**：企业身份下「同 org 成员可见」（M5 已落模式「本 org
+    成员或 admin」）——本企业成员可读本企业账号的认证记录；**跨企业 ⇒ 403**
+    （沿用本读面既有 ``commercial_certification_forbidden`` 码，**不自造失败码、
+    不改既有码**）；平台身份沿用「只见本人」的存量口径（行为逐位不变）。
+    """
     if actor.id != user_id and actor.role != ROLE_ADMIN:
-        raise _error("commercial_certification_forbidden", "只能查看本人认证记录。", 403)
+        visibility = resource_visibility(session, actor, user_id)
+        if visibility not in (VIS_SAME_ORG, VIS_SELF):
+            raise _error(
+                "commercial_certification_forbidden", "只能查看本人认证记录。", 403
+            )
     _require_user(session, user_id)
     rows = list(
         session.scalars(

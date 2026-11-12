@@ -46,6 +46,7 @@ from fde_api.dispatch.models import (
     DeliverySettlement,
     DispatchSettlementAllocation,
 )
+from fde_api.orgs.models import INTERNAL_ORG_ID
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Project
 
@@ -565,22 +566,78 @@ def _serialize_settlement(row: RegionalServiceSettlement) -> dict[str, Any]:
     }
 
 
+def _applicant_org_id(session: Session, applicant_user_id: str) -> str | None:
+    """区域伙伴的 org 归属（**间接归属**——OWNER 2026-11-12 拍板）。
+
+    ``regional_partners`` **无 org_id 列**（零新列、零迁移、零新表）——伙伴
+    的 org 归属经 ``applicant_user_id`` → ``users.org_id`` 推导。
+    """
+    applicant = session.get(User, applicant_user_id)
+    return applicant.org_id if applicant is not None else None
+
+
+def _partner_visible_to(session: Session, row: RegionalPartner, actor: User) -> bool:
+    """该伙伴行对 actor 是否可见（M7 区域面 **org 维度接线**）。
+
+    判定式（与 M3a 隔离入口同口径，CR-062：商业域读面对他人一律 404）：
+
+    - **admin**（平台托管方）⇒ 可见（全量，本轮口径不变）；
+    - **平台身份非 admin**（``org_id IS NULL``，存量账号）⇒ 可见性**逐位不变**
+      ——仍是「只见本人申请的」（本轮不越界改写既有语义）；
+    - **企业身份**（``org_id = X``）⇒ 可见「本人申请的」**或**「申请人在
+      **同一企业 org** 内」的伙伴行——**跨 org 不可见**。
+    """
+    if actor.role == ROLE_ADMIN:
+        return True
+    if row.applicant_user_id == actor.id:
+        return True
+    if actor.org_id is None:
+        # 平台身份非 admin：既有语义不变（只见本人申请的）
+        return False
+    applicant_org_id = _applicant_org_id(session, row.applicant_user_id)
+    if applicant_org_id is None:
+        return False
+    return applicant_org_id in (actor.org_id, INTERNAL_ORG_ID)
+
+
 def get_partner(session: Session, *, actor: User, partner_id: object) -> dict[str, Any]:
-    """伙伴详情（admin 全量；非 admin 只见本人申请的，他人 404 不透 existence）。"""
+    """伙伴详情（admin 全量；企业身份可见同 org；跨 org／他人 404 不透 existence）。"""
     row = _load_partner(session, partner_id)
-    if actor.role != ROLE_ADMIN and row.applicant_user_id != actor.id:
+    if not _partner_visible_to(session, row, actor):
         raise _error("partner_not_found", "区域伙伴不存在。", 404)
     return serialize_partner(row)
 
 
 def list_partners(session: Session, *, actor: User) -> list[RegionalPartner]:
-    """读面：admin 全量；非 admin 只见本人申请的伙伴。"""
+    """读面：admin 全量；企业身份可见同 org；平台身份非 admin 只见本人申请的。
+
+    **M7 区域面 org 维度接线**（零新列零新表——org 归属经
+    ``applicant_user_id`` → ``users.org_id`` 推导，见 ``_applicant_org_id``）。
+    """
     if actor.role == ROLE_ADMIN:
         return list(session.scalars(select(RegionalPartner).order_by(RegionalPartner.applied_at)))
+    if actor.org_id is None:
+        # 平台身份非 admin：既有语义逐位不变（只见本人申请的）
+        return list(
+            session.scalars(
+                select(RegionalPartner)
+                .where(RegionalPartner.applicant_user_id == actor.id)
+                .order_by(RegionalPartner.applied_at)
+            )
+        )
+    # 企业身份：本人申请的 ＋ 同 org 其他成员申请的
+    same_org_applicants = list(
+        session.scalars(
+            select(User.id).where(User.org_id.in_((actor.org_id, INTERNAL_ORG_ID)))
+        )
+    )
     return list(
         session.scalars(
             select(RegionalPartner)
-            .where(RegionalPartner.applicant_user_id == actor.id)
+            .where(
+                (RegionalPartner.applicant_user_id == actor.id)
+                | (RegionalPartner.applicant_user_id.in_(same_org_applicants))
+            )
             .order_by(RegionalPartner.applied_at)
         )
     )

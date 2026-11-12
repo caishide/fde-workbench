@@ -45,6 +45,12 @@ from fde_api.commercial.models import (
     CommercialRevenueLedger,
     CommercialSplitRule,
 )
+from fde_api.commercial.org_read_scope import (
+    VIS_CROSS_ENTERPRISE,
+    VIS_OTHER,
+    resource_visibility,
+    visible_user_ids_query,
+)
 from fde_api.commercial.service import CommercialServiceError
 from fde_api.dispatch.models import (
     DeliveryPackage,
@@ -778,13 +784,27 @@ def list_revenue_entries(
     status: object = None,
     limit: object = 100,
 ) -> dict[str, Any]:
-    """科目列表（本人只见自己的；admin 见全量）——「三类科目分别可查」。"""
+    """科目列表（本人只见自己的；admin 见全量）——「三类科目分别可查」。
+
+    **M6 org 隔离接线**：非 admin 的企业身份用户，可见集合收敛为
+    「本 org（＋平台内部桶）成员的科目行」——本企业成员互相可见，别家企业
+    的科目行**不外泄**（行归属经 ``subject_user_id``／``payee_user_id``
+    → ``users.org_id`` 推导，零迁移零新列）。
+    """
     statement = select(CommercialRevenueLedger)
     if actor.role != ROLE_ADMIN:
-        statement = statement.where(
-            (CommercialRevenueLedger.subject_user_id == actor.id)
-            | (CommercialRevenueLedger.payee_user_id == actor.id)
-        )
+        visible_ids = visible_user_ids_query(actor)
+        if visible_ids is not None:
+            # 企业身份：SQL 下推 org 谓词（红线 10——不在 SQL 后再加 Python 过滤）
+            statement = statement.where(
+                CommercialRevenueLedger.subject_user_id.in_(visible_ids)
+                | CommercialRevenueLedger.payee_user_id.in_(visible_ids)
+            )
+        else:
+            statement = statement.where(
+                (CommercialRevenueLedger.subject_user_id == actor.id)
+                | (CommercialRevenueLedger.payee_user_id == actor.id)
+            )
     if subject_type is not None:
         if subject_type not in REVENUE_SUBJECT_TYPES:
             raise _error("invalid_subject_type", "subject_type 必须是三类科目之一。")
@@ -795,7 +815,16 @@ def list_revenue_entries(
         statement = statement.where(CommercialRevenueLedger.status == status)
     if subject_user_id is not None:
         if actor.role != ROLE_ADMIN and subject_user_id != actor.id:
-            raise _error("commercial_ledger_forbidden", "只能查看本人科目记录。", 403)
+            # **M6 org 隔离**（与上面列表级谓词**同语义**——M3a 规格 §2 硬要求：
+            # 对象级与列表级不一致 ⇒ 详情 403 / 列表可见的幽灵行）：
+            # - 企业身份读**别家企业**账号 ⇒ 404（不确认主体存在，M3a §3.5）；
+            # - 企业身份读**同企业**账号 ⇒ 放行（本企业成员互相可见）；
+            # - **平台身份**读他人 ⇒ 沿用既有 403（存量回归面零变化）。
+            visibility = resource_visibility(session, actor, subject_user_id)
+            if visibility == VIS_CROSS_ENTERPRISE:
+                raise _error("revenue_entry_not_found", "科目行不存在。", 404)
+            if visibility == VIS_OTHER:
+                raise _error("commercial_ledger_forbidden", "只能查看本人科目记录。", 403)
         statement = statement.where(CommercialRevenueLedger.subject_user_id == subject_user_id)
     try:
         limit_value = int(str(limit))
@@ -821,8 +850,19 @@ def get_revenue_entry(
     row = session.get(CommercialRevenueLedger, entry_id)
     if row is None:
         raise _error("revenue_entry_not_found", "科目行不存在。", 404)
-    if actor.role != ROLE_ADMIN and actor.id not in (row.subject_user_id, row.payee_user_id):
-        raise _error("commercial_ledger_forbidden", "只能查看本人科目记录。", 403)
+    if actor.role != ROLE_ADMIN:
+        if actor.id not in (row.subject_user_id, row.payee_user_id):
+            # **M6 org 隔离**（与列表级谓词**同语义**——M3a 规格 §2 硬要求）：
+            # - 企业身份读**别家企业**的行 ⇒ 404（不确认资源存在，M3a §3.5）；
+            # - 企业身份读**同企业**的行 ⇒ 放行（本企业成员互相可见）；
+            # - **平台身份**读他人 ⇒ 沿用既有 403（存量回归面零变化）。
+            visibility = resource_visibility(
+                session, actor, row.subject_user_id, row.payee_user_id
+            )
+            if visibility == VIS_CROSS_ENTERPRISE:
+                raise _error("revenue_entry_not_found", "科目行不存在。", 404)
+            if visibility == VIS_OTHER:
+                raise _error("commercial_ledger_forbidden", "只能查看本人科目记录。", 403)
     return {"entry": serialize_revenue_entry(row)}
 
 
@@ -845,14 +885,27 @@ def reconcile_revenue(
     if subject_type is not None and subject_type not in REVENUE_SUBJECT_TYPES:
         raise _error("invalid_subject_type", "subject_type 必须是三类科目之一。")
     if subject_user_id is not None and actor.role != ROLE_ADMIN and subject_user_id != actor.id:
-        raise _error("commercial_ledger_forbidden", "只能对账本人科目记录。", 403)
+        # **M6 org 隔离**（与列表级谓词同语义）：企业身份读别家企业账号 ⇒ 404；
+        # 同企业账号 ⇒ 放行；平台身份读他人 ⇒ 沿用既有 403。
+        visibility = resource_visibility(session, actor, subject_user_id)
+        if visibility == VIS_CROSS_ENTERPRISE:
+            raise _error("revenue_entry_not_found", "科目行不存在。", 404)
+        if visibility == VIS_OTHER:
+            raise _error("commercial_ledger_forbidden", "只能对账本人科目记录。", 403)
 
     statement = select(CommercialRevenueLedger).where(CommercialRevenueLedger.status != "voided")
     if actor.role != ROLE_ADMIN:
-        statement = statement.where(
-            (CommercialRevenueLedger.subject_user_id == actor.id)
-            | (CommercialRevenueLedger.payee_user_id == actor.id)
-        )
+        visible_ids = visible_user_ids_query(actor)
+        if visible_ids is not None:
+            statement = statement.where(
+                CommercialRevenueLedger.subject_user_id.in_(visible_ids)
+                | CommercialRevenueLedger.payee_user_id.in_(visible_ids)
+            )
+        else:
+            statement = statement.where(
+                (CommercialRevenueLedger.subject_user_id == actor.id)
+                | (CommercialRevenueLedger.payee_user_id == actor.id)
+            )
     if subject_type is not None:
         statement = statement.where(CommercialRevenueLedger.subject_type == subject_type)
     if subject_user_id is not None:
