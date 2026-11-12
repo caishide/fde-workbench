@@ -32,6 +32,6 @@
 - manifest 形状：`entrypoint`／`format`／`source`／`batch`／`rewrite`／`license_ledger`／`use_boundaries`（when_to_use＋human_boundary）／`references`（required_reading＋authoritative_sources）／`form`／`knowledge_discipline`；`license_ledger` 指向本目录的 LICENSE-AUDIT.md。
 - 正文直接粘贴本批对应 md 全文，key 用上表的 key。
 
-## 已入库状态
+## 已入库状态（2026-11-12 实测）
 
-待代录后回填（见 `docs/skill-library/PROGRESS.md` 台账节）。
+PR #382 squash `d2f233c1`＝fork/main 顶（CI 4 job × 双事件 8 runs 全绿，API 全读 check-runs 终审 success=8／失败=0）后执行导入——POST 全 201、3 条 id（`6863cd96`／`4bc83d2f`／`d56e5692`）、正文逐字节一致＋服务端结构化指纹逐位一致（ALL MATCH: True）、个人技能 18→21 条（batch-1/2/3/4 十八条未受影响）、公共 14 条未变、容器临时文件清零。台账回填随本节同批入库。
