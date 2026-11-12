@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     agent_allowed_egress: str = ""
     # 上下文脱敏禁区词（逗号分隔，真实客户名等）：命中即拒绝发起 run（fail-closed）
     agent_forbidden_terms: str = ""
+    # L 线 L3：agent 上下文知识片段（server/seeds/lessons.json 静态经验条目层）
+    # ——能力腿＋项目行业过滤，条数与单条字符上限防上下文膨胀（agents/lessons.py）。
+    agent_lessons_enabled: bool = True
+    agent_lessons_top_k: int = Field(default=3, ge=0)
+    agent_lessons_max_chars: int = Field(default=400, ge=1)
     # ⑦ 宿主通道出站限制面（任务书 §9 方案 A，2026-11-11 拍板实施）：开启后
     # 宿主 spawn zcode 前起本地正向代理（仅监听 127.0.0.1 临时端口），把
     # HTTP(S)_PROXY/NO_PROXY 注入进程 env；白名单外 CONNECT 一律 403 拒绝，

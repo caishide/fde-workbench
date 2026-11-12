@@ -61,6 +61,7 @@ from fde_api.agents.context import (
 from fde_api.agents.execution_authorization import ExecutionGrantError
 from fde_api.agents.execution_grants import authorize_host_run
 from fde_api.agents.execution_policy import normalize_workspace_under_root, policy_snapshot
+from fde_api.agents.lessons import knowledge_snippets_for
 from fde_api.agents.workspace_files import (
     _CONTEXT_FILE,
     _MANIFEST_FILE,
@@ -387,7 +388,11 @@ def _render_context(
             capability=agent.capability_tier,
             confirmed_items=items,
             template_skeleton=skeleton,
-            knowledge_snippets=(),
+            # L 线 L3：静态经验条目层接线（能力腿＋项目行业过滤＋top-K 截断；
+            # 装载异常运行时软失败回落空片段——见 agents/lessons.py）。
+            knowledge_snippets=knowledge_snippets_for(
+                project=project, agent=agent, settings=settings
+            ),
             forbidden_terms=forbidden_terms,
         )
     except SanitizationError as error:

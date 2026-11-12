@@ -1,0 +1,131 @@
+{
+  "version": "lessons-v1",
+  "entries": [
+    {
+      "id": "LESS-SOP-001",
+      "capability_tags": [
+        "agent.module.presales"
+      ],
+      "text": "接单先过资格判据：止步清单命中两条以上即拒单或改结构——资格判据不过不往下走，产能不投给不该做的单。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S0-A §3/§S1",
+      "sha256": "74bdf8fff37739ab51a4ed1447eb9e11e62d8aae7a2b026c6070c78f1f901c5d"
+    },
+    {
+      "id": "LESS-SOP-002",
+      "capability_tags": [
+        "agent.module.presales"
+      ],
+      "text": "选客户先分层：按预算与成熟度分象限，优先服务匹配象限；不匹配的单宁可不做，不硬凑。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S0-A §2",
+      "sha256": "3f21987383999c7b3113d78000167c9ce398eb03d099c8ebf8721133f0203bc3"
+    },
+    {
+      "id": "LESS-SOP-003",
+      "capability_tags": [
+        "agent.module.presales"
+      ],
+      "text": "免费与付费边界成文：免费止于锚点演示，演示证明能力、不免费交付改造——免费成为常态等于没有商业模式。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S2 免费与付费四档边界表",
+      "sha256": "4c24421f107476cb07cbf39b5a9a6f0c33f822fb29e23a8f5259f6d623ba9568"
+    },
+    {
+      "id": "LESS-SOP-004",
+      "capability_tags": [
+        "agent.module.solution"
+      ],
+      "text": "进深度方案前先答本土约束三问：企业性质、审批链、最后一公里定义权——定义权由谁说了算必须成文，不靠事后默认。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S3-0",
+      "sha256": "cf89c310ac9331b3393883c8bf9af0509cc1237764f8b27d3cc55c71d14cced9"
+    },
+    {
+      "id": "LESS-SOP-005",
+      "capability_tags": [
+        "agent.module.deployment"
+      ],
+      "text": "现场调研与试点用时间盒：到期即收口复盘再续期——时间盒是机制不是提示，无期限的调研等于无调研。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S6/S8",
+      "sha256": "ce1658e37493f906d5e9601508582f6b5f520d6cefa0f97cbabe29fce9a24be4"
+    },
+    {
+      "id": "LESS-SOP-006",
+      "capability_tags": [
+        "agent.module.solution"
+      ],
+      "text": "过度设计在方案期刹车：先砍非必要项、再锁最小可验收集——上游刹车比交付期拦范围蔓延更省钱。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S7.5-0",
+      "sha256": "c569a2148d8fc98a1daf672b9c0e6091d421639af8f43549593846f5d90a1c11"
+    },
+    {
+      "id": "LESS-SOP-007",
+      "capability_tags": [
+        "agent.module.knowledge"
+      ],
+      "text": "访谈素材入库必须带来源标注：缺来源等于没记——每个结论要能回溯到具体访谈对象与凭证。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S3 采集纪律",
+      "sha256": "729d4d5e59d39e5cef52b4ccc70ac03889c0aa3169592b6032da27fff7f0aa23"
+    },
+    {
+      "id": "LESS-SOP-008",
+      "capability_tags": [
+        "agent.module.acceptance"
+      ],
+      "text": "验收证据只收指针＋指纹成对登记，原件留在项目工作目录——系统里对得上，现场拿得走。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S9 验收段；实践口径见 docs/v3.1/pilot-复盘-somwyn-2026-11-09.md",
+      "sha256": "1b5fff185202d22bd13478131710280d1d0f9ec229effd1e16f8f201dae0e752"
+    },
+    {
+      "id": "LESS-SOP-009",
+      "capability_tags": [
+        "agent.quality_guard"
+      ],
+      "text": "关键节点决策分离：谁提交、谁审阅、谁拍板须为不同人；提交人自审自拍在流程上不成立。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S9；实践口径见 docs/v3.1/pilot-复盘-somwyn-2026-11-09.md D1",
+      "sha256": "4db902e3f3cbd2afd74942880898910cd64f3a9547f6e54b0b88f6bd42bfaf47"
+    },
+    {
+      "id": "LESS-SOP-010",
+      "capability_tags": [
+        "agent.quality_guard"
+      ],
+      "text": "失败环节显式留痕：作废要留痕、新版本另起；删除重传掩盖过程按事故处理，不算修复。",
+      "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S9；实践口径见 docs/v3.1/pilot-复盘-somwyn-2026-11-09.md",
+      "sha256": "29e30d1b4d1348c77d3c1565b31f250f1458ac6929a9cdb082dbfb672f5862b7"
+    },
+    {
+      "id": "LESS-DIAG-001",
+      "capability_tags": [
+        "agent.module.solution"
+      ],
+      "text": "技术选型先算账：订阅计费随规模膨胀，自托管成本结构不同——决策依据是成本结构账，不是直觉与传闻。",
+      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
+      "sha256": "3b733e2f0513a992c13f4ab625d1af0266bd5288bb55cc68c3162c65f2aa8ea1"
+    },
+    {
+      "id": "LESS-DIAG-002",
+      "capability_tags": [
+        "agent.quality_guard"
+      ],
+      "text": "结果数字不编造：未跑通环节如实写未跑通；客户未提供的数字留待提供，不替客户填数。",
+      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
+      "sha256": "192588273df4cc8bbceb24c21382d25fe84ca9f95b4058eb51fe4800a9c7081a"
+    },
+    {
+      "id": "LESS-DIAG-003",
+      "capability_tags": [
+        "agent.module.presales"
+      ],
+      "text": "建议按客户真实阶段给语境：选型期的建议不写成实施完成——未发生的事不用完成时态。",
+      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
+      "sha256": "deea83145fe811635789433c1660ce8a30942c8b1e3b59fb21efa367d59c8a8b"
+    },
+    {
+      "id": "LESS-DIAG-004",
+      "capability_tags": [
+        "agent.module.solution"
+      ],
+      "text": "从高频、高成本、可验证的窄流程切入：先确定性校验后生成增强，不先建通用大平台。",
+      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
+      "sha256": "0ad1f431eed9b9ad802ba6e50790e357fea2bc50f5b5a0a870b0c880baa4e6db"
+    }
+  ]
+}
