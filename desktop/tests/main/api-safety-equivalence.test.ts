@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   BODY_SAMPLES,
+  HEADER_SAMPLES,
   METHOD_SAMPLES,
   PATH_SAMPLES,
 } from "../shared/api-safety-samples"
@@ -35,7 +36,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 async function desktopJudge(
-  kind: "path" | "method" | "body",
+  kind: "path" | "method" | "body" | "header",
   input: string | unknown,
 ): Promise<boolean> {
   const { createApiRequestHandler } = await loadApiModule()
@@ -58,6 +59,7 @@ async function desktopJudge(
   }
   try {
     if (kind === "body") base.body = input
+    if (kind === "header") base.headers = input
     await request(base)
     return fetchCalled
   } catch (error) {
@@ -69,6 +71,26 @@ async function desktopJudge(
     }
     throw error
   }
+}
+
+// 获客诊断 T-14a 公开面：空 accessToken＝免注册请求，桥不下发 Authorization
+// 头；自定义头 x-diagnostic-token 原样透传（fetch 桩捕获请求头断言）。
+async function desktopFetchHeaders(
+  requestInput: Record<string, unknown>,
+): Promise<Record<string, string>> {
+  const { createApiRequestHandler } = await loadApiModule()
+  const seenHeaders: Record<string, string> = {}
+  const fakeFetch: typeof fetch = ((_url, init) => {
+    Object.assign(seenHeaders, (init?.headers ?? {}) as Record<string, string>)
+    return Promise.resolve(jsonResponse({ data: {}, error: null }))
+  }) as typeof fetch
+  const request = createApiRequestHandler({
+    apiBaseUrl: API_BASE_URL,
+    fetch: fakeFetch,
+    timeoutMs: 5_000,
+  })
+  await request(requestInput)
+  return seenHeaders
 }
 
 describe("CR-071 桌面 IPC 桥等价性判定（共享样本集）", () => {
@@ -100,5 +122,35 @@ describe("CR-071 桌面 IPC 桥等价性判定（共享样本集）", () => {
         `body 样本判定漂移：${sample.note}`,
       ).toBe(sample.expected)
     }
+  })
+
+  it("自定义请求头样本：判定与 expected 逐位一致（T-14a 校验项 9）", async () => {
+    for (const sample of HEADER_SAMPLES) {
+      const actual = await desktopJudge("header", sample.headers)
+      expect(
+        actual,
+        `桌面桥自定义头判定漂移：${sample.note}`,
+      ).toBe(sample.expected)
+    }
+  })
+
+  it("公开面：空 accessToken 不下发 Authorization，自定义头原样透传", async () => {
+    const headers = await desktopFetchHeaders({
+      path: "/api/v1/diagnostics/questionnaire",
+      method: "GET",
+      accessToken: "",
+      headers: { "x-diagnostic-token": "diag_tok-123" },
+    })
+    expect(headers.authorization).toBeUndefined()
+    expect(headers["x-diagnostic-token"]).toBe("diag_tok-123")
+  })
+
+  it("非空 accessToken 仍下发 Bearer（公开面扩展零回归）", async () => {
+    const headers = await desktopFetchHeaders({
+      path: "/api/v1/projects",
+      method: "GET",
+      accessToken: "probe-token",
+    })
+    expect(headers.authorization).toBe("Bearer probe-token")
   })
 })

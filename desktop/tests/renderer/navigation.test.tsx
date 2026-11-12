@@ -76,6 +76,8 @@ describe("role-aware project workbench navigation", () => {
     ["#help", { kind: "help" }],
     ["#extensions", { kind: "extensions" }],
     ["#account", { kind: "account" }],
+    ["#diagnostics", { kind: "public-diagnostics" }],
+    ["#diagnostics/share/AbC_123-x", { kind: "public-diagnostics-share", shareToken: "AbC_123-x" }],
   ])("parses the supported route %s", (hash, route) => {
     expect(parseHashRoute(hash)).toEqual(route)
   })
@@ -111,8 +113,59 @@ describe("role-aware project workbench navigation", () => {
     "#projects/%2D",
     "#projects/.",
     "#unknown",
+    // 获客诊断 T-14a：分享令牌非法形态不确认路由存在（回落 projects）
+    "#diagnostics/share/",
+    "#diagnostics/share/..",
+    "#diagnostics/share/bad token",
+    "#diagnostics/share/a%20b",
+    "#diagnostics/share/%E0%A4%A",
   ])("rejects an ambiguous or malformed route %s", (hash) => {
     expect(parseHashRoute(hash)).toEqual({ kind: "projects" })
+  })
+
+  it("renders the public diagnostic flow for unauthenticated visitors (T-14a)", async () => {
+    location.hash = "#diagnostics"
+    installBridge(
+      bridge({
+        refresh: vi.fn().mockResolvedValue(ok(null)),
+        apiRequest: vi.fn().mockResolvedValue(
+          ok({ status: 404, data: null, error: { code: "not_found", message: "" } }),
+        ),
+      }),
+    )
+    renderApp(<App />)
+    // 未登录直达 #diagnostics 渲染访客引导页（而非登录页）；部署闸默认关在
+    // 点击「开始测算」后才以「暂未开放」呈现（404 不确认面存在）。
+    expect(await screen.findByRole("heading", { name: "政策补贴测算" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "开始测算" })).toBeVisible()
+    expect(screen.queryByRole("heading", { name: /登录/ })).not.toBeInTheDocument()
+  })
+
+  it("renders the public diagnostic share view for unauthenticated visitors (T-14a)", async () => {
+    location.hash = "#diagnostics/share/tokABC_1"
+    installBridge(
+      bridge({
+        refresh: vi.fn().mockResolvedValue(ok(null)),
+        apiRequest: vi.fn().mockResolvedValue(
+          ok({
+            status: 200,
+            data: {
+              version: "diag-report-v2",
+              generated_at: "2026-11-12T10:00:00+00:00",
+              headline: "现状一句话：报价靠老师傅",
+              findings: [],
+              first_step: null,
+              policy_opportunities: [],
+              loop_completed: { identified: false, located: false, handled: false, written_back: false },
+              notice: "这是诊断摘要。",
+            },
+            error: null,
+          }),
+        ),
+      }),
+    )
+    renderApp(<App />)
+    expect(await screen.findByRole("heading", { name: "现状一句话：报价靠老师傅" })).toBeVisible()
   })
 
   it.each([
