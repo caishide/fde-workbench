@@ -73,3 +73,5 @@ desktop/src/renderer/out/
 desktop/build/icon-old-*
 # 本机 Agent 工具缓存（plans / workflow-drafts / workflow-runs），永不入库
 .zcode/
+# agents 测试假沙箱 run 工作区产物（prime_run RecordingBackend）不入库
+server/agent-workspaces/

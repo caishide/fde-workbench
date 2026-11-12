@@ -2,6 +2,19 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 N5 实施轮：G-02——AI 发起 run 受控提议通道（propose→人工密码确认→落 run；零迁移零新路由＝485/52/153/73 口径不变；api_catalog 96→98，2026-11-12）
+
+任务书 §15 序 7 末位（蔡工授权链「继续实施N4和N5」；差距台账 v1.20 G-02 CLOSED）。★**安全评审必跑（DoD⑤）**：code-review 技能已迁移外部插件 ⇒ 以同等严格度对 diff 只读逐面评审（12 面；AI 审查不执行被审代码）——**发现 C 项真缺口当场闭合**（agents.run_start 的 project_id 在 body，票据 scope 检查原只覆盖 path 参数 ⇒ `_require_run_start_scope_binding` propose+confirm 双侧补齐）。
+
+- **NEW 目录两确认类（api_catalog ENTRIES 96→98）**：`workflows.run_start`＋`agents.run_start` 进 `CONFIRMATION_KEYS`（3→5 值）⇒ risk 3——AI 侧发起即 `awaiting_confirmation`（15min 窗语义零改动），**人工密码确认后才经既有发起路由落 run**；AI 不代发起 run。
+- **api_actions 三闸**：①propose 幂等键闸（`run_start_idempotency_required` 400——取消/重复防护锚点）；②confirm 终态守卫（`run_cancelled_not_revivable` 409——workflows 同键 cancelled 复活洞在 AI 通道封死〔executor.start_run 幂等去重不区分状态〕；agents 无取消路由，failed/timeout/budget_exceeded 同义拦截＝AI 不代重试红线；同键已完成 run 不拦＝幂等重放复用不算重试）；③票据绑定闸（安全评审 C 项，propose+confirm 双侧）。
+- **三样安全清单各有独立反例**：取消语义（propose 后人工取消/失败同键 run ⇒ confirm 409＋零新 run）／幂等键（双 execution_id 同键双确认 ⇒ run 表恰 1 行，第二个走生产幂等 200 复用）／授权绑定（scope≠project propose 403 零落库＋账号停用 confirm 重授权 403＋auth_version 变更 409）。
+- **端到端审计**：requested（confirmation_required/auth_version/scope/execution_id）→started→finished 三事件链，零密码字段；未确认零 run；过期 409；驳回 cancelled 零 run。
+- **测试 NEW `test_ai_run_proposal.py` 16 例**＋**变异三连全红→try/finally 还原→绿**（M1 propose 幂等键闸／M2 confirm 终态守卫／M3 confirm 授权重判）＋邻域回归 5 文件 86 passed；ruff 绿；mypy 官方闸 279 基线不变。
+- **明确不做（任务书边界机械承载）**：不解除 15min 窗／不让 AI 直接执行／提议不可批量确认／不改宿主通道五边界／接管与重试动作永不收编（目录钉 `agents.run_takeover`/`run_retry` 零命中）。
+
+口径：**零迁移零新表零新 Flask 路由**（两条 ENTRIES 指向既有发起路由）＝485 路由/52 蓝图/153 表/73 rev 单头 `b5d9e2f4a7c1` 全不变；**api_catalog ENTRIES 96→98**；宿主人工通道与 automation_approvals 面零变化。
+
 ## [未发布] — AI 原生化 N4 实施轮：G-10/G-11/G-14——评测观察轮＋受控发布通道＋指标复审工单（评测回流闭环三件结构面全落；迁移 72→73＝485/52/153/73，2026-11-12）
 
 任务书 §15 序 5（蔡工显式授权「继续实施N4和N5」；差距台账 v1.19 三条 CLOSED）。差距台账三条：G-10「golden set 不连真实模型；CI 无 AI 评测 job」／G-11「模拟实验室改进链止于 approved，无发布通道」／G-14「metrics v31 七指标无任何自动消费方」。★N4 前提现测注记维持留痕：活库零真实 draft 样本 ⇒ ai-eval 首跑预计 `insufficient_data`——这是协议 v0 的诚实语义（不编造分数），报告即证据，不是缺陷。

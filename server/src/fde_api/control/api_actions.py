@@ -129,12 +129,71 @@ def _authorized(user, spec, parameters, scope=None):
             _project(session, user, {"project_id": scope}, parameters["project_id"])
 
 
+# N5（G-02）：发起 run 走受控提议通道（确认类）。AI 不代发起 run——propose
+# 即 awaiting_confirmation，人工密码确认后才经既有发起路由落 run。
+RUN_START_OPERATIONS = frozenset({"workflows.run_start", "agents.run_start"})
+
+
+def _require_run_start_idempotency_key(operation, body):
+    """propose 闸：发起 run 必须携带幂等键（取消/重复防护的锚点）。"""
+    if operation in RUN_START_OPERATIONS and not (
+        isinstance(body.get("idempotency_key"), str) and body["idempotency_key"].strip()
+    ):
+        raise ControlServiceError(
+            "run_start_idempotency_required",
+            "发起 run 必须携带幂等键（idempotency_key）：确认与取消语义都按它判定。",
+            400)
+
+
+def _require_run_start_scope_binding(operation, parameters, body, scope):
+    """票据绑定闸（安全评审 C 项）：agents.run_start 的 project_id 在 body，
+    _authorized 的 scope 检查只覆盖 parameters.project_id（workflows 腿）——
+    这里补 agents 腿：票据 scope 与 body.project_id 不一致即 403，AI 不得借
+    确认通道发起票据授权范围之外项目的 run。"""
+    if operation != "agents.run_start" or not scope:
+        return
+    if body.get("project_id") != scope:
+        raise ControlServiceError(
+            "forbidden", "操作超出本次项目授权范围。", 403)
+
+
+def _run_start_confirm_guard(session, data):
+    """confirm 闸：同幂等键已终结的 run 不得经确认通道复活（N5 反例①）。
+
+    workflows executor.start_run 的幂等键去重不区分状态——同键 cancelled run
+    会被原样返回（复活洞）。宿主人工通道人看得见状态、无此问题；AI 提议
+    通道在确认时补一刀：workflows 同键存在 cancelled ⇒ 409；agents 无取消
+    路由，终态失败（failed/timeout/budget_exceeded）同义——经 AI 确认重试
+    ＝AI 代重试（红线④），同样 409。请换新幂等键重新发起。同键已完成的
+    run 不拦（幂等重放返回既有结果，生产 200 复用，不算重试）。
+    """
+    key = str((data.get("body") or {}).get("idempotency_key") or "").strip()
+    if not key:
+        raise ControlServiceError(
+            "run_start_idempotency_required", "幂等键缺失，请重新发起操作。", 409)
+    if data["operation"] == "workflows.run_start":
+        from fde_api.workflows.models import WorkflowRun
+        rows = session.scalars(select(WorkflowRun).where(WorkflowRun.idempotency_key == key)).all()
+        blocked = ("cancelled",)
+    else:
+        from fde_api.agents.models import AgentRun
+        rows = session.scalars(select(AgentRun).where(AgentRun.idempotency_key == key)).all()
+        blocked = ("failed", "timeout", "budget_exceeded")
+    if any(row.status in blocked for row in rows):
+        raise ControlServiceError(
+            "run_cancelled_not_revivable",
+            "同幂等键的运行已终结（取消/失败），不能经确认复活或代重试；请换新的幂等键重新发起。",
+            409)
+
+
 def execute_api(*, user, claims, allowed, operation=None, parameters=None, body=None, query=None):
     parameters, body, query = parameters or {}, body or {}, query or {}
     spec = _spec(operation, parameters, body, query)
     if spec["write"] and "workbench.write" not in allowed:
         raise ControlServiceError("forbidden", "本次 AI 执行未获写入授权。", 403)
     _authorized(user, spec, parameters, claims.get("project_id"))
+    _require_run_start_idempotency_key(operation, body)
+    _require_run_start_scope_binding(operation, parameters, body, claims.get("project_id"))
     if not spec["write"]:
         return _invoke(user, spec, parameters, body, query)
     execution_id = claims.get("execution_id")
@@ -269,6 +328,10 @@ def decide_action(user, identifier, password, approve=True):
                 raise ControlServiceError("invalid_password", "当前账号密码不正确。", 403)
             spec = _spec(data["operation"], data["parameters"], data["body"], data["query"])
             _authorized(current, spec, data["parameters"], data.get("scope"))
+            if data["operation"] in RUN_START_OPERATIONS:
+                _require_run_start_scope_binding(
+                    data["operation"], data["parameters"], data["body"], data.get("scope"))
+                _run_start_confirm_guard(session, data)
             if data.get("target_fingerprint") and data["operation"] == "files.deprecate":
                 from fde_api.files.models import ProjectFile
                 target = session.get(ProjectFile, data["parameters"]["file_id"], with_for_update=True)

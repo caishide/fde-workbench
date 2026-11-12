@@ -99,12 +99,20 @@ ENTRIES = [
     ("dispatch.disputes_resolve", "POST", "/api/v1/dispatch/disputes/{dispute_id}/resolve", "人工裁决（结论必填；处罚类动作 100% 人工；可选 close=true 直关；平台侧）", "resolution；可选 close"),
     ("dispatch.simulator_replay", "POST", "/api/v1/dispatch/simulator/replay", "历史包回放打分（当前池×当前规则版本再撮合画像；只读；全链路仿真留 CLI 沙箱库；平台侧）", ""),
     ("dispatch.claim_gates_list", "GET", "/api/v1/dispatch/claim-gates", "城市开闸看板（§6.4 三条件+种子开关逐城可解释明细；只读不翻转开关；平台侧）", ""),
-    # 编程工作台（goal-d4）：agents 只读四条；发起 run/接管/重试属人工授权
-    # 写路径，继续不收（沿门禁三路由先例）
+    # 编程工作台（goal-d4）：agents 读取面只读；N5（G-02）起发起 run 经
+    # 受控提议通道收编（确认类：AI 侧发起即 awaiting_confirmation，人工密码
+    # 确认才真正落 run）；接管/重试仍属人工授权写路径，继续不收（沿门禁
+    # 三路由先例）
     ("agents.list", "GET", "/api/v1/agents", "读取智能体注册表与可用状态（含不可用原因：disabled/adapter_missing/credential_missing）", ""),
     ("agents.run_get", "GET", A + "/runs/{run_id}", "查询 agent run 溯源（状态/成本/降级链/产物 sha256 指纹）", ""),
     ("agents.tool_calls", "GET", A + "/runs/{run_id}/tool-calls", "查询 run 工具调用留痕（denied 明细可过滤）", "decision=allowed|denied 可选"),
     ("agents.cost", "GET", A + "/cost", "查询 agent 成本明细与月度汇总（project 需 project_id；seat/platform 仅系统运维员）", "scope=project|seat|platform，scope=project 时必带 project_id"),
+    # 发起 run 受控提议通道（N5，G-02）：AI 只提议不代发起——propose 即
+    # awaiting_confirmation（15min 窗），人工密码确认后才走既有发起路由落
+    # run；幂等键必填，同键 cancelled 的运行不得经确认复活（409）。宿主
+    # 人工通道零变化。
+    ("workflows.run_start", "POST", P + "/workflows/{definition_id}/runs", "发起工作流运行（确认类：AI 只提议，人工密码确认后才落 run；幂等键必填；已取消的运行不复活）", "idempotency_key 必填；context 可选"),
+    ("agents.run_start", "POST", A + "/{agent_id}/run", "发起智能体 run（确认类：AI 只提议，人工密码确认后才落 run；幂等键必填；已取消的运行不复活）", "project_id 必填,solution_id 可选,difficulty 可选；idempotency_key 必填"),
     # 评审会（goal-d5）：只读三条；召集/发言/收敛属人工收敛写路径不收——
     # 评审结论永远经人工收敛封存，AI 不代拍板（沿门禁与 agents 先例）
     ("meetings.templates", "GET", "/api/v1/meeting-templates", "评审会模板列表（三档门 lite/std/full；T2-lite=守卫+1 模块智能体、2 话轮）", ""),
@@ -136,11 +144,14 @@ EXTERNAL_EFFECT_KEYS = frozenset({
 })
 # 确认类补口（WB-DEF-10）：目录确认面不再只看 DELETE/.archive/.deprecate 后缀；
 # N3c 补一条——AI 建议的终审留痕端点（dispatch.packages_match_ai_decision）
-# 列确认类：AI 不代拍板，AI 侧发起即 awaiting_confirmation，人工密码确认后才落痕
+# 列确认类：AI 不代拍板，AI 侧发起即 awaiting_confirmation，人工密码确认后才落痕；
+# N5（G-02）补两条——发起 workflow/agent run 走受控提议通道（AI 不代发起 run）
 CONFIRMATION_KEYS = frozenset({
     "solutions.export_sow",
     "documents.generate",
     "dispatch.packages_match_ai_decision",
+    "workflows.run_start",
+    "agents.run_start",
 })
 
 
