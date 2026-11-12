@@ -229,6 +229,53 @@ def seat_quota():
 
 
 # ---------------------------------------------------------------------------
+# E11 智能体凭据管理面（2026-11-13）。此前 `agent_credentials` 表**无任何
+# HTTP 路由**（唯一创建点是本地脚本）⇒ 种子 agent 的 credential_ref 全为 null
+# ⇒ run 发起 409 credential_missing。写入只存 Fernet 密文、绝不回显；平台管理面
+# 只认平台身份 ＋ system_operator AI 档（M3b 批次 ①-a 单一判定）。
+# 不进 api_catalog（凭据面同「人工授权写路径」不进目录的红线）。
+# ---------------------------------------------------------------------------
+
+
+@agents_blueprint.get("/credentials")
+@require_auth
+def list_credentials():
+    """凭据清单（只出名字与「是否已配置」，绝不出密文/明文）。"""
+    from fde_api.agents import credentials as credentials_service
+
+    try:
+        return _data(credentials_service.list_credentials(actor=g.current_user))
+    except credentials_service.CredentialsError as error:
+        return credentials_service.error_response_for(error)
+
+
+@agents_blueprint.post("/credentials")
+@require_auth
+def save_credential():
+    """写入/覆盖一条凭据（同名即更新）。明文只在请求内存中出现，落库是密文。"""
+    from fde_api.agents import credentials as credentials_service
+
+    try:
+        return _data(
+            credentials_service.save_credential(actor=g.current_user, payload=_payload())
+        )
+    except credentials_service.CredentialsError as error:
+        return credentials_service.error_response_for(error)
+
+
+@agents_blueprint.delete("/credentials/<name>")
+@require_auth
+def delete_credential(name):
+    """删除一条凭据。"""
+    from fde_api.agents import credentials as credentials_service
+
+    try:
+        return _data(credentials_service.delete_credential(actor=g.current_user, name=name))
+    except credentials_service.CredentialsError as error:
+        return credentials_service.error_response_for(error)
+
+
+# ---------------------------------------------------------------------------
 # P2′① 宿主轮询领取面（§11.3；2026-11-08）。鉴权 = FDE_AGENT_HOST_POLL_TOKEN
 # （X-Host-Poll-Token 头；宿主代理非用户，不走 JWT）。三条写/读面均 fail-closed
 # （开关/令牌未配置 403）。不进 api_catalog（宿主机器面，与 bridge 同族）。

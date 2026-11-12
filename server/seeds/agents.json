@@ -7,8 +7,10 @@
       "name": "质量守卫",
       "capability_tier": "agent.quality_guard",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "评审会质量守卫：只读校验/评分/拦截（PartyMode §4 四类角色之一）"
@@ -18,8 +20,10 @@
       "name": "售前智能体",
       "capability_tier": "agent.module.presales",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：售前结构化输入与问题清单提炼"
@@ -29,8 +33,10 @@
       "name": "方案智能体",
       "capability_tier": "agent.module.solution",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：方案草稿与不可变 SOW 组装"
@@ -40,8 +46,10 @@
       "name": "报价智能体",
       "capability_tier": "agent.module.pricing",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：报价草稿（数值禁区：报价卡系数不进模板，D10 待拍板 ③）"
@@ -51,8 +59,10 @@
       "name": "部署智能体",
       "capability_tier": "agent.module.deployment",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：部署实施与入场条件核对"
@@ -62,8 +72,10 @@
       "name": "验收智能体",
       "capability_tier": "agent.module.acceptance",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：门禁证据 G1–G9 核对与差距项"
@@ -73,8 +85,10 @@
       "name": "知识库智能体",
       "capability_tier": "agent.module.knowledge",
       "sandbox_profile": "default",
-      "allowed_tools": ["read_file"],
-      "credential_ref": null,
+      "allowed_tools": [
+        "read_file"
+      ],
+      "credential_ref": "default",
       "max_cost_units": 0,
       "max_duration_ms": 0,
       "description": "模块智能体：知识片段检索与惯例引用（只讲惯例不开处方）"
