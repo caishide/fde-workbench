@@ -4,29 +4,40 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
 爬扫企业 B 的读面，暴露盘点表外的疑似全局面。**本轮零生产代码改动**——
 若某条读面坐实真实跨 org 越权，按 ADR-M3 :44 登记「待 M0 补充」＋
 `xfail(strict=True)` 待销号，另开轮修，不得顺手改生产代码、不得据此申报
-「安全专项零高危」。
+→「安全专项零高危」。
 
 设计要点（对齐 team-lead 实施规格）：
 
-- ``ROUTES`` 30 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
-  资源 ID 逐条拼出具体路径；企业 A token 打过去须 ``403/404``（或 200 但
-  载荷不含 B 标识）。
+- ``ROUTES`` 37 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
+  资源 ID 逐条拼出具体路径；企业 A token 打过去须 ``403/404``。
 - **双阳性对照**：B 属主 token 同路径须 ``200``（防「全 404」假绿）；
   A 企业内与 B 属主**同角色**的账号仍须 ``403/404``（排除「403 其实由
   角色差异产生」的假绿）。两条都过才算 org 维度真收敛。
-- **完整性钉**：候选面由 ``create_app().url_map`` 动态派生（支持 GET＋
-  路径含模板变量），``candidate - accounted == set()`` 保证「未登记即红」、
-  ``accounted - candidate == set()`` 保证登记不陈旧；**绝不写死 480**、
-  **绝不引用 ``docs/audit/v3-route-inventory.csv`` 作集合**（在途 PR 会
-  改清单，且清单列是 AST 富化产物，CI 只钉 (method,path)）。
-- 排除面逐条登记理由：阳性对照不可行／admin-only 平台面／公开匿名面／
-  内部服务间面／角色面／本轮抽样上限。
+- **候选面动态派生**：``create_app().url_map`` 派生「GET＋路径含模板变量」
+  的全部路由（现测 101 条），**绝不引用 ``docs/audit/v3-route-inventory.csv``
+  作集合**（在途 PR 会改清单，且清单列是 AST 富化产物，CI 只钉
+  (method,path)）；候选面条数只在基线断言处写死本轮实测值。
+- **排除登记结构化**：``_EXCLUSION_RECORDS`` 每条带
+  ``reason``／``exclusion_kind``／``verified_positive_control``／
+  ``sweep_required``／``b_owner_status``／``measured``（三套 token 实测码）。
+- **降级即红（反逃逸闸，本轮新增）**：并集恒等对「把爬扫面降级成排除登记」
+  是不变量，故另配四道闸：
+  ① 条数基线 ``len(ROUTES) == 37``／``len(_EXCLUSION_RECORDS) == 64``；
+  ② **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
+     均被拒」的路由若停留在排除登记里即转红；
+  ③ 排除登记的 ``measured`` 与**现测重测**逐条一致（登记不可伪造、不可陈旧）；
+  ④ 声明与实测一致（``verified_positive_control`` ⇔ B 属主实测 200；
+     ``sweep_required`` ⇔ 三套实测派生），且阳性对照可行者若仍被排除，
+     必须是「角色面」唯一形态。
+  ①②③④ 合起来既挡「删登记」也挡「移出 ROUTES 塞进排除」的双向降级，
+  「移出 1 条 ＋ 移入 1 条」凑平条数同样转红。
 
 覆盖面＝「测试判别力面」：本文件只证明用例在检验跨企业性，不跨面支撑
 git 泄漏面或运行时日志·事件·审计面结论。
 """
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -70,10 +81,9 @@ def _candidate_get_var_routes(app):
         for (method, path) in _actual_routes(app)
         if "GET" in method.split("|") and "<" in path
     }
-
-
-# 本轮实际爬扫的 30 条高风险企业资源读面：key 为 (method, Flask rule)，
+# 本轮实际爬扫的 37 条高风险企业资源读面：key 为 (method, Flask rule)，
 # value 为「用 B 企业资源 ID 拼出具体路径」的构造器。
+# 条数基线由 test_m8_sweep_registry_count_and_semantic_baseline 钉住。
 ROUTES = {
     ("GET", "/api/v1/agents/runs/<run_id>"): lambda w: f"/api/v1/agents/runs/{w['run'].id}",
     ("GET", "/api/v1/agents/runs/<run_id>/tool-calls"): lambda w: f"/api/v1/agents/runs/{w['run'].id}/tool-calls",
@@ -102,86 +112,623 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/ontology/relation-types"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/relation-types",
     ("GET", "/api/v1/projects/<project_id>/ontology/terms"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/terms",
     ("GET", "/api/v1/projects/<project_id>/payments"): lambda w: f"/api/v1/projects/{w['project_b'].id}/payments",
+    ("GET", "/api/v1/projects/<project_id>/presurvey-intake"): lambda w: f"/api/v1/projects/{w['project_b'].id}/presurvey-intake",
     ("GET", "/api/v1/projects/<project_id>/quotes"): lambda w: f"/api/v1/projects/{w['project_b'].id}/quotes",
     ("GET", "/api/v1/projects/<project_id>/requirements"): lambda w: f"/api/v1/projects/{w['project_b'].id}/requirements",
     ("GET", "/api/v1/projects/<project_id>/research/exports/<export_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/research/exports/{w['export'].id}",
+    ("GET", "/api/v1/projects/<project_id>/research/subjects"): lambda w: f"/api/v1/projects/{w['project_b'].id}/research/subjects",
+    ("GET", "/api/v1/projects/<project_id>/solutions"): lambda w: f"/api/v1/projects/{w['project_b'].id}/solutions",
+    ("GET", "/api/v1/projects/<project_id>/tasks"): lambda w: f"/api/v1/projects/{w['project_b'].id}/tasks",
+    ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
+    ("GET", "/api/v1/projects/<project_id>/workflow-runs"): lambda w: f"/api/v1/projects/{w['project_b'].id}/workflow-runs",
+    ("GET", "/api/v1/projects/<project_id>/workflows"): lambda w: f"/api/v1/projects/{w['project_b'].id}/workflows",
 }
+# 候选面中未纳入本轮爬扫的 64 条，逐条结构化登记：
+#   reason                  —— 人读理由（必须含自身实测状态码）
+#   exclusion_kind          —— 硬排除形态（阳性对照不可行/admin-only/
+#                             公开面/内部服务间面/角色面）
+#   verified_positive_control —— B 属主同路径实测 200（阳性对照可行）
+#   sweep_required          —— 实测派生的「必须纳入 ROUTES 爬扫」判别式
+#   b_owner_status          —— B 属主实测状态码（与 measured.b_owner 互锁）
+#   measured                —— 三套 token 实测码（A / 同角色 A / B 属主）
+# 数值口径来自基线 d092c2e 的 A/B/同角色 A 三状态码现测，并由
+# test_m8_exclusion_registry_matches_live_measurement 逐条现测复核。
+_EXCLUSION_RECORDS = {
+    ("GET", "/api/v1/admin/commercial/orgs/<org_id>/ai-budget"): {
+        "reason": "admin-only 平台面，非企业 token 读面：A 实测 403、同角色 A 实测 403、B 属主实测 403；M6 已证 admin 全量可见是平台能力非漏洞",
+        "exclusion_kind": "admin_only",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 403,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
+    },
+    ("GET", "/api/v1/ai/chat/messages/<turn_id>/progress"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/ai/executions/<execution_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/ai/lcsc-runs/<run_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/commercial/enterprise-quota/<subject_key>"): {
+        "reason": "阳性对照不可行：A 实测 400、同角色 A 实测 400、B 属主同路径实测 400（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 400,
+        "measured": {"a": 400, "same_role_a": 400, "b_owner": 400},
+    },
+    ("GET", "/api/v1/commercial/enterprise-spaces/<subject_key>"): {
+        "reason": "阳性对照不可行：A 实测 400、同角色 A 实测 400、B 属主同路径实测 400（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 400,
+        "measured": {"a": 400, "same_role_a": 400, "b_owner": 400},
+    },
+    ("GET", "/api/v1/commercial/opportunities/<opportunity_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/commercial/regional-partners/<partner_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/commercial/revenue-ledger/<entry_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/delivery-plans/<plan_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/diagnostics/leads/claims/<claim_id>"): {
+        "reason": "公开匿名/分享只读面，非企业资源读面：A 实测 404、同角色 A 实测 404、B 属主实测 404",
+        "exclusion_kind": "public_surface",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/diagnostics/share/<share_token>"): {
+        "reason": "公开匿名/分享只读面，非企业资源读面：A 实测 404、同角色 A 实测 404、B 属主实测 404",
+        "exclusion_kind": "public_surface",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/discovery/extractions/<extraction_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/dispatch/packages/<package_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/dispatch/packages/<package_id>/offers"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/document-templates/<version_id>/download-url"): {
+        "reason": "admin-only 平台面，非企业 token 读面：A 实测 403、同角色 A 实测 403、B 属主实测 403；M6 已证 admin 全量可见是平台能力非漏洞",
+        "exclusion_kind": "admin_only",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 403,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
+    },
+    ("GET", "/api/v1/extensions/plugins/<plugin_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/extensions/skills/<skill_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/extensions/skills/<skill_id>/versions"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/handover-packages/<package_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/industry-templates/<template_id>/versions"): {
+        "reason": "角色面而非 org 隔离面：A 实测 403、同角色 A 实测 200、B 属主实测 200（同角色 A 亦可达 ⇒ org 隔离不适用，阳性对照不具 org 判别力）",
+        "exclusion_kind": "role_surface",
+        "verified_positive_control": True,
+        "sweep_required": False,
+        "b_owner_status": 200,
+        "measured": {"a": 403, "same_role_a": 200, "b_owner": 200},
+    },
+    ("GET", "/api/v1/industry-templates/versions/<version_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/internal/dsh/approvals/<approval_id>"): {
+        "reason": "内部 DSH 服务间面（静态令牌服务间面），非企业 token 读面：A 实测 401、同角色 A 实测 401、B 属主实测 401",
+        "exclusion_kind": "internal_service",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 401,
+        "measured": {"a": 401, "same_role_a": 401, "b_owner": 401},
+    },
+    ("GET", "/api/v1/internal/dsh/executions/<run_id>/knowledge"): {
+        "reason": "内部 DSH 服务间面（静态令牌服务间面），非企业 token 读面：A 实测 401、同角色 A 实测 401、B 属主实测 401",
+        "exclusion_kind": "internal_service",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 401,
+        "measured": {"a": 401, "same_role_a": 401, "b_owner": 401},
+    },
+    ("GET", "/api/v1/interview-minutes/<minutes_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/meeting-templates/<template_id>/checklist"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/meetings/<meeting_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/meetings/<meeting_id>/cost"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/meetings/<meeting_id>/minutes"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/documents/<document_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/documents/<document_id>/versions"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/documents/<version_id>/download-url"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/documents/<version_id>/preview-url"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/files/<version_id>/download-url"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/files/<version_id>/preview-url"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/files/items/<file_id>/versions"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/guidance-analyses/<analysis_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology/change-sets/<change_set_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology/terms/<term_id>/impact"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/quotes/<quote_key>/draft"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/research/forms"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 409（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 409,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 409},
+    },
+    ("GET", "/api/v1/projects/<project_id>/research/forms/<form_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 409（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 409,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 409},
+    },
+    ("GET", "/api/v1/projects/<project_id>/research/subjects/<subject_id>/memo"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 400（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 400,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 400},
+    },
+    ("GET", "/api/v1/projects/<project_id>/research/subjects/<subject_id>/personal-memos"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 400（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 400,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 400},
+    },
+    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>/health"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>/review-trail"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/tasks/<task_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/workflow-runs/<run_id>"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/proposals/<proposal_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/regression/results/<result_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/regression/suites/<suite_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/runs/<run_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/runs/<run_id>/evaluation"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/runs/<run_id>/trace"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/scenarios/<scenario_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/simulation/scenarios/<scenario_id>/versions"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/skills/<skill_id>/document"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/templates/<template_id>/versions/<version_id>/research-forms"): {
+        "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 403, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/test-executions/<execution_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/test-plans/<plan_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/transcript-drafts/<draft_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/translator/translations/<translation_id>"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/users/<user_id>/ai-access"): {
+        "reason": "admin-only 平台面，非企业 token 读面：A 实测 403、同角色 A 实测 403、B 属主实测 403；M6 已证 admin 全量可见是平台能力非漏洞",
+        "exclusion_kind": "admin_only",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 403,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
+    },
+}
+# 人类可读视图（由 _EXCLUSION_RECORDS 派生，不单独维护，避免两处失同步）
+_EXCLUDED_WITH_REASON = {route: rec["reason"] for route, rec in _EXCLUSION_RECORDS.items()}
 
-# 候选面中未纳入本轮爬扫的 71 条，逐条登记理由（「未登记即红」的另一半）。
-# 理由分类均来自 D:/test/fde-wt-m8 基线 d092c2e 的 A/B/同角色 A 三状态码实测。
-_EXCLUDED_WITH_REASON = {
-    ("GET", "/api/v1/admin/commercial/orgs/<org_id>/ai-budget"): "admin-only 平台面（B 属主亦 403）：M6 已证 admin 全量可见是平台能力非漏洞",
-    ("GET", "/api/v1/ai/chat/messages/<turn_id>/progress"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/ai/executions/<execution_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/ai/lcsc-runs/<run_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/commercial/enterprise-quota/<subject_key>"): "阳性对照不可行：B 属主亦 400（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/commercial/enterprise-spaces/<subject_key>"): "阳性对照不可行：B 属主亦 400（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/commercial/opportunities/<opportunity_id>"): "阳性对照不可行：B 属主亦 404（商机需企业确认前置状态，全 404 假绿风险）",
-    ("GET", "/api/v1/commercial/regional-partners/<partner_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/commercial/revenue-ledger/<entry_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/delivery-plans/<plan_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/diagnostics/leads/claims/<claim_id>"): "公开获客诊断匿名认领面，非企业资源读面；B 属主亦 404",
-    ("GET", "/api/v1/diagnostics/share/<share_token>"): "公开分享只读面，非企业资源读面；B 属主亦 404",
-    ("GET", "/api/v1/discovery/extractions/<extraction_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/dispatch/packages/<package_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/dispatch/packages/<package_id>/offers"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/document-templates/<version_id>/download-url"): "admin-only 平台面（A/B 均 403），非企业资源读面",
-    ("GET", "/api/v1/extensions/plugins/<plugin_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/extensions/skills/<skill_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/extensions/skills/<skill_id>/versions"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/handover-packages/<package_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/industry-templates/<template_id>/versions"): "角色面而非 org 隔离面：同角色 A 账号即 200（403 由角色差异产生，非跨企业收敛）",
-    ("GET", "/api/v1/industry-templates/versions/<version_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/internal/dsh/approvals/<approval_id>"): "内部 DSH 服务间面（A/B 均 401，静态令牌服务间面），非企业 token 读面",
-    ("GET", "/api/v1/internal/dsh/executions/<run_id>/knowledge"): "内部 DSH 服务间面（A/B 均 401，静态令牌服务间面），非企业 token 读面",
-    ("GET", "/api/v1/interview-minutes/<minutes_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/meeting-templates/<template_id>/checklist"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/meetings/<meeting_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/meetings/<meeting_id>/cost"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/meetings/<meeting_id>/minutes"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/projects/<project_id>/documents/<document_id>"): "阳性对照不可行：B 属主亦 404（需先建文档），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/documents/<document_id>/versions"): "阳性对照不可行：B 属主亦 404（需先建文档），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/documents/<version_id>/download-url"): "阳性对照不可行：B 属主亦 404（需先建文档版本），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/documents/<version_id>/preview-url"): "阳性对照不可行：B 属主亦 404（需先建文档版本），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/files/<version_id>/download-url"): "阳性对照不可行：B 属主亦 404（需先建文件版本），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/files/<version_id>/preview-url"): "阳性对照不可行：B 属主亦 404（需先建文件版本），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/files/items/<file_id>/versions"): "阳性对照不可行：B 属主亦 404（需先建文件），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/guidance-analyses/<analysis_id>"): "阳性对照不可行：B 属主亦 404（需先建分析记录），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/ontology/change-sets/<change_set_id>"): "阳性对照不可行：B 属主亦 404（需先建变更集），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/ontology/terms/<term_id>/impact"): "阳性对照不可行：B 属主亦 404（需先建术语），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/presurvey-intake"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/quotes/<quote_key>/draft"): "阳性对照不可行：B 属主亦 404（需先建报价草稿），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/research/forms"): "阳性对照不可行：B 属主亦 409（需模板绑定前置状态），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/research/forms/<form_id>"): "阳性对照不可行：B 属主亦 409（需模板绑定前置状态），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/research/subjects"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/research/subjects/<subject_id>/memo"): "阳性对照不可行：B 属主亦 400（需 memo 前置状态），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/research/subjects/<subject_id>/personal-memos"): "阳性对照不可行：B 属主亦 400（需 memo 前置状态），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/solutions"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>"): "阳性对照不可行：B 属主亦 404（需先建方案），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>/health"): "阳性对照不可行：B 属主亦 404（需先建方案），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/solutions/<solution_id>/review-trail"): "阳性对照不可行：B 属主亦 404（需先建方案），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/tasks"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/tasks/<task_id>"): "阳性对照不可行：B 属主亦 404（需先建任务），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/test-plans"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/workflow-runs"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/projects/<project_id>/workflow-runs/<run_id>"): "阳性对照不可行：B 属主亦 404（需先建工作流运行），全 404 假绿风险",
-    ("GET", "/api/v1/projects/<project_id>/workflows"): "本轮抽样面上限 30 条；已实测 A/同角色 A ∈ {403,404} 且 B=200，留待后续轮扩面",
-    ("GET", "/api/v1/simulation/proposals/<proposal_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/regression/results/<result_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/regression/suites/<suite_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/runs/<run_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/runs/<run_id>/evaluation"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/runs/<run_id>/trace"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/scenarios/<scenario_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/simulation/scenarios/<scenario_id>/versions"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/skills/<skill_id>/document"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/templates/<template_id>/versions/<version_id>/research-forms"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/test-executions/<execution_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/test-plans/<plan_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/transcript-drafts/<draft_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/translator/translations/<translation_id>"): "阳性对照不可行：B 属主亦 404（全 404 假绿风险），本轮夹具无该资源前置状态",
-    ("GET", "/api/v1/users/<user_id>/ai-access"): "admin-only 平台面（A/B 均 403，用户 AI 授权查询），非企业资源读面",
-}
+# org 维度收敛的状态码（A / 同角色 A 被拒时只接受这两个码）
+_ORG_BLOCK_CODES = (403, 404)
+
+# 排除登记允许的五类形态（软排除＝阳性对照可行但未排；硬排除＝下面五类）
+_EXCLUSION_KINDS = frozenset(
+    {
+        "positive_control_infeasible",
+        "admin_only",
+        "public_surface",
+        "internal_service",
+        "role_surface",
+    }
+)
+
+
+def _derived_must_sweep(measured):
+    """实测派生「必须纳入 ROUTES 爬扫」。
+
+    判别式＝B 属主同路径 200（阳性对照可行）且 A 与同角色 A 均被 org 收敛
+    （403/404）——此时该路由是货真价实的 org 隔离面，停留在排除登记里就是
+    「降级逃逸」，必须转红。
+    """
+    return (
+        measured["b_owner"] == 200
+        and measured["a"] in _ORG_BLOCK_CODES
+        and measured["same_role_a"] in _ORG_BLOCK_CODES
+    )
+
+
+def _measurement_ids(world):
+    """排除登记重测用的 ID 映射：已知资源用真实 ID，未知资源用随机 hex。"""
+    return {
+        "project_id": world["project_b"].id,
+        "org_id": world["org_b"].id,
+        "user_id": world["user_b"].id,
+        "export_id": world["export"].id,
+        "form_id": world["form"].id,
+        "subject_id": world["subject"].id,
+        "run_id": world["run"].id,
+        "conversation_id": world["conversation"].id,
+        "action_id": world["action_id"],
+        "template_id": uuid4().hex,
+        "version_id": uuid4().hex,
+        "document_id": uuid4().hex,
+        "file_id": uuid4().hex,
+        "task_id": uuid4().hex,
+        "quote_key": uuid4().hex[:8],
+        "analysis_id": uuid4().hex,
+        "change_set_id": uuid4().hex,
+        "term_id": uuid4().hex,
+        "solution_id": uuid4().hex,
+        "meeting_id": uuid4().hex,
+        "minutes_id": uuid4().hex,
+        "plan_id": uuid4().hex,
+        "package_id": uuid4().hex,
+        "extraction_id": uuid4().hex,
+        "execution_id": uuid4().hex,
+        "proposal_id": uuid4().hex,
+        "result_id": uuid4().hex,
+        "suite_id": uuid4().hex,
+        "scenario_id": uuid4().hex,
+        "translation_id": uuid4().hex,
+        "plugin_id": uuid4().hex,
+        "skill_id": uuid4().hex,
+        "subject_key": uuid4().hex[:8],
+        "partner_id": uuid4().hex,
+        "entry_id": uuid4().hex,
+        "opportunity_id": uuid4().hex,
+        "claim_id": uuid4().hex,
+        "share_token": uuid4().hex,
+        "approval_id": uuid4().hex,
+        "draft_id": uuid4().hex,
+        "turn_id": uuid4().hex,
+    }
+
+
+def _build_measurement_path(rule, ids):
+    """把规则里的模板变量换成具体 ID（未知变量用随机 hex）。"""
+    return re.sub(r"<([^>]+)>", lambda m: str(ids.get(m.group(1), uuid4().hex)), rule)
 
 
 def _b_markers(world):
@@ -295,6 +842,8 @@ def m8_world(db_session):
         "user_a_lead": user_a_lead,
         "user_b": user_b,
         "project_b": project_b,
+        "subject": subject,
+        "form": form,
         "export": export,
         "run": run,
         "conversation": conversation,
@@ -337,9 +886,14 @@ def test_m8_cross_enterprise_a_token_cannot_read_b_resource(
 
 
 def test_m8_sweep_surface_covers_every_candidate_get_read_face(app):
-    """完整性钉：候选面 ≡ ROUTES ∪ 排除登记；未登记即红、陈旧登记即红。"""
+    """完整性钉：候选面 ≡ ROUTES ∪ 排除登记；未登记即红、陈旧登记即红。
+
+    注：并集恒等对「把爬扫面降级成排除登记」是不变量（移出 ROUTES 后并集
+    不变），故「降级即红」由另外两道语义闸承担（条数+实测基线、排除登记
+    现测重测），见下两条用例。
+    """
     candidate = _candidate_get_var_routes(app)
-    accounted = set(ROUTES) | set(_EXCLUDED_WITH_REASON)
+    accounted = set(ROUTES) | set(_EXCLUSION_RECORDS)
     assert candidate - accounted == set(), (
         "发现未登记的 GET 读面（须纳入 ROUTES 或补排除理由）：",
         sorted(candidate - accounted),
@@ -348,13 +902,11 @@ def test_m8_sweep_surface_covers_every_candidate_get_read_face(app):
         "登记面已陈旧（url_map 中不再存在）：",
         sorted(accounted - candidate),
     )
-    assert all(reason.strip() for reason in _EXCLUDED_WITH_REASON.values()), (
-        "排除登记必须逐条给出非空理由"
+    assert set(ROUTES).isdisjoint(_EXCLUSION_RECORDS), (
+        "同一条路由不得既被爬扫又被排除：",
+        sorted(set(ROUTES) & set(_EXCLUSION_RECORDS)),
     )
 
-
-def test_m8_swept_routes_are_real_get_rules(app):
-    """ROUTES 必须是 create_app().url_map 里真实存在的 GET 规则（防 stale）。"""
     actual = _actual_routes(app)
     assert set(ROUTES) <= actual, (
         "ROUTES 含不存在的路由：",
@@ -362,26 +914,115 @@ def test_m8_swept_routes_are_real_get_rules(app):
     )
     assert all(method == "GET" for method, _ in ROUTES)
 
+    assert all(reason.strip() for reason in _EXCLUDED_WITH_REASON.values()), (
+        "排除登记必须逐条给出非空理由"
+    )
+    for route, rec in _EXCLUSION_RECORDS.items():
+        codes = {str(code) for code in rec["measured"].values()}
+        missing = sorted(code for code in codes if code not in rec["reason"])
+        assert not missing, (
+            route,
+            "排除理由必须包含自身实测状态码",
+            missing,
+            rec["reason"],
+        )
 
-def test_m8_route_builders_fully_substitute_template_variables(m8_world):
-    """每条 ROUTES 的构造器必须把模板变量全部换成真实 B 资源 ID。"""
+
+def test_m8_sweep_registry_count_and_semantic_baseline():
+    """条数基线 ＋ 语义基线：让「移出 ROUTES ＋ 移入排除登记」的双向降级转红。
+
+    ① 条数基线（本轮现算实测值，不沿用历史数）；
+    ② 声明与实测一致（verified_positive_control / sweep_required /
+       b_owner_status 与 measured 三套实测码互锁）；
+    ③ **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
+       均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
+    ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
+    """
+    assert len(ROUTES) == 37, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(_EXCLUSION_RECORDS) == 64, (
+        "排除登记条数基线被改动：",
+        len(_EXCLUSION_RECORDS),
+    )
+
+    for route, rec in _EXCLUSION_RECORDS.items():
+        measured = rec["measured"]
+        assert rec["exclusion_kind"] in _EXCLUSION_KINDS, (route, rec)
+        assert rec["b_owner_status"] == measured["b_owner"], (route, rec)
+        assert rec["verified_positive_control"] == (
+            measured["b_owner"] == 200
+        ), (route, rec)
+        assert rec["sweep_required"] == _derived_must_sweep(measured), (route, rec)
+
+    must_sweep = {
+        route
+        for route, rec in _EXCLUSION_RECORDS.items()
+        if _derived_must_sweep(rec["measured"])
+    }
+    assert must_sweep == set(), (
+        "排除登记里存在「阳性对照可行且 org 维度收敛」的路由——必须纳入 ROUTES 爬扫：",
+        sorted(must_sweep),
+    )
+
+    for route, rec in _EXCLUSION_RECORDS.items():
+        if not rec["verified_positive_control"]:
+            continue
+        assert rec["exclusion_kind"] == "role_surface", (route, rec)
+        assert rec["measured"]["same_role_a"] == 200, (route, rec)
+        assert "角色" in rec["reason"], (route, rec["reason"])
+
+
+def test_m8_exclusion_registry_matches_live_measurement(
+    client, db_session, settings, m8_world
+):
+    """排除登记的实测证据必须与现测一致（登记不可伪造、不可陈旧）。
+
+    这是「降级逃逸口」的第二道闸核心：把一条真实爬扫路由从 ROUTES 移进
+    排除登记，就必须同时伪造 ``measured``，而伪造值与现测不符即转红——
+    「移出 1 条 ＋ 移入 1 条」凑平条数也不例外。
+    """
+    # ROUTES 构造器：模板变量必须全部替换成真实 B 资源 ID
     for route, build in ROUTES.items():
         path = build(m8_world)
         assert "<" not in path and ">" not in path, (route, path)
         assert path.startswith("/api/v1/"), (route, path)
 
+    ids = _measurement_ids(m8_world)
+    headers = (
+        _auth(m8_world["user_a"], settings),
+        _auth(m8_world["user_a_lead"], settings),
+        _auth(m8_world["user_b"], settings),
+    )
+    mismatches = []
+    for route, rec in _EXCLUSION_RECORDS.items():
+        path = _build_measurement_path(route[1], ids)
+        live = tuple(client.get(path, headers=hdr).status_code for hdr in headers)
+        declared = (
+            rec["measured"]["a"],
+            rec["measured"]["same_role_a"],
+            rec["measured"]["b_owner"],
+        )
+        if live != declared:
+            mismatches.append((route, live, declared))
+    assert mismatches == [], (
+        "排除登记的实测证据与现测不符（登记陈旧或被伪造）：",
+        mismatches,
+    )
 
-def test_m8_routes_and_exclusions_are_disjoint():
-    """同一条路由不得既被爬扫又被排除（防止悄悄撤掉一条读面）。"""
-    assert set(ROUTES).isdisjoint(_EXCLUDED_WITH_REASON)
 
+def test_m8_a_token_never_sees_b_resources_in_200_list_surfaces(
+    client, db_session, settings, m8_world
+):
+    """200 列表面：A 企业账号的项目列表与待确认 API-action 清单不得出现 B 标识。
 
-def test_m8_a_project_list_never_contains_b_project_id(client, db_session, settings, m8_world):
-    """200 列表面：A 企业账号的项目列表不得出现 B 企业项目标识。"""
-    owner = client.get("/api/v1/projects", headers=_auth(m8_world["user_b"], settings))
-    assert owner.status_code == 200
+    「或 200 但载荷不含 B 标识」这一形态由本用例承载（参数化爬扫面用严格
+    403/404，使身份/夹具取值的摘除式变异能确定性转红）。
+    """
+    owner_projects = client.get(
+        "/api/v1/projects", headers=_auth(m8_world["user_b"], settings)
+    )
+    assert owner_projects.status_code == 200
     assert m8_world["project_b"].id in {
-        row["id"] for row in owner.get_json()["data"]["items"]
+        row["id"] for row in owner_projects.get_json()["data"]["items"]
     }
 
     response = client.get("/api/v1/projects", headers=_auth(m8_world["user_a"], settings))
@@ -389,16 +1030,15 @@ def test_m8_a_project_list_never_contains_b_project_id(client, db_session, setti
     items = response.get_json()["data"]["items"]
     assert m8_world["project_b"].id not in {row["id"] for row in items}
 
-
-def test_m8_a_pending_actions_never_contains_b_action(client, db_session, settings, m8_world):
-    """200 列表面：A 企业账号的待确认 API-action 清单不得出现 B 企业操作。"""
-    owner = client.get("/api/v1/ai/actions", headers=_auth(m8_world["user_b"], settings))
-    assert owner.status_code == 200
+    owner_actions = client.get(
+        "/api/v1/ai/actions", headers=_auth(m8_world["user_b"], settings)
+    )
+    assert owner_actions.status_code == 200
     assert m8_world["action_id"] in {
-        row["id"] for row in owner.get_json()["data"]["items"]
+        row["id"] for row in owner_actions.get_json()["data"]["items"]
     }
 
-    response = client.get("/api/v1/ai/actions", headers=_auth(m8_world["user_a"], settings))
-    assert response.status_code == 200
-    identifiers = {row["id"] for row in response.get_json()["data"]["items"]}
+    actions = client.get("/api/v1/ai/actions", headers=_auth(m8_world["user_a"], settings))
+    assert actions.status_code == 200
+    identifiers = {row["id"] for row in actions.get_json()["data"]["items"]}
     assert m8_world["action_id"] not in identifiers
