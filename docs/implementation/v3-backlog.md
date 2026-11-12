@@ -638,13 +638,14 @@
   - **桌面**：NEW `transcripts/TranscriptDraftsPanel.tsx` 挂 overview tab guidanceSlot（presurvey 录入卡旁）——本地文件导入（只读文本进表单，原件永不上传）、草稿列表/详情（正文+复核清单徽标）、弃置、晋升表单（canManage 显隐同构）、纪要正式库列表/详情；加载失败 fail-静默（教训 51：不与页面级 alert 抢道），动作错误 alert 呈现。
   - **测试**：服务端 NEW `test_transcript_drafts.py` 8 例（代号化/fail-closed/权限 403-404-401/列表形状/晋升三要素四连 422+未来时戳 422/墓碑/T+7 清理幂等/零外键隔离钉）；变异三连全红→还原绿（摘三要素校验红/代号化改直通红/清理谓词取反红）；桌面 NEW `transcript-drafts-panel.test.tsx` 7 例。
 
-### T-A10 桌面产物预览面（AgentsConsole 产物行内容预览/下载）— **✅ 排期已拍板（2026-11-11 N1 挂账销项轮交互拍板：排入下一实施轮；实施授权＝下一轮开工时给，本行只销「排期未定」，非实施）**
+### T-A10 桌面产物预览面（AgentsConsole 产物行内容预览/下载）— **✅ DONE（2026-11-12 N3c 实施轮与 G-15 合批交付；进程空间裁决落地＝宿主裸跑态全量可用＋容器态显式 404 `artifact_content_unavailable` 降级不静默）**
 - **排期裁决（2026-11-11，蔡工交互拍板「拍板排期到下轮实施」）**：**下一实施轮**（桌面轮）实施；进程空间裁决随实施轮拍板（宿主裸跑全量＋容器态降级为推荐项，不预设——与登记原句一致）。本行状态：PROPOSED → **排期已定（下轮）**，仍不构成本轮实施授权。
 - **登记缘由（实弹暴露）**：N1 人工链辅助轮腿①「产物人工接受」执行时实证——桌面 AgentsConsole 产物行**只有指针/类型/指纹/复核按钮，无内容预览/下载**（服务端亦无产物内容读取路由，`server/src/fde_api/agents/routes.py` 仅 PATCH 复核写面）⇒ 复核人被迫离开应用到文件系统看原件（宿主工作区 `D:\test\agent-workspaces\<run_id>\output\`）；「看到什么就复核什么」的语义在桌面内不闭合——复核人实际复核的是**工作区原件**，库内行只是它的指针+指纹（sha256 逐件一致可验，但桌面内无法自证）。
 - 目标：AgentsConsole 运行详情产物表支持**就地预览**（doc 类走既有 Markdown 渲染器 `MemoMarkdown` 同构、config 类 JSON 高亮）＋**原件下载**（落本地用户目录，原件永不进仓库/数据库）。
 - 前置事实：产物原件存于**宿主工作区**（`FDE_LOCAL_STORAGE_ROOT`/宿主裸跑态 `FDE_AGENT_WORKSPACE_ROOT`），**容器内 server 读不到宿主路径**（T-Z1 裁定 A 前提）⇒ 内容读取路由在容器部署态必然 404/降级（与 T-Z1 的 `adapter_missing` 同族降级语义）；**实施裁决项＝读取面在哪个进程空间**（容器内仅当原件已登记进服务端存储根时可用／宿主裸跑态才全量可用——登记时须拍板，不预设）。
 - 边界（红线）：原件=客户语境资料，**只走本地指针+下载，永不进 git 历史与远端**（与「门禁证据只存 source_uri+sha256 指针」同款纪律）；预览不新增外发通道。
 - 复杂度：**M**。依赖：无（桌面增量；服务端读取面形态待拍板）。**本条为登记，不排期、不实施**——排期与进程空间裁决归后续桌面轮。
+- **实施留痕（2026-11-12 N3c 轮）**：服务端 NEW `agents/artifact_content.py`＋`GET /api/v1/agents/runs/<run_id>/artifacts/<artifact_id>/content`——逐字节 sha256 对库行指纹自证（不符 503 fail-closed，「看到什么就复核什么」在桌面内闭合）；防穿越〔绝对路径/.. /逃逸 output/〕404；**容器态原件不在场显式 404 不静默不伪造**；超限 413 不截断；can_manage 与复核动作同尺；只读零写零事件（预览不新增外发通道）；不进 api_catalog。桌面 AgentsConsole 产物行预览（doc 走 MemoMarkdown）/收起/下载（blob 本地落盘，原件永不进仓库/数据库）。测试 NEW `test_agent_artifact_content.py` 8 例＋变异 M4（摘指纹闸）红→还原→绿＋桌面预览/下载/404/非 canManage 四态 vitest。红线自证：原件=客户语境资料，只走本地指针+下载。
 
 ### T-B1 agent_artifacts 扩列（diff/test_results）+ 产物→`handover_packages` 闭环 — **✅ DONE（扩列半 goal-tb tb2 #189 / 封包半 goal-tb tb4，2026-11-07，§拍板闸 6⑪ 委托拍板解封）**
 - 目标：run 产物从「有 sha256 但无结构化内容」变成可封包的结项交付物。

@@ -12,6 +12,7 @@ from flask import Blueprint, g, jsonify, request
 from fde_api.agents import service
 from fde_api.auth.decorators import require_auth
 from fde_api.errors import error_response
+from fde_api.extensions import db
 
 agents_blueprint = Blueprint("agents", __name__, url_prefix="/api/v1/agents")
 
@@ -159,6 +160,30 @@ def set_artifact_reviewed(run_id, artifact_id):
             actor=g.current_user, run_id=run_id, artifact_id=artifact_id, reviewed=reviewed
         )
     )
+
+
+@agents_blueprint.get("/runs/<run_id>/artifacts/<artifact_id>/content")
+@require_auth
+def get_artifact_content(run_id, artifact_id):
+    """T-A10 产物内容读取（can_manage；N3c 轮合批交付）：桌面就地预览/下载。
+
+    逐字节 sha256 对库行指纹自证（不符 503 fail-closed）；原件不在服务端
+    可见工作区（容器部署态常态）⇒ 显式 404 不静默；只读零写零事件——
+    预览不新增外发通道。不进 api_catalog（复核面沿业务对象纪律）。
+    """
+    from fde_api.agents.artifact_content import ArtifactContentError, read_artifact_content
+
+    session = db.session()
+    try:
+        return _data(
+            read_artifact_content(
+                session, actor=g.current_user, run_id=run_id, artifact_id=artifact_id
+            )
+        )
+    except ArtifactContentError as error:
+        return error_response(error.code, error.message, error.status, None)
+    finally:
+        session.close()
 
 
 @agents_blueprint.get("/cost")

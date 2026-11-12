@@ -948,3 +948,60 @@ def list_claim_gates_route():
         return jsonify({"data": data, "error": None})
     finally:
         session.close()
+
+
+@blueprint.post("/packages/<package_id>/match-ai")
+@require_auth
+def match_ai_route(package_id: str):
+    """AI 派单建议腿（N3c G-06；admin/project_lead——与 match 同闸）：返件式零落库。
+
+    并列双来源、闸唯一：响应＝规则腿（``_stage_b_ranked`` 单一真身，不落
+    dispatch_offers）＋AI 建议并列；采纳＝人工按建议走既有指派/发布（责任
+    主体记人在那条链），显式采纳/驳回留痕走 decision 端点。本路由**进
+    api_catalog**（dispatch 域「路由不得脱册」钉：建议腿只返件，采纳仍走
+    既有通道）；AI 通道故障按 DSH 同尺映射（503 可重试 / 409 终态）；
+    Stage A 零过闸不调 AI（零烧费）。
+    """
+    from fde_api.control.ai_server_client import DSHRuntimeError
+    from fde_api.dispatch import recommend_ai
+
+    session = db.session()
+    try:
+        with session.begin():
+            data = recommend_ai.recommend_dispatch_package(
+                session, actor=g.current_user, package_id=package_id
+            )
+        return jsonify({"data": data, "error": None})
+    except DSHRuntimeError as error:
+        return error_response(error.code, error.public_message, 503 if error.retryable else 409)
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()
+
+
+@blueprint.post("/packages/<package_id>/match-ai/decision")
+@require_auth
+def match_ai_decision_route(package_id: str):
+    """AI 建议采纳/驳回留痕（N3c G-06 判据「可被人工采纳/驳回」的机械面）。
+
+    纯事件端点：只落 operation_events（adopted/rejected），零业务写——
+    采纳的指派动作仍须走既有 offers/publish。本路由**进 api_catalog 且列
+    确认类**（AI 不代拍板：AI 侧发起即待人工密码确认，确认后才落痕）。
+    """
+    from fde_api.dispatch import recommend_ai
+
+    session = db.session()
+    try:
+        with session.begin():
+            data = recommend_ai.record_recommendation_decision(
+                session,
+                actor=g.current_user,
+                package_id=package_id,
+                payload=_json_body(),
+            )
+        return jsonify({"data": data, "error": None})
+    except DispatchServiceError as error:
+        return _dispatch_error(error)
+    finally:
+        session.close()

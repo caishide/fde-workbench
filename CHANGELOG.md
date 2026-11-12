@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 N3c 实施轮：G-06 AI 派单推荐（返件式）＋G-15 桌面跨 run 编排面＋T-A10 产物内容读取面
+
+- **这一轮解决什么**：任务书 §15 序 4——BP §1.3a L3 定义里的「AI 参与派单推荐」缺通道（差距台账 G-06）；「人管理 Agent」缺跨 run 呈现面（G-15）；复核人被迫离开桌面看产物原件（backlog T-A10，N1 人工链实弹暴露）。三件同轮合批，四项交互拍板留痕可推翻（match-ai 独立路由返件式／decision 纯事件端点／AgentsConsole 升级编排面／T-A10 合批）。
+- **G-06（NEW `dispatch/recommend_ai.py`＋`POST /api/v1/dispatch/packages/<id>/match-ai`，返件式）**：规则腿与 AI 建议腿**并列双来源、闸唯一**——match_package 的 Stage B 排序循环抽取为 `_stage_b_ranked` 单一真身双腿共用（行为零变化经 r5 回归证）；AI 建议只读叠加**零 dispatch_offers 落库**＝AI 不自动派单、采纳后责任主体仍记人；场景 C 不调 AI 零烧费；契约失败即时重试一次 409 `ai_dispatch_contract_failed`；输出端兜底脱敏；`dispatch_ai_recommended` 事件携 sha256/计数/版本不带建议全文；提示词只有不透明 user_id 零姓名。
+- **采纳/驳回＝NEW `POST .../match-ai/decision` 纯事件端点**：只落 operation_events（`dispatch_ai_recommendation_adopted/_rejected`），零业务写——采纳后派单仍走既有人工通道。
+- **G-15＋T-A10 桌面（`AgentsConsole.tsx` 升级跨 run 编排面，零服务端新写路径）**：run 表多选＋「终审队列（跨 run）」汇总未复核产物＋批量标记复核（逐件既有 PATCH 复核写面＝终审不可绕过）＋产物预览（doc 走 MemoMarkdown）＋原件下载；服务端 NEW `agents/artifact_content.py`＋`GET /runs/<run_id>/artifacts/<artifact_id>/content`——逐字节 sha256 对库行指纹自证（不符 503 fail-closed）；防穿越 404；**容器态原件不在场显式 404 `artifact_content_unavailable` 不静默不伪造**（进程空间裁决＝宿主裸跑态全量可用）；超限 413 不截断；can_manage 同尺；只读零写零事件。
+- **测试与验证**：服务端 NEW `test_dispatch_ai_recommend.py` 12 例（含 api_catalog 双钉）＋`test_agent_artifact_content.py` 8 例＋`test_ai_api_actions.py` +1（AI 侧 decision 确认流钉：发起即 awaiting_confirmation）；桌面 `agents-console.test.tsx` +5（13/13，typecheck 绿＋全量 93 文件绿）；**变异 M1–M4 红→字节级还原→绿**（候选闭集／decision 事件／J-1 登记／指纹闸）；服务端广域回归 13 文件 87 例绿；mypy 279 基线不变；J-1 提示词白名单 +1。
+- **口径**：+3 路由 **480→483**（dispatch 两路由进 api_catalog〔建议腿只返件不落库；decision 端点列**确认类** risk 3＝AI 不代拍板，须人工密码确认〕／artifacts content 路由不进〔复核面纪律〕；基线＝插队融合树 fork/main `8b858d7`——本基点 `6efe666` 之上插队 #373/#375/#378/#379/#380/#374/#377）／52 蓝图／153 表／71 rev 单头 `a3e8c2f6b9d4`（本轮零迁移零新表）；`api_catalog` 94→**96 ENTRIES**；审计清单三件套合并树重生成（route CSV +3 行）＋archify architecture 图重生成＋preview 整页实拍（防陈旧闸绿）；pytest：基线 3205 收集〔main run 43129411451〕＋本轮 +21（12+8+1）⇒ PR head run 43146775588 实测 **3226 收集 = 3218 passed + 8 skipped**；插队融合合并树（T-15 +13／L2 #374 +32／L3 #377 +11）本地现测 **3282 收集**，终值以本 PR CI 为准。
+- **挂账／下一轮**：N4（§15 序 5，CI eval 非必需观察轮，需 N3a 真实样本）——**排期≠实施授权**；桌面变更 ⇒ 便携版 **r39** 随 PR 交付（r38 已被 T-15 #375 消耗——序号写前现测；fde-package-verify asar marker 验证）。
 ## [未发布] — 获客诊断第二十轮·T-15 渠道接线：渠道链接注册表＋服务端 partner 归因推导＋桌面渠道链接管理面板（NEW `diagnostics/channel_links.py`＋3 路由 477→480＋迁移 `a3e8c2f6b9d4` 70→71，2026-11-12）
 
 - **这一轮解决什么**：T-11 立了三档归因（A 渠道报备／B 认领转化／C 平台留存），但 **A 档的来源凭证此前没有任何产生机制**——`source_type='partner'` 只能由客户端声明，等于「谁说自己带来的就记谁的」；T-15 补上**渠道链接 ID 体系**：平台发链接 → 渠道方把链接标识带进来 → 服务端**机械推导**归因，零手工记账（P-2）。
