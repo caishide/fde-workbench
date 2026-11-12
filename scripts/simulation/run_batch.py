@@ -38,6 +38,22 @@ def _refuse_inside_repo(out_dir: Path) -> None:
         raise SystemExit(f"输出目录落在本仓内，拒绝（真相层专用）：{root}")
 
 
+API_PREFIX = "/api/v1"
+
+
+def _api_base(raw: str) -> str:
+    """把主机根归一成 API 根（带 ``/api/v1`` 前缀）。
+
+    蓝图前缀写在 ``simulation_blueprint = Blueprint(..., url_prefix="/api/v1/simulation")``
+    ——只写 ``{base}/simulation/...`` 会 404（前缀整段缺失）。此处统一补齐，
+    已带前缀者原样保留（幂等）。
+    """
+    base = raw.rstrip("/")
+    if base.endswith(API_PREFIX):
+        return base
+    return base + API_PREFIX
+
+
 def _http(method: str, url: str, *, token: str, body: dict | None = None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
@@ -163,7 +179,7 @@ def main() -> int:
     parser.add_argument("--out-dir", required=True, help="JSONL 输出目录（真相层，仓内即拒）")
     args = parser.parse_args()
 
-    base = args.base_url.rstrip("/")
+    base = _api_base(args.base_url)
     token = Path(args.token_file).read_text(encoding="utf-8").strip()
     out_dir = Path(args.out_dir)
     _refuse_inside_repo(out_dir)
