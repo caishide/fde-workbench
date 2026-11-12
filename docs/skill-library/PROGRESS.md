@@ -135,3 +135,10 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 录入口径：v2 六条同 key 重存自动开新版本（服务端按整份发布材料指纹判定，版本行不可变可回滚）；batch-1 四张（01/03/04/05）当年蔡工桌面端亲手录入，key 以库内现值为准——代录前列表回读按 name 匹配，匹配不上即挂起该条并登记，不猜 key；新卡两条（industry-learning-30day／onboarding-coaching-sop）同通道首存。
 - 待回填：已入库状态（PR 合并＋代录 id＋双校验）随合并后代录结果另起回填 PR（batch-7 同款两段式）。
 - 已入库（2026-11-12 实测）：PR [#395](https://github.com/caishide/fde-workbench/pull/395) squash 合并 `3646883`（CI 8 check-runs 全绿，API 终审）；代录通道 8 条全 201——v2 六条同 id 开新版本（presales-diagnosis-framework＝d19f5e45／pricing-proposal-structure＝8b4128ee／weekly-value-report-triage＝05a3baec／handover-closeout-checklist＝fbdb6735／value-narrative-draft＝c3062589／go-live-decision-checklist＝b0cbcda5，current_version 1→2，版本行不可变可回滚）＋新卡两条（industry-learning-30day＝bef1c901／onboarding-coaching-sop＝687204a6）；双校验 ALL MATCH（结构化指纹 content_sha256＋document 回读正文逐字节 7500/7309/6670/6453/5223/4939/3941/4345 B）；skill_definitions personal 26→28、public 14 未变；容器 /tmp ks8* 清零＋ready 200。详见 batch-8/README「已入库状态」。台账回填随本节同批入库。
+### L 线导入轮交付（2026-11-12，卡24 127 例＋文集 B 演练 7 件→训练场）
+
+- 立项：用户 2026-11-12 授权消解挂账（卡24 127 例 JSON→L 线导入轮＋训练场挂账）；登记件 `docs/skill-library/import-round-1/README.md`（指针＋sha256＋许可快照，包体全在真相层 `交付场景导入包\round2\`，与 L1 首批目录隔离）。
+- 134 包＝卡24 127 例（MIT 案例库条目独立改编：94 例工作流起草＋33 例主会话同契约补齐；企业名代号化、源效果数字零写入）＋文集 B 演练篇 7 件（无许可严档仅思想，全原创场景）。`status='draft'` 全量，建行与激活恒人工。
+- 四闸两轮独立实测全过：`import_cases.py` 主会话本地 134 包／失败 0＋工作流复核轮 134/134 零发现；装配器 127/127（missing=0 invalid=0）。
+- 许可现测：案例库 MIT 远端 HEAD `ef55012`＝本地零漂移；文集 B license 404 严档维持。
+- 挂账销号：训练场挂账（文集 B 演练篇不作素材直转→转正式场景走 import_cases 闸门＋import_card_v1 重写）与卡24 127 例导入排期两条销号；⛔禁入清单与诊断评测答案零触碰。
