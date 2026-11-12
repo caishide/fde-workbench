@@ -77,6 +77,7 @@ describe("role-aware project workbench navigation", () => {
     ["#extensions", { kind: "extensions" }],
     ["#account", { kind: "account" }],
     ["#diagnostics", { kind: "public-diagnostics" }],
+    ["#diagnostics/sample", { kind: "public-diagnostics-sample" }],
     ["#diagnostics/share/AbC_123-x", { kind: "public-diagnostics-share", shareToken: "AbC_123-x" }],
   ])("parses the supported route %s", (hash, route) => {
     expect(parseHashRoute(hash)).toEqual(route)
@@ -166,6 +167,24 @@ describe("role-aware project workbench navigation", () => {
     )
     renderApp(<App />)
     expect(await screen.findByRole("heading", { name: "现状一句话：报价靠老师傅" })).toBeVisible()
+  })
+
+  it("renders the public diagnostic sample report for unauthenticated visitors (T-13′)", async () => {
+    location.hash = "#diagnostics/sample"
+    installBridge(
+      bridge({
+        refresh: vi.fn().mockResolvedValue(ok(null)),
+        apiRequest: vi.fn().mockResolvedValue(
+          ok({ status: 404, data: null, error: { code: "not_found", message: "" } }),
+        ),
+      }),
+    )
+    renderApp(<App />)
+    // 示例报告页是纯静态展示面——未登录直达也渲染，且带角标与「非实时」声明。
+    expect(await screen.findByRole("heading", { name: "诊断报告长什么样" })).toBeVisible()
+    expect(screen.getByText("示例案例 · 据公开案例整理")).toBeVisible()
+    expect(screen.getByText("示例内容 · 非实时诊断结果")).toBeVisible()
+    expect(screen.queryByRole("heading", { name: /登录/ })).not.toBeInTheDocument()
   })
 
   it.each([

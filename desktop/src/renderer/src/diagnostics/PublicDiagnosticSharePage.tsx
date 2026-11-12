@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 
 import { BRAND_NAME } from "../../../shared/brand"
 import { DIAGNOSTIC_SHARE_READ_URL, publicApiRequest, type ShareView } from "./publicDiagnosticApi"
+import { stageLabel } from "./ReportView"
 
 /**
  * 诊断报告分享只读页（**公开面**：可入 URL 的只读凭证）。
@@ -82,7 +83,7 @@ export function PublicDiagnosticSharePage({ shareToken }: { shareToken: string }
             <ul className="diag-findings">
               {view.findings.map((finding) => (
                 <li key={finding.id}>
-                  <strong>{finding.stage}</strong>
+                  <strong>{finding.stage ? stageLabel(finding.stage) : "—"}</strong>
                   <span>{finding.title}</span>
                 </li>
               ))}

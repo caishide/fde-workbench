@@ -256,6 +256,12 @@ describe("获客诊断访客界面（公开面）", () => {
     expect(sessionCall?.body).toEqual({})
   })
 
+  it("首屏带「先看示例报告」入口（只读样例页，不采集访客信息）", async () => {
+    render(<PublicDiagnosticPage />)
+    const link = await screen.findByRole("link", { name: "先看示例报告" })
+    expect(link).toHaveAttribute("href", "#diagnostics/sample")
+  })
+
   it("首屏必填预检：缺必填不上传，提示缺的题", async () => {
     const user = userEvent.setup()
     render(<PublicDiagnosticPage />)
@@ -422,6 +428,16 @@ describe("获客诊断访客界面（公开面）", () => {
     await user.click(await screen.findByRole("button", { name: "开始测算" }))
     expect(await screen.findByRole("heading", { name: "诊断服务暂未开放" })).toBeVisible()
     expect(calls.find((item) => item.path.endsWith("/sessions"))).toBeUndefined()
+  })
+
+  it("闸关时仍给示例报告入口（示例页是静态展示面，不依赖诊断服务开闸）", async () => {
+    routeError("GET /api/v1/diagnostics/questionnaire", 404, "not_found", "")
+    const user = userEvent.setup()
+    render(<PublicDiagnosticPage />)
+    await user.click(await screen.findByRole("button", { name: "开始测算" }))
+    expect(await screen.findByRole("heading", { name: "诊断服务暂未开放" })).toBeVisible()
+    const entry = screen.getByRole("link", { name: "先看示例报告" })
+    expect(entry).toHaveAttribute("href", "#diagnostics/sample")
   })
 })
 

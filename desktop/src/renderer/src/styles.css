@@ -2575,3 +2575,18 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .diag-share-link { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--brand-blue); border-radius: var(--radius); background: var(--brand-blue-soft); }
 .diag-share-link code { word-break: break-all; font-size: var(--font-caption); color: var(--text); }
 .diag-share-notice { color: var(--muted); }
+
+/* 工具内示例报告（获客诊断 T-13′）：角标 + 非实时声明 + 案例切换 */
+.diag-sample-notice { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--warning-border); border-radius: var(--radius); background: var(--warning-soft); }
+.diag-sample-notice-title { margin: 0 0 6px; color: var(--warning-ink); font-weight: 600; }
+.diag-sample-notice ul { margin: 0; padding-left: 20px; color: var(--warning-ink); }
+.diag-sample-notice li + li { margin-top: 4px; }
+.diag-sample-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.diag-sample-meta { display: grid; gap: 6px; }
+.diag-sample-badge { display: inline-block; width: fit-content; margin: 0; padding: 3px 10px; border: 1px solid var(--warning-border); border-radius: 999px; background: var(--warning-soft); color: var(--warning-ink); font-size: var(--font-caption); }
+.diag-sample-title { margin: 0; }
+.diag-sample-summary { margin: 0; color: var(--muted); }
+.diag-sample-attribution { margin: 0; color: var(--muted); font-size: var(--font-caption); }
+.diag-sample-note { margin: 0; color: var(--muted-strong); }
+.diag-sample-entry { text-decoration: none; }
+a.primary-button, a.secondary-button { text-decoration: none; }

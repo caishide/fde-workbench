@@ -20,11 +20,11 @@ import {
   type AssessmentCard,
   type DiagnosticSlot,
   type QuestionnairePayload,
-  type ReportDoc,
   type SessionState,
   type SessionWithToken,
   type ShareLinkPayload,
 } from "./publicDiagnosticApi"
+import { ReportView } from "./ReportView"
 
 /**
  * 获客诊断访客界面（**公开面**：未登录可达；获客诊断 T-14a）。
@@ -286,6 +286,12 @@ export function PublicDiagnosticPage() {
           <p className="eyebrow">{BRAND_NAME} · 政策补贴测算</p>
           <h1>诊断服务暂未开放</h1>
           <p>该服务正在部署准备中，暂未对外开放。开放后可免注册使用。</p>
+          <p>
+            {/* 闸关时也要能看见示例报告——示例页是静态展示面，不依赖诊断服务开闸。 */}
+            <a className="secondary-button diag-sample-entry" href="#diagnostics/sample">
+              先看示例报告
+            </a>
+          </p>
         </header>
       </section>
     )
@@ -323,6 +329,9 @@ export function PublicDiagnosticPage() {
             <button className="primary-button" type="button" onClick={() => void start()} disabled={busy}>
               {busy ? "正在准备…" : "开始测算"}
             </button>
+            <a className="secondary-button diag-sample-entry" href="#diagnostics/sample">
+              先看示例报告
+            </a>
           </div>
         </div>
       ) : null}
@@ -632,93 +641,5 @@ function AssessmentCardView({ card }: { card: AssessmentCard }) {
         </ul>
       </section>
     </div>
-  )
-}
-
-/** 完整报告三层渲染（现状与问题／定位与处置／政策与申报机会）。 */
-function ReportView({ report }: { report: ReportDoc }) {
-  const situation = report.layers.situation
-  const action = report.layers.action
-  const closing = action.closing_loop
-  return (
-    <article className="public-diagnostic-card diag-report">
-      <h2 className="diag-report-headline">{situation.headline}</h2>
-      <section className="diag-section">
-        <h3>现状与问题</h3>
-        <ul className="diag-findings">
-          {situation.findings.map((finding) => (
-            <li key={finding.id}>
-              <strong>{finding.stage}</strong>
-              <span>{finding.problem}</span>
-            </li>
-          ))}
-        </ul>
-        {situation.open_questions.length > 0 ? (
-          <div className="diag-open-questions">
-            <h4>待澄清</h4>
-            <ul>
-              {situation.open_questions.map((question) => (
-                <li key={question}>{question}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </section>
-      <section className="diag-section">
-        <h3>第一步</h3>
-        <p className="diag-first-step">
-          {action.first_step.when}：{action.first_step.what}——产出：{action.first_step.output}
-        </p>
-        {action.actions.length > 0 ? (
-          <ol className="diag-actions">
-            {action.actions.map((item) => (
-              <li key={`${item.finding_id}:${item.action}`}>
-                {item.action}
-                <em>产出：{item.expected_output}</em>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </section>
-      <section className="diag-section">
-        <h3>闭环四步</h3>
-        <ol className="diag-loop">
-          <li>识别：{closing.identified}</li>
-          <li>定位：{closing.located}</li>
-          <li>处置：{closing.handled}</li>
-          <li>回写：{closing.written_back}</li>
-        </ol>
-      </section>
-      {report.layers.policy.opportunities.length > 0 ? (
-        <section className="diag-section">
-          <h3>政策与申报机会</h3>
-          {report.layers.policy.opportunities.map((opportunity) => (
-            <article key={opportunity.policy_id} className="diag-policy-card">
-              <h4>{opportunity.title}</h4>
-              <p className="diag-policy-meta">
-                {opportunity.doc_number} · {opportunity.issued_on}
-              </p>
-              <div className="diag-basis">
-                <p className="diag-basis-original">
-                  <strong>{opportunity.original_basis}</strong>
-                  <span>{opportunity.official_text}</span>
-                </p>
-                <p className="diag-basis-interpretation">
-                  <strong>{opportunity.interpretation_basis}</strong>
-                  <span>{opportunity.our_reading}</span>
-                </p>
-              </div>
-              <p className="diag-policy-meta">
-                出处：<a href={opportunity.official_source_url} target="_blank" rel="noreferrer noopener">{opportunity.official_source_url}</a>
-                （快照 {opportunity.snapshot_date}）
-              </p>
-            </article>
-          ))}
-        </section>
-      ) : null}
-      <p className="diag-report-meta">
-        报告版本 {report.version} · 生成于 {report.generated_at}
-      </p>
-    </article>
   )
 }
