@@ -201,8 +201,16 @@ def main() -> int:
     parser.add_argument("--adapter", choices=("mock", "real"), default="mock")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--model-mode", choices=("stub", "server"), default="stub")
+    parser.add_argument(
+        "--call-interval-seconds",
+        type=float,
+        default=0.2,
+        help="相邻两轮评估调用之间的间隔秒数（默认 0.2；对限流敏感的 provider 建议加大）",
+    )
     parser.add_argument("--out-dir", required=True, help="JSONL 输出目录（真相层，仓内即拒）")
     args = parser.parse_args()
+    if args.call_interval_seconds < 0:
+        raise SystemExit("--call-interval-seconds 不能为负")
 
     base = _api_base(args.base_url)
     token = Path(args.token_file).read_text(encoding="utf-8").strip()
@@ -284,7 +292,7 @@ def main() -> int:
                 f"  [run] {run.get('run_key')} round={eval_round} status={status} "
                 f"model_total={score.get('total_score')} verdict={score.get('verdict')}"
             )
-            time.sleep(0.2)
+            time.sleep(args.call_interval_seconds)
 
     manifest = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

@@ -298,6 +298,44 @@ def test_anchor_must_be_subset_of_scenario(tmp_path):
         _run_cli(tmp_path, "--anchor", "SC-B", "--runs-per-scenario", "1")
 
 
+# ---------------------------------------------------------------------------
+# ③ 节流旗标：--call-interval-seconds（缺省 0.2＝既有行为零变化）
+# ---------------------------------------------------------------------------
+
+
+def _run_cli_capture_sleep(tmp_dir: Path, sleeps: list[float], *extra: str) -> int:
+    with mock.patch.object(run_batch.time, "sleep", side_effect=sleeps.append), mock.patch.object(
+        run_batch, "_resolve_active_scenario", return_value={
+            "id": "sc-1",
+            "scenario_key": "SC-A",
+            "version": 2,
+            "split": "train",
+        }
+    ), mock.patch.object(run_batch, "_run_once", return_value=_fake_run("run-fixed", 42)), mock.patch.object(
+        run_batch, "_evaluate", return_value=None
+    ), mock.patch.object(run_batch, "_evaluation_report", return_value=_fake_report()):
+        return _run_cli(tmp_dir, "--anchor", "SC-A", "--model-mode", "server", *extra)
+
+
+def test_call_interval_default_preserves_legacy_spacing(tmp_path):
+    """缺省 0.2s＝登记改进位之前的固定间隔，零行为变化。"""
+    sleeps: list[float] = []
+    assert _run_cli_capture_sleep(tmp_path, sleeps, "--runs-per-scenario", "3") == 0
+    assert sleeps == [0.2, 0.2, 0.2]
+
+
+def test_call_interval_flag_feeds_sleep_spacing(tmp_path):
+    """对限流敏感的 provider 加大间隔：旗标值逐轮透传给 sleep。"""
+    sleeps: list[float] = []
+    assert _run_cli_capture_sleep(tmp_path, sleeps, "--runs-per-scenario", "3", "--call-interval-seconds", "1.5") == 0
+    assert sleeps == [1.5, 1.5, 1.5]
+
+
+def test_call_interval_rejects_negative(tmp_path):
+    with pytest.raises(SystemExit):
+        _run_cli(tmp_path, "--runs-per-scenario", "1", "--call-interval-seconds", "-1")
+
+
 def test_idempotent_resume_skips_registered_rounds(tmp_path):
     """重跑同一命令不重复取样：幂等键＝(场景, run, 评估轮次)。"""
     calls = {"n": 0}
