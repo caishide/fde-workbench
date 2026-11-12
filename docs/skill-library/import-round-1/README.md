@@ -191,3 +191,8 @@
 - 辅助件指纹：合并批次件 `import-batch-20261112.json` sha `46c6a292247973804f3412dbfe624aba5807e39aeaa64054a9f37df61610e029`；`manifest.json`（逐包指纹与时间戳，转换器生成）。
 - 污染隔离：本轮零接触诊断评测答案（评测答案目录零触碰）；单向阀口径不变（判卷基准只进训练场 judge 面）。
 - **未做（恒人工）**：draft 建行与激活——AI 不代发起、不碰 API；134 包全部 `variant='normal' / source_kind='import' / rubric_version='rubric-v1' / split='train'`，vague/complex 变体留训练场变异机制按需物化。
+
+## 已入库状态（2026-11-12 实测）
+
+- PR：[#400](https://github.com/caishide/fde-workbench/pull/400) 已 squash 合并（`dd67732`），CI 8 check-runs 全绿。
+- 包体持续留真相层 `round2\`（不在仓内）；draft 建行与激活待蔡工按 §4 三步人工执行。
