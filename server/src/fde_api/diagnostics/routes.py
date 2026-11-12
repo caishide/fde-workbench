@@ -80,6 +80,8 @@ def create_session_route():
     channel_ref = body.get("channel_ref") or _channel_ref()
     if channel_ref is not None and not isinstance(channel_ref, str):
         raise service.DiagnosticsServiceError("invalid_channel_ref", "渠道标识必须是字符串。", 400)
+    if channel_ref is not None and len(channel_ref) > 80:
+        raise service.DiagnosticsServiceError("invalid_channel_ref", "渠道标识过长。", 400)
     row, token = service.create_session(
         ip_address=request.remote_addr,
         source_type=source_type,

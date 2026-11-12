@@ -517,6 +517,12 @@ def db_session(app) -> Session:
 
     cleanup_models = (
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
+        # 获客诊断 T-15：渠道链接注册表。``created_by`` 指向 users（**FK
+        # SET NULL**）；与线索行零外键（channel_ref 是字符串列）——先于
+        # users 清理即可；**零外键指向 projects**。
+        __import__(
+            "fde_api.diagnostics.models", fromlist=["LeadDiagnosticChannelLink"]
+        ).LeadDiagnosticChannelLink,
         # 获客诊断 T-10a：匿名诊断会话行。唯一外键指向 users（claimed_by，
         # **FK SET NULL**）——必须先于 users 清理；**零外键指向 projects**
         # （线索 ≠ 项目，metadata 扫描钉死）。

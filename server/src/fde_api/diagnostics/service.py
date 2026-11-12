@@ -331,9 +331,29 @@ def create_session(
     source_type: str = "direct",
     channel_ref: str | None = None,
 ) -> tuple[LeadDiagnosticSession, str]:
-    """新建匿名会话；返回（行, 明文令牌）——**明文只此一次**。"""
+    """新建匿名会话；返回（行, 明文令牌）——**明文只此一次**。
+
+    **归因接线（T-15 机械归因）**：
+
+    - ``source_type='partner'`` **不接受客户端声明**——渠道报备归因只能由
+      有效渠道链接服务端推导（否则 A 档〔收费档〕可被任意伪造）；
+    - ``channel_ref`` 在场时按**渠道链接 token** 解析：命中在用链接 ⇒
+      ``source_type='partner'``＋``channel_ref=链接行 UUID``；未命中
+      （过期/停用/伪造）⇒ **fail-closed 降档**——会话照常建（stale 链接不拦
+      真实线索）但落 ``direct``，``channel_ref`` 原样留存（诚实审计线索）；
+    - ``source_type='channel'``（协会活动等免费名目）保持客户端声明 ＋
+      自由文本 ``channel_ref``——不涉收费档，无伪造收益。
+
+    停用链接的历史归因**不改写**：A 档在会话创建时刻定格。
+    """
     if source_type not in SOURCE_TYPES:
         raise _error("invalid_source_type", "来源类型非法。", 400)
+    if source_type == "partner":
+        raise _error(
+            "partner_source_forbidden",
+            "渠道报备归因由平台渠道链接自动落，不接受直接声明。",
+            400,
+        )
     if source_type != "direct" and not (channel_ref or "").strip():
         raise _error(
             "channel_ref_required",
@@ -343,6 +363,19 @@ def create_session(
     ip_hash = hash_ip(ip_address)
     enforce_ip_daily_limit(ip_hash)
 
+    # 渠道链接解析（T-15）：channel_ref 视作链接 token 尝试归一；
+    # 命中即机械落 partner；未命中降 direct（channel_ref 留痕不改写）。
+    # 函数内懒导入（热点行数预算 + 与 claim_service 同款域内引用习惯）。
+    from fde_api.diagnostics.channel_links import resolve_link
+
+    resolved = source_type
+    resolved_ref = (channel_ref or "").strip() or None
+    if resolved_ref:
+        link = resolve_link(resolved_ref)
+        if link is not None:
+            resolved = "partner"
+            resolved_ref = link.id
+
     token = secrets.token_urlsafe(32)
     now = datetime.now(UTC)
     with db.session() as session:
@@ -351,8 +384,8 @@ def create_session(
             status="draft",
             answers={},
             assessment=None,
-            source_type=source_type,
-            channel_ref=(channel_ref or "").strip() or None,
+            source_type=resolved,
+            channel_ref=resolved_ref,
             created_ip_hash=ip_hash,
             claim_window_expires_at=now + timedelta(days=CLAIM_WINDOW_DAYS),
             expires_at=now + timedelta(days=SESSION_RETENTION_DAYS),

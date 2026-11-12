@@ -323,3 +323,54 @@ class LeadDiagnosticClaim(Base, TimestampMixin):
     )
     # 认领方留言（申请时的自述；**过脱敏管线**——企业名不入库）
     note: Mapped[str | None] = mapped_column(String(500))
+
+
+class LeadDiagnosticChannelLink(Base, TimestampMixin):
+    """R4 专属渠道链接（获客诊断 T-15：渠道链接 ID 体系）。
+
+    一行 = 平台发给区域合作商的一条专属诊断链接。链接 token 是**归因凭证**：
+    访客经该链接进入 ⇒ 服务端**机械地**落 ``source_type='partner'``（A 渠道
+    报备档），零手工记账（P-2）。
+
+    **纪律**（沿匿名写面同尺）：
+
+    - token **只存 sha256 指纹**（明文只在创建响应里返回一次——admin 把它拼进
+      专属链接后交付渠道方；库泄漏拿不到可用链接）；
+    - ``channel_ref`` 归因写回线索行的是**链接行的 UUID**（``lead_diagnostic_sessions.channel_ref``
+      是普通字符串列，不加外键——线索域与链接注册表松耦合，删链接不改历史归因）；
+    - **零外键指向 ``projects``**（线索 ≠ 项目，域内自持）；``created_by`` 指向
+      users 且 **SET NULL**（发链接的平台操作员离职不锁表）。
+
+    停用（``is_active=False``）是**软撤**：历史归因不改写，新会话不再解析为
+    partner（fail-closed 降档 direct——过期链接不拦访客，只不再给 A 档证据）。
+    """
+
+    __tablename__ = "lead_diagnostic_channel_links"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(token_sha256) = 64",
+            name="ck_lead_diagnostic_channel_links_token_sha_len",
+        ),
+        CheckConstraint(
+            "is_active OR deactivated_at IS NOT NULL",
+            name="ck_lead_diagnostic_channel_links_deactivate_shape",
+        ),
+        # 指纹唯一：同一条链接 token 只对应一行
+        Index("ux_lead_diagnostic_channel_links_token", "token_sha256", unique=True),
+        Index("ix_lead_diagnostic_channel_links_active", "is_active"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    # 链接 token **只存指纹**（明文只在创建响应里出现一次）
+    token_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 渠道方区域（R4 的本区域；记录/对齐用——线索区域仍以访客自填为准）
+    region_name: Mapped[str | None] = mapped_column(String(80))
+    # 渠道方代号化备注（不写真实姓名/联系方式——台账纪律）
+    note: Mapped[str | None] = mapped_column(String(200))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    deactivated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )

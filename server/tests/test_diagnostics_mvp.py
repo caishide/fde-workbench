@@ -369,23 +369,29 @@ def test_rate_limiter_failure_can_be_fail_open(diag_app, diag_client):
 # ── 归因结构 ─────────────────────────────────────────────────────────
 
 
-def test_channel_source_requires_channel_ref(diag_client):
-    """渠道来源必须带渠道链接标识（归因自动落，零手工记账）。"""
-    response = diag_client.post(
+def test_source_rules(diag_client):
+    """T-15 契约两条：``partner`` 声明一律 400（A 档只能由链接推导）；
+    ``channel`` 免费名目仍须自带渠道标识。"""
+    partner = diag_client.post(
         "/api/v1/diagnostics/sessions", json={"source_type": "partner"}
     )
-    assert response.status_code == 400
-    assert response.get_json()["error"]["code"] == "channel_ref_required"
+    assert partner.status_code == 400
+    assert partner.get_json()["error"]["code"] == "partner_source_forbidden"
+    bare_channel = diag_client.post(
+        "/api/v1/diagnostics/sessions", json={"source_type": "channel"}
+    )
+    assert bare_channel.status_code == 400
+    assert bare_channel.get_json()["error"]["code"] == "channel_ref_required"
 
 
-def test_channel_source_records_channel_ref(diag_app, diag_client, db_session):
-    """渠道来源落库 channel_ref（供 T-11 三档归因用）。"""
+def test_stale_channel_ref_fails_closed_to_direct(diag_app, diag_client, db_session):
+    """无效渠道标识 ⇒ **降档 direct**（不拦真实线索）但 ref 原样留痕（诚实审计）。"""
     diag_app.config["SETTINGS"] = diag_app.config["SETTINGS"].model_copy(
         update={"diagnostics_daily_ip_limit": 50}
     )
-    token = _create(diag_client, source_type="partner", channel_ref="r4-zhang-001")
+    token = _create(diag_client, channel_ref="r4-zhang-001")
     row = db_session.scalars(select(LeadDiagnosticSession)).one()
-    assert row.source_type == "partner"
+    assert row.source_type == "direct"  # 无有效链接证据不给 A 档
     assert row.channel_ref == "r4-zhang-001"
     assert row.attribution_tier is None  # 比例与档位留给 T-11（只落结构不落数）
     assert token
