@@ -1,10 +1,10 @@
 {
- "route_count": 477,
+ "route_count": 480,
  "blueprint_count": 52,
- "table_count": 152,
- "revision_count": 70,
+ "table_count": 153,
+ "revision_count": 71,
  "heads": [
-  "d7e2f4a9c1b3"
+  "a3e8c2f6b9d4"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -25,6 +25,14 @@
    "create_tables": [
     "ontology_terms",
     "ontology_term_aliases"
+   ],
+   "add_column_tables": []
+  },
+  "a3e8c2f6b9d4": {
+   "file": "a3e8c2f6b9d4_diagnostic_channel_links.py",
+   "down_revision": "d7e2f4a9c1b3",
+   "create_tables": [
+    "lead_diagnostic_channel_links"
    ],
    "add_column_tables": []
   },

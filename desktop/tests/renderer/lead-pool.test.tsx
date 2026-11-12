@@ -212,6 +212,7 @@ it("admin：裁定队列展示认领人/自认领信号，接受走 POST accept"
       )
     }
     if (path.startsWith("/api/v1/diagnostics/leads?")) return Promise.resolve([])
+    if (path === "/api/v1/diagnostics/leads/channel-links") return Promise.resolve([])
     if (path.includes("/claims?status=")) {
       return Promise.resolve([
         claimRow({
@@ -262,6 +263,7 @@ it("admin 驳回走确认弹窗后 POST reject", async () => {
       return Promise.resolve(claimRow({ status: "rejected" }))
     }
     if (path.startsWith("/api/v1/diagnostics/leads?")) return Promise.resolve([])
+    if (path === "/api/v1/diagnostics/leads/channel-links") return Promise.resolve([])
     if (path.includes("/claims?status=")) return Promise.resolve([claimRow()])
     throw new Error(`unexpected ${path}`)
   })

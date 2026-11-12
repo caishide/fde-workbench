@@ -122,6 +122,46 @@ def get_claim_route(claim_id: str):
     return _data(claim_service.serialize_claim(claim))
 
 
+# ── 渠道链接（T-15：R4 专属链接 ＝ 归因凭证；admin 专属） ────────────────
+
+
+@diagnostics_leads_blueprint.post("/channel-links")
+@_gate_first
+@require_role("admin")
+def create_channel_link_route():
+    """发一条 R4 专属链接（**明文 token 只此一次**——拼进链接后交付渠道方）。"""
+    from fde_api.diagnostics import channel_links
+
+    link, token = channel_links.create_link(actor=_actor(), payload=_payload())
+    return _data({**channel_links.serialize_link(link), "token": token}), 201
+
+
+@diagnostics_leads_blueprint.get("/channel-links")
+@_gate_first
+@require_role("admin")
+def list_channel_links_route():
+    """渠道链接清单（**无明文 token**；带在册线索数——渠道方对账可见）。"""
+    from fde_api.diagnostics import channel_links
+
+    raw_limit = request.args.get("limit") or "100"
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 100
+    return _data(channel_links.list_links(limit=limit))
+
+
+@diagnostics_leads_blueprint.post("/channel-links/<link_id>/deactivate")
+@_gate_first
+@require_role("admin")
+def deactivate_channel_link_route(link_id: str):
+    """停用链接（软撤：历史归因不改写，新会话不再解析为 partner）。"""
+    from fde_api.diagnostics import channel_links
+
+    link = channel_links.deactivate_link(actor=_actor(), link_id=link_id)
+    return _data(channel_links.serialize_link(link))
+
+
 @diagnostics_leads_blueprint.post("/claims/<claim_id>/accept")
 @_gate_first
 @require_role("admin")

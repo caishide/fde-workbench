@@ -412,13 +412,18 @@ def test_ordinary_claim_is_not_self_claim(diag_client, db_session, settings):
 
 
 def test_partner_reported_lead_is_tier_a(diag_client, db_session, settings):
-    """渠道报备来的线索 ⇒ A 档（比例不落数，只落结构）。"""
+    """渠道报备来的线索 ⇒ A 档（比例不落数，只落结构）——报备证据＝**有效渠道链接**（T-15），
+    ``partner`` 只能由链接 token 服务端推导，不接客户端声明。"""
     _, admin_headers = _make_user(db_session, settings, role="admin", email="admin@x.test")
     _, partner_headers = _make_user(db_session, settings, role="fde_engineer")
+    link_token = diag_client.post(
+        "/api/v1/diagnostics/leads/channel-links",
+        json={"region_name": "浙江省", "note": "R4-ZJ-001"},
+        headers=admin_headers,
+    ).get_json()["data"]["token"]
     lead = _lead(
         diag_client,
-        source_type="partner",
-        channel_ref="R4-ZJ-001",
+        channel_ref=link_token,  # 只递 token；服务端命中链接 ⇒ partner ＋ ref 写回链接行 UUID
         region="浙江省",
     )
     claim = _claim(
