@@ -13,6 +13,7 @@
 - **明确不做（任务书边界机械承载）**：不把 eval 设必需门禁（阈值未校准）／不删静态钉（改语义）／不自动上线提示词改动（工单制）。
 
 口径：路由 **483→485**（+2：release/rollback 两人工治理面，不进 api_catalog，96 ENTRIES 不变）／蓝图 52／表 153／**72→73 rev** 单头 `b5d9e2f4a7c1`；route CSV +2 行；archify architecture 图重生成＋preview 整页实拍＋图纸防陈旧闸绿。四特征④复评维持 2-1-2-1 不虚升（结构面齐；真实行使待 CI 配凭据出首份非 insufficient 报告＋首提案真实走通道）。
+**合并与活体复验（2026-11-12）**：PR #405 squash `3f9a9ce`（树哈希零漂移＝本地 `ab46039^{tree}` ≡ `3f9a9ce^{tree}`；两度插队 rebase：#402/#403 与 #404——CHANGELOG 节序 N4→L2→L2 读数→N6、AGENTS 双 bullet 两侧全留）；PR head CI 四绿（run 43242225793 server-tests **3457 passed + 8 skipped**）；main push run **43245541589** 四 job 全绿（server-tests **3457 passed + 8 skipped** 逐位吻合）；ai-eval 观察轮 job 首跑真机报告 **verdict=insufficient_data**（`model_credentials_absent`——凭据缺席诚实语义，不编造分数，artifact `ai-eval-report` 90 天在案；prompt_fingerprint `ae12fd11c092cb7c`；G-10 复测判据「CI 多出 eval job 且产出报告文件」活体兑现）。活体部署三验全绿（七撞纪律）：三镜像从合并树 rebuild（api `82c271a4afc7`／worker `abc86d47c0cc`／scheduler `06da616ec967`，容器 `.Image` 与构建产物逐位一致）＋`alembic upgrade head` 真实升级 `f2a7c4e9b6d3 → b5d9e2f4a7c1`、容器内 `alembic current`＝`b5d9e2f4a7c1 (head)`；活体 `url_map` **485 non-static** ≡ 口径；ready/live 200；活库 `improvement_proposals.release_json`（json 列）＋CHECK 五值含 `published` 断言在位。
 
 ## [未发布] — 交付案例学习闭环 L2 批跑器节流旗标轮：run_batch NEW `--call-interval-seconds`（底册挂账改进位落地；缺省 0.2 零行为变化；scripts 层零生产代码改动·零迁移零路由零蓝图＝483/52/153/72 口径不变，2026-11-12）
 
