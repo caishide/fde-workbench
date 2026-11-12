@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "6fe6bc1a-dfe9-45fa-8a30-d27e3f68ca1d",
+  "receiptId": "b7e82002-0c32-423c-a547-5ed6b611d493",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
-  "input": "D:\\test\\fde-wt-n3bimpl\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-  "output": "D:\\test\\fde-wt-n3bimpl\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+  "input": "D:\\test\\fde-wt-n3cimpl\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+  "output": "D:\\test\\fde-wt-n3cimpl\\docs\\architecture\\archify-diagrams\\architecture\\review-1\\system-architecture.html",
   "specification": {
-    "sha256": "041fd20bbb6f586e800d28b6344c7b43e4b1c3ac2b4cc9cae35fad1bb38329b7",
-    "bytes": 14646
+    "sha256": "9356ab3ded8148e44eac0605ed8268df7d23b591b9f397bd124c24c64647da2b",
+    "bytes": 15320
   },
   "artifact": {
-    "sha256": "d8ce91e5b8b5f53fac5aaa891ec77fd2d05af1d4c9921dcb9f2781eff11d4370",
+    "sha256": "efb1bb34ace74d0f37f34657a6d3a563da5451d4c677c42e69823118822fae3d",
     "bytes": 845314
   }
 }

@@ -156,6 +156,21 @@ def test_wechat_password_commands_never_reach_model(ai_context):
     assert "过期" in response
     execute.assert_not_called()
 
+def test_dispatch_ai_decision_requires_human_confirmation(ai_context, db_session):
+    """N3c（G-06）：AI 建议的终审留痕端点列**确认类**——AI 发起即
+    awaiting_confirmation，绝不直接落痕（AI 不代拍板：终审责任主体必须是人）；
+    确认前 pending 队列可见（人工可拒绝或改判）。"""
+    users, _ = ai_context
+    user = users["admin"]
+    result = invoke(
+        user,
+        "dispatch.packages_match_ai_decision",
+        {"package_id": str(uuid4())},
+        {"decision": "adopted", "recommendation_sha256": "ab" * 32, "adopted_candidate_ids": ["u-1"]},
+    )
+    assert result["status"] == "awaiting_confirmation", result
+    assert any(item["operation"] == "dispatch.packages_match_ai_decision" for item in pending_actions(user))
+
 
 __all__ = [
     "ai_context",

@@ -232,3 +232,149 @@ it("canManage 缺省 false：产物行无复核操作按钮（写闸在服务端
   await screen.findByText("未复核")
   expect(screen.queryByText("标记复核")).toBeNull()
 })
+
+// —— N3c G-15：跨 run 终审队列与批量复核（写语义零新增：逐件既有 PATCH）——
+
+function baseMocks(): (path: string, options?: { method?: string; body?: unknown }) => Promise<unknown> {
+  return (path: string, options?: { method?: string; body?: unknown }) => {
+    if (path === `/api/v1/agents/runs?project_id=${projectId}`) {
+      return Promise.resolve({
+        items: [
+          runRow({ id: "run-aaaaaaaa12345678", status: "completed" }),
+          runRow({ id: "run-bbbbbbbb12345678", status: "failed" }),
+        ],
+        truncated: false,
+      })
+    }
+    if (path === `/api/v1/agents/cost?scope=project&project_id=${projectId}`) {
+      return Promise.resolve(costSummary())
+    }
+    if (path === "/api/v1/agents/runs/run-aaaaaaaa12345678" && options?.method === "GET") {
+      return Promise.resolve(runRow({
+        id: "run-aaaaaaaa12345678",
+        artifacts: [
+          { id: "art-a1", kind: "doc", storage_ref: "output/plan.md", sha256: "a".repeat(64), reviewed: false, linked_solution_id: null },
+          { id: "art-a2", kind: "doc", storage_ref: "output/done.md", sha256: "b".repeat(64), reviewed: true, linked_solution_id: null },
+        ],
+      }))
+    }
+    if (path === "/api/v1/agents/runs/run-bbbbbbbb12345678" && options?.method === "GET") {
+      return Promise.resolve(runRow({
+        id: "run-bbbbbbbb12345678",
+        artifacts: [
+          { id: "art-b1", kind: "config", storage_ref: "output/settings.json", sha256: "c".repeat(64), reviewed: false, linked_solution_id: null },
+        ],
+      }))
+    }
+    if (/\/artifacts\/art-(a1|b1)$/.test(path) && options?.method === "PATCH") {
+      expect(options.body).toEqual({ reviewed: true })
+      return Promise.resolve({ reviewed: true })
+    }
+    if (/\/runs\/run-[ab]{8}12345678\/tool-calls$/.test(path) && options?.method === "GET") {
+      return Promise.resolve({ items: [], denied_count: 0 })
+    }
+    throw new Error(`unexpected api call: ${options?.method ?? "GET"} ${path}`)
+  }
+}
+
+it("G-15：勾选多 run 汇总未复核产物进终审队列，批量标记复核＝逐件 PATCH＋回执就地呈现", async () => {
+  const user = userEvent.setup()
+  mocks.apiRequest.mockImplementation(baseMocks())
+  render(<AgentsConsole projectId={projectId} canManage />)
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-aaaa" }))
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-bbbb" }))
+  // 队列只收未复核产物（art-a2 已复核不出现）
+  expect(await screen.findByText("output/plan.md")).toBeInTheDocument()
+  expect(screen.getByText("output/settings.json")).toBeInTheDocument()
+  expect(screen.queryByText("output/done.md")).toBeNull()
+  // 批量＝逐件既有 PATCH
+  await user.click(screen.getByRole("button", { name: "批量标记复核（2）" }))
+  expect(await screen.findByText("批量复核完成：成功 2。")).toBeInTheDocument()
+  const patchCalls = mocks.apiRequest.mock.calls.filter(
+    (call) => typeof call[0] === "string" && /\/artifacts\/art-(a1|b1)$/.test(String(call[0])) && (call[1] as { method?: string } | undefined)?.method === "PATCH",
+  )
+  expect(patchCalls).toHaveLength(2)
+})
+
+it("G-15：批量复核逐件结果如实呈现（1 成功 1 失败不吞错）", async () => {
+  const user = userEvent.setup()
+  const { ApiClientError } = await import("../../src/renderer/src/api/client")
+  mocks.apiRequest.mockImplementation((path: string, options?: { method?: string; body?: unknown }) => {
+    if (/\/artifacts\/art-b1$/.test(path) && options?.method === "PATCH") {
+      return Promise.reject(new ApiClientError({ code: "project_forbidden", message: "产物复核需要项目管理权限。" }, 403))
+    }
+    return baseMocks()(path, options)
+  })
+  render(<AgentsConsole projectId={projectId} canManage />)
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-aaaa" }))
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-bbbb" }))
+  await user.click(await screen.findByRole("button", { name: "批量标记复核（2）" }))
+  expect(await screen.findByText("批量复核完成：成功 1，失败 1。")).toBeInTheDocument()
+})
+
+// —— N3c T-A10：产物就地预览/下载（content 路由 sha256 自证；降级显式呈现）——
+
+function contentPayload(storageRef: string): Record<string, unknown> {
+  const text = storageRef.endsWith(".json") ? '{"model":"glm","tokens":16}' : "# 计划\n交付内容"
+  // 服务端 base64 编码的是 UTF-8 字节；jsdom 的 btoa 只收 Latin1，须先过 TextEncoder
+  const bytes = new TextEncoder().encode(text)
+  let binary = ""
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  return {
+    run_id: "run-aaaaaaaa12345678",
+    artifact_id: "art-a1",
+    kind: "doc",
+    storage_ref: storageRef,
+    sha256: "a".repeat(64),
+    size: bytes.length,
+    mime: "text/markdown",
+    reviewed: false,
+    content_base64: btoa(binary),
+  }
+}
+
+it("T-A10：队列产物预览拉 content 路由并渲染；下载走 anchor（原件落本地）", async () => {
+  const user = userEvent.setup()
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+  mocks.apiRequest.mockImplementation((path: string, options?: { method?: string; body?: unknown }) => {
+    if (path === "/api/v1/agents/runs/run-aaaaaaaa12345678/artifacts/art-a1/content" && options?.method === "GET") {
+      return Promise.resolve(contentPayload("run-aaaa/output/plan.md"))
+    }
+    return baseMocks()(path, options)
+  })
+  render(<AgentsConsole projectId={projectId} canManage />)
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-aaaa" }))
+  await user.click(await screen.findByRole("button", { name: "预览" }))
+  // doc 类走 MemoMarkdown 同构：「# 计划」渲染为标题，正文段落可断言
+  expect(await screen.findByRole("heading", { name: "计划" })).toBeInTheDocument()
+  expect(screen.getByText("交付内容")).toBeInTheDocument()
+  await user.click(screen.getAllByRole("button", { name: "下载" })[0])
+  await waitFor(() => expect(clickSpy).toHaveBeenCalled())
+  const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement
+  expect(anchor.download).toBe("plan.md")
+  clickSpy.mockRestore()
+})
+
+it("T-A10：容器态降级显式呈现（content 404 错误不吞不静默）", async () => {
+  const user = userEvent.setup()
+  const { ApiClientError } = await import("../../src/renderer/src/api/client")
+  mocks.apiRequest.mockImplementation((path: string, options?: { method?: string; body?: unknown }) => {
+    if (path.endsWith("/content")) {
+      return Promise.reject(new ApiClientError({ code: "artifact_content_unavailable", message: "产物原件不在服务端可见的工作区（宿主裸跑态在部署机本地可用；容器部署态读不到宿主路径）。" }, 404))
+    }
+    return baseMocks()(path, options)
+  })
+  render(<AgentsConsole projectId={projectId} canManage />)
+  await user.click(await screen.findByRole("checkbox", { name: "选择运行 run-aaaa" }))
+  await user.click(await screen.findByRole("button", { name: "预览" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent("产物原件不在服务端可见的工作区")
+})
+
+it("T-A10：非 canManage 无预览/下载按钮（服务端 can_manage 同尺，呈现同构显隐）", async () => {
+  mocks.apiRequest.mockImplementation(baseMocks())
+  render(<AgentsConsole projectId={projectId} />)
+  fireEvent.click((await screen.findAllByText("详情"))[0])
+  await screen.findByText("未复核")
+  expect(screen.queryByRole("button", { name: "预览" })).toBeNull()
+  expect(screen.queryByRole("button", { name: "下载" })).toBeNull()
+})

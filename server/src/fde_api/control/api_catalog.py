@@ -88,6 +88,8 @@ ENTRIES = [
     ("dispatch.settlements_mine", "GET", "/api/v1/dispatch/settlements/mine", "我的席位结算（只含自己席位的角色与金额；他席存在与金额不出现；预扣税原样透出）", ""),
     ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
     ("dispatch.packages_match", "POST", "/api/v1/dispatch/packages/{package_id}/match", "两段式撮合 Top3（Stage A 资格门 + 场景裁决 + Stage B；§4）", ""),
+    ("dispatch.packages_match_ai", "POST", "/api/v1/dispatch/packages/{package_id}/match-ai", "AI 派单建议腿（返件式：规则腿与 AI 建议腿并列双来源、闸唯一；只返建议，不落库、不建 offer、不自动派单——采纳须走既有 offers/publish 人工通道且责任主体记人；同步模型调用消耗 AI 预算）", ""),
+    ("dispatch.packages_match_ai_decision", "POST", "/api/v1/dispatch/packages/{package_id}/match-ai/decision", "AI 派单建议的人工终审留痕（采纳/驳回只落 operation_events，零业务写；AI 不代拍板——AI 侧调用须人工密码确认后方可执行）", "decision=adopted|rejected,recommendation_sha256,adopted_candidate_ids"),
     ("dispatch.packages_level_override", "POST", "/api/v1/dispatch/packages/{package_id}/required-level", "发布前人工覆盖等级门槛（必填 reason 留痕；§4.5）", "level,reason"),
     ("dispatch.profiles_list", "GET", "/api/v1/dispatch/profiles", "供给池能力档案与产能看板（含在途/上限；平台侧）", ""),
     ("dispatch.profiles_me", "GET", "/api/v1/dispatch/profiles/me", "我的能力档案与产能（自助只读；无档案 404）", ""),
@@ -132,8 +134,14 @@ EXTERNAL_EFFECT_KEYS = frozenset({
     "documents.generate",      # 文档生成（worker 内模型调用）——WB-DEF-10
     "translator.translate",    # AI 翻译管道（模型调用）
 })
-# 确认类补口（WB-DEF-10）：目录确认面不再只看 DELETE/.archive/.deprecate 后缀
-CONFIRMATION_KEYS = frozenset({"solutions.export_sow", "documents.generate"})
+# 确认类补口（WB-DEF-10）：目录确认面不再只看 DELETE/.archive/.deprecate 后缀；
+# N3c 补一条——AI 建议的终审留痕端点（dispatch.packages_match_ai_decision）
+# 列确认类：AI 不代拍板，AI 侧发起即 awaiting_confirmation，人工密码确认后才落痕
+CONFIRMATION_KEYS = frozenset({
+    "solutions.export_sow",
+    "documents.generate",
+    "dispatch.packages_match_ai_decision",
+})
 
 
 def _catalog_row(key, method, path, description, hints):

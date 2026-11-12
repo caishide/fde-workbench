@@ -241,6 +241,62 @@ def _explanation(entry: dict[str, Any], scenario: str, rank: int) -> str:
     )
 
 
+def _stage_b_ranked(
+    *,
+    package: DeliveryPackage,
+    version: Any,
+    rule: dict[str, Any],
+    scenario: str,
+    passed: list[dict[str, Any]],
+) -> list[tuple[tuple, dict[str, Any], dict[str, Any]]]:
+    """Stage B 排序（§4.3/§4.4）——``match_package`` 与 AI 建议腿
+    （recommend_ai，N3c G-06）共用的单一真身：规则结果「仍出」即使不落库
+    也走同一排序（并列双来源、闸唯一）。"""
+    seed = scoring.tie_break_seed(package.id, package.dispatch_round, version.version_no)
+    ranked: list[tuple[tuple, dict[str, Any], dict[str, Any]]] = []
+    for entry in passed:
+        profile = entry["profile"]
+        industry = scoring.industry_score(
+            profile.industry_tags, package.required_industry
+        )
+        if scenario == "onsite":
+            key = scoring.sort_key_onsite(
+                tier=entry["tier"],
+                level=profile.level,
+                industry=industry,
+                sla=scoring.sla_score(),
+            )
+            stage_b = {
+                "geo_tier": entry["tier"],
+                "ability": {"level": profile.level, "score": scoring.level_score(profile.level, rule)},
+                "industry": industry,
+                "sla": scoring.sla_score(),
+            }
+        else:
+            weighted = scoring.weighted_score(
+                level=profile.level,
+                industry_tags=profile.industry_tags,
+                tier=entry["tier"],
+                rule=rule,
+            )
+            key = scoring.sort_key_remote(
+                weighted=weighted,
+                in_fence=scoring.in_fence(profile.home_city, entry["client_city"], profile.geo_fence_km),
+                seed=seed,
+                candidate_key=profile.user_id,
+            )
+            stage_b = {
+                "weighted_score": weighted,
+                "ability": {"level": profile.level, "score": scoring.level_score(profile.level, rule)},
+                "industry": industry,
+                "sla": scoring.sla_score(),
+                "geo": scoring.geo_score(entry["tier"]),
+            }
+        ranked.append((key, entry, stage_b))
+    ranked.sort(key=lambda item: item[0])
+    return ranked
+
+
 def match_package(
     session: Session, *, actor: User, package_id: str
 ) -> dict[str, Any]:
@@ -301,48 +357,9 @@ def match_package(
             "rule_version": version.version_no,
         }
 
-    seed = scoring.tie_break_seed(package.id, package.dispatch_round, version.version_no)
-    ranked: list[tuple[tuple, dict[str, Any], dict[str, Any]]] = []
-    for entry in passed:
-        profile = entry["profile"]
-        industry = scoring.industry_score(
-            profile.industry_tags, package.required_industry
-        )
-        if scenario == "onsite":
-            key = scoring.sort_key_onsite(
-                tier=entry["tier"],
-                level=profile.level,
-                industry=industry,
-                sla=scoring.sla_score(),
-            )
-            stage_b = {
-                "geo_tier": entry["tier"],
-                "ability": {"level": profile.level, "score": scoring.level_score(profile.level, rule)},
-                "industry": industry,
-                "sla": scoring.sla_score(),
-            }
-        else:
-            weighted = scoring.weighted_score(
-                level=profile.level,
-                industry_tags=profile.industry_tags,
-                tier=entry["tier"],
-                rule=rule,
-            )
-            key = scoring.sort_key_remote(
-                weighted=weighted,
-                in_fence=scoring.in_fence(profile.home_city, entry["client_city"], profile.geo_fence_km),
-                seed=seed,
-                candidate_key=profile.user_id,
-            )
-            stage_b = {
-                "weighted_score": weighted,
-                "ability": {"level": profile.level, "score": scoring.level_score(profile.level, rule)},
-                "industry": industry,
-                "sla": scoring.sla_score(),
-                "geo": scoring.geo_score(entry["tier"]),
-            }
-        ranked.append((key, entry, stage_b))
-    ranked.sort(key=lambda item: item[0])
+    ranked = _stage_b_ranked(
+        package=package, version=version, rule=rule, scenario=scenario, passed=passed
+    )
 
     top_n = int(DISPATCH_CONSTANTS["top_n"])
     created: list[tuple[DispatchOffer, dict[str, Any]]] = []
