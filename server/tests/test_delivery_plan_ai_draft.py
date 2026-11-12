@@ -313,8 +313,9 @@ def test_ai_draft_permissions_and_surface(db_session, d4_client, d4_settings) ->
     assert member.post(f"/api/v1/projects/{project.id}/delivery-plans/generate-ai").status_code == 403
     assert d4_client.post(f"/api/v1/projects/{project.id}/delivery-plans/generate-ai").status_code == 401
 
-    # 治理面红线钉：AI 起草路由不进 api_catalog（沿 quality/N3a 先例）
+    # 治理面红线钉：AI 起草路由不进 api_catalog（沿 quality/N3a 先例）；
+    # N5（G-02）起 workflows.run_start（发起 run 确认类）例外收编——起草类仍禁。
     from fde_api.control.api_catalog import CATALOG
 
     assert not any(key.startswith("plans.") for key in CATALOG)
-    assert not any(key.startswith("workflows.") for key in CATALOG)
+    assert not any(key.startswith("workflows.") and key != "workflows.run_start" for key in CATALOG)

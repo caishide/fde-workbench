@@ -11,6 +11,7 @@
 - **三样安全清单各有独立反例**：取消语义（propose 后人工取消/失败同键 run ⇒ confirm 409＋零新 run）／幂等键（双 execution_id 同键双确认 ⇒ run 表恰 1 行，第二个走生产幂等 200 复用）／授权绑定（scope≠project propose 403 零落库＋账号停用 confirm 重授权 403＋auth_version 变更 409）。
 - **端到端审计**：requested（confirmation_required/auth_version/scope/execution_id）→started→finished 三事件链，零密码字段；未确认零 run；过期 409；驳回 cancelled 零 run。
 - **测试 NEW `test_ai_run_proposal.py` 16 例**＋**变异三连全红→try/finally 还原→绿**（M1 propose 幂等键闸／M2 confirm 终态守卫／M3 confirm 授权重判）＋邻域回归 5 文件 86 passed；ruff 绿；mypy 官方闸 279 基线不变。
+- **CI 首轮撞两枚既有只读钉 ⇒ 钉换代不删钉（N4 先例）**：`test_agent_traceability`（agents 面允许集扩 run_start 确认类；接管/handoff/retry/rehearse/recover 仍零命中）＋`test_delivery_plan_ai_draft`（workflows 起草禁收收窄为「除 run_start 外」）。
 - **明确不做（任务书边界机械承载）**：不解除 15min 窗／不让 AI 直接执行／提议不可批量确认／不改宿主通道五边界／接管与重试动作永不收编（目录钉 `agents.run_takeover`/`run_retry` 零命中）。
 
 口径：**零迁移零新表零新 Flask 路由**（两条 ENTRIES 指向既有发起路由）＝485 路由/52 蓝图/153 表/73 rev 单头 `b5d9e2f4a7c1` 全不变；**api_catalog ENTRIES 96→98**；宿主人工通道与 automation_approvals 面零变化。
