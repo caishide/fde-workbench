@@ -142,3 +142,4 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 四闸两轮独立实测全过：`import_cases.py` 主会话本地 134 包／失败 0＋工作流复核轮 134/134 零发现；装配器 127/127（missing=0 invalid=0）。
 - 许可现测：案例库 MIT 远端 HEAD `ef55012`＝本地零漂移；文集 B license 404 严档维持。
 - 挂账销号：训练场挂账（文集 B 演练篇不作素材直转→转正式场景走 import_cases 闸门＋import_card_v1 重写）与卡24 127 例导入排期两条销号；⛔禁入清单与诊断评测答案零触碰。
+- 已入库（2026-11-12 实测）：PR [#400](https://github.com/caishide/fde-workbench/pull/400) squash 合并 `dd67732`＝fork/main 顶（CI 8 check-runs 全绿）；登记件随本 PR 入库，包体持续留真相层 round2；draft 建行与激活待蔡工人工执行（§4 三步）。
