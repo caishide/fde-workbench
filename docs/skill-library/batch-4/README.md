@@ -20,3 +20,11 @@ B 桶参考型排期跟着做；第一批＝卡19 行业速查＋仓库 B G 端�
 ## 录入
 
 合并后由助理按已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能；一技能一版本；`required_capabilities` 空数组；manifest 沿 batch-3 形状（`source`=batch-4／参考型声明／使用时机／人机边界／引用指针）。
+
+## 已入库状态（2026-11-12，经授权代录通道）
+
+- 落点：桌面端 **扩展页 → 个人技能**，owner＝admin（`8b29bd77-4f98-40b5-a339-698c22e5f627`），scope=personal，status=published，current_version=1；写入走与 UI 保存同一条正式接口 `POST /api/v1/extensions/skills/personal`，未直写库、未建/改会话；
+- 2 条 id：`industry-quick-reference`＝`b2e0a4ca…`、`gov-compliance-reference`＝`78615ef9…`；
+- 校验（实测）：`POST` 全 201；`GET /api/v1/skills?scope=personal` 列表 18 条（batch-1/2/3 十六条旧记录未受影响），本批 2 条正文字符数 2330／1683 与本仓 md 逐位一致；`GET /api/v1/skills/<id>/document` 的 `body` 与本仓 md 逐字节一致（sha256 相同）且服务端 `content_sha256`（结构化指纹）与本地按服务端算法复算值逐位一致，`ALL MATCH: True`；库内 `skill_definitions`／`skill_versions` 行 18+18 一致，公共技能 14 条未变；
+- 容器内临时文件（载荷/执行器/报告）已 `docker exec -u root rm -f` 清零；临时脚本留本机临时目录未入库；
+- 后续新版本由蔡工在桌面端亲手录（一人一版本）。
