@@ -25,6 +25,11 @@ from fde_api.auth.models import ROLE_ADMIN, User
 from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
 from fde_api.auth.passwords import verify_password
 from fde_api.commercial.ladder import external_ladder_code
+from fde_api.commercial.org_read_scope import (
+    VIS_SAME_ORG,
+    VIS_SELF,
+    resource_visibility,
+)
 from fde_api.commercial.models import (
     CERTIFICATION_STATUSES,
     COMMERCIAL_ROLES,
@@ -436,9 +441,18 @@ def set_delivery_eligibility(
 def get_entitlement_for_view(
     session: Session, *, actor: User, user_id: str
 ) -> dict[str, Any]:
-    """读面（本人或 admin）：权益行 + 培训购买行 + 对外编号推导。"""
+    """读面（本人或 admin）：权益行 + 培训购买行 + 对外编号推导。
+
+    **M6 org 隔离接线**：企业身份下「同 org 成员可见」（M5 已落模式「本 org
+    成员或 admin」）——本企业成员可读本企业账号的权益；**跨企业 ⇒ 403**
+    （沿用本读面既有 ``commercial_entitlement_forbidden`` 语义，**不自造失败码、
+    不改既有码**）；平台身份（``org_id IS NULL``，非 admin）沿用「只见本人」的
+    存量口径（行为逐位不变——读他人仍 403）。
+    """
     if actor.id != user_id and actor.role != ROLE_ADMIN:
-        raise _error("commercial_entitlement_forbidden", "只能查看本人权益。", 403)
+        visibility = resource_visibility(session, actor, user_id)
+        if visibility not in (VIS_SELF, VIS_SAME_ORG):
+            raise _error("commercial_entitlement_forbidden", "只能查看本人权益。", 403)
     _require_user(session, user_id)
     row = ensure_entitlement(session, user_id)
     trainings = session.scalars(

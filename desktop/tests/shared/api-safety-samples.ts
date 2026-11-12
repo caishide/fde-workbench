@@ -136,3 +136,101 @@ export const BODY_SAMPLES: readonly ApiSafetyBodySample[] = [
   { body: 1n, expected: false, note: "BigInt 不可 JSON 序列化（两桥同拒）" },
   { body: "plain-string", expected: true, note: "字符串 body（可序列化；body 契约静态闸另行约束）" },
 ]
+
+/**
+ * 自定义请求头样本（获客诊断 T-14a，校验项 9）：expected=true＝该 headers
+ * 可随请求发出；false＝拒绝。允许名单只有一个 ``x-diagnostic-token``——
+ * authorization／cookie／content-type 等桥自带头不可由渲染层覆写。
+ */
+export interface ApiSafetyHeaderSample {
+  headers: unknown
+  expected: boolean
+  note: string
+}
+
+export const HEADER_SAMPLES: readonly ApiSafetyHeaderSample[] = [
+  { headers: undefined, expected: true, note: "未带自定义头（缺省）" },
+  { headers: null, expected: true, note: "null＝未带自定义头（显式放行）" },
+  { headers: {}, expected: true, note: "空对象＝无自定义头" },
+  {
+    headers: { "x-diagnostic-token": "diag12" },
+    expected: true,
+    note: "允许名单唯一头（token_urlsafe 字符集）",
+  },
+  {
+    headers: { "X-Diagnostic-Token": "diag_tok" },
+    expected: true,
+    note: "头名大小写不敏感（HTTP 语义；两桥透传原样）",
+  },
+  {
+    headers: { "x-diagnostic-token": "a".repeat(128) },
+    expected: true,
+    note: "取值上限 128 字（含）",
+  },
+  {
+    headers: { "x-diagnostic-token": "a".repeat(129) },
+    expected: false,
+    note: "取值超 128 字",
+  },
+  {
+    headers: { "x-diagnostic-token": "" },
+    expected: false,
+    note: "空取值（持有即权凭证不许为空串）",
+  },
+  {
+    headers: { "x-diagnostic-token": "bad value" },
+    expected: false,
+    note: "取值含空格",
+  },
+  {
+    headers: { "x-diagnostic-token": "bad;value" },
+    expected: false,
+    note: "取值含分号（头注入面）",
+  },
+  {
+    headers: { "x-diagnostic-token": 123 },
+    expected: false,
+    note: "取值非字符串",
+  },
+  {
+    headers: { authorization: "Bearer attacker" },
+    expected: false,
+    note: "authorization 是桥自带头，不可由渲染层覆写",
+  },
+  {
+    headers: { cookie: "sid=1" },
+    expected: false,
+    note: "cookie 不在允许名单（会话语义不可借桥携带）",
+  },
+  {
+    headers: { "content-type": "text/plain" },
+    expected: false,
+    note: "content-type 是桥自带头，不可覆写",
+  },
+  {
+    headers: { "x-custom": "v" },
+    expected: false,
+    note: "未知头名拒绝",
+  },
+  {
+    headers: "x-diagnostic-token",
+    expected: false,
+    note: "形状非对象（字符串）",
+  },
+  {
+    headers: ["x-diagnostic-token"],
+    expected: false,
+    note: "数组形状拒绝",
+  },
+  {
+    headers: {
+      "x-diagnostic-token": "t1",
+      "x-a": "1",
+      "x-b": "2",
+      "x-c": "3",
+      "x-d": "4",
+    },
+    expected: false,
+    note: "数量超限（>4；单允许名单下首个未知头也拒——数量闸是纵深防御，两侧判定恒同）",
+  },
+]

@@ -2483,3 +2483,95 @@ progress::-webkit-progress-value { background: var(--brand-gradient); border: no
 .anchor-b { background: #FEF4E6; color: #B54708; border: 1px solid #F1CF9A; }
 .anchor-c { background: #EAF6EE; color: #1E7B3C; border: 1px solid #B7DFC2; }
 .anchor-none { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+
+/* ============================================================
+   获客诊断 T-14a 访客界面（公开面：#diagnostics ＋ #diagnostics/share/<token>）。
+   只新增类不改既有类契约；颜色全部取既有令牌。
+   ============================================================ */
+.public-diagnostic-page { max-width: 860px; margin: 0 auto; padding: 24px 20px 48px; }
+
+.public-diagnostic-page .page-heading { margin-bottom: 16px; }
+.public-diagnostic-page .page-heading p { color: var(--muted); }
+
+.public-diagnostic-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  background: var(--surface);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.public-diagnostic-stack { display: grid; gap: 16px; }
+
+.public-diagnostic-footer {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+
+.diag-steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; }
+.diag-notes { margin: 0 0 16px; padding: 10px 12px; list-style: none; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3); color: var(--muted); font-size: var(--font-label); display: grid; gap: 4px; }
+
+.diag-slot-list { display: grid; gap: 16px; }
+.diag-slot { display: grid; gap: 6px; }
+.diag-slot-label { display: grid; gap: 2px; font-weight: var(--weight-medium, 500); }
+.diag-slot-hint { color: var(--muted); font-style: normal; font-size: var(--font-caption); }
+.diag-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--surface-inset, var(--surface));
+  color: var(--text);
+  font-size: var(--font-body);
+}
+.diag-input:focus { outline: 2px solid var(--brand-blue); outline-offset: 1px; }
+
+.diag-option-group { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.diag-option { display: inline-flex; align-items: center; gap: 6px; }
+
+.diag-consent { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; color: var(--text); font-size: var(--font-label); }
+.diag-consent input { margin-top: 3px; }
+
+.diag-tier { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.diag-tier-label { color: var(--muted); font-size: var(--font-label); }
+.diag-tier strong { font-size: var(--font-title, 20px); color: var(--brand-gold); }
+
+.diag-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.diag-section h2, .diag-section h3 { margin: 0 0 8px; font-size: var(--font-body); color: var(--text); }
+.diag-section h4 { margin: 10px 0 4px; font-size: var(--font-label); color: var(--muted); }
+.diag-section ul, .diag-section ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+
+.diag-policy-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 8px 0; display: grid; gap: 6px; }
+.diag-policy-card h3, .diag-policy-card h4 { margin: 0; }
+.diag-policy-meta { margin: 0; color: var(--muted); font-size: var(--font-caption); word-break: break-all; }
+
+.diag-basis { display: grid; gap: 6px; }
+.diag-basis p { margin: 0; padding: 8px 10px; border-radius: var(--radius); font-size: var(--font-label); display: grid; gap: 2px; }
+.diag-basis p strong { font-size: var(--font-caption); }
+.diag-basis-original { border: 1px solid var(--border); background: var(--surface-3); color: var(--text); }
+.diag-basis-interpretation { border: 1px dashed var(--brand-blue); background: var(--brand-blue-soft); color: var(--text); }
+
+.diag-disclaimers { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--border); color: var(--muted); font-size: var(--font-caption); }
+.diag-disclaimers ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+
+.diag-report-headline { margin: 0 0 4px; }
+.diag-findings { list-style: none; padding: 0; display: grid; gap: 8px; }
+.diag-findings li { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.diag-findings li strong { color: var(--brand-blue); font-size: var(--font-caption); }
+.diag-first-step { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--brand-blue-soft); }
+.diag-actions em, .diag-actions li { color: var(--text); }
+.diag-actions em { margin-left: 6px; color: var(--muted); font-size: var(--font-caption); font-style: normal; }
+.diag-loop-state { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.diag-loop-state li { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border); font-size: var(--font-label); }
+.diag-loop-state li.done { border-color: var(--success-border); color: var(--success-ink); background: var(--success-soft); }
+.diag-loop-state li.todo { color: var(--muted); }
+.diag-report-meta { margin: 14px 0 0; color: var(--muted); font-size: var(--font-caption); }
+
+.diag-open-questions { margin-top: 10px; }
+.diag-open-questions ul { color: var(--muted); }
+
+.diag-share-box p { margin: 0 0 8px; color: var(--text); }
+.diag-share-link { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--brand-blue); border-radius: var(--radius); background: var(--brand-blue-soft); }
+.diag-share-link code { word-break: break-all; font-size: var(--font-caption); color: var(--text); }
+.diag-share-notice { color: var(--muted); }

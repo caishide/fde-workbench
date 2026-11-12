@@ -40,8 +40,19 @@ export type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 export interface ApiRequestOptions {
   method: ApiMethod
+  /**
+   * 工作台访问令牌。**空串＝公开面**（免注册请求）：桥据此不下发
+   * ``Authorization`` 头——获客诊断 T-14a 的匿名诊断流程走的就是这条路。
+   */
   accessToken: string
   body?: unknown
+  /**
+   * 自定义请求头（获客诊断 T-14a）。**允许名单只有一个**：
+   * ``X-Diagnostic-Token``（匿名诊断会话的持有即权凭证，服务端只从请求头取，
+   * 不入 URL——URL 会进访问日志）。其余头一律被 shared/api-safety.ts 拒绝
+   * （authorization／cookie 等可改写身份语义的头不可由渲染层覆写）。
+   */
+  headers?: Record<string, string>
 }
 
 export interface ApiResponse<T> {

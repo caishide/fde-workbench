@@ -99,3 +99,73 @@
 <!-- rule-slots:end -->
 
 > **机器闸**：`server/tests/test_commercial_opportunity_attribution.py` 解析上块 JSON，与代码常量 `OPPORTUNITY_RULE_KEYS`／`OPPORTUNITY_RULE_VALUE_KINDS` **逐项双向相等**，并核对配置表每行 `status='unset'`——**规则文件与代码配置位一一对应**（任务书 §8 验收）。
+
+## 9. 数据归属权与导出权（M7 轮新增；ADR-M7）
+
+- **适用范围**：商机数据（`commercial_opportunities`）的客户识别字段——**企业确认前由平台托管，区域服务商不可导出客户名单，双方按授权可见**（leader 任务书 §7 M7；sec 评审硬条件「归属权与导出权须在 M7 写死」）。
+- **配套 ADR**：`docs/commercialization/multi-tenant/ADR-M7-opportunity-data-ownership.md`。
+- **硬约束**：本节**零新表、零新列、零新路由**——授权可见范围由既有列推导（见下表「授权推导来源」），**不新增任何授权模型**。
+
+### 9.1 语义（三段式）
+
+| 段 | 语义 | 代码落点 |
+|---|---|---|
+| ① **平台托管** | 商机数据由平台托管；**企业确认前**，企业代号只是**未经平台核验的报备声明**，属平台的客户识别事实 | `commercial_opportunities.enterprise_confirmed_at` 为空 |
+| ② **企业确认前区域服务商不可导出客户名单** | 「区域服务商」＝任一 `regional_partners` 行的申请账号（G5 外部角色）；其不得**枚举**客户名单（`?enterprise_code=` 探针关闭），亦不得读到他人的客户识别字段 | `attribution_service.require_enterprise_confirmed_for_customer_list`／`customer_identity_visible` |
+| ③ **双方按授权可见** | 企业确认后，客户识别字段对当事方可见；**托管方（admin）全量可见**（含未企业确认商机） | `attribution_service.customer_identity_visible` 第 1/4 条 |
+
+### 9.2 客户识别字段与遮蔽口径
+
+- **客户识别字段**（本域「客户名单」的唯一可枚举面）：`enterprise_code`（企业代号）、`enterprise_registered`（企业是否已自助注册——派生事实）。
+- **遮蔽而非删除**：不可见时两字段输出 `None`，并置 `customer_identity_visible=false` 显式透出判定结果——**字段形状稳定**，前端与测试可据该字段判别（避免「静默遮蔽」）。
+- **托管方例外**：`admin` 是平台方（托管方），全量可见**保持不变**——与 M3b「admin 跨 org 代操作留痕不阻断」一致；硬约束针对的是**区域服务商这一外部角色**。
+
+### 9.3 授权推导来源（零新表零新列零新路由）
+
+| 判定要素 | 推导来源（**全部为既有列/既有表**） |
+|---|---|
+| 托管方判定 | `users.role == 'admin'` |
+| 区域服务商身份 | `regional_partners.applicant_user_id == actor.id`（**既有表**，非新增授权表） |
+| 企业确认闸 | `commercial_opportunities.enterprise_confirmed_at IS NOT NULL`（**既有列**） |
+| 当事方判定 | `reported_by_user_id`／`attribution_owner_user_id`／`presales_owner_user_id`（**既有 FK 列**） |
+| 组织归属 | `users.org_id`（**间接归属**——OWNER 2026-11-12 拍板：不新增 org_id 列、不新增迁移、不改表结构） |
+
+### 9.4 错误码闭集
+
+| 错误码 | 状态 | 语义 |
+|---|---|---|
+| `opportunity_customer_list_not_confirmed` | 403 | 企业确认前，区域服务商请求客户名单（枚举探针命中「域外 ＋ 未企业确认」的行） |
+
+> **为什么是 403 而不是 409**：这是**读面授权**判定，不是状态机冲突——403 与既有读面越权码（`opportunity_forbidden`）同族，语义是「该身份此刻无权取得该客户识别数据」；409 留给**状态机**冲突（链路步序、规则位未配置等）。
+
+### 9.5 枚举探针的精确口径
+
+「按企业代号取数」是**存在性探针**——即使命中行全在 actor 可见域内，它也回答了「该企业代号在平台是否存在」。故：
+
+- 命中行全在 actor **可见域内** ⇒ 放行（actor 本就能看见，无新信息泄露）；
+- 命中行全**已企业确认** ⇒ 放行（已确认的客户识别事实属「双方按授权可见」）；
+- 存在「**域外 ＋ 未企业确认**」的行 ⇒ 403 `opportunity_customer_list_not_confirmed`。
+
+### 9.6 范围声明（如实登记）
+
+- 本轮硬约束的作用对象＝**区域服务商这一外部角色**；**非区域服务商账号**的账号级客户名单遮蔽属可能的扩展，**须 OWNER 裁决后再落**，本轮不越界改写既有语义。
+- 本轮**不激活**任何业务闸、不预写金额、不开售卖闸、不代做合规签署。
+
+<!-- ownership-rules:begin -->
+```json
+{
+  "section": "9",
+  "custodian": "admin",
+  "confirmation_gate_column": "enterprise_confirmed_at",
+  "external_role_source": "regional_partners.applicant_user_id",
+  "customer_identity_fields": ["enterprise_code", "enterprise_registered"],
+  "error_codes": ["opportunity_customer_list_not_confirmed"],
+  "zero_new_table": true,
+  "zero_new_column": true,
+  "zero_new_route": true
+}
+```
+<!-- ownership-rules:end -->
+
+> **机器闸**：`server/tests/test_m7_opportunity_data_ownership.py` 解析上块 JSON，与代码常量 `OPPORTUNITY_CUSTOMER_IDENTITY_FIELDS` **逐项双向相等**，并核对错误码闭集、托管方口径、确认闸列名、外部角色来源——**文档块／代码常量／测试三方一致**（M7 验收）。
+

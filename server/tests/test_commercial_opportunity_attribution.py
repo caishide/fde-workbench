@@ -94,7 +94,14 @@ def _activate_seat(app, admin_user_id: str, user_id: str) -> None:
     """经服务原语激活席位（admin 动作，bootcamp_practical 源、未设到期）。
 
     F 线 T3 起报备资格走席位费闸（ADR-011 §5-F），夹具用真实服务路径激活。
-    ``app`` 形参接 AuthorizedClient（其 ``.client`` 才是 Flask test client）。"""
+    ``app`` 形参接 AuthorizedClient（其 ``.client`` 才是 Flask test client）。
+
+    ★ **M6 注记（2026-11-12）**：本夹具是**测试态激活**——**非商用态**、
+    **不触发真实计费**（不经首单扣费闸、不产生科目行、不落金额）；
+    它只把 ``commercial_entitlements.seat_status`` 置为 ``active`` 以满足
+    报备资格闸，避免用例为「造一个 active 席位」而新增激活路径。
+    此处**不与** §17-1「有真实外部交付者前不激活」的商用态纪律打架：
+    后者约束的是**商用态的席位激活与计费**，本夹具只服务于测试断言。"""
     from fde_api.auth.models import User as UserModel
     from fde_api.commercial.service import activate_seat
     from fde_api.extensions import db

@@ -47,7 +47,9 @@ from fde_api.commercial.models import (
     CommercialOpportunity,
     CommercialOpportunityRule,
     CommercialRevenueLedger,
+    RegionalPartner,
 )
+from fde_api.commercial.org_read_scope import visible_user_ids_query
 from fde_api.commercial.service import CommercialServiceError
 from fde_api.dispatch.models import DeliveryPackage
 from fde_api.projects.events import record_event
@@ -308,10 +310,212 @@ def _enterprise_project_count(session: Session, enterprise_code: str) -> int:
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# M7：商机数据归属权与导出权硬约束（ADR-M7）
+#
+# 语义（任务书 §7 M7；sec 评审硬条件「归属权与导出权须在 M7 写死」）：
+#
+#   **平台托管** → **企业确认前区域服务商不可导出客户名单** → **双方按授权可见**
+#
+# 实现口径（**零新表、零新列、零新路由**——裁决 1：主体归属走 ``user.org_id``
+# 间接归属，不新增 org_id 列、不新增迁移、不改表结构）：
+#
+# - 「客户识别字段」＝**企业代号**与**企业是否已注册**派生事实——本域唯一
+#   客户名单可枚举面（见 ``OPPORTUNITY_CUSTOMER_IDENTITY_FIELDS``）；
+# - 「托管方」＝**平台 admin**（平台侧，全量可见，本轮不变——与 M3b
+#   「admin 跨 org 代操作留痕不阻断」一致）；
+# - 「区域服务商」＝任一 ``regional_partners`` 行的申请账号（G5 外部角色；
+#   四阶段皆属外部伙伴；区域代理本期无进入路径）——经既有 ``applicant_user_id``
+#   列判定，**不新增任何授权表**；
+# - 「企业确认」＝既有 ``commercial_opportunities.enterprise_confirmed_at`` 列
+#   （第②步平台代录企业书面答复时落值）——**企业确认前企业代号只是未经核验的
+#   报备声明**，属平台托管事实。
+# ══════════════════════════════════════════════════════════════════════════
+
+# 客户识别字段集合（本域「客户名单」的唯一可枚举面定义）
+OPPORTUNITY_CUSTOMER_IDENTITY_FIELDS = ("enterprise_code", "enterprise_registered")
+
+
+def is_opportunity_custodian(actor: User) -> bool:
+    """托管方判定——**平台 admin** 是商机数据的托管方（ADR-M7 §2）。
+
+    托管方全量可见（**含未企业确认商机**）：admin 是平台方，本轮口径不变。
+    本判定**只看 role 不看 org_id**——存量平台身份账号（``org_id IS NULL``）
+    不因此获得客户名单能力（客户名单能力属外部角色专属的受限面）。
+    """
+    return actor.role == ROLE_ADMIN
+
+
+def is_regional_partner(session: Session, actor: User) -> bool:
+    """区域服务商身份判定（G5 外部角色；**零新表**——既有 ``regional_partners``）。
+
+    「区域服务商」＝任一 ``regional_partners`` 行的申请账号
+    （``applicant_user_id``）——四阶段（``city_observer``／``city_service``／
+    ``formal_partner``）皆属外部伙伴；``regional_agent`` 本期无进入路径
+    （服务层显式拒绝），对本判定无影响。
+
+    区域伙伴的组织归属经 ``applicant_user_id`` → ``users.org_id`` 推导
+    （OWNER 2026-11-12 拍板：**不新增 org_id 列**）。
+    """
+    if is_opportunity_custodian(actor):
+        return False
+    return (
+        session.scalar(
+            select(RegionalPartner.id)
+            .where(RegionalPartner.applicant_user_id == actor.id)
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def customer_identity_visible(
+    row: CommercialOpportunity,
+    *,
+    actor: User,
+    external_partner: bool,
+    enforce_ownership: bool = True,
+) -> bool:
+    """客户识别字段对该 actor 是否可见（**授权模型**；零新表零新列零新路由）。
+
+    判定式（ADR-M7 §2）：
+
+    1. **托管方**（admin）⇒ 恒可见（平台托管方全量可见，本轮不变）；
+    2. **写面回显**（``enforce_ownership=False``）⇒ 可见——回显是**自证回执**
+       （本人刚提交的报备／刚确认的流转），遮蔽它不产生任何信息安全收益；
+    3. **非区域服务商身份** ⇒ 既有可见性语义**逐位不变**（本轮硬约束的作用
+       对象是**外部角色**，不越界改写既有读面口径——与 M6 的 org 隔离接线
+       分工正交）；
+    4. **区域服务商**（外部角色）⇒ 客户识别字段**以企业确认为闸**：
+       - 已企业确认 ⇒ 可见（**双方按授权可见**）；
+       - 企业确认前 ⇒ **不可见**（平台托管的客户识别事实不得外发给区域
+         服务商——**含其本人刚报备的行**：企业代号此时是**未经核验的报备
+         声明**，客户名单的主体是平台而非报备人）。
+
+    **范围声明**：本轮硬约束的作用对象＝**区域服务商这一外部角色**
+    （任务书 §7 M7 明文）——非区域服务商账号的账号级客户名单遮蔽属可能的
+    扩展，须 OWNER 裁决后再落，本轮不越界改写既有语义。
+    """
+    if is_opportunity_custodian(actor):
+        return True
+    if not enforce_ownership:
+        return True
+    if not external_partner:
+        return True
+    return row.enterprise_confirmed_at is not None
+
+
+def require_enterprise_confirmed_for_customer_list(
+    session: Session,
+    *,
+    actor: User,
+    enterprise_code: str,
+    scoped_ids: set[str],
+) -> None:
+    """**企业确认前的客户名单保护闸**（fail-closed；ADR-M7 §3）。
+
+    语义：企业确认前，企业代号是**未经平台核验的报备声明**——属平台托管的
+    客户识别事实；**区域服务商**不得据此**枚举**客户名单。
+
+    不通过 ⇒ 403 ``opportunity_customer_list_not_confirmed``。
+
+    **为什么是 403 而不是 409**：这是**读面授权**判定，不是状态机冲突——
+    409（``rule_not_configured`` 那种）会让调用方误读为「稍后重试即可」；
+    403 与既有读面越权码（``opportunity_forbidden``）同族，语义是「该身份
+    此刻无权取得该客户识别数据」。409 留给**状态机**冲突（链路步序、
+    规则位未配置等）。
+
+    **判定口径（精确到「是否会泄信息」）**：只有当该 ``enterprise_code``
+    **在平台全域存在未企业确认的行、且该行不在 actor 的可见域内**时，
+    探针才会泄露新信息（「这个企业代号在平台存在」）。故：
+
+    - 命中行全在 actor 可见域内 ⇒ 放行（actor 本就能看见，无新信息）；
+    - 命中行全已企业确认 ⇒ 放行（已确认的客户识别事实属「双方按授权可见」）；
+    - 存在「域外 ＋ 未企业确认」的行 ⇒ 403（**存在性旁路**被关闭）。
+    """
+    if is_opportunity_custodian(actor):
+        return
+    if not is_regional_partner(session, actor):
+        return
+    leaking = list(
+        session.scalars(
+            select(CommercialOpportunity.id).where(
+                CommercialOpportunity.enterprise_code == enterprise_code,
+                CommercialOpportunity.enterprise_confirmed_at.is_(None),
+            )
+        )
+    )
+    if not leaking:
+        return
+    if all(row_id in scoped_ids for row_id in leaking):
+        # 命中行全在 actor 可见域内 ⇒ 无新信息泄露
+        return
+    raise _error(
+        "opportunity_customer_list_not_confirmed",
+        "企业确认前，客户识别数据由平台托管：区域服务商不得取得客户名单"
+        "（企业确认后双方按授权可见）。",
+        403,
+    )
+
+
+def _opportunity_scope_filter(actor: User):
+    """列表可见域谓词（**M6 org 隔离 × M7 客户名单硬约束的单一权威**）。
+
+    - **平台身份／admin** ⇒ ``None`` 分支：既有语义**逐位不变**（只见本人
+      报备/归属/售前三列）——M1 拍板「存量用户不回填」⇒ 存量回归面零变化；
+    - **企业身份** ⇒ 可见集合收敛为「本 org（＋平台内部桶）成员」的商机
+      （M5 已落模式；行归属经 ``reported_by_user_id``／
+      ``attribution_owner_user_id``／``presales_owner_user_id`` →
+      ``users.org_id`` 推导，**零迁移零新列**）；别家企业商机不外泄。
+
+    ★ ``list_opportunities`` 的列表语句与枚举闸基准 ``scoped_ids`` **共用本
+    谓词** ⇒ M7 的 ``require_enterprise_confirmed_for_customer_list`` 判定
+    基准自动跟随 M6 的 org 可见域，两层约束不各说各话。判定权威仍是既有
+    ``fde_api.orgs.isolation``（经 ``org_read_scope.visible_user_ids_query``）。
+    """
+    visible_ids = visible_user_ids_query(actor)
+    if visible_ids is None:
+        return (
+            (CommercialOpportunity.reported_by_user_id == actor.id)
+            | (CommercialOpportunity.attribution_owner_user_id == actor.id)
+            | (CommercialOpportunity.presales_owner_user_id == actor.id)
+        )
+    return (
+        CommercialOpportunity.reported_by_user_id.in_(visible_ids)
+        | CommercialOpportunity.attribution_owner_user_id.in_(visible_ids)
+        | CommercialOpportunity.presales_owner_user_id.in_(visible_ids)
+    )
+
+
 def serialize_opportunity(
-    session: Session, row: CommercialOpportunity, now: datetime | None = None
+    session: Session,
+    row: CommercialOpportunity,
+    *,
+    actor: User,
+    external_partner: bool | None = None,
+    enforce_ownership: bool = True,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
+    """商机序列化（**按授权裁剪客户识别字段**；ADR-M7 §2）。
+
+    裁剪规则：``customer_identity_visible`` 为假 ⇒ ``enterprise_code`` 与
+    ``enterprise_registered`` 输出 ``None``（**遮蔽**，不是删除——字段形状
+    稳定，前端与测试可据 ``customer_identity_visible`` 判别），并置
+    ``customer_identity_visible=False`` 显式透出判定结果。
+
+    ``enforce_ownership=False`` 用于**写面回显**（自证回执：本人刚提交／
+    刚确认的流转）——回显不适用导出权硬约束（见 ``customer_identity_visible``
+    判定式第 2 条）。
+    """
     moment = now or _now()
+    if external_partner is None:
+        external_partner = is_regional_partner(session, actor)
+    visible = customer_identity_visible(
+        row,
+        actor=actor,
+        external_partner=external_partner,
+        enforce_ownership=enforce_ownership,
+    )
     effective = protection_effective_status(row, moment)
     days_remaining = None
     if effective == "active" and row.protection_expires_at is not None:
@@ -321,7 +525,7 @@ def serialize_opportunity(
         days_remaining = max(0, int(-(-remaining // 86400)))
     return {
         "id": row.id,
-        "enterprise_code": row.enterprise_code,
+        "enterprise_code": row.enterprise_code if visible else None,
         "title": row.title,
         "note": row.note,
         "status": row.status,
@@ -379,7 +583,13 @@ def serialize_opportunity(
         "withdrawn_at": row.withdrawn_at.isoformat() if row.withdrawn_at else None,
         "disputed_at": row.disputed_at.isoformat() if row.disputed_at else None,
         # 派生事实：企业是否已自助注册（**注册不改变归属**——结构性保证的可见证据）
-        "enterprise_registered": _enterprise_project_count(session, row.enterprise_code) > 0,
+        "enterprise_registered": (
+            _enterprise_project_count(session, row.enterprise_code) > 0
+            if visible
+            else None
+        ),
+        # M7：客户识别字段对该读者的可见性判定结果（显式透出，避免「静默遮蔽」）
+        "customer_identity_visible": visible,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -391,14 +601,43 @@ def list_opportunities(
     status: object = None,
     enterprise_code: object = None,
 ) -> dict[str, Any]:
-    """商机列表（admin 全量；非 admin 只见自己报备或归属的）。"""
+    """商机列表（admin 全量；非 admin 只见自己报备或归属的）。
+
+    **M7 客户名单硬约束**（ADR-M7 §3）：本读面**本身就是客户名单导出面**
+    （admin 全量含企业代号＋「企业是否已注册」派生事实，且支持
+    ``?enterprise_code=`` 枚举）——故硬约束**落在本函数与序列化层**，
+    不是另开一个 export 端点：
+
+    - **按企业代号枚举**（``?enterprise_code=``）＝客户名单导出尝试⇒对
+      **区域服务商**且**命中的商机尚未企业确认** ⇒ 403
+      ``opportunity_customer_list_not_confirmed``（fail-closed）；
+    - 列表内每行按 ``customer_identity_visible`` **遮蔽**客户识别字段
+      （企业确认前对区域服务商遮蔽）。
+
+    **M6 org 隔离接线**（落点在 ``_opportunity_scope_filter``）：企业身份下
+    可见集合收敛为「本 org（＋平台内部桶）成员报备/归属/售前的商机」——本企业
+    成员互相可见，**别家企业商机不外泄**（行归属经三个用户 FK →
+    ``users.org_id`` 推导，零迁移零新列）。列表语句与 ``scoped_ids`` 共用同一
+    谓词 ⇒ 枚举闸基准自动跟随 org 可见域，两层约束不各说各话。
+    """
+    # **可见域谓词**（可见域语义单一权威）——M6 的 org 维度接线落点即此
+    # 谓词（见 ``_opportunity_scope_filter`` docstring）。
+    scope_filter = (
+        None if actor.role == ROLE_ADMIN else _opportunity_scope_filter(actor)
+    )
     statement = select(CommercialOpportunity)
-    if actor.role != ROLE_ADMIN:
-        statement = statement.where(
-            (CommercialOpportunity.reported_by_user_id == actor.id)
-            | (CommercialOpportunity.attribution_owner_user_id == actor.id)
-            | (CommercialOpportunity.presales_owner_user_id == actor.id)
+    if scope_filter is not None:
+        statement = statement.where(scope_filter)
+    # **可见域 id 集合**（枚举闸用）——只含**可见域谓词**（不含 status 过滤、
+    # 不含 enterprise_code 过滤）：它回答「actor 本来能看见哪些行」，是
+    # 枚举探针是否泄露新信息的唯一判据基准。
+    scoped_ids = set(
+        session.scalars(
+            select(CommercialOpportunity.id).where(scope_filter)
+            if scope_filter is not None
+            else select(CommercialOpportunity.id)
         )
+    )
     if status is not None:
         if status not in OPPORTUNITY_STATUSES:
             raise _error("invalid_status", f"status 必须是 {'/'.join(OPPORTUNITY_STATUSES)} 之一。")
@@ -416,8 +655,22 @@ def list_opportunities(
             )
         )
     )
+    external_partner = is_regional_partner(session, actor)
+    if enterprise_code is not None:
+        # 枚举闸：按客户代号取数＝客户名单导出尝试（存在性旁路被关闭）
+        require_enterprise_confirmed_for_customer_list(
+            session,
+            actor=actor,
+            enterprise_code=enterprise_code.strip(),
+            scoped_ids=scoped_ids,
+        )
     return {
-        "opportunities": [serialize_opportunity(session, row) for row in rows],
+        "opportunities": [
+            serialize_opportunity(
+                session, row, actor=actor, external_partner=external_partner
+            )
+            for row in rows
+        ],
         "count": len(rows),
         "scope": "platform" if actor.role == ROLE_ADMIN else "self",
     }
@@ -426,6 +679,7 @@ def list_opportunities(
 def get_opportunity(
     session: Session, *, actor: User, opportunity_id: str
 ) -> dict[str, Any]:
+    """商机详情（**按授权裁剪客户识别字段**；ADR-M7 §2）。"""
     row = _load(session, opportunity_id)
     if actor.role != ROLE_ADMIN and actor.id not in (
         row.reported_by_user_id,
@@ -433,7 +687,9 @@ def get_opportunity(
         row.presales_owner_user_id,
     ):
         raise _error("opportunity_forbidden", "只能查看本人相关商机。", 403)
-    return {"opportunity": serialize_opportunity(session, row)}
+    return {
+        "opportunity": serialize_opportunity(session, row, actor=actor),
+    }
 
 
 def _require_sourcer_seat(session: Session, actor: User) -> None:
@@ -539,7 +795,10 @@ def submit_opportunity(
             "enterprise_code": row.enterprise_code,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def confirm_enterprise_demand(
@@ -585,7 +844,10 @@ def confirm_enterprise_demand(
             "enterprise_code": row.enterprise_code,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def confirm_attribution(
@@ -641,7 +903,10 @@ def confirm_attribution(
             "enterprise_code": row.enterprise_code,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def reassign_attribution(
@@ -691,7 +956,10 @@ def reassign_attribution(
             "owner_user_id": owner.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def set_protection(
@@ -738,7 +1006,10 @@ def set_protection(
             else None,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def renew_protection(
@@ -789,7 +1060,10 @@ def renew_protection(
             "renewal_count": row.protection_renewal_count,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def assign_presales(
@@ -836,7 +1110,10 @@ def assign_presales(
             "presales_owner_user_id": owner.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def record_match(
@@ -885,7 +1162,10 @@ def record_match(
             "delivery_package_id": package.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def record_customer_choice(
@@ -925,7 +1205,10 @@ def record_customer_choice(
             "delivery_package_id": package.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def record_settlement(
@@ -986,7 +1269,10 @@ def record_settlement(
             "amount": float(entry.amount),
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def mark_disputed(
@@ -1031,7 +1317,10 @@ def mark_disputed(
             "opportunity_id": row.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def withdraw_opportunity(
@@ -1045,7 +1334,12 @@ def withdraw_opportunity(
     if actor.role != ROLE_ADMIN and row.reported_by_user_id != actor.id:
         raise _error("opportunity_forbidden", "只有报备人本人可撤回商机。", 403)
     if row.status == "withdrawn":
-        return {"opportunity": serialize_opportunity(session, row), "changed": False}
+        return {
+            "opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": False,
+        }
     if row.status == "settled":
         raise _error("invalid_opportunity_state", "已结算的商机不可撤回。", 409)
     row.withdrawn_at = _now()
@@ -1061,7 +1355,10 @@ def withdraw_opportunity(
             "opportunity_id": row.id,
         },
     )
-    return {"opportunity": serialize_opportunity(session, row), "changed": True}
+    return {"opportunity": serialize_opportunity(
+                session, row, actor=actor, enforce_ownership=False
+            ),
+            "changed": True,}
 
 
 def _reject_when_disputed(row: CommercialOpportunity) -> None:
@@ -1090,6 +1387,7 @@ def _package_enterprise_code(session: Session, package: DeliveryPackage) -> str 
 
 __all__ = [
     "CommercialServiceError",
+    "OPPORTUNITY_CUSTOMER_IDENTITY_FIELDS",
     "OPPORTUNITY_PROTECTION_STATUSES",
     "OPPORTUNITY_RULE_STATUSES",
     "active_protection_for_enterprise",
@@ -1097,8 +1395,11 @@ __all__ = [
     "configure_rule",
     "confirm_attribution",
     "confirm_enterprise_demand",
+    "customer_identity_visible",
     "ensure_rule",
     "get_opportunity",
+    "is_opportunity_custodian",
+    "is_regional_partner",
     "list_opportunities",
     "list_rules",
     "mark_disputed",
@@ -1108,6 +1409,7 @@ __all__ = [
     "record_settlement",
     "reassign_attribution",
     "renew_protection",
+    "require_enterprise_confirmed_for_customer_list",
     "require_rule_configured",
     "rule_status_snapshot",
     "serialize_opportunity",

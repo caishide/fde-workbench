@@ -927,6 +927,38 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - 拍板留痕：设计稿 §6 四项未获逐项答复，按「按推荐执行＋留痕可推翻」先例记默认立场（①独立 L 线 ②首批三类来源照单 ③单向阀确认＋静态钉 ④L3 才消费 lessons 来源边界），记录于 `docs/audit/交付案例学习闭环-L1任务书-2026-11-12.md`。
 
 **本轮未做（授权边界内）**：L2 锚点场景＋分布读数、L3 `lessons.json` 接线均未开工（排期≠实施授权，待蔡工另行放行）；导入与激活两步由蔡工在桌面/API 人工执行。
+
+### T-M7 商机数据归属权与区域服务商（M7-1 轮）— **结构就绪·待授权**（2026-11-12）
+
+- **登记说明**：本行**不新增 B# 编号**（`AGENTS.md:45` B# 已 FREEZE 封顶 B#40）——用 `T-M7` 任务号，与既有 `T-L0` 同族编号法。
+- **来源**：leader 任务书 §7 M7（商机归属与区域服务商）＋ sec 评审硬条件「归属权与导出权**须在 M7 写死**」（`docs/commercialization/多客户工作平台-评审记录-2026-11-10.md:35`）＋ GAP-11／GAP-12。
+- **状态**：**结构就绪·待授权**——本轮＝**只落结构与测试**（M7 后置的**业务/合规授权层**理由仍维持：合规条件清单四项签署未完成）。
+- **落地实现**：
+  - **ADR-M7**（`docs/commercialization/multi-tenant/ADR-M7-opportunity-data-ownership.md`）五项裁决：客户名单面＝既有列表读面（**不新开 export 端点**）／企业确认闸＝既有列 `enterprise_confirmed_at`／区域服务商身份＝既有表 `regional_partners.applicant_user_id` 推导／托管方＝admin 全量可见保持不变／主体归属走 `user.org_id` **间接归属**（OWNER 2026-11-12 拍板：不新增 org_id 列、不新增迁移、不改表结构）。
+  - 服务层：`attribution_service.py` 落归属权原语（`is_opportunity_custodian`／`is_regional_partner`／`customer_identity_visible`／`require_enterprise_confirmed_for_customer_list`）＋读面裁剪（`list_opportunities` 枚举闸＋`serialize_opportunity` 客户识别字段遮蔽，遮蔽而非删除＋显式 `customer_identity_visible`）；`regional_service.py` 落区域面 org 维度接线（`list_partners`／`get_partner`）。
+  - 成文规则：`docs/commercialization/rules/opportunity-attribution-rules.md` **§9「数据归属权与导出权」**＋机器可读块（文档块／代码常量／测试**三方一致**机器闸）。
+  - 验收对照：`docs/commercialization/multi-tenant/M7-验收对照-v1.md`。
+- **验收证据**：NEW `test_m7_opportunity_data_ownership.py` **13 例**＋`test_m7_s5_e2e.py` **9 例**＋`test_m7_cross_org_opportunity.py` **10 例**＝ **32 例**；邻域回归 `test_commercial_opportunity_attribution.py`（23）＋`test_commercial_regional_partners.py`（31）＋`test_m3b_batch2_commercial.py`（14）＝ **68 例全绿**；`ruff` All checks passed；mypy 基线 **279/279**（零新增）。
+- **零结构变化自证**：**零迁移零新表零新列零新路由**——授权可见范围由既有列推导；开工基线 `fc9aa34` 上的 M6 轮增量仅服务文件＋测试＋文档。
+- **本轮未做（授权边界内）**：不开售卖闸、不登记合规条件证据（`register_gate_condition`／`open_sale_gate` **零调用**）；不激活席位计费（S5 e2e 复用 `_activate_seat` 夹具＝**测试态激活、非商用态、不触发真实计费**）；不改 G4 七步转移函数语义／G5 区域四阶段语义／售卖闸开闭逻辑／`_require_sourcer_seat` 判定式／`activate_seat`／`FIRST_ORDER_SEAT_FEE`／任何配置位数值；不代做合规签署、不代填签闸栏日期、不代填真实发布记录。
+- **待 OWNER 裁决（ADR-M7 §7）**：①非区域服务商账号是否也须受「企业确认前客户代号遮蔽」约束；②企业确认后区域服务商可见的客户名单粒度；③企业侧在商机读面的可见位。
+
 | V31-P2 | **批量分解 vs gunicorn timeout**：全量 9 任务单请求卡项目行锁 >120s 被 `--timeout 120` abort（零残留，重跑安全=幂等锚验证通过） | somwyn 试点 Step 6（分批 item_ids 缓解，9/9 成功） | P2 | runbook Step 6 增补「大方案 item_ids 分批」注记；服务端批量切片上限评估或 timeout 拍板 |
 | V31-P3 | **转写草稿卷属主**：容器 `/app/.fde-transcript-drafts` 属主 root → 首写 PermissionError | somwyn 试点 Step 1（`chown fde:fde` 已临时修复） | ✅ **已实施（2026-11-10）**：Dockerfile 预建目录并以 fde 属主 chown（存量卷一次性 chown 语义不变）；随下次 rebuild 生效 | 镜像/entrypoint 以运行属主（fde）预建目录 |
 | V31-D1 | **审阅动作 admin 代执行复核**（人工项）：试点全程审阅动作（facts/reqs 接受、测试计划批准、执行登记）由 admin 代执行；本体 confirm 与 workflow 拍板已由 pilot.reviewer 决策分离完成 | somwyn 试点全程 | ✅ **已复核销号（2026-11-09）** | AI 技术核验稿先行（22 事实锚点程序化核验 21/22 精确命中，#10 内容正确行号锚滑一位留档注记；7 需求↔事实溯源映射齐；测试账 v1 superseded/v2 approved/7×passed dev 逐项吻合；★1/★2 澄清材料实证在案〔Zoho 投递 id/四条验收口径〕）→ **蔡工交互拍板**（29 项全部认可／两 ★ 澄清后接受并已流转 accepted〔审阅 comment 标注蔡工授权链，admin 代执行留痕〕／测试定性认可）。清单 `.fde/pilot-D1复核清单-2026-11-09.md` §三/§四 已回填；后续试点按 runbook C4 配置 project_lead 执行 |
+
+### T-M6 商业计量面按 org 隔离接线（M6-1 轮）— **结构就绪·待授权**（2026-11-12）
+
+- **登记说明**：本行**不新增 B# 编号**（`AGENTS.md:45` B# 借鉴线已 FREEZE，封顶 B#40，不再新增任何 B# 条目）——用 `T-M6` 任务号，与既有 `T-L0`／`T-M7` 同族编号法。
+- **来源**：leader 任务书 §14 M6 行＋§7 M6（商业计量结构落地）＋ OWNER 2026-11-12 拍板八项（主体归属走 `user.org_id` 间接归属／可见性沿用 M5 模式／G2 去重主体仍 USCC 单键／M3a 隔离入口语义／CR-062 404 口径／admin 跨 org 仍是 admin 行为＋留痕／金额与激活闸不碰／四席位口径不碰）＋ GAP-07／08／09／10。
+- **状态**：**结构就绪·待授权**——本轮＝**只落结构与测试**；M6 后置的**业务/合规授权层**理由仍维持（M6 真实试点反馈未完成）；Leader 任务书 §14 M6 行**保持 `[ ]` 不打勾**。
+- **落地实现**：
+  - **单一 helper**：NEW `server/src/fde_api/commercial/org_read_scope.py`——归属推导（用户 FK → `users.org_id`）＋列表级 SQL 谓词下推（红线 10）＋对象级四态可见性判定（`VIS_SELF`／`VIS_SAME_ORG`／`VIS_CROSS_ENTERPRISE`／`VIS_OTHER`）。**判定权威仍是既有 `fde_api/orgs/isolation.py`**（`org_scope_org_ids`／`is_platform_identity`）——**未新建平行权限判定**（红线 8 合规）。
+  - **接线读面**：G3 科目层（`list_revenue_entries`／`get_revenue_entry`／`reconcile_revenue`）＋ G1 权益面（`get_entitlement_for_view`）＋ G3 认证记录面（`list_certification_records`）＋ G4 商机列表（`list_opportunities`）。
+  - **失败码纪律**：跨企业 ⇒ **404**（M3a §3.5 默认口径「不确认资源存在」）；同企业无操作权 ⇒ 沿用该读面**既有码**（403）。**不自造失败码、不改既有码**。
+  - **验收对照**：`docs/commercialization/multi-tenant/M6-验收对照-v1.md`。
+- **验收证据**：NEW `test_m6_commercial_org_isolation.py` **20 例**（G3 科目层 5／权益＋认证 2／商机 1／同企业互见 2／平台身份零回归 3／admin 全量＋留痕 3／G2 两面现状核实 3／USCC 单键去重 1）；商业域邻域回归 **228 例全绿**；既有商业域七套件 **138 例全绿**；`ruff` All checks passed；mypy 基线 **279/279**（零新增）。
+- **变异可辨**：两处摘除式变异**全转红→字节级还原→复绿**——M1（`visible_user_ids_query` 的 org 谓词 → 只含 actor 本人）⇒ **1 failed**；M2（`resource_visibility` 跨企业分支 → 退化为 `VIS_OTHER`）⇒ **4 failed**；还原后 sha256 `950bb310…090e1` 一致、**20 passed** 复绿。
+- **零结构变化自证**：**零迁移零新表零新列零新路由**——归属经既有用户 FK 推导，不加列；授权可见范围由既有列推导；`git diff --name-status` 仅一个 helper 模块＋六个服务文件＋测试＋文档。
+- **本轮未做（授权边界内）**：不改 `billing_service.py` 六道扣费闸／`activate_seat`／`FIRST_ORDER_SEAT_FEE`／任何配置位数值／`orgs/isolation.py` 语义／`admin_routes.py` 双闸路由；不改 G4 七步转移函数语义／G5 区域四阶段语义／售卖闸开闭逻辑；**G2 两面（额度账／企业空间）经核实后不改**（CR-062「绑定账号本人或 admin」判定天然比 org 维度更严，改之即推翻 CR-062 与既有钉「同主体第二经办人也 404」）；不激活三道业务闸、不落任何金额、售卖闸维持 closed、不登记合规条件证据、不代做合规签署、不代填签闸栏日期与真实发布记录；桌面端零改动。
+- **M6/M7 同一交付分支叠加（已裁决并执行）**：M6 轮与 M7 轮经 rebase 压成**单提交、一条线性交付分支、一个 PR**。两轮语义正交（M6＝org 维度可见性／M7＝客户名单导出权），唯一重叠点 `attribution_service.py::list_opportunities` 已按「**以 M7 的 `_opportunity_scope_filter(actor)` 单一谓词为底，把 M6 的 org 谓词（`org_read_scope.visible_user_ids_query`）融进去**」解决；`scope_filter` 与 `scoped_ids` 共用同一谓词 ⇒ M7 枚举闸基准自动跟随 org 可见域，字段遮蔽与枚举闸**独立生效、未被 org 谓词绕过**。

@@ -17,6 +17,7 @@ import "../../src/renderer/src/fde-web-bridge" // 注入 window.fde
 import type { ApiMethod } from "../../src/shared/contracts"
 import {
   BODY_SAMPLES,
+  HEADER_SAMPLES,
   METHOD_SAMPLES,
   PATH_SAMPLES,
 } from "../shared/api-safety-samples"
@@ -32,7 +33,7 @@ function stubFetch(payload: unknown) {
 }
 
 async function webJudge(
-  kind: "path" | "method" | "body",
+  kind: "path" | "method" | "body" | "header",
   input: string | unknown,
 ): Promise<boolean> {
   const fetchMock = stubFetch({ data: {}, error: null })
@@ -43,13 +44,38 @@ async function webJudge(
   const request = window.fde.api.request
   const result = kind === "body"
     ? await request(path, { method: "POST", accessToken: "equivalence-probe", body: input })
-    : await request(path, { method, accessToken: "equivalence-probe" })
+    : kind === "header"
+      ? await request(path, {
+          method: "POST",
+          accessToken: "equivalence-probe",
+          headers: input as Record<string, string>,
+        })
+      : await request(path, { method, accessToken: "equivalence-probe" })
   const allowed = result.ok === true
   if (allowed) {
     // 放行面必须真实到达 fetch（裸发降级路径的判别信号）
     expect(fetchMock).toHaveBeenCalled()
   }
   return allowed
+}
+
+// 获客诊断 T-14a 公开面：捕获 web 桥实际发给 fetch 的请求头。
+async function webFetchHeaders(
+  path: string,
+  options: Record<string, unknown>,
+): Promise<Record<string, string>> {
+  let seenHeaders: Record<string, string> = {}
+  const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+    seenHeaders = { ...((init?.headers ?? {}) as Record<string, string>) }
+    return { ok: true, status: 200, json: async () => ({ data: {}, error: null }) }
+  })
+  vi.stubGlobal("fetch", fetchMock)
+  const result = await window.fde.api.request(
+    path,
+    options as unknown as Parameters<typeof window.fde.api.request>[1],
+  )
+  expect(result.ok).toBe(true)
+  return seenHeaders
 }
 
 afterEach(() => {
@@ -97,5 +123,33 @@ describe("CR-071 web 桥等价性判定（共享样本集，与桌面恒同）",
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe("invalid_request")
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("自定义请求头样本：判定与 expected 逐位一致（T-14a 校验项 9）", async () => {
+    for (const sample of HEADER_SAMPLES) {
+      const actual = await webJudge("header", sample.headers)
+      expect(
+        actual,
+        `web 桥自定义头判定漂移：${sample.note}`,
+      ).toBe(sample.expected)
+    }
+  })
+
+  it("公开面：空 accessToken 不下发 Authorization，自定义头原样透传", async () => {
+    const headers = await webFetchHeaders("/api/v1/diagnostics/questionnaire", {
+      method: "GET",
+      accessToken: "",
+      headers: { "x-diagnostic-token": "diag12" },
+    })
+    expect(headers.authorization).toBeUndefined()
+    expect(headers["x-diagnostic-token"]).toBe("diag12")
+  })
+
+  it("非空 accessToken 仍下发 Bearer（公开面扩展零回归）", async () => {
+    const headers = await webFetchHeaders("/api/v1/projects", {
+      method: "GET",
+      accessToken: "probe-token",
+    })
+    expect(headers.authorization).toBe("Bearer probe-token")
   })
 })
