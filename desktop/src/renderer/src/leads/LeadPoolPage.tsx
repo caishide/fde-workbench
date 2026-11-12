@@ -48,7 +48,7 @@ export const ATTRIBUTION_LABELS: Record<string, string> = {
 
 export const FEE_BASIS_LABELS: Record<string, string> = {
   none: "零转化费",
-  pending_pricing: "转化费比例待价格轮",
+  ratio_applied: "转化费按平台比例计",
 }
 
 export interface LeadPoolEntry {

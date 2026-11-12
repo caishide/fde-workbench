@@ -2,9 +2,9 @@
  "route_count": 483,
  "blueprint_count": 52,
  "table_count": 153,
- "revision_count": 71,
+ "revision_count": 72,
  "heads": [
-  "a3e8c2f6b9d4"
+  "f2a7c4e9b6d3"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -647,6 +647,12 @@
     "workflow_definitions",
     "workflow_definition_versions"
    ],
+   "add_column_tables": []
+  },
+  "f2a7c4e9b6d3": {
+   "file": "f2a7c4e9b6d3_diagnostic_fee_ratio_basis.py",
+   "down_revision": "a3e8c2f6b9d4",
+   "create_tables": [],
    "add_column_tables": []
   },
   "f3a9c7e1d5b2": {

@@ -208,7 +208,7 @@ it("admin：裁定队列展示认领人/自认领信号，接受走 POST accept"
     ) {
       expect(options.body).toMatchObject({ decision_note: "区域吻合，接受" })
       return Promise.resolve(
-        claimRow({ status: "accepted", attribution_tier: "B", fee_basis: "pending_pricing" }),
+        claimRow({ status: "accepted", attribution_tier: "B", fee_basis: "ratio_applied" }),
       )
     }
     if (path.startsWith("/api/v1/diagnostics/leads?")) return Promise.resolve([])

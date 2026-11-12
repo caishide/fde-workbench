@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -281,6 +282,15 @@ class Settings(BaseSettings):
     # AI 用量与审计如实记在它头上。**留空 = 报告功能不可用**（受理时 503
     # fail-closed，不静默降级成「没有报告」）。
     diagnostics_ai_actor_username: str = ""
+    # ── 获客诊断工具（T-16 价格轮）：转化费比例（**配置面**） ───────────
+    # 三档归因的转化费为**比例制**（蔡工 2026-11-12 拍板④，按推荐执行＋留痕
+    # 可推翻）：A 渠道报备缺省 20%、B 认领转化缺省 10%（C 平台留存零转化费，
+    # 不走比例）。比例数值**只在配置面**——模型列零比例零金额字段（静态钉
+    # 不变），认领单投影不携带比例数字（dispatch 域「报价/收款明细不出响应」
+    # 同款纪律）。取值 0~1 的小数；越界启动即炸——商业口径错配宁可起不来，
+    # 不可带错跑（也挡住「填 20 想表达 20%」的经典笔误）。
+    diagnostics_fee_ratio_tier_a: Decimal = Field(default=Decimal("0.20"), ge=0, le=1)
+    diagnostics_fee_ratio_tier_b: Decimal = Field(default=Decimal("0.10"), ge=0, le=1)
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",
