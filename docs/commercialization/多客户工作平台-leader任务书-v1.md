@@ -20,6 +20,7 @@
 4. **AI 供应商合规红线自动升级**：评估文档 §7.0 已实证「GLM/MiniMax 订阅 key 明文不适用于自建 SaaS」——多客户商用后平台即 SaaS，**模型侧只允许按量付费 key**，且预算闸须从「整实例一个数」改为「按主体分别设额」（GAP-04 的额度账承担）。此项进 M4。
 5. **顺序纪律沿用 G 线**：M0（决策与盘点，零代码）→ M1（底座）→ M2/M3/M4（可部分并行，各自独立切片）→ M5–M7（商业语义落地）→ M8（回归与试点）。每轮 DoD 四同步（代码/文档/台账/交付物）照旧。
 6. **v1.2 拍板结论（2026-11-10，全部采纳本文建议）**：**甲路线**（组织级隔离，不启用 RLS）｜ **orgs 独立表**｜ **企业/创业者自助激活，交付者与区域审核**｜ **先免费额度、订阅随 M6 落结构**｜ **现服务器不扩容先试点**｜ **W0 与商用平台分离**｜ **试用客户 M1 后再评估迁移**｜ **`org_id=NULL` = 平台身份不受 org 限制**（存量回归面最小）｜ **交付者供给由 `OWNER` 亲自兼任首交付者**。**MVP 范围 = M1 + M2 + M3a/c/b + M5 四 Goal 先行**（MT-B 即第一个对外里程碑），M6 计费结构与 M7 区域商机按真实反馈后置。
+7. **M6/M7 工程排序后置已解除（2026-11-12）**：§0 第 6 条末尾「M6 计费结构与 M7 区域商机按真实反馈后置」一句**就**工程排序层（实施次序）而言已解除——M6-1 轮（商业域读面 org 隔离接线＋跨 org 隔离用例）已进入实施（**零迁移零新表零新路由**）。**但业务闸与合规签署的后置维持不变**：M6 的真实试点反馈、M7 的合规条件签署（售卖闸四项合规条件）**仍为未完成**，M6 验收行（§14）**不打勾**、业务闸与合规证据**一律不代填**。
 
 ---
 
@@ -319,8 +320,9 @@ orgs（新表，主体承载）
     - [x] 批次 ④（57 条 特殊域与平台事实）✅（PR #336 squash 合并 `405c541`＝fork/main 顶；CI 四绿实测 **3058 收集 = 3051 passed + 7 skipped**〔run 42989050456〕；实改＝**dispatch package_access 授予留痕**（ADR-M3 §5「谁授权给谁」——跨企业授权 ⇒ `cross_org_package_access_granted`＋org 维度取被授权账号归属）；dispatch 访问面核验（第三语义：无授权 ⇒ 404 不泄露存在性／admin 平台全局放行／授予后可读）；users 域跨 org 留痕（`cross_org_user_updated`）；★人工复核纠正（simulation＝平台级演练域／internal＝服务间认证／agents·ai·bridge 由既有套件覆盖）；NEW `test_m3b_batch4_special_domains.py` 6 例；变异摘 `_record_grant_event` ⇒ 3 红→还原→6 绿；dispatch 十八套件 161 例全绿；2026-11-11）
 - [x] M4：Redis/存储/队列/预算按主体隔离；主体级 `budget_blocked` 留痕 ✅（四批全合并＝fork/main：A PR #338 `ed41602`（Redis 13/13 键族归属核销，零生产代码——M0 判定 K3/K4/K5 现测纠正为核销）／B PR #340 squash `5027fc4`（AI 预算主体＝企业 org：`orgs.ai_monthly_token_budget` 可空未配置回落实例值；`subject_budget_exceeded` 主体级判定＋`ai_call_audits.status='budget_blocked'` 留痕；admin 双闸写面）／C PR #344 squash `4313229`（`outbox_events.subject_org`＋`background_jobs.org_id` 存量 NULL=平台级零回填；enqueue/ensure keyword-only 主体声明编译闸；27 调用点接线；`GET /admin/jobs/metering` 计量读面——计量面非授权面）／D PR #351 squash `fcc73b0`（NEW `storage/layout.py` 单一权威＋`FDE_STORAGE_LAYOUT` 五状态机出厂 legacy＋新键 `org/{org_id}/…`／`platform/…` 逻辑键不变零回填＋24 调用点接线＋`storage-migrate-layout` 命令只交付不跑）；CI 链合并树实测 3073→3091→3097→3142 收集（PR #351 run 43058957925＝3135 passed + 7 skipped）；部署活体复验绿（alembic `c1d4e7f9a2b3 (head)`／url_map 469 non-static／三镜像逐位一致／ready·live 200／四容器 healthy）；「供应商只允许按量付费 key」红线落 `server/.env.example` AI 段；收口 PR（2026-11-12））
 - [x] M5：企业注册→诊断→三付费选项全程无人工建号；分流可回看；G6 验收清单过 ✅（M5-3 验收轮：端到端 test_m5_s1_e2e_from_registration_to_paid_option＋对照表 docs/commercialization/multi-tenant/M5-验收对照-v1.md；PR #361）
-- [ ] M6：G3 验收清单过；计费名目有归属、无硬编码数值；席位反例用例过
+- [ ] M6：G3 验收清单过；计费名目有归属、无硬编码数值；席位反例用例过（2026-11-12 已解除工程排序后置，进入实施；M6-1 轮：商业域读面 org 隔离接线＋跨 org 隔离用例；本轮零迁移零新表零新路由）
 - [ ] M7：G4/G5 验收清单过；售卖开关关闭态验证
+  > （2026-11-12 已解除工程排序后置，进入实施；M7-1 轮：商机数据归属权硬约束＋S5 e2e；本轮零迁移零新表零新路由；售卖闸维持 closed、合规签署未代做）
 - [ ] M8：安全专项零高危；全量回归绿；2–3 家试点完成；MT-C 签核
 - [ ] 回写：评估文档 §0、G 线任务书 §4、v2.0 方案 §10、AGENTS.md（如红线有增）
 

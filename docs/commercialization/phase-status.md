@@ -1,9 +1,109 @@
 # 商业化阶段状态（按 Goal 轮次累积）
 
 - 权威基线：**fork/main**——G0 合并 `28f55fd`（#216）／G1 合并 `f186342`（#217）；G2 合并 `b0fd5fc`（#228）／G3 合并 `f65f874`（#234）／G4 合并 `ffed2e2`（#241）／**G5 合并 `28285e5`（#251，基线 `5294a6e`，合并前两度 rebase 融合上游 #246/#247/#250/#249/#252/#254/#253 七笔）／**G6 合并 `4e3e0e0`（#262，基线 `212b5fb`，合并前两度 rebase 融合上游 #258/#259/#260/#261 四笔）**
-- 工作树：`D:\test\fde-wt-g1`
-- 当前阶段：**§16 最终验收清单核对（收尾核查轮）— 已完成（18/18 全过）；商业化 G1–G6 Goal 循环全部收口**
+- 工作树：`D:/test/fde-wt-g1`（G1–G6 收口态）／**`D:/test/fde-wt-m6`（M6/M7 联合轮：单分支 `feat/m6-m7-commercial-joint`，交付基线 fork/main `d0118b1`）**
+- 当前阶段：**多客户 M6/M7 联合轮（M6 商业域读面 org 隔离＋M7 商机数据归属权硬约束／S5 e2e／区域面 org 接线）— 结构就绪·待授权**（三道业务闸不激活、金额不预写、售卖闸维持 `closed`、合规签署未代做）；商业化 G1–G6 Goal 循环已全部收口
 - 阶段纪律：**一个 Goal 只做一个阶段，不跳阶段**；每阶段按任务书 §14 总提示词逐项回报（SHA/分支/阶段、改动文件、迁移、API·权限·目录、前端、测试命令与通过·失败·跳过数、安全·兼容·回滚、验收证据、遗留、下一阶段是否可开）
+
+---
+
+## M7：商机数据归属权与区域服务商（M7-1 轮）— 结构就绪·待授权
+
+- 分支：`feat/m6-m7-commercial-joint`（工作树 `D:/test/fde-wt-m6`；M6/M7 压成单提交、一个 PR）
+- 开工基线：fork/main `fc9aa34`；**交付基线已 rebase 至 `d0118b1`**（单提交 PR）
+- 状态：**结构就绪·待授权**（本轮＝**只落结构与测试**；M7 后置的**业务/合规授权层**理由**仍维持**——合规条件清单四项签署未完成，售卖闸维持 `closed`，**未代做合规签署**）
+
+### 目标
+
+leader 任务书 §7 M7：S5 场景端到端（渠道侧能力，售卖默认关）＋「**商机数据归属权写死：平台托管、企业确认前区域服务商不可导出客户名单、双方按授权可见**」（sec 评审硬条件）＋ G4/G5 验收清单过。
+
+### 设计决策及理由（含 ADR 编号）
+
+- **ADR-M7**（`multi-tenant/ADR-M7-opportunity-data-ownership.md`）五项裁决：①**客户名单面＝既有列表读面**（`GET /commercial/opportunities` 支持 `?enterprise_code=` 枚举 ⇒ 硬约束落在 `list_opportunities`＋`serialize_opportunity`，**不新开 export 端点**——另开端点无效：绕过路径在既有读面）；②**企业确认闸＝既有列** `enterprise_confirmed_at`（零新列）；③**区域服务商身份＝既有表推导** `regional_partners.applicant_user_id`（零新表）；④**托管方＝admin** 全量可见**保持不变**（与 M3b「admin 跨 org 代操作留痕不阻断」一致）；⑤**主体归属走 `user.org_id` 间接归属**（OWNER 2026-11-12 拍板：不新增 org_id 列、不新增迁移、不改表结构）。
+
+### 修改文件
+
+```text
+新增：
+  docs/commercialization/multi-tenant/ADR-M7-opportunity-data-ownership.md
+  docs/commercialization/multi-tenant/M7-验收对照-v1.md
+  server/tests/test_m7_opportunity_data_ownership.py
+  server/tests/test_m7_s5_e2e.py
+  server/tests/test_m7_cross_org_opportunity.py
+修改：
+  server/src/fde_api/commercial/attribution_service.py   （归属权原语＋读面裁剪）
+  server/src/fde_api/commercial/regional_service.py      （区域面 org 维度接线）
+  docs/commercialization/rules/opportunity-attribution-rules.md （§9＋机器可读块）
+  docs/commercialization/phase-status.md / 多客户工作平台-leader任务书-v1.md /
+  docs/commercialization/multi-tenant/GM线联合排期草案.md / 00-gap-register.md /
+  docs/商业化_G1_G4_Goal实施任务书.md / docs/implementation/v3-backlog.md /
+  CHANGELOG.md / AGENTS.md
+```
+
+### 数据库迁移
+
+**零迁移**（本轮零新表零新列零新路由——裁决 1）。既有 G4/G5 六表（`commercial_opportunities`／`commercial_opportunity_rules`／`regional_partner_tiers`／`regional_partners`／`regional_sale_gate`／`regional_service_settlements`）**表结构逐位不变**；授权可见范围由既有列推导（`enterprise_confirmed_at`＋三列 FK＋`users.org_id`）。
+
+### API / 权限 / API Catalog
+
+**零新路由**——硬约束落在**既有** `GET /api/v1/commercial/opportunities`、`GET /api/v1/commercial/opportunities/<id>` 读面（列表＋序列化层）。治理面不进 api_catalog；ENTRIES 不变。新增错误码 `opportunity_customer_list_not_confirmed`（403）——**既有错误码逐位不变**。
+
+### 前端变化
+
+无（纯服务端轮，桌面便携版不重打包；商机读面无桌面消费方现测确认）。
+
+### 测试命令与结果
+
+- NEW `test_m7_opportunity_data_ownership.py` **13 例**＋`test_m7_s5_e2e.py` **9 例**＋`test_m7_cross_org_opportunity.py` **10 例**＝ **32 例**。
+- 邻域回归：`test_commercial_opportunity_attribution.py`（**23 passed**）＋`test_commercial_regional_partners.py`（**31 passed**）＋`test_m3b_batch2_commercial.py`（**14 passed**）＝ **68 例**。
+- `ruff check --select F401,F841 src tests` → **All checks passed**。
+- `python scripts/check-python-types.py` → **OK：baseline 279 occurrences / 104 distinct，current 279**（零新增类型错误）。
+
+### 安全检查
+
+- **客户名单硬约束**（M7 头号新增件）：企业确认前区域服务商**不可导出客户名单**——枚举探针（`?enterprise_code=`）命中「域外 ＋ 未企业确认」的行 ⇒ 403；读面客户识别字段按授权遮蔽（`enterprise_code`／`enterprise_registered` 输出 `None`＋显式 `customer_identity_visible=false`）。
+- **托管方例外**：admin（平台方）全量可见**保持不变**——硬约束针对的是**区域服务商这一外部角色**。
+- **fail-closed**：枚举闸 fail-closed（存在「域外 ＋ 未企业确认」行即拒绝，**不回落放行**）；规则位未配置仍 409 `rule_not_configured`（**不回落默认值**）。
+- **席位测试态**：S5 e2e 复用既有 `_activate_seat` 夹具（**测试态激活、非商用态、不触发真实计费**）——§17-1 拍板「席位计费在有真实外部交付者前不激活」，工程侧零门控；**未改** `activate_seat` 路径、**未加**全局门控、**未改** G4 拉单资格判定式。
+- **售卖闸维持 `closed`**：`register_gate_condition`／`open_sale_gate` **本轮零调用**；四条件槽全空。
+
+### 数据兼容与回滚
+
+- **零迁移** ⇒ 无回滚脚本需求；回滚＝还原本轮改动（2 个服务文件＋3 个测试文件＋文档）。
+- **既有读面语义未变**：非区域服务商账号的可见性**逐位不变**（`test_non_partner_role_visibility_is_unchanged`）；平台身份非 admin 的区域伙伴读面可见性**逐位不变**。
+
+### 验收证据（leader 任务书 §7 M7 逐条）
+
+| 验收项 | 证据 | 状态 |
+|---|---|---|
+| S5 场景端到端（注册→报备→企业确认→保护期→撮合） | `test_m7_s5_e2e.py::test_s5_e2e_partner_registers_reports_confirms_protects_and_matches` | ✅ |
+| GAP-11 反例（企业自行注册不转移归属） | `::test_s5_attribution_not_transferred_when_enterprise_registers_directly` | ✅ |
+| 售卖开关关闭态下区域伙伴无法进入售卖流 | `::test_s5_sale_gate_closed_blocks_formal_partner_entry`（409 `regional_sale_gate_closed`）＋`::test_s5_no_code_path_signs_while_gate_closed`（源码扫描钉） | ✅ |
+| 区域档目录关闭态仍可见（边界显式钉住） | `::test_s5_sale_gate_read_face_still_closed_and_catalog_visible` | ✅ |
+| 商机数据归属权写死（平台托管／不可导出／按授权可见） | `test_m7_opportunity_data_ownership.py` 13 例（含规则文件↔代码常量↔测试三方一致、零新表零新列零新路由哨兵、错误码闭集） | ✅ |
+| 区域面跨 org 隔离 | `test_m7_cross_org_opportunity.py` 10 例 | ✅ |
+| 规则文件 §9 成文 | `docs/commercialization/rules/opportunity-attribution-rules.md` §9＋机器可读块 | ✅ |
+
+> 逐条对照表见 `docs/commercialization/multi-tenant/M7-验收对照-v1.md`。
+
+### 与 M6 的边界（合并协调）
+
+M6 负责**商业域读面按 org 隔离的通用接线**（科目层／额度账／企业空间／权益／认证记录／**商机列表**）；M7 负责**商机数据归属权硬约束**＋**区域面特有部分**（`regional_partners`／`regional_partner_tiers`）。
+
+★**唯一重叠点是 `attribution_service.py::list_opportunities`**（M6 把可见域谓词换成 `visible_user_ids_query(actor)` 的 org 谓词下推；M7 改的是**可见行内哪些客户识别字段可读**＋**枚举探针闸**）——双方口径**正交可叠加，不需要任何一方让步**；**合并策略＝以 M7 的谓词结构为底**（`_opportunity_scope_filter(actor)` ＋ `scoped_ids` 与 `scope_filter` 共用同一谓词）**把 M6 的 org 谓词融进去**。M6 侧其余改动文件与 M7 **零文件重叠**。
+
+⚠️ **合并前置检查项**：M7 改了 `serialize_opportunity` 签名（新增 `actor` 关键字参数 ＋ `enforce_ownership`）——M6 当前 diff 未改该函数调用点，合并时无需改动；但**合并后 M6 若新增调用点须带 `actor=`**（漏带直接 `TypeError`）。
+
+### 遗留问题
+
+1. **合规条件清单四项签署证据仍缺**（ADR-011:288）——本轮**未代做**；售卖闸维持 `closed`。
+2. **非区域服务商账号的账号级客户名单遮蔽**——属可能的扩展，**须 OWNER 裁决后再落**（ADR-M7 §7 决策点 1）。
+3. **企业确认后区域服务商可见的客户名单粒度**——本轮只放行企业代号＋已注册派生事实；粒度口径待 OWNER 拍板（ADR-M7 §7 决策点 2）。
+4. **企业侧在商机读面的可见位**——本轮企业侧未开商机读面（商机读面在商业域，非企业空间）（ADR-M7 §7 决策点 3）。
+
+### 是否允许进入下一阶段
+
+**结构就绪·待授权**——M7-1 轮**只落结构与测试**完成；**业务/合规授权层**的 M7 后置理由**仍维持**（M7 等合规条件签署完成）。下一阶段（**商用态放行**）须待：①合规四项签署证据齐备＋律师意见；②OWNER 对上述三个遗留决策点的裁决；③席位计费门控的真实商用形态。
 
 ---
 
@@ -59,7 +159,7 @@
 ### 测试命令与结果
 
 - `pytest tests/test_commercial_enterprise_space.py -q` → **27 passed**。
-- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **2624 收集 = 2618 passed + 6 skipped，0 failed**（EXIT=0 / 19m35s〔rebase 融合上游 #258/#259/#260 三笔后复跑〕；G5 轮基线 2596 收集 + 本轮 +27 + 上游 #258 +1 ＝ 2624）。
+- 全量 `pytest -q -n 4 --dist loadfile`（**CI 同命令**）→ **收集数／通过数一律以本轮合并后 `fork/main` 的 CI run 实测为准，本节不写死数字**（main 并发推进会使数字落地即失效）。本机唯一 failed＝`test_host_egress_proxy.py::test_run_without_gate_leaves_proxy_env_absent`——**本机环境变量 `HTTPS_PROXY` 污染**（断言「无代理闸时环境无 `HTTPS_PROXY`」），**与本轮改动无关**（已在本轮改动**全部 stash 后**的纯净基线上复跑同一用例⇒同样 failed，确认为既存环境问题；CI 环境无此变量）。旧记录 2624 收集〔G5 轮时点值〕与 3225 收集〔本轮开工时点值〕均为**过程值**，引用前须现测。
 - **PR CI server-tests 实测（run 42655291432）：2618 passed + 6 skipped（462.00s）；main run 42657141489 同值（619.95s）——与本地实测（19m35s）三轮一致**。
 - `python scripts/check-python-types.py` → **OK：baseline 279 occurrences / 104 distinct，current 279**（四实施期 Optional 收窄当场归零）。
 - `ruff check`（全部改动文件）→ All checks passed。
@@ -306,7 +406,7 @@
 | 撮合不张冠李戴／结算引用既有分账 | `test_match_requires_same_enterprise_package`（409 `package_enterprise_mismatch`）＋ `test_settlement_requires_project_share_entry`（409 `ledger_subject_mismatch`） |
 | 争议期间链路冻结 | `test_dispute_freezes_downstream_steps`（409 `opportunity_disputed`）；变异 M4 转红 |
 | 归属人工确认、不得静默改写 | `test_attribution_cannot_be_silently_overwritten`（409 `attribution_already_confirmed`）；变异 M5 转红 |
-| 报备＝R2；治理写双闸；事件无密码 | `test_report_requires_r2_role`＋`test_admin_actions_require_admin_and_password`＋`test_attribution_event_recorded_without_password` |
+| 报备＝席位费已缴（不限角色）；治理写双闸；事件无密码 | `test_report_requires_paid_seat_not_role`（席位 active 或科目层有效 `seat_fee` 行任一即放行；**角色分层本身不构成资格**——ADR-011 §5-F 补充拍板 12 已将原「报备＝R2」口径改为「缴 3980 席位费、不限角色」；原引用的 `test_report_requires_r2_role` **在本仓不存在**，此处更正）＋`test_admin_actions_require_admin_and_password`＋`test_attribution_event_recorded_without_password` |
 | 读面权限 | `test_read_scope_and_permissions`（本人／admin 全量／他人 403／未认证 401）＋ `test_withdraw_only_by_reporter` |
 | 治理面不进 api_catalog | `test_governance_face_not_in_api_catalog`＋路由审计 CSV（ENTRIES 94 不变） |
 | 新增服务端逻辑有测试 | NEW `test_commercial_opportunity_attribution.py` **23 例**＋变异五连全红→还原→绿 |
@@ -667,7 +767,7 @@ docs/commercialization/
 | 10 | 培训费／席位费／项目分成分别记账；六项计费名目已定义归属 | ✅ | ADR-003/008 科目层独立（`delivery_settlements` 列集合逐位钉**零加列**）＋`test_three_subject_types_separately_queryable_and_reconcilable`（分桶对账逐位吻合）＋六名目只定义归属（ADR-008）＋`commercial_split_rules` 零行（比例不落数） |
 | 11 | 商机七步链路完整；已确认归属不因企业自行注册而转移；规则数值可配置且未预写默认值 | ✅ | G4 `test_seven_step_chain_completes`＋跳步 409；`test_attribution_not_transferred_when_enterprise_registers_directly`（M1/M2 红）＋企业侧立项无商机行写路径（结构性保证）；五配置位播种 unset＋fail-closed 409 `rule_not_configured`（M3 红）＋转移唯一路径被 `attribution_criteria` 闸（本期无转移路径） |
 | 12 | 区域四阶段可区分；城市服务伙伴按项目结算；「区域代理」标注暂不启用；前两阶段无独家权 | ✅ | G5 四阶段闭集＋注记读面派生（agent.enabled=false＋note）；`test_city_service_per_project_settlement`（一单一结＋重复 409）＋`test_regional_agent_is_not_enterable`（409 无写路径）＋`test_exclusive_territory_rejected_for_first_two_stages`＋DB CHECK（M3/M4/M5 红） |
-| 13 | 区域售卖能力默认关闭，开关条件绑定合规条件清单已签署；本期无任何对外收费签约路径 | ✅ | `regional_sale_gate` 单行播种 closed＋CHECK 结构性排除缺件开门＋`require_sale_gate_open` 唯一闸门（闸关 409）＋**源码扫描钉**（formal_partner 写点唯一且在过闸函数内）＋合规四项「登记≠开启」；T-12b 本期不做（独立轮次） |
+| 13 | 区域售卖能力默认关闭，开关条件绑定合规条件清单已签署；本期无任何对外收费签约路径 | ✅（**附口径澄清**：判 ✅ 者为**结构性绑定**而非「已签署」事实） | `regional_sale_gate` 单行播种 closed＋CHECK 结构性排除缺件开门＋`require_sale_gate_open` 唯一闸门（闸关 409）＋**源码扫描钉**（formal_partner 写点唯一且在过闸函数内）＋合规四项「登记≠开启」；T-12b 本期不做（独立轮次）。**口径澄清（2026-11-12 M7-1 轮）**：本条原文含「**已签署**」——现实**不符**（`regional_sale_gate` 四条件槽全空、`phase-status.md` 活库断言、ADR-011:288「合规四项签署证据＋律师意见仍缺」）。故本条的 ✅ **仅指「开关默认关 + 开关条件与合规条件清单**结构性绑定** + 本期无对外收费签约路径」**三项已验收，**不含**「合规条件清单已签署」——「绑定签署证据齐备」与「已签署」是两件事，不得混同（口径跳跃已在本条显式澄清，不倒填签署事实） |
 | 14 | 企业空间复用既有权限模型；三档分流人工判定并留痕，无量化阈值硬编码 | ✅ | G6 既有 `add_project_member`/`project_access` **零平行权限表**（元数据机器闸：G6 仅两表且无 permission/acl 命名）；`enterprise_triage_decisions`（tier 闭集复用 G2 权威＋rationale 必填＋**零阈值常量零评分代码**＋载荷无数字哨兵）＋空间读面回看用例（M2 红＝前置闸真实拦截） |
 | 15 | 三档自助分级与「不承诺完全自助」一致 | ✅ | ADR-010 §1-8①：自助面（注册/分流/选择）自助，诊断内容生产维持 L3 形态（AI 草稿→admin 登记六项→企业确认）；任务书 §10「完全自助是长期目标，不第一天承诺」逐字承接 |
 | 16 | 关键流转默认需人工确认且可人工接管（L3 形态）；接管路径留审计事件；G0 已出具 AI 草稿采纳率与接管频次实测 | ✅（附注记） | ADR-007（G2 成文）：admin 门＋密码确认双闸＋自我动作例外＋AI 无直写入口（治理面六轮不进 api_catalog，ENTRIES 94 不变）；人工接管沿 `handoff_run` 既有模式；**G0 实测已出具**（00-baseline-audit.md §H）：人工接管频次 **0 行**/`agent_run_handoff` 0 条、AI 草稿采纳率 **insufficient_data**（无承载事件）——诚实无样本结论＋GAP-15 埋点缺口登记 gap-register（§17 外部输入）；G1–G6 关键流转逐动作 operation_events 留痕（密码不落事件） |
@@ -835,3 +935,57 @@ docs/commercialization/
   3. **GAP-15 首批真实 run 复审＝维持挂账（半激活）**——触发器 ①agent_runs 非零 ✅（实 run 12）②采纳率埋点有数 ❌（=0）；12 条实 run 无一在方案确认流产生采纳留痕，缺**首条采纳样本**而非样本量；销号条件＝任一真实采纳/否决样本落 `operation_events` 即自动销号，无需再开轮。
 - **裁决落账**：三项均**无本轮可实施工作量**（§17/§1.8 已被既有拍板/裁决关闭，GAP-15 等待外部数据）。复确认即维持原状态，不预置工程、不代造样本、不落默认值。
 - 口径：纯文档零代码；pytest/vitest/mypy 全不变；零迁移零路由 ⇒ 无需 rebuild/alembic/重打包。
+
+---
+
+## 多客户 M6-1 轮：商业域读面 org 隔离接线 — 结构就绪·待授权（2026-11-12）
+
+- **分支／基线**：`feat/m6-m7-commercial-joint`（工作树 `D:/test/fde-wt-m6`，开工基线 fork/main `fc9aa34`／交付基线 `d0118b1`；M6 与 M7 同一交付分支、一个 PR）
+- **性质**：**结构就绪·待授权**——本轮只落**结构＋测试**，**三道业务闸未激活**（席位激活／扣费闸／售卖闸）、**金额 unset**、**售卖闸 closed**、**合规签署未代做**。Leader 任务书 §14 M6 行**保持 `[ ]` 不打勾**（验收未完成前打勾＝倒填）。
+- **轮次定位**：M6 =「商业计量结构落地」的**多租户接线轮**——G2/G3 商业计量结构已由 G 线交付并收口，本轮**不重建计费逻辑**，补的是**多租户 org 归属隔离**（商业域读面此前只有「admin 全量／本人」两档，`org_scope_allows` 在 commercial 包零实调用）。
+
+### A 组·跨 org 读面隔离接线（单一 helper，零迁移零新表零新列零新路由）
+
+| 读面 | 归属推导路径 | 跨企业失败码 | 状态 |
+|---|---|---|---|
+| G3 科目列表／单条／筛选／对账（`list_revenue_entries`／`get_revenue_entry`／`reconcile_revenue`） | `subject_user_id`／`payee_user_id` → `users.org_id` | **404** `revenue_entry_not_found` | ✅ |
+| G1 商业权益（`get_entitlement_for_view`） | `user_id` → `users.org_id` | **403** `commercial_entitlement_forbidden`（沿用既有码） | ✅ |
+| G3 认证记录（`list_certification_records`） | `user_id` → `users.org_id` | **403** `commercial_certification_forbidden`（沿用既有码） | ✅ |
+| G4 商机列表（`list_opportunities`） | `reported_by_user_id`／`attribution_owner_user_id`／`presales_owner_user_id` → `users.org_id` | 列表**不含**别家商机 | ✅（与并行 M7 轮叠加，见下「跨轮次叠加」） |
+| G2 额度账／企业空间（`get_quota_view`／`get_enterprise_space_view`） | — | — | **现状核实**：CR-062 的「绑定账号本人或 admin」判定天然比 org 维度更严，**本轮不改**（改之即推翻 CR-062 与既有钉「同主体第二经办人也 404」） |
+
+- **单一入口**：NEW `server/src/fde_api/commercial/org_read_scope.py`——判定权威仍为既有 `fde_api/orgs/isolation.py`（`org_scope_org_ids`／`is_platform_identity`），**未新建平行权限判定**（红线 8 合规）；**归属推导走用户 FK → `users.org_id`**（拍板①：零新增 org_id 列、零新增迁移、零改表结构）。
+- **失败码纪律**：跨企业 ⇒ **404**（M3a 规格 §3.5「不确认资源存在」）；同企业无操作权 ⇒ 沿用该读面**既有码**（403）。**不自造失败码、不改既有码**。
+- **对象级与列表级同语义**（M3a 规格 §2）：四态判定（`VIS_SELF`／`VIS_SAME_ORG`／`VIS_CROSS_ENTERPRISE`／`VIS_OTHER`）共用同一 helper ⇒ 不产生「详情 403／列表可见的幽灵行」。
+- **admin 跨 org 代操作仍是 admin 行为＋留痕**（拍板⑥，**不推翻** M3b 批次②先例）：`cross_org_` 事件名前缀与 org 维度逐位不变。
+
+### B 组·跨 org 隔离用例（进 CI）
+
+- NEW `server/tests/test_m6_commercial_org_isolation.py`＝**20 例**（G3 科目层 5／权益＋认证 2／商机 1／**同企业互见 2**／**平台身份零回归 3**／**admin 全量＋留痕 3**／G2 两面现状核实 3／USCC 单键去重 1）。
+
+### 变异可辨验证（M6-1 轮两处，M3a 规格 §3.6 摘除式）
+
+| 变异 | 变异点 | 变异后（实测） | 还原 |
+|---|---|---|---|
+| M1 | `visible_user_ids_query` 的 org 谓词 → 只含 actor 本人 | **1 failed / 19 passed**（同企业互见红） | sha256 `950bb310…090e1` 还原一致 → **20 passed** 复绿 |
+| M2 | `resource_visibility` 跨企业分支 → 退化为 `VIS_OTHER` | **4 failed / 16 passed**（科目单条／探测不可分辨／筛选／对账 四例红） | sha256 `950bb310…090e1` 还原一致 → **20 passed** 复绿 |
+
+### 跨轮次叠加（M6/M7 同一交付分支，已正交叠加）
+
+- **M6/M7 同一交付分支叠加（已裁决并执行）**：M6 轮与 M7 轮经 rebase 压成**单提交、一条线性交付分支、一个 PR**。两轮语义正交（M6＝org 维度可见性／M7＝客户名单导出权），唯一重叠点 `attribution_service.py::list_opportunities` 已按「**以 M7 的 `_opportunity_scope_filter(actor)` 单一谓词为底，把 M6 的 org 谓词（`org_read_scope.visible_user_ids_query`）融进去**」解决；`scope_filter` 与 `scoped_ids` 共用同一谓词 ⇒ M7 枚举闸基准自动跟随 org 可见域，字段遮蔽与枚举闸**独立生效、未被 org 谓词绕过**。
+
+### 本轮**未**做（业务闸与合规层，一律不代做）
+
+| 项 | 状态 |
+|---|---|
+| 三道业务闸（席位激活／扣费闸／售卖闸） | **未激活**（本轮纯读面隔离接线） |
+| 金额 | **unset**——`FIRST_ORDER_SEAT_FEE = 3980.00`（G 线已拍板的唯一落数金额）**一字未动**；`commercial_fee_configs` 三槽位**保持 unset**（缺省不可收款） |
+| 售卖闸 | **closed**——`regional_sale_gate` 四条件签署证据未登记 |
+| 合规签署／签闸日期／真实发布记录 | **未代做**、**不代填** |
+| 桌面端 | **零改动**（本轮纯服务端） |
+| `docs/audit/v3-*`／`docs/architecture/archify-diagrams/*/candidate.json` | **零改动**（本轮零结构变化 ⇒ 不触发清单重生成） |
+
+### 验收证据
+
+- 对照表：`docs/commercialization/multi-tenant/M6-验收对照-v1.md`。
+- 缺口回填：`docs/commercialization/00-gap-register.md` GAP-07／08／09／10（M6-1 轮**只追加**行，四条**均不销号**——业务闸层待授权）。

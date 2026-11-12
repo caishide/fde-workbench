@@ -41,31 +41,39 @@
 
 - **现状：** 无席位订阅表；`seat_shares_for`（settlements.py:59）只算分成份额，不管年度席位费 3980；无「交付完成并验收后扣费」触发点；无方案 A（一次性扣除）的书面选定承载。
 - **处置方向：** 新增订阅权益与激活流；扣费挂结项验收后沿 `handover_packages`/Gate 验收事实；实战营/陪跑营含首年席位=可测不变量（反例用例）。
+- **M6-1 轮回填（2026-11-12，只追加）**：**商业计量面按 org 隔离接线**落地——席位/权益类读面（`get_entitlement_for_view`）的跨 org 隔离已接线（企业身份读别家企业账号 ⇒ 403 `commercial_entitlement_forbidden`；同企业成员互相可见；平台身份存量用户零回归；admin 全量不变）。**本轮零迁移零新表零新列零新路由**；`activate_seat` 与 `FIRST_ORDER_SEAT_FEE = 3980.00` **一字未动**，`commercial_fee_configs` 三槽位**保持 unset**（缺省不可收款）。证据：`server/tests/test_m6_commercial_org_isolation.py`（20 例）＋对照表 `docs/commercialization/multi-tenant/M6-验收对照-v1.md`。**本条不销号**——席位激活闸与真实扣费流未激活，属业务闸层待授权。
 
 ## GAP-08 认证独立收费项与模拟考核驱动（G3）
 
 - **现状：** 无认证费配置位；认证状态无承载（GAP-02 的 `certification_status`）；`simulation_evaluations` 存在但无「通过线」结构（本期也不设通过线）。
 - **处置方向：** 认证费独立收费项（金额缺省不可收款）；认证状态由模拟考核结果驱动（只读消费 simulation，遵守 V3.2 表无 project_id 红线）。
+- **M6-1 轮回填（2026-11-12，只追加）**：认证记录读面（`list_certification_records`）的跨 org 隔离已接线——企业身份读别家企业账号 ⇒ 403 `commercial_certification_forbidden`（沿用既有码，不自造失败码）。**认证费金额仍 unset**（缺省不可收款）；通过线未配置 ⇒ 认证**不判定通过**（停在 `pending_threshold`），本轮**未改**该语义。证据：`test_cross_enterprise_certification_records_read_forbidden`。**本条不销号**——金额与通过线属业务闸层待授权。
 
 ## GAP-09 收入科目层（G3）
 
 - **现状：** `delivery_settlements` 是项目级派单分账（四席位份额），无收入科目维度；在它上面加列硬塞被任务书 §0.3 禁止。
 - **处置方向：** 新增科目层（收入类型→金额→关联订单/席位/分成事件），外键指回 quotes/payments/contracts 与既有结算；六项计费名目只定义归属不定义计算；分成比例只落配置结构不落数（ADR-003）。
+- **M6-1 轮回填（2026-11-12，只追加）**：科目层读面（`list_revenue_entries`／`get_revenue_entry`／`reconcile_revenue`）的跨 org 隔离已接线——企业身份读别家企业账号 ⇒ **404** `revenue_entry_not_found`（M3a §3.5 默认口径「不确认资源存在」；探测不可分辨已钉）；同企业成员互相可见；平台身份存量用户仍既有 403（零回归）；admin 全量不变。**归属推导走 `subject_user_id`／`payee_user_id` → `users.org_id`**（零迁移零新表零新列零新路由）。**分成比例仍只落配置结构不落数**（`commercial_split_rules` 零行、`status='unset'`）；`FIRST_ORDER_SEAT_FEE = 3980.00` **一字未动**。证据：`test_cross_enterprise_revenue_entry_*` 四例＋`test_cross_enterprise_revenue_reconciliation_returns_not_found`。**本条不销号**——科目层业务闸未激活。
 
 ## GAP-10 陪跑期限与培训周期挂钩结构（G3）
 
 - **现状：** 无陪跑/培训期概念。
 - **处置方向：** 结构先落、数值待定（「本次不定数」纪律，配置位缺省不预写业务数值）。
+- **M6-1 轮回填（2026-11-12，只追加）**：培训权益读面随权益面同轮完成 org 隔离接线（权益面读面返回 `trainings` 明细，跨企业账号 ⇒ 403）。**陪跑期限数值仍不落数**（`commercial_fee_configs.mentoring_period_days` 未配置 ⇒ `TrainingEntitlement.valid_until` 留空），本轮**未改**该语义。证据：`test_cross_enterprise_entitlement_read_forbidden`。**本条不销号**——数值待业务拍板。
 
 ## GAP-11 商机归属七步链路（G4）
 
 - **现状：** 无线索/报备/归属/保护期任何表。`project_ai_opportunity_profiles`（research）是项目内 AI 机会画像，`project_solution_opportunities` 是方案挂接——均非渠道商机，不能复用为主表。
 - **处置方向：** 新增归属链路（报备→企业确认→平台确认→保护期→售前→撮合→结算），规则数值可配置且**不预写默认值**（保护期为空=「未配置」，可区分于「永久保护」/「立即失效」）；已确认归属不因企业自行注册转移（反例用例）。
+- **处置结果（G4，ADR-009）：** 链路已落（`commercial_opportunities` ＋ `commercial_opportunity_rules`，七步转移函数齐备，五规则位迁移播种全 `unset`，未配置动作 fail-closed 409 `rule_not_configured`）。
+- **处置结果补充（2026-11-12 M7-1 轮，只追加）：** **商机数据归属权与导出权硬约束**已写死（sec 评审硬条件「归属权与导出权须在 M7 写死」；leader 任务书 §7 M7）——「平台托管、企业确认前区域服务商不可导出客户名单、双方按授权可见」。落地：`docs/commercialization/multi-tenant/ADR-M7-opportunity-data-ownership.md` ＋ `docs/commercialization/rules/opportunity-attribution-rules.md` §9（含机器可读块，文档/代码常量/测试三方一致）。**零迁移零新表零新列零新路由**——授权可见范围由既有列推导（`enterprise_confirmed_at` ＋ 三列 FK ＋ `users.org_id`）。硬约束落点＝**既有列表读面与序列化层**（`list_opportunities` ＋ `serialize_opportunity`）——**不另开 export 端点**（既有列表读面本身就是客户名单导出面，另开端点无效）。证据：`server/tests/test_m7_opportunity_data_ownership.py` 13 例＋`server/tests/test_m7_s5_e2e.py` 9 例。**GAP-11 状态：结构已收口**（七步链＋归属权硬约束＋S5 端到端；数值仍待拍板，五规则位维持 `unset`）。
 
 ## GAP-12 区域合作商四阶段与售卖开关（G5）
 
 - **现状：** 无区域伙伴任何概念。
 - **处置方向：** 四阶段可区分落库（区域代理标注「暂不启用」）；前两阶段无独家权；城市服务伙伴按项目结算无固定年费；**售卖能力默认关闭**，开关绑定合规条件清单已签署；试运营指标不落数（ADR-005 于 G5 成文，含「两店一年」合规条件登记）。
+- **处置结果（G5，ADR-005）：** 四阶段已落库（`regional_partners` ＋ `regional_partner_tiers` ＋ `regional_sale_gate` ＋ `regional_service_settlements`）；售卖闸单行播种 `closed`；`require_sale_gate_open` 为唯一对外收费签约闸门（闸关 409 `regional_sale_gate_closed`）；「登记≠开启」（`register_gate_condition` 只登记证据）。
+- **处置结果补充（2026-11-12 M7-1 轮，只追加）：** **区域面 org 维度接线**已落（`regional_service.py` 的 `list_partners`／`get_partner`）——零新列零迁移零新表，org 归属经 `applicant_user_id → users.org_id` 推导（OWNER 2026-11-12 拍板：主体归属走 `user.org_id` **间接归属**，不新增 org_id 列、不新增迁移、不改表结构）。S5 场景端到端已落（`server/tests/test_m7_s5_e2e.py`）＋售卖闸关闭态边界显式钉住（关闭态下区域档目录**仍可见**＝既有行为、**不是漏洞**；进入售卖流必 409）。**GAP-12 状态：结构就绪·待授权**——**合规条件清单四项签署证据仍缺**（`regional_sale_gate` 四条件槽全空、ADR-011:288「合规四项签署证据＋律师意见仍缺」）；本轮**未登记任何合规条件证据、未开启售卖闸、未代做合规签署**。**「开关条件与合规清单结构性绑定」已验收 ≠「已签署」**（口径澄清见 `phase-status.md` §16 #13）。
 
 ## GAP-13 四类注册入口与自助态（G6）
 
