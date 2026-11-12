@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from typing import Any, Iterator
 
+from fde_api.ai.prompt_registry import version_of
+
 SYSTEM_PROMPT = """你是 FDE 交付质量的独立评估员。
 
 你只做一件事：按给定的评分基准（Rubric）给**分项评分 + 证据引用**。
@@ -96,6 +98,10 @@ def _iter_artifact_blocks(artifacts: dict[str, Any]) -> Iterator[tuple[str, str]
                 f"{phase}（结构化交付）",
                 json.dumps(rest, ensure_ascii=False)[:MAX_ARTIFACT_CHARS],
             )
+
+
+# N6/G-13：版本标签唯一权威＝ai/prompt_registry.py（此处只 re-export）。
+EVALUATION_PROMPT_VERSION = version_of("fde_api.simulation.evaluation_prompt", "SYSTEM_PROMPT")
 
 
 def build_evaluation_messages(

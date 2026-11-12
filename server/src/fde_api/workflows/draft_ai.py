@@ -34,6 +34,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from fde_api.ai.prompt_registry import version_of
+
 from fde_api.control.ai_server_client import DSHRuntimeError, execute_ai_prompt
 from fde_api.guidance.enterprise_dict import DICT_FAILURE_CODE, RedactionConfigError
 from fde_api.guidance.redaction import SensitiveCredentialDetected, redact_text_detailed
@@ -63,7 +65,8 @@ __all__ = [
 ]
 
 # 提示词版本（N2 归因纪律；ADR §3 钉名 workflow-dag-prompt-v1）。
-WORKFLOW_DAG_PROMPT_VERSION = "workflow-dag-prompt-v1"
+# N6/G-13：标签唯一权威＝ai/prompt_registry.py（ADR §3 钉名不变；正文改动必同步注册表升版本）。
+WORKFLOW_DAG_PROMPT_VERSION = version_of("fde_api.workflows.draft_ai", "WORKFLOW_DAG_DRAFT_SYSTEM_PROMPT")
 # 审计 purpose（ai_call_audits NOT NULL CHECK；≤60 字自由文本域；ADR §3 钉名）。
 WORKFLOW_DAG_PURPOSE = "workflow_dag_draft"
 

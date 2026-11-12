@@ -187,7 +187,10 @@ class ServerModelEvaluation:
         rubric_version: str = RUBRIC_VERSION,
     ) -> ModelEvaluation:
         from fde_api.ai.deepseek import DeepSeekError
-        from fde_api.simulation.evaluation_prompt import build_evaluation_messages
+        from fde_api.simulation.evaluation_prompt import (
+            EVALUATION_PROMPT_VERSION,
+            build_evaluation_messages,
+        )
         from fde_api.simulation.evaluation_schema import (
             EvaluationContractError,
             parse_model_evaluation,
@@ -216,6 +219,7 @@ class ServerModelEvaluation:
                 messages=messages,
                 request_id="simulation-evaluation",
                 purpose="simulation_evaluation",
+                prompt_version=EVALUATION_PROMPT_VERSION,
                 max_tokens=EVALUATION_MAX_TOKENS,
             )
         except DeepSeekError as error:
@@ -238,6 +242,7 @@ class ServerModelEvaluation:
                     messages=messages,
                     request_id="simulation-evaluation-retry",
                     purpose="simulation_evaluation",
+                    prompt_version=EVALUATION_PROMPT_VERSION,
                     max_tokens=EVALUATION_MAX_TOKENS,
                 )
             except DeepSeekError as retry_error:
@@ -281,6 +286,7 @@ class ServerModelEvaluation:
                     messages=messages,
                     request_id="simulation-evaluation-retry",
                     purpose="simulation_evaluation",
+                    prompt_version=EVALUATION_PROMPT_VERSION,
                     max_tokens=EVALUATION_MAX_TOKENS,
                 )
             except DeepSeekError as error:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fde_api.ai.industry_template_schema import ChatMessage
+from fde_api.ai.prompt_registry import version_of
 
 
 CHAT_SYSTEM_PROMPT = """你是 FDE 行业模板创建助手。你只能输出 JSON，禁止增加、删除或改名字段。
@@ -25,6 +26,11 @@ task_key 必须是唯一 snake_case；duration_days 必须是正整数；default
 必须严格遵守用户明确指定的模块范围，不得擅自补充其他模块。若用户明确表示不需要调研表、不要 AI 生成调研表或只需要模块与任务，research_definition 必须为 null，不得生成任何调研表。只有用户需要调研表时，research_definition 才使用 {"forms":[...]}，并恰当覆盖 project、department、role、process、opportunity 五类表单。每个表单包含 form_key,name,description,subject_type,module_key,sort_order,sections；每个 section 包含 section_key,name,description,sort_order,fields；每个 field 包含 field_key,name,help_text,type,is_required,options,sort_order。所有 *_key 使用 snake_case，is_required 必须为布尔值。
 字段 type 只能是 short_text、long_text、rich_text、integer、decimal、date、single_choice、multi_choice、table、file_reference。普通文本字段 options 可为空对象；单选/多选必须使用 {"choices":["选项"]}；不要输出未声明的属性。
 用户未提供的信息应采用合理的行业默认值，并在 description 中简短标注“部分内容为 AI 推断，发布前请核对”。不要把未核实的企业信息写成确定事实；未知限制直接设计为调研问题，不得因信息不完整而拒绝生成。"""
+
+
+# N6/G-13：版本标签唯一权威＝ai/prompt_registry.py（此处只 re-export）。
+CHAT_PROMPT_VERSION = version_of("fde_api.ai.industry_template_prompt", "CHAT_SYSTEM_PROMPT")
+GENERATION_PROMPT_VERSION = version_of("fde_api.ai.industry_template_prompt", "GENERATION_SYSTEM_PROMPT")
 
 
 def build_chat_messages(history: list[ChatMessage], catalog: list[dict]) -> list[dict[str, str]]:

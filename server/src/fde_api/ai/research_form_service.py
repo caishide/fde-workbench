@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from fde_api.ai.deepseek import DeepSeekClient, DeepSeekError
-from fde_api.ai.research_form_prompt import build_research_form_messages
+from fde_api.ai.research_form_prompt import PROMPT_VERSION, build_research_form_messages
 from fde_api.config import Settings
 from fde_api.extensions import db
 from fde_api.ontology import service as ontology_service  # V3 T-O2b 值域开放
@@ -512,6 +512,7 @@ def _call_ai(messages: list[dict[str, str]], *, on_event: Callable[[dict[str, st
             max_tokens=12_000,
             on_event=on_event,
             purpose="research_form_generate",
+            prompt_version=PROMPT_VERSION,
         )
     except DeepSeekError as error:
         status = {

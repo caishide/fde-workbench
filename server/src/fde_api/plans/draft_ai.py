@@ -35,6 +35,8 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from fde_api.ai.prompt_registry import version_of
+
 from fde_api.control.ai_server_client import DSHRuntimeError, execute_ai_prompt
 from fde_api.extensions import db
 from fde_api.guidance.enterprise_dict import DICT_FAILURE_CODE, RedactionConfigError
@@ -55,7 +57,8 @@ __all__ = [
 ]
 
 # 提示词版本（N2 归因纪律：审计账本按版本归因；提示词正文改动必须升版本）。
-PLAN_DRAFT_PROMPT_VERSION = "plan-draft-prompt-v1"
+# N6/G-13：标签唯一权威＝ai/prompt_registry.py（正文改动必同步注册表升版本）。
+PLAN_DRAFT_PROMPT_VERSION = version_of("fde_api.plans.draft_ai", "DELIVERY_PLAN_DRAFT_SYSTEM_PROMPT")
 # 审计 purpose（ai_call_audits NOT NULL CHECK；≤60 字自由文本域）。
 PLAN_DRAFT_PURPOSE = "delivery_plan_draft"
 

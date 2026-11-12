@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from fde_api.ai.prompt_registry import version_of
 from fde_api.auth.models import UTCDateTime
 from fde_api.workbench.models import Base, TimestampMixin, new_uuid
 
@@ -45,7 +46,8 @@ REQUIREMENT_STATUSES = ("pending", "accepted", "rejected", "needs_clarification"
 # （project, source_type, source_id, extractor_version, prompt_version）——版本
 # 升级后同源再抽生成新行（产出确实不同），试点期的 v1 行保留为历史事实。
 EXTRACTOR_VERSION = "discovery-extractor-v2"
-PROMPT_VERSION = "discovery-prompt-v2"
+# N6/G-13：版本标签唯一权威＝ai/prompt_registry.py（此处只 re-export，正文改动必同步注册表）。
+PROMPT_VERSION = version_of("fde_api.discovery.prompt", "DISCOVERY_SYSTEM_PROMPT")
 
 REDACTION_EVENT_TYPE = "discovery.redaction_review"
 

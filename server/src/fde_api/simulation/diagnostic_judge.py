@@ -26,6 +26,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from fde_api.ai.prompt_registry import version_of
+
 # 评分语义版本（与真相层 rubric 文件版本对齐；考题/评分规则改动必须换版本号，
 # 曲线在 C 类修复处打版本断点——防「改考题刷分」伪装成进化）。
 # v0.2（2026-11-11，curve 1 元验证 fail 断点）：复述失效条款重界定——v0.1
@@ -37,6 +39,9 @@ DIAGNOSTIC_JUDGE_RUBRIC_VERSION = "rubric-v0.2"
 # AI 调用用途（归因台账；与生成侧 ``diagnostic_report`` 分键——评分消耗和
 # 生成消耗必须能分开对账）
 DIAGNOSTIC_JUDGE_PURPOSE = "diagnostic_report_judge"
+
+# 提示词版本（N6/G-13 注册表；与 rubric 版本分键——评分规则换版本≠提示词换版本）。
+DIAGNOSTIC_JUDGE_PROMPT_VERSION = version_of("fde_api.simulation.diagnostic_judge", "SYSTEM_PROMPT")
 
 # 输出预算上限（max_tokens 是帽不是成本）：思考型模型（MiniMax-M3.1 级）的
 # interleaved thinking 与裁定 JSON 共用预算，2026-11-11 真机实测思考长度采样
@@ -521,6 +526,7 @@ def evaluate_diagnostic_report(
             messages=messages,
             request_id=request_id,
             purpose=DIAGNOSTIC_JUDGE_PURPOSE,
+            prompt_version=DIAGNOSTIC_JUDGE_PROMPT_VERSION,
             max_tokens=DIAGNOSTIC_JUDGE_MAX_TOKENS,
         )
 

@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import requests
 from flask import current_app, g, has_request_context
+
+from fde_api.ai.model_routing import resolve_quality_route
 from sqlalchemy import select
 
 from fde_api.auth.models import User
@@ -339,11 +341,15 @@ def execute_ai_prompt(*, user_id: str, prompt: str, execution_id: str | None = N
         level, _ = effective_ai_access(user)
         if level == "disabled":
             raise DSHRuntimeError("ai_access_denied", "管理员尚未为此账号开放 AI 权限。", retryable=False)
-        model = model_override or resolve_model_preference(session, user_id, preference_id)
+        model = (
+            model_override
+            or resolve_quality_route(purpose)
+            or resolve_model_preference(session, user_id, preference_id)
+        )
         if deep_thinking and model.get("provider") not in {"deepseek", "deepseek-official"}:
             from fde_api.control.service import ControlServiceError
             raise ControlServiceError("thinking_unsupported", "当前模型暂不支持手动深度思考，请关闭开关或选择 DeepSeek 模型。", 400)
-        use_tools = use_tools and model.get("supports_tools", True)
+        use_tools = bool(use_tools and model.get("supports_tools", True))
         # CR-006 统一预算门：``ai_monthly_token_budget`` 超限即拒，且不发起
         # 任何 DSH/供应商请求。与 deepseek 直连腿同语义（预算 0=不限额；设施
         # 故障 fail-open）。此门带显式 user_id——后台任务（workflow skill
