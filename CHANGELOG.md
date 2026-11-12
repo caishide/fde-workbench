@@ -16,8 +16,8 @@
 
 按两层框架推进工程侧；业务/合规授权层后置维持＝结构就绪·待授权。本轮＝**只落测试与文档**，授权层动作一律不代做。
 
-- **本轮交付**：NEW `server/tests/test_m8_red_team_sweep.py`（红队爬扫：企业 A 账号全 API 爬扫企业 B 读面，双阳性对照＋完整性钉「未登记即红」）／`test_m8_replay_guard.py`（重放防护）／`test_m8_sensitive_log.py`（敏感日志）三专项回归套件（**22 个 def test_**）＋ NEW `docs/commercialization/multi-tenant/M8-验收对照-v1.md` 验收对照表 v1＋ `docs/commercialization/phase-status.md` M8-1 轮节＋ leader 任务书 §14 M8 行注记（**保持 `[ ]` 不打勾**）。
-- **实测**：三件套 **60 collect 全绿**；邻域回归 12 套件 **181 passed**；**5 组变异全部转红→字节级还原（3 文件 sha256 一致）→复绿**。全量 pytest 收集数与 CI run 号为时点快照，**待本轮 CI 实测回填**。
+- **本轮交付**：NEW `server/tests/test_m8_red_team_sweep.py`（红队爬扫：企业 A 账号全 API 爬扫企业 B 读面，双阳性对照＋完整性钉「未登记即红」）／`test_m8_replay_guard.py`（重放防护）／`test_m8_sensitive_log.py`（敏感日志）三专项回归套件（**23 个 def test_**）＋ NEW `docs/commercialization/multi-tenant/M8-验收对照-v1.md` 验收对照表 v1＋ `docs/commercialization/phase-status.md` M8-1 轮节＋ leader 任务书 §14 M8 行注记（**保持 `[ ]` 不打勾**）。
+- **实测**：三件套 **62 collect 全绿**；邻域回归 12 套件 **181 passed**；**5 组变异全部转红→字节级还原（3 文件 sha256 一致）→复绿**。全量 pytest 收集数与 CI run 号为时点快照，**待本轮 CI 实测回填**。
 - **零结构变化**：**零迁移零新表零新列零新路由**、**零生产代码 diff**；**不重跑** `scripts/audit/extract_workbench_inventory.py`、**不重生成** `docs/audit/v3-*` 与 archify `candidate.json`（零结构变化轮口径纪律）。路由・蓝图・表・迁移 rev 与 pytest 收集数一律不写死，**以本轮 CI 实测为准**。
 - **AGENTS 状态链与现行结构口径行本轮不改**（零结构变化轮口径纪律 ＋ 超长行整行重写冲突风险），**本轮登记由 AGENTS bullet 承载——有意裁决，非 DoD 缺项**。
 - **安全专项「零高危」为 Goal 验收条件，本轮不作该判定、留授权层**（leader :212 / §14 :326）；§14 M8 行保持 `[ ]`。

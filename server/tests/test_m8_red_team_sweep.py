@@ -8,13 +8,13 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
 
 设计要点（对齐 team-lead 实施规格）：
 
-- ``ROUTES`` 37 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
+- ``ROUTES`` 38 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
   资源 ID 逐条拼出具体路径；企业 A token 打过去须 ``403/404``。
 - **双阳性对照**：B 属主 token 同路径须 ``200``（防「全 404」假绿）；
   A 企业内与 B 属主**同角色**的账号仍须 ``403/404``（排除「403 其实由
   角色差异产生」的假绿）。两条都过才算 org 维度真收敛。
 - **候选面动态派生**：``create_app().url_map`` 派生「GET＋路径含模板变量」
-  的全部路由（现测 101 条），**绝不引用 ``docs/audit/v3-route-inventory.csv``
+  的全部路由（现测 102 条），**绝不引用 ``docs/audit/v3-route-inventory.csv``
   作集合**（在途 PR 会改清单，且清单列是 AST 富化产物，CI 只钉
   (method,path)）；候选面条数只在基线断言处写死本轮实测值。
 - **排除登记结构化**：``_EXCLUSION_RECORDS`` 每条带
@@ -22,7 +22,7 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
   ``sweep_required``／``b_owner_status``／``measured``（三套 token 实测码）。
 - **降级即红（反逃逸闸，本轮新增）**：并集恒等对「把爬扫面降级成排除登记」
   是不变量，故另配四道闸：
-  ① 条数基线 ``len(ROUTES) == 37``／``len(_EXCLUSION_RECORDS) == 64``；
+  ① 条数基线 ``len(ROUTES) == 38``／``len(_EXCLUSION_RECORDS) == 64``；
   ② **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
      均被拒」的路由若停留在排除登记里即转红；
   ③ 排除登记的 ``measured`` 与**现测重测**逐条一致（登记不可伪造、不可陈旧）；
@@ -37,12 +37,13 @@ git 泄漏面或运行时日志·事件·审计面结论。
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from uuid import uuid4
 
 import pytest
 
-from fde_api.agents.models import AgentRegistry, AgentRun
+from fde_api.agents.models import AgentArtifact, AgentRegistry, AgentRun
 from fde_api.auth.tokens import issue_access_token
 from fde_api.control.chat import AIConversation
 from fde_api.research.models import (
@@ -86,6 +87,7 @@ def _candidate_get_var_routes(app):
 # 条数基线由 test_m8_sweep_registry_count_and_semantic_baseline 钉住。
 ROUTES = {
     ("GET", "/api/v1/agents/runs/<run_id>"): lambda w: f"/api/v1/agents/runs/{w['run'].id}",
+    ("GET", "/api/v1/agents/runs/<run_id>/artifacts/<artifact_id>/content"): lambda w: f"/api/v1/agents/runs/{w['run'].id}/artifacts/{w['artifact'].id}/content",
     ("GET", "/api/v1/agents/runs/<run_id>/tool-calls"): lambda w: f"/api/v1/agents/runs/{w['run'].id}/tool-calls",
     ("GET", "/api/v1/ai/chat/conversations/<conversation_id>"): lambda w: f"/api/v1/ai/chat/conversations/{w['conversation'].id}",
     ("GET", "/api/v1/commercial/certification-records/<user_id>"): lambda w: f"/api/v1/commercial/certification-records/{w['user_b'].id}",
@@ -689,6 +691,7 @@ def _measurement_ids(world):
         "form_id": world["form"].id,
         "subject_id": world["subject"].id,
         "run_id": world["run"].id,
+        "artifact_id": world["artifact"].id,
         "conversation_id": world["conversation"].id,
         "action_id": world["action_id"],
         "template_id": uuid4().hex,
@@ -806,6 +809,16 @@ def m8_world(db_session):
         idempotency_key=f"m8-{uuid4().hex}",
     )
     db_session.add(run)
+    db_session.flush()
+
+    artifact = AgentArtifact(
+        run_id=run.id,
+        kind="doc",
+        storage_ref=f"{run.id}/output/report.md",
+        sha256=hashlib.sha256("# M8 隔离用例产物\n正文。\n".encode("utf-8")).hexdigest(),
+        reviewed=False,
+    )
+    db_session.add(artifact)
 
     conversation = AIConversation(
         user_id=user_b.id,
@@ -846,6 +859,7 @@ def m8_world(db_session):
         "form": form,
         "export": export,
         "run": run,
+        "artifact": artifact,
         "conversation": conversation,
         "action_id": action_id,
     }
@@ -877,12 +891,21 @@ def test_m8_cross_enterprise_a_token_cannot_read_b_resource(
 
     # 阳性对照：B 属主 token 同路径须 200，防「全 404」假绿
     #（先例 test_m3b_batch3_project_service.py:262-288）。
+    # 例外：artifact 内容路由须工作区文件在场才能 204（B 属主 404 合法，
+    # 完整三态验证由 test_m8_artifact_content_route_full_matrix 承担）。
     allowed = client.get(path, headers=_auth(m8_world["user_b"], settings))
-    assert allowed.status_code == 200, (
-        path,
-        allowed.status_code,
-        allowed.get_data(as_text=True)[:200],
-    )
+    if "artifacts" in path and path.endswith("/content"):
+        assert allowed.status_code == 404, (
+            "artifact 内容路由在测试工作区无文件时 B 属主须 404",
+            path,
+            allowed.status_code,
+        )
+    else:
+        assert allowed.status_code == 200, (
+            path,
+            allowed.status_code,
+            allowed.get_data(as_text=True)[:200],
+        )
 
 
 def test_m8_sweep_surface_covers_every_candidate_get_read_face(app):
@@ -938,7 +961,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 37, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(ROUTES) == 38, ("爬扫面条数基线被改动：", len(ROUTES))
     assert len(_EXCLUSION_RECORDS) == 64, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
@@ -1042,3 +1065,48 @@ def test_m8_a_token_never_sees_b_resources_in_200_list_surfaces(
     assert actions.status_code == 200
     identifiers = {row["id"] for row in actions.get_json()["data"]["items"]}
     assert m8_world["action_id"] not in identifiers
+
+
+def test_m8_artifact_content_route_full_matrix(
+    app, client, db_session, settings, m8_world, monkeypatch, tmp_path
+):
+    """#376（N3c）新增路由 GET /api/v1/agents/runs/<run_id>/artifacts/<artifact_id>/content
+
+    参数化爬扫面里该路由走 B 属主 404（测试工作区无文件），此用例摆出
+    原件后完整验证三态：A / 同角色 A 仍须 403（org 收敛不受文件在场影响）；
+    B 属主须 200（can_manage＋文件在场所需，阳性对照完整）。
+    """
+    # 把 agent_workspace_root 指向 tmp_path，并摆出原件
+    workspace_root = tmp_path / "agent-workspaces"
+    monkeypatch.setitem(
+        app.config,
+        "SETTINGS",
+        app.config["SETTINGS"].model_copy(
+            update={"agent_workspace_root": str(workspace_root)}
+        ),
+    )
+    artifact = m8_world["artifact"]
+    org_b = m8_world["org_b"]
+    run = m8_world["run"]
+    content = "# M8 隔离用例产物\n正文。\n".encode("utf-8")
+    target = workspace_root / "org" / org_b.id / run.id / "output" / "report.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+
+    path = f"/api/v1/agents/runs/{run.id}/artifacts/{artifact.id}/content"
+
+    # A（fde_engineer，已加入 B 项目）⇒ 403（can_manage 拒绝，org 收敛不依赖文件）
+    blocked_a = client.get(path, headers=_auth(m8_world["user_a"], settings))
+    assert blocked_a.status_code == 403, (path, blocked_a.status_code, blocked_a.get_data(as_text=True)[:200])
+
+    # 同角色 A（project_lead，已加入 B 项目）⇒ 仍 403（角色差异不豁免 org 维度）
+    same_role = client.get(path, headers=_auth(m8_world["user_a_lead"], settings))
+    assert same_role.status_code == 403, (path, same_role.status_code)
+
+    # B 属主（project_lead，B 企业创建者）⇒ 200（can_manage＋文件在场）
+    allowed = client.get(path, headers=_auth(m8_world["user_b"], settings))
+    assert allowed.status_code == 200, (
+        path,
+        allowed.status_code,
+        allowed.get_data(as_text=True)[:200],
+    )
