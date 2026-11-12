@@ -241,6 +241,7 @@ worker / scheduler 不监听端口，光看「容器 Up」看不出循环是否�
 - 本地文件存储目录（容器卷 `fde_storage`）、数据库和管理员配置密文必须一起备份。
 - 桌面安装包默认连接 `http://127.0.0.1:8010`。远程部署时，在打包前修改 `desktop/package.json` 的 `build.extraMetadata.fdeApiUrl` 为受信任的 HTTPS 地址。**启用 OSS 直连存储（`storage_backend=oss`）时，打包前再补 `build.extraMetadata.fdeOssHost`（OSS 主机，可带或不带 `https://`）——它经构建注入进打包态 CSP 的 `connect-src`（CR-057），漏配则文件二进制面（renderer 直连 signed URL 的上传/下载/预览）被 CSP 静默阻断（半坏隐蔽态）**。形态×存储对齐表：本地回环+local（缺省，零变化）／远程 HTTPS API+local（signed URL 经服务端同源或反代下发）／远程 HTTPS API+OSS（须补 `fdeOssHost`）。`fdeOssHost` 缺省省略＝本地形态零行为变化。
 - 当前版本没有内置更新中心；版本升级由部署者通过代码发布、数据库迁移和重新打包完成。
+- **换树接管部署前先跑接管检查器**（教训⑩机械闸化；2026-11-12 一日内三发 env 键静默丢失事故家族的闸）：`python scripts/deploy/takeover_check.py --tree <部署树根> --live`——核对根 `.env` 是否含 compose 全部插值变量、`server/.env` 是否含关键键（`FDE_JWT_SECRET`／AI 端点三键／⑦ 出站闸两键＋训练场模型槽位），并对照 `server/.env.example` 差集告警（只读键名，永不打印键值）；`--live` 另验活体 api 容器 migrations 挂载源在场（**僵尸挂载**——部署树已删时 `alembic current` 必炸而健康端点照绿的隐蔽态）与容器 env 关键键。任何 FAIL 先补齐再 `up -d`。
 - **让别人从公网登录的受控试用**：见 [对外受控试用部署方案 v1.0](docs/deployment/对外试用部署方案-v1.md)——覆盖 HTTPS 反向代理、客户端重新打包、账号分发与回收、数据红线及上线验收清单。本文件仍是部署命令的唯一权威，该方案只写对外场景的增量与边界，不复制命令。
 
 ## 换机迁移清单
