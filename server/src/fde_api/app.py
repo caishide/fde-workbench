@@ -116,6 +116,12 @@ def create_app(settings: Settings | None = None) -> Flask:
     for blueprint in iter_blueprints():
         app.register_blueprint(blueprint)
 
+    # V3.3 M2（WP4）：开关关闭时不挂载 ontology 绑定路由——原系统路由表不变。
+    # 不进 _BLUEPRINT_SPECS（无门控位，且审计脚本按注册表派生全量清单）
+    if getattr(settings, "ontology_enabled", False):
+        from fde_api.integrations.routes import ontology_bindings_blueprint
+
+        app.register_blueprint(ontology_bindings_blueprint)
     from fde_api.control.ai_server_client import apply_runtime_plugin
     from fde_api.control.chat import weixin_message_handler
 
