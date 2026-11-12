@@ -126,3 +126,11 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 收尾口径：本批把第三批观察名单中的三项转正销号；观察名单其余四项（业务流程映射族／成本评估／源件清单族／需求转验证实验族）维持暂不立项并登记理由；⛔禁入清单零触碰；挂账不变（v2 补强 6 处／训练场与育才两条／卡二十四 127 例案例导入排期）。
 - 录入：合并后走已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能，3 条一技能一版本，`required_capabilities` 空数组；manifest 带 `license_ledger`＋`use_boundaries`＋`form`＋`knowledge_discipline`（形状见 batch-7/README「录入」节）。
 - 已入库（2026-11-12 实测）：PR [#391](https://github.com/caishide/fde-workbench/pull/391) squash 合并 `6733124`（CI 8 check-runs 全绿，API 终审）；代录通道 3 条全 201（id：customer-acceptance-review＝049be454-034f-4c20-916a-bb19b4b630b3／delivery-retrospective-review＝57f46376-e452-4a61-a97a-20d13289b2bf／poc-production-transition＝fe919d7c-8c1f-4e5b-a015-e3465f84f341），双校验 ALL MATCH（结构化指纹 content_sha256＋document 回读正文逐字节 3859／3826／4124 B）；skill_definitions personal 23→26、public 14 未变；容器 /tmp ks7* 清零＋ready 200。详见 batch-7/README「已入库状态」。台账回填随本节同批入库。
+### batch-8 交付（2026-11-12，挂账消解批：v2 补强 6 处＋育才两卡）
+
+- 立项依据：用户 2026-11-12 授权消解三项挂账——本批承载 v2 补强 6 处（挂账表六行销号）＋育才两条销号（SKILL-27/28 新卡）；训练场挂账与卡24 127 例转 L 线导入轮（import-round-1，同日并行执行，仓库侧登记另行 PR）；观察名单其余四项维持暂不立项（同口径确认）。
+- 八份交付全在 `docs/skill-library/batch-8/`（6 份 v2＝同 key 重存开新版本，v1 文件留原批次目录不动；2 份新卡新 key）：SKILL-01＋痛点登记册（抱怨翻偏差/多因假设/反证条件/区间排序）／SKILL-03＋报价诚信三件（费用三互指/不确定性区间化/排除项一级化/变更预算闸）／SKILL-04＋决策导向三件（拍板三要素/读者分型/追问预判备询/对照意识）／SKILL-05＋移交验证三件（责任反转/行为性验收/移交可否决）／SKILL-08＋基线先行、两个打折因子、全生命周期成本、零/负不写回本／SKILL-14＋会前预验轮、检查面分域、问题闭环、阻断项机械准入；SKILL-27 行业学习 30 天、SKILL-28 新人带教与 SOP 沉淀（育才）。
+- 许可账：仓库 A 五源（AGPL-3.0-only）抽象借鉴＋独立重写，停更失效重核当日复跑通过（`git ls-remote` HEAD `b8c6876` 与本地快照逐位一致）；文集 B 六件无 LICENSE 严档仅思想（license API 404 当日复核）；逐卡对照表登记借用的判据思想与未复现项（字段集/小节定序/状态词表/乘式字面/分钟级模板/档位判据）。
+- 防抄 v5：268 文件语料（沿 v4 口径），10 件 ALL CLEAN（real=0 eng=0 banned=0 strict=0）＋变异判别力实测（向 SKILL-01 注入源件片段 real=85 红 → 还原 ALL CLEAN）；数字纪律＝掩编号/日期/卡号/序数后零残留 ASCII 数字，SKILL-27 自有流程时限按 batch-1「流程性参数自定」口径豁免。
+- 录入口径：v2 六条同 key 重存自动开新版本（服务端按整份发布材料指纹判定，版本行不可变可回滚）；batch-1 四张（01/03/04/05）当年蔡工桌面端亲手录入，key 以库内现值为准——代录前列表回读按 name 匹配，匹配不上即挂起该条并登记，不猜 key；新卡两条（industry-learning-30day／onboarding-coaching-sop）同通道首存。
+- 待回填：已入库状态（PR 合并＋代录 id＋双校验）随合并后代录结果另起回填 PR（batch-7 同款两段式）。
