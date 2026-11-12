@@ -30,7 +30,7 @@
 | 3 | 故障冒烟：provider／凭据不可用或模型 API 不可达时再跑一次 | **明确失败码、无挂死、无静默降级**；失败不产出半成品、不写真相层；与一表 iptables 无依赖关系 |
 | 4 | 回退演练：切回上一版宿主代理／CLI 版本，重复 #1–#2 | 回退路径可用（试点期间出问题的唯一自救通道）；版本切换留痕 |
 
-**失败处置**：版本／sha256 与钉死值不符 ⇒ **供应链异常，立即冻结并排查**；`--json` 形状与夹具不符 ⇒ 先按 `agents/zcode_contract.py` 复核契约，不得靠改断言放行。**商用条款书面回执未到位前不进入真实凭据联调**（D3 生产启用闸，见 `docs/audit/D4-D7人工项推进包-2026-11-07.md` §1）。
+**失败处置**：版本／sha256 与钉死值不符 ⇒ **供应链异常，立即冻结并排查**；`--json` 形状与夹具不符 ⇒ 先按 `agents/zcode_contract.py` 复核契约，不得靠改断言放行。~~**商用条款书面回执未到位前不进入真实凭据联调**~~（**2026-11-12 已解除**：zcode 不做商用申请，本前置移除；真实凭据联调现仅受 N1 试点授权 + 本表全 PASS 约束，见 `docs/audit/D4-D7人工项推进包-2026-11-07.md` §2/§5）。
 
 ## 三、证据与交接
 
@@ -39,5 +39,9 @@
 
 | 表 | 结果 | 执行人 | 日期 | 证据 sha256 |
 |---|---|---|---|---|
-| 一、iptables | 待执行 | （人工） | | |
-| 二、宿主侧代理 zcode CLI（D1=A 校正） | 待执行 | （人工） | | |
+| 一、iptables | **PASS**（2026-11-13 真机） | Agent 执行·蔡工授权留痕（N2 卡片 A，留痕可推翻） | 2026-11-13 | `44b6a1d61f742d446f041dc7483b8c91eece7a3ada29f8c2e43ec9c2d807d689` |
+| 二、宿主侧代理 zcode CLI（D1=A 校正） | **PASS**（2026-11-13 真机） | Agent 执行·蔡工授权留痕（N2 卡片 A，留痕可推翻） | 2026-11-13 | `8fb1d9210e3be5c4eef8fbc2064e1594212c61e2190d368c8522017f1a678682` |
+
+> **2026-11-13 执行记录**（证据原件 `D:\test\FDE\engagements\pilot-precheck\{01-iptables-rules.txt, 02-zcode-version.txt}`，只留本地）：
+> - **一表**：宿主 WSL OUTPUT 链为空（隔离面在 per-container netns，D1=A 后 zcode 不进容器，沙箱基线 `network_mode: none`）；沙箱内空路由表＋白名单内外域名/裸 IP 全部拒绝（EAI_AGAIN／ENETUNREACH）；对照面 api 容器白名单可达。**隔离生效 = PASS**。
+> - **二表**：`--version`=0.17.1 与钉定值一致；`zcode.cjs` sha256 `D9AFD58D…346D6`；provider revision 43 sha256 `62412A27…10CB3`；冒烟 EXIT=0 单对象汇总与夹具形状一致；故障冒烟 EXIT=1 明确报错零半成品（provider 覆盖开关＝`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 成对）；回退演练＝故障态复现→修复 `~/.zcode/cli/config.json` `defaultModelSelection`→恢复 EXIT=0（**宿主代理实施时须校验该键在场**）。**全项 PASS**。

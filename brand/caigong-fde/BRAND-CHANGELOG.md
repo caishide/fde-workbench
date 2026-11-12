@@ -5,6 +5,7 @@
 
 | 日期 | 版本 | 变更文件 | 变更内容 | 原因 | 执行人 / 审批人 | 影响的下游物料 |
 |---|---|---|---|---|---|---|
+| 2026-11-10 | v1.3 | `BRAND-GUIDELINES.md` / `BRAND-ASSET-CHECKLIST.md` / `BRAND-MASTER-PLAN.md` / `BRAND-LOGO-GUIDE.md` / `BRAND-COMPLETION-INDEX.md` / `specs/A-品牌核心补齐.md` | **英文短句 "Evidence in every delivery." 由候选转定稿**，6 处「未定稿／暂不得对外使用」标注与 2 处待确认项同步回写 | 蔡工 2026-11-10 裁定「可以」（品牌包回写定稿，网站与 E31/E32 不动） | 待确认 | 官网双语 slogan（已在使用）／顶栏 tagline／OG／JSON-LD／llms 双语／博客署名 |
 | 2026-11-03 | v1.0 | `build_logo_svgs.py` + 8 个 SVG + PNG/ICO | CG 环形主标定稿，矢量资产全套生成 | 方案一评审定稿 | 待确认 | 桌面端侧边栏 / favicon / Windows 打包图标 / docx 页眉 / 名片 |
 | 2026-11-03 | v1.1 | `BRAND-LOGO-GUIDE.md` | 增补话术与色彩系统章节 | 品牌话术定稿 | 待确认 | 全渠道文案 |
 | 2026-11-04 | v1.0 | `BRAND-ASSET-CHECKLIST.md` | 建立 36 项资产清单与三波实施路线 | 品牌全案策划（当时以清单形态承载） | 待确认 | 后续全部物料 |
