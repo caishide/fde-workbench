@@ -124,12 +124,20 @@ def test_t1_reverse_chain_from_solution_to_problem_refs(db_session, d4_client, d
 
 
 def test_agents_catalog_exposes_readonly_four_only() -> None:
-    """api_catalog 只收 agents 只读（goal-d7 起 5 条：+agents.quota O-3 配额）；
-    写路径（run/handoff/retry/rehearse/recover）不收。"""
+    """api_catalog agents 面＝只读五条（goal-d7 起 5 条：+agents.quota O-3 配额）
+    ＋ N5（G-02）受控提议通道一条（agents.run_start 确认类：AI 侧发起即
+    awaiting_confirmation，人工密码确认才落 run）；其余写路径（接管/handoff/
+    retry/rehearse/recover）仍不收——钉换代不删钉（N4 先例）。"""
     readonly = {"agents.list", "agents.run_get", "agents.tool_calls", "agents.cost", "agents.quota"}
     assert readonly <= set(CATALOG)
     for key in readonly:
         assert CATALOG[key]["method"] == "GET"
         assert CATALOG[key]["write"] is False
+    assert CATALOG["agents.run_start"]["method"] == "POST"
+    assert CATALOG["agents.run_start"]["write"] is True
+    assert CATALOG["agents.run_start"]["confirmation"] is True
+    assert CATALOG["agents.run_start"]["risk"] == 3
     for key in CATALOG:
-        assert not key.startswith("agents.") or key in readonly
+        assert not key.startswith("agents.") or key in readonly or key == "agents.run_start"
+    for banned in ("agents.run_takeover", "agents.run_retry", "agents.handoff", "agents.rehearse", "agents.recover"):
+        assert banned not in CATALOG
