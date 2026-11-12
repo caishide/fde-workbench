@@ -143,3 +143,4 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 许可现测：案例库 MIT 远端 HEAD `ef55012`＝本地零漂移；文集 B license 404 严档维持。
 - 挂账销号：训练场挂账（文集 B 演练篇不作素材直转→转正式场景走 import_cases 闸门＋import_card_v1 重写）与卡24 127 例导入排期两条销号；⛔禁入清单与诊断评测答案零触碰。
 - 已入库（2026-11-12 实测）：PR [#400](https://github.com/caishide/fde-workbench/pull/400) squash 合并 `dd67732`＝fork/main 顶（CI 8 check-runs 全绿）；登记件随本 PR 入库，包体持续留真相层 round2；draft 建行与激活待蔡工人工执行（§4 三步）。
+- 登记勘误（2026-11-13）：原起草工作流在用量窗口重置后自动续跑，写手终稿覆盖 42 例（初版 33 例主会话补齐件＋9 例在飞件）并于 01:09 重过四闸；本表已按终版 manifest（主会话 01:11 复跑复核，134 包／失败 0）整体更新（42 行哈希变化、92 行不变）——登记-修订链：#400 初版→勘误 PR。工作流两 run 均已终态，无再续跑可能。
