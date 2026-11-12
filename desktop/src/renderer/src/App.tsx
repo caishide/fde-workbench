@@ -34,6 +34,8 @@ import { SystemConfigurationPage } from "./system/SystemConfigurationPage"
 import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
 import { EnterpriseRegisterPage } from "./commercial/EnterpriseRegisterPage"
 import { EnterpriseSpacePage } from "./commercial/EnterpriseSpacePage"
+import { PublicDiagnosticPage } from "./diagnostics/PublicDiagnosticPage"
+import { PublicDiagnosticSharePage } from "./diagnostics/PublicDiagnosticSharePage"
 import { TranslatorPortalPage } from "./translator/TranslatorPortalPage"
 import { LeadPoolPage } from "./leads/LeadPoolPage"
 import { MetricsReportPage } from "./metrics/MetricsReportPage"
@@ -67,7 +69,12 @@ function AuthenticatedApp() {
     return <main className="loading-page"><Loading label="正在加载工作台…" /></main>
   }
   // 自助注册是**公开面**：未登录时也可进入（服务端按来源 IP 限流）。
+  // 获客诊断 T-14a：免注册诊断与分享页同属公开面（服务端部署闸默认关）。
   if (status === "unauthenticated" || !user) {
+    if (route.kind === "public-diagnostics") return <PublicDiagnosticPage />
+    if (route.kind === "public-diagnostics-share") {
+      return <PublicDiagnosticSharePage shareToken={route.shareToken} />
+    }
     return route.kind === "enterprise-register" ? <EnterpriseRegisterPage /> : <LoginPage />
   }
   if (user.mustChangePassword) return <ChangePasswordPage />
@@ -103,6 +110,10 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "system-configuration") return <SystemConfigurationPage />
   if (route.kind === "commercial-ops") return <CommercialOpsPage />
   if (route.kind === "enterprise-register") return <EnterpriseRegisterPage />
+  if (route.kind === "public-diagnostics") return <PublicDiagnosticPage />
+  if (route.kind === "public-diagnostics-share") {
+    return <PublicDiagnosticSharePage shareToken={route.shareToken} />
+  }
   if (route.kind === "enterprise-space") return <EnterpriseSpacePage />
   if (route.kind === "modules") return <ModulesPage />
   if (route.kind === "templates") return <TemplatesPage />

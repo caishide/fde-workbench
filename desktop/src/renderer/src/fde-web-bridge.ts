@@ -31,6 +31,7 @@ import {
   isBodySerializable,
   isMultipartFileShape,
   isSafeApiPath,
+  validateCustomHeaders,
   type MultipartFileBodyShape,
 } from "../../shared/api-safety"
 
@@ -252,9 +253,19 @@ async function apiRequest<T>(
   } else if (options.body !== undefined && !isBodySerializable(options.body)) {
     return fail({ code: "invalid_request", message: "请求体不可序列化。" })
   }
+  // 校验项 9（shared 原语）：自定义请求头允许名单（只有 x-diagnostic-token）。
+  if (validateCustomHeaders(options.headers) !== null) {
+    return fail({ code: "invalid_request", message: "自定义请求头不合法。" })
+  }
   const headers: Record<string, string> = {
     accept: "application/json",
-    authorization: `Bearer ${options.accessToken}`,
+    // 空令牌＝公开面（获客诊断 T-14a 免注册流程）：不下发 Authorization 头。
+    ...(options.accessToken
+      ? { authorization: `Bearer ${options.accessToken}` }
+      : {}),
+    // 自定义头只有 x-diagnostic-token（共享原语已把关），不可能与上面
+    // 两个桥自带头发生命名冲突。
+    ...(options.headers ?? {}),
   }
   let body: BodyInit | undefined
   if (multipart) body = multipart

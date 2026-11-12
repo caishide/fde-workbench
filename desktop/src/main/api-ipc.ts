@@ -15,6 +15,7 @@ import {
   isBodySerializable,
   isSafeApiPath,
   serializeBodyString,
+  validateCustomHeaders,
   validateMultipartFileShape,
 } from "../shared/api-safety"
 
@@ -29,6 +30,8 @@ interface ValidatedApiRequest {
   method: ApiMethod
   accessToken: string
   body?: unknown
+  /** 获客诊断 T-14a：自定义请求头（允许名单只有 x-diagnostic-token）。 */
+  headers?: Record<string, string>
 }
 
 interface MultipartFileBody {
@@ -52,7 +55,7 @@ interface RegisterApiIpcOptions {
   isTrustedSender(event: IpcMainInvokeEvent): boolean
 }
 
-const ALLOWED_KEYS = new Set(["path", "method", "accessToken", "body"])
+const ALLOWED_KEYS = new Set(["path", "method", "accessToken", "body", "headers"])
 const REDACTED = "[REDACTED]"
 
 export class ApiIpcError extends Error implements ApiErrorDto {
@@ -76,7 +79,11 @@ export function createApiRequestHandler(
     const pluginDecision = request.method === "POST"
       && /^\/api\/v1\/extensions\/plugin-requests\/[^/]+\/decision$/.test(new URL(request.url).pathname)
     const timeout = setTimeout(() => controller.abort(), pluginDecision ? Math.max(options.timeoutMs, 330_000) : options.timeoutMs)
-    const secrets = [request.accessToken, ...collectSensitiveValues(request.body)]
+    const secrets = [
+      request.accessToken,
+      ...Object.values(request.headers ?? {}),
+      ...collectSensitiveValues(request.body),
+    ]
     try {
       const multipartBody = isMultipartFileBody(request.body) ? buildMultipartBody(request.body) : undefined
       const serializedBody = request.body === undefined || multipartBody
@@ -86,10 +93,16 @@ export function createApiRequestHandler(
         method: request.method,
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${request.accessToken}`,
+          // 空令牌＝公开面（获客诊断 T-14a 免注册流程）：不下发 Authorization 头。
+          ...(request.accessToken
+            ? { authorization: `Bearer ${request.accessToken}` }
+            : {}),
           ...(serializedBody === undefined || multipartBody
             ? {}
             : { "content-type": "application/json" }),
+          // 自定义头只有 x-diagnostic-token（共享原语已把关），不可能与上面
+          // 三个桥自带头发生命名冲突。
+          ...(request.headers ?? {}),
         },
         ...(multipartBody ? { body: multipartBody } : serializedBody === undefined ? {} : { body: serializedBody }),
         signal: controller.signal,
@@ -138,9 +151,14 @@ function validateRequest(
     typeof value.method !== "string" ||
     !isAllowedMethod(value.method) ||
     typeof value.accessToken !== "string" ||
-    value.accessToken.length === 0 ||
     value.accessToken.length > 16_384
   ) {
+    throw invalidRequest()
+  }
+  // 空令牌＝公开面（获客诊断 T-14a 免注册诊断流程）：桥只做传输安全，
+  // 授权永远由服务端判（未授权端点仍回 401）。
+  // 校验项 9（shared 原语）：自定义请求头允许名单。
+  if (validateCustomHeaders(value.headers) !== null) {
     throw invalidRequest()
   }
   const path = value.path
@@ -186,6 +204,9 @@ function validateRequest(
     method: value.method as ApiMethod,
     accessToken: value.accessToken,
     ...(value.body === undefined ? {} : { body: value.body }),
+    ...(value.headers === undefined
+      ? {}
+      : { headers: value.headers as Record<string, string> }),
   }
 }
 

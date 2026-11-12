@@ -28,6 +28,28 @@ const ENCODED_DOT = /%2e/i
 const AUTH_PATH = /^\/api\/v1\/auth(?:\/|$)/i
 const FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
+/**
+ * 自定义请求头允许名单（获客诊断 T-14a）。
+ *
+ * 匿名诊断会话的令牌是**持有即权**凭证，服务端只从 ``X-Diagnostic-Token``
+ * 请求头取（URL 会进访问日志）。但两桥的请求头是写死的（accept／authorization／
+ * content-type），访客界面拿不到令牌就调不动免注册流程——本名单是那道缺口
+ * 的唯一开口。
+ *
+ * 纪律：**只放行一个头**。authorization／cookie／content-type 等一切可改写
+ * 身份或请求语义的头一律拒绝——自定义头不得覆盖桥自带头，也不得让渲染层
+ * 借桥提权（桥的职责是路径/方法/形状安全，不是授权；授权永远由服务端判）。
+ */
+export const ALLOWED_CUSTOM_HEADER_NAMES: ReadonlySet<string> = new Set([
+  "x-diagnostic-token",
+])
+
+/** 自定义头取值字符集：token_urlsafe 形态（字母数字连字符下划线），≤128 字。 */
+export const CUSTOM_HEADER_VALUE_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+const MAX_CUSTOM_HEADERS = 4
+
+
 export interface MultipartFileBodyShape {
   kind: "multipart_file"
   fields: Record<string, string>
@@ -146,6 +168,27 @@ export function isAuthExcludedPath(path: string, method: string): boolean {
   const isPasswordVerification =
     decodedPathname === "/api/v1/auth/verify-password" && method === "POST"
   return AUTH_PATH.test(decodedPathname) && !isPasswordVerification
+}
+
+/**
+ * 校验项 9（获客诊断 T-14a）：自定义请求头允许名单。
+ *
+ * @returns 拒因文案；null＝合法可放行（undefined／null＝未带自定义头）。
+ */
+export function validateCustomHeaders(headers: unknown): string | null {
+  if (headers === undefined || headers === null) return null
+  if (!isRecord(headers)) return "自定义请求头形状非法"
+  const entries = Object.entries(headers)
+  if (entries.length > MAX_CUSTOM_HEADERS) return "自定义请求头数量超限"
+  for (const [name, value] of entries) {
+    if (!ALLOWED_CUSTOM_HEADER_NAMES.has(name.toLowerCase())) {
+      return `自定义请求头不在允许名单：${name}`
+    }
+    if (typeof value !== "string" || !CUSTOM_HEADER_VALUE_PATTERN.test(value)) {
+      return "自定义请求头取值非法"
+    }
+  }
+  return null
 }
 
 /**
