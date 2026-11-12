@@ -34,6 +34,25 @@
 - manifest 形状沿 batch-2..7：`entrypoint`／`format`／`source`／`batch`＝"batch-8"／`rewrite`／`license_ledger`＝"docs/skill-library/batch-8/LICENSE-AUDIT.md"／`use_boundaries`（when_to_use＋human_boundary）／`references`／`form`／`knowledge_discipline`；v2 条另带 `supersedes_version`＝被升级的版本号。
 - batch-1 四张（01/03/04/05）当年为蔡工桌面端亲手录入，key 以库内现值为准：代录前先列表回读按 name 匹配，匹配不上即挂起该条并登记，不猜 key。
 
+## 已入库状态（2026-11-12 实测）
+
+- PR：[#395](https://github.com/caishide/fde-workbench/pull/395) 已 squash 合并（`3646883`），CI 8 check-runs 全绿（API check-runs 终审，含延迟注册的 pseudonymization）。
+- 代录：已授权代录通道（2026-11-12 蔡工口径延续）8 条全部 `POST /api/v1/extensions/skills/personal` 成功（HTTP 201）：
+  - **v2 六条（同 id 开新版本，current_version 1→2，旧版本行不可变可回滚）**：
+    - `presales-diagnosis-framework` → id `d19f5e45-0914-48e8-bbd7-2eb8d41f74ba`（v2）
+    - `pricing-proposal-structure` → id `8b4128ee-935d-4678-b792-2d064410cddf`（v2）
+    - `weekly-value-report-triage` → id `05a3baec-8981-479f-8143-abcb31d202fc`（v2）
+    - `handover-closeout-checklist` → id `fbdb6735-e1ca-4c94-83da-ea7c74929a79`（v2）
+    - `value-narrative-draft` → id `c3062589-6756-431a-af05-3dd146d9853e`（v2）
+    - `go-live-decision-checklist` → id `b0cbcda5-7cc4-45a8-9ba9-c6853fcecbff`（v2）
+  - **新卡两条（v1）**：
+    - `industry-learning-30day` → id `bef1c901-d62a-468c-a42b-a0d272366675`
+    - `onboarding-coaching-sop` → id `687204a6-78ad-4558-81ae-c57aa207f5d5`
+- 双校验 **ALL MATCH**（宿主终校验 ALL MATCH: True）：①服务端结构化指纹 `content_sha256` 与本地载荷重算逐位一致；②`GET /skills/<id>/document` 回读正文与本批 md 逐字节一致（7500／7309／6670／6453／5223／4939／3941／4345 B）。
+- 库内核验：`skill_definitions` scope=personal 26→**28** 行（六条 v2 各含 v1+v2 两个不可变版本行），`scope=public` **14** 行未变。
+- 容器清场：`/tmp/ks8*` 已清零，`/api/v1/health/ready` 复探 200。
+- 台账回填随本节同批入库（PROGRESS.md batch-8 节已入库 bullet）。
+
 ## 验收口径（本批自检）
 
 - 8 份 SKILL 全过防抄扫描 v5（268 文件语料；15 字滑窗＋英文片段＋禁词＋strict 措辞钉＋数字纪律）；
