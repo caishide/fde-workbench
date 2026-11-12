@@ -86,4 +86,5 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 防抄：15 字滑窗对 7 源 ALL CLEAN（剩余命中全为对照表声明标识符）＋英文长片段 0＋禁词 0＋**最严档附加扫描**（P0–P3 字样／HH:MM 时刻表／概率乘影响／应对四词连用）全 0；扫描抓到并当场修正两处真命中（审计文件自指禁词字面、四域枚举与源同序同词——扫描器该抓的都抓了）。
 - 单一权威划界逐篇写明：门禁清单本体＝产品门禁面（SKILL-14 只管决策会）；纪要结构化抽取＝产品既有面（SKILL-10 只出草稿）；平台权限模型（SKILL-11 零接触）；报价收费（SKILL-13 与 SKILL-03 划界）；撤场收口（SKILL-15 与 SKILL-05 划界）；复盘回写（SKILL-16 与 SKILL-07 划界）。
 - 录入：合并后走已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能，7 条一技能一版本。
+- **已入库（2026-11-12 实测）**：PR #372 squash `6efe666`＝fork/main 顶（CI 4 job × 双事件 8 runs 全绿，server-tests 13m26s/11m47s）后执行导入——POST 全 201、7 条 id（`241bfdbb`／`b5be879e`／`d9b279f7`／`0dc7cb9c`／`b0cbcda5`／`7a865f2a`／`ba13bf39`）、正文逐字节一致＋服务端结构化指纹逐位一致（ALL MATCH: True）、个人技能 9→16 条（batch-1/2 九条未受影响）、公共 14 条未变、容器临时文件清零；详见 batch-3/README「已入库状态」。台账回填随本节同批入库。
 
