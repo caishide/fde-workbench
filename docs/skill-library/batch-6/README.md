@@ -31,4 +31,6 @@
 - manifest 形状：`entrypoint`／`format`／`source`／`batch`＝"batch-6"／`rewrite`／`license_ledger`（指向本目录 LICENSE-AUDIT.md）／`use_boundaries`（when_to_use＋human_boundary）／`references`（required_reading＋authoritative_sources）／`form`／`knowledge_discipline`。
 - 正文直接粘贴本批对应 md 全文，key 用上表的 key。
 
-## 已入库状态（待代录后回填）
+## 已入库状态（2026-11-12 实测）
+
+PR #387 squash `c91584b`＝fork/main 顶（CI 4 job × 双事件 8 runs 全绿，API 全读 check-runs 终审 success=8／失败=0）后执行导入——POST 全 201、2 条 id（`bef8205b`／`80d066a5`）、正文逐字节一致＋服务端结构化指纹逐位一致（ALL MATCH: True）、个人技能 21→23 条（batch-1..5 廿一条未受影响）、公共 14 条未变、容器临时文件清零。台账回填随本节同批入库。

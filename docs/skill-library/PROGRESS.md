@@ -114,3 +114,4 @@ enterprise-acceptance／project-retrospective／poc-to-production／business-pro
 - 防抄：扫描器沿 v3 口径适配（目标目录／标识符／专项钉／README 内容钉／许可账行数阈值随本批形态调整），一次全绿——15 字滑窗对 **17 源语料**（与第五批同一语料，两份新源件均已在其中，从严不变）**ALL CLEAN（real=0 eng=0 banned=0 strict=0，EXIT=0）**＋英文长片段 0＋禁词 0＋参考型附加扫描（五节齐备／独立重写＋未搬声明在位／两份零 ASCII 数字〔元信息掩码后〕／SKILL-22 同源双用＋零复用声明／SKILL-23 划界后定声明＋阈值形态专项零命中／README 内容钉 5 项／许可账同源双用声明在位）。
 - 收尾口径：本批后两仓已点名候选面全部归位；观察名单其余条目维持暂不立项（权威归属已被既有面覆盖或属他线挂账：v2 补强／训练场／育才／案例语料四类挂账不变）；禁入清单零触碰。
 - 录入：合并后走已授权代录通道（2026-11-12 蔡工口径延续）导入 admin 个人技能，2 条一技能一版本，`required_capabilities` 空数组；manifest 带 `license_ledger`＋`use_boundaries`＋`form`＋`knowledge_discipline`（形状见 batch-6/README「录入」节）。
+- **已入库（2026-11-12 实测）**：PR #387 squash `c91584b`＝fork/main 顶（CI 4 job × 双事件 8 runs 全绿，API 全读 check-runs 终审 success=8／失败=0）后执行导入——POST 全 201、2 条 id（`bef8205b`／`80d066a5`）、正文逐字节一致＋服务端结构化指纹逐位一致（ALL MATCH: True）、个人技能 21→23 条（batch-1..5 廿一条未受影响）、公共 14 条未变、容器临时文件清零；详见 batch-6/README「已入库状态」。台账回填随本节同批入库。
