@@ -90,42 +90,6 @@
       "text": "失败环节显式留痕：作废要留痕、新版本另起；删除重传掩盖过程按事故处理，不算修复。",
       "source_ref": "D:\\test\\FDE\\蔡工FDE工作台_文档中心\\12_FDE_SOP现行产品_v2.4.7\\FDE个人接单全流程SOP-双轨融合版-v2.4.7.md §S9；实践口径见 docs/v3.1/pilot-复盘-somwyn-2026-11-09.md",
       "sha256": "29e30d1b4d1348c77d3c1565b31f250f1458ac6929a9cdb082dbfb672f5862b7"
-    },
-    {
-      "id": "LESS-DIAG-001",
-      "capability_tags": [
-        "agent.module.solution"
-      ],
-      "text": "技术选型先算账：订阅计费随规模膨胀，自托管成本结构不同——决策依据是成本结构账，不是直觉与传闻。",
-      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
-      "sha256": "3b733e2f0513a992c13f4ab625d1af0266bd5288bb55cc68c3162c65f2aa8ea1"
-    },
-    {
-      "id": "LESS-DIAG-002",
-      "capability_tags": [
-        "agent.quality_guard"
-      ],
-      "text": "结果数字不编造：未跑通环节如实写未跑通；客户未提供的数字留待提供，不替客户填数。",
-      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
-      "sha256": "192588273df4cc8bbceb24c21382d25fe84ca9f95b4058eb51fe4800a9c7081a"
-    },
-    {
-      "id": "LESS-DIAG-003",
-      "capability_tags": [
-        "agent.module.presales"
-      ],
-      "text": "建议按客户真实阶段给语境：选型期的建议不写成实施完成——未发生的事不用完成时态。",
-      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
-      "sha256": "deea83145fe811635789433c1660ce8a30942c8b1e3b59fb21efa367d59c8a8b"
-    },
-    {
-      "id": "LESS-DIAG-004",
-      "capability_tags": [
-        "agent.module.solution"
-      ],
-      "text": "从高频、高成本、可验证的窄流程切入：先确定性校验后生成增强，不先建通用大平台。",
-      "source_ref": "D:\\test\\FDE\\knowledge\\诊断案例集\\cards\\somwyn.json display 段（展示面·示例报告已带角标口径）",
-      "sha256": "0ad1f431eed9b9ad802ba6e50790e357fea2bc50f5b5a0a870b0c880baa4e6db"
     }
   ]
 }
