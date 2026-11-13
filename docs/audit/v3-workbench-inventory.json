@@ -1,10 +1,10 @@
 {
- "route_count": 490,
+ "route_count": 491,
  "blueprint_count": 52,
  "table_count": 153,
- "revision_count": 75,
+ "revision_count": 76,
  "heads": [
-  "d4b8e1f6a9c3"
+  "d4b7e2f9a6c1"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -360,6 +360,14 @@
    ],
    "add_column_tables": [
     "gates"
+   ]
+  },
+  "d4b7e2f9a6c1": {
+   "file": "d4b7e2f9a6c1_loop2_l4_candidate_payload.py",
+   "down_revision": "d4b8e1f6a9c3",
+   "create_tables": [],
+   "add_column_tables": [
+    "improvement_proposals"
    ]
   },
   "d4b8e1f6a9c3": {

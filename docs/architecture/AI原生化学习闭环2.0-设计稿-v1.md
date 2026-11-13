@@ -55,7 +55,7 @@
 - **适配器**：第三档 `adapter_mode="workbench"`（mock/real 保留）。probe＝真模型生成下一问；analyze/design＝真模型按 mock 同款 JSON 契约（结构化失败回落自由文本 `structured=False`，沿 `real.py` 语义）；implement/validate 复用确定性腿（real.py probe 委托 mock 先例）。
 - **runner 改造（评审 P0-Ⅴ，v1 漏写）**：现有循环全程传同一 `base_ctx`（disclosed 恒空，`runner.py:161-178`）——改为循环内逐轮 `dataclasses.replace(base_ctx, disclosed=customer.disclosed_facts, config={**base_ctx.config, "history": history})`；mock 忽略新键 ⇒ 零回归。
 - **候选载荷通道**：run config（`create_run` 放行任意 dict，`run_service.py:104-106`）→ `runner.py:172` 合入 `ctx.config["candidate_payload"]`；**run_key 含 config 指纹**（`run_service.py:41-50,123-130`）⇒ 基线/候选组天然分流。
-- **注册两处**：`models.py:60 ADAPTER_MODES` ＋ `adapters/__init__.py:23-32 build_adapter`（闭集现无测试断言，扩值冲击面小——评审实测）。
+- **注册两处**：`models.py:60 ADAPTER_MODES` ＋ `adapters/__init__.py:23-32 build_adapter`（闭集现无测试断言，扩值冲击面小——评审实测）。【**L4 施工勘误（2026-11-14）**：注册之外还有两处 DB 落点本稿漏记——`simulation_runs.adapter_mode` 列宽 `String(8)`（"workbench" 9 字符放不下，须扩 `String(16)`）与表上 `ck_simulation_runs_adapter_mode` CHECK 闭集 `('real','mock')`（须扩 `'workbench'`）；两处已随迁移① `d4b7e2f9a6c1` 落地，不随迁则 workbench 运行行在 DB 层必被拒。】
 - **成本口径（评审修正）**：实际 **10 次模型调用/题**（6 probe＋4 相位，`runner.py:176-289`）；`cost_json` 现硬编码 `"tokens": 0`（`runner.py:315-321`）——须接 DeepSeekClient usage 回填，否则回归 cost_delta 失真。模型槽位 NEW `deepseek_simulation_workbench_model`（缺省回落评估槽位）；purpose=`simulation_workbench`（审计＋J-1＋注册表 +1）；**J-1 动态插值例外**：DB 载荷内插 system 消息须登记 `_KNOWN_EXCEPTION_VARIABLES`（`test_prompt_hygiene_jseries.py:31-52`，沿 `industry_template.context` 先例）。
 - **执行方式**：单跑 30-60s 同步（`run_service.py:153-154`）会卡请求——单跑与回归一并走后台队列；桌面验收拆两层：CI 用 mock DeepSeekClient seam 钉（契约/回落/audit 行），真机证据另附 run id＋活库取证（沿 G9b 先例）。
 - 否决：全量切 real；把 mock 做逼真。

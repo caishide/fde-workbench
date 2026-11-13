@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # V3.2 G9：模拟训练场的**独立模型评估层**槽位（按用途独立，不与生产管道
     # 换档互牵连）。缺 API Key 时该层返回 unavailable（不产生分数）。
     deepseek_simulation_evaluation_model: str = "deepseek-v4-pro"
+    # 学习闭环 2.0 L4：训练场 workbench 执行面（API 内真模型跑题）槽位——
+    # 空 = 回落评估槽位；缺端点/密钥 ⇒ 运行诚实失败（不静默退回 mock）。
+    deepseek_simulation_workbench_model: str = ""
     # 诊断报告科目评分模型（T-08）：空 = 沿用训练场评估模型槽位；评分模型
     # 与生成模型分档是常态，独立槽位便于单独校准。
     diagnostic_judge_model: str = ""

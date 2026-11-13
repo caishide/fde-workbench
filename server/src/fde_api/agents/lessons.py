@@ -92,7 +92,11 @@ def knowledge_snippets_for(*, project: Any, agent: Any, settings: Any) -> tuple[
     run 路径不为种子问题炸客户可见面）；渲染面既有禁区词＋模式遮蔽闸对
     注入文本二次把关（``render_masked_context`` 内 ``_clean``），零新脱敏面。
     """
-    if not bool(getattr(settings, "fde_agent_lessons_enabled", False)):
+    # 键名＝config.Settings 字段名（agent_lessons_*，env FDE_AGENT_LESSONS_*）。
+    # 学习闭环 2.0 L4 断点⑥修正：此前误读 ``fde_agent_lessons_*``（配置侧从无
+    # 此键）⇒ 生产注入恒关——同坑两次复发家族，配套 create_app 真实 Settings
+    # 验收钉（tests/test_lessons_wiring.py）。
+    if not bool(getattr(settings, "agent_lessons_enabled", False)):
         return ()
     try:
         entries = load_entries()
@@ -108,7 +112,7 @@ def knowledge_snippets_for(*, project: Any, agent: Any, settings: Any) -> tuple[
         entries,
         capability_tier=str(getattr(agent, "capability_tier", "") or ""),
         project_industry=industry,
-        top_k=int(getattr(settings, "fde_agent_lessons_top_k", 3)),
-        max_chars=int(getattr(settings, "fde_agent_lessons_max_chars", 400)),
+        top_k=int(getattr(settings, "agent_lessons_top_k", 3)),
+        max_chars=int(getattr(settings, "agent_lessons_max_chars", 400)),
     )
     return tuple(picked)

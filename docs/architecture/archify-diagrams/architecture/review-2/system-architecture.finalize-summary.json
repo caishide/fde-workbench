@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "180a831f358c35632ac915cb4620307cba3eebdc1848b0be284ae7ad61131a56",
+    "bytes": 12995
+  },
+  "artifact": {
+    "path": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "14ce88cef25ee116f054ca84a94455723ae34f20d8a329abe01d2125c3ba5d70",
+    "bytes": 845314
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\review-2\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\review-2\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\review-2\\system-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-13T06:10:42.431Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4990,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "bridge-api",
+            "from": "bridge",
+            "to": "api",
+            "label": "POST 快照 · FDE_BRIDGE_TOKEN",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "bridge → api needs 3 bends: move node bridge or api so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

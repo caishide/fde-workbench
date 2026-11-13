@@ -299,11 +299,36 @@ def list_findings():
 @simulation_blueprint.post("/runs/<run_id>/analyze")
 @require_auth
 def analyze_run(run_id):
-    """失败分析：由评估结论归因，落失败发现行（幂等）。"""
+    """失败分析（三源化，学习闭环 2.0 L4）：L-A 规则层＋L-B 真模型层（likely）
+    ＋L-C 人工终裁最新行（confirmed）；幂等不增殖。"""
     try:
         data = improvement_service.analyze_run(actor=g.current_user, run_id=run_id)
     except service.ScenarioServiceError as error:
         return error_response(error.code, error.message, error.status, error.detail or None)
+    return _data(data)
+
+
+@simulation_blueprint.post("/findings/draft-ai")
+@require_auth
+def draft_findings_ai():
+    """AI 蒸馏起草（学习闭环 2.0 L4 断点③；**不进 api_catalog**——治理审阅面）。
+
+    返件式零落库：蒸馏输入＝字段允许名单投影（evidence_refs/reason/note 不进
+    起草面）；产出三型候选载荷（lesson_entry / skill_version_draft /
+    prompt_overlay_fragment）；契约失败整批丢弃重试一次 ⇒ 409
+    ``ai_draft_contract_failed``。采纳＝人工确认后经 ``create_proposal``
+    （candidate_payload 随提案入档）；AI 通道故障按 DSH 同尺映射。
+    """
+    from fde_api.control.ai_server_client import DSHRuntimeError
+    from fde_api.simulation import improvement_draft
+
+    payload = _payload()
+    try:
+        data = improvement_draft.draft_improvements(
+            actor=g.current_user, finding_ids=payload.get("finding_ids")
+        )
+    except DSHRuntimeError as error:
+        return error_response(error.code, error.public_message, 503 if error.retryable else 409)
     return _data(data)
 
 
