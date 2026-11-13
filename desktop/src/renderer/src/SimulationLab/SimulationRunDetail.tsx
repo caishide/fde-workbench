@@ -51,6 +51,114 @@ function integrationStatus(trace: { payload: Record<string, unknown> }): string 
   return typeof value === "string" ? value : ""
 }
 
+function hasExpandableArtifact(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0
+  return true
+}
+
+function formatStructuredValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  if (value === null || value === undefined) return "—"
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+interface TextArtifactEntry {
+  name: string
+  kind: string
+  sha256: string
+  text: string
+}
+
+function extractTextArtifactEntries(artifact: Record<string, unknown>): TextArtifactEntry[] {
+  const rawList = artifact.artifacts
+  if (!Array.isArray(rawList)) return []
+  const result: TextArtifactEntry[] = []
+  for (let index = 0; index < rawList.length; index += 1) {
+    const item = rawList[index]
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (
+      typeof record.text === "string" ||
+      typeof record.name === "string" ||
+      typeof record.sha256 === "string"
+    ) {
+      result.push({
+        name: typeof record.name === "string" && record.name ? record.name : `artifact-${index + 1}`,
+        kind: typeof record.kind === "string" && record.kind ? record.kind : "artifact",
+        sha256: typeof record.sha256 === "string" ? record.sha256 : "",
+        text: typeof record.text === "string" ? record.text : "",
+      })
+    }
+  }
+  return result
+}
+
+function renderArtifactDetail(artifact: unknown): ReactElement {
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+    return (
+      <div
+        className="simulation-trace-artifact-panel"
+        role="region"
+        aria-label="阶段交付产物原文"
+      >
+        <pre className="simulation-artifact-json">{formatStructuredValue(artifact)}</pre>
+      </div>
+    )
+  }
+  const record = artifact as Record<string, unknown>
+  const textEntries = extractTextArtifactEntries(record)
+  const restEntries = Object.entries(record).filter(([key]) =>
+    textEntries.length > 0 ? key !== "artifacts" : true,
+  )
+
+  return (
+    <div
+      className="simulation-trace-artifact-panel"
+      role="region"
+      aria-label="阶段交付产物原文"
+    >
+      {textEntries.length > 0 ? (
+        <ul className="simulation-trace-artifact-files">
+          {textEntries.map((entry, idx) => (
+            <li key={`${entry.name}-${entry.sha256}-${idx}`} className="simulation-trace-artifact-file">
+              <header className="simulation-trace-artifact-file-header">
+                <strong>{entry.name}</strong>
+                <span className="simulation-trace-artifact-kind">{entry.kind}</span>
+                {entry.sha256 ? (
+                  <code className="simulation-trace-artifact-sha" title={entry.sha256}>
+                    sha256: {entry.sha256}
+                  </code>
+                ) : null}
+              </header>
+              <pre className="simulation-trace-artifact-text">{entry.text || "（无正文内容）"}</pre>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {restEntries.length > 0 ? (
+        <dl className="simulation-trace-artifact-fields">
+          {restEntries.map(([key, val]) => (
+            <div key={key} className="simulation-trace-artifact-field">
+              <dt>{key}</dt>
+              <dd>
+                <pre className="simulation-artifact-json">{formatStructuredValue(val)}</pre>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  )
+}
+
 function errorText(caught: unknown): string {
   if (caught instanceof ApiClientError) return caught.message
   if (caught instanceof Error) return caught.message
@@ -77,6 +185,7 @@ export function SimulationRunDetail(): ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  const [expandedTraceSeqs, setExpandedTraceSeqs] = useState<number[]>([])
   const sequence = useRef(0)
 
   const loadRuns = useCallback(async () => {
@@ -126,6 +235,7 @@ export function SimulationRunDetail(): ReactElement {
   }, [loadRuns])
 
   useEffect(() => {
+    setExpandedTraceSeqs([])
     void loadRunDetail(selectedId)
   }, [loadRunDetail, selectedId])
 
@@ -366,24 +476,47 @@ export function SimulationRunDetail(): ReactElement {
                 <p className="simulation-empty">该运行暂无 Trace。</p>
               ) : (
                 <ol className="simulation-trace-list">
-                  {traces.map((trace) => (
-                    <li key={trace.seq}>
-                      <span className="simulation-trace-seq">#{trace.seq}</span>
-                      <span className="simulation-trace-phase">{trace.phase}</span>
-                      <span className="simulation-trace-event">{trace.event_type}</span>
-                      <span className="simulation-trace-payload">
-                        {Object.entries(trace.payload)
-                          .filter(([key]) => key !== "artifact")
-                          .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`)
-                          .join("；")}
-                      </span>
-                      {integrationStatus(trace) ? (
-                        <span className="simulation-trace-integration">
-                          接线状态 {integrationStatus(trace)}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
+                  {traces.map((trace) => {
+                    const artifactValue = trace.payload?.artifact
+                    const canExpandArtifact = hasExpandableArtifact(artifactValue)
+                    const isExpanded = expandedTraceSeqs.includes(trace.seq)
+                    return (
+                      <li key={trace.seq}>
+                        <div className="simulation-trace-row-head">
+                          <span className="simulation-trace-seq">#{trace.seq}</span>
+                          <span className="simulation-trace-phase">{trace.phase}</span>
+                          <span className="simulation-trace-event">{trace.event_type}</span>
+                          <span className="simulation-trace-payload">
+                            {Object.entries(trace.payload)
+                              .filter(([key]) => key !== "artifact")
+                              .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`)
+                              .join("；")}
+                          </span>
+                          {integrationStatus(trace) ? (
+                            <span className="simulation-trace-integration">
+                              接线状态 {integrationStatus(trace)}
+                            </span>
+                          ) : null}
+                          {canExpandArtifact ? (
+                            <UiButton
+                              compact
+                              aria-expanded={isExpanded}
+                              onClick={() => {
+                                setExpandedTraceSeqs((prev) =>
+                                  prev.includes(trace.seq)
+                                    ? prev.filter((item) => item !== trace.seq)
+                                    : [...prev, trace.seq],
+                                )
+                              }}
+                            >
+                              {isExpanded ? "收起交付原文" : "展开交付原文"}
+                            </UiButton>
+                          ) : null}
+                        </div>
+                        {canExpandArtifact && isExpanded ? renderArtifactDetail(artifactValue) : null}
+                      </li>
+                    )
+                  })}
                 </ol>
               )}
             </section>

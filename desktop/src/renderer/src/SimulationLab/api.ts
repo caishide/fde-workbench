@@ -307,6 +307,32 @@ export async function decideProposal(
   return data as import("./types").ProposalDto
 }
 
+export async function releaseProposal(
+  apiRequest: SimulationApiRequest,
+  proposalId: string,
+  payload: { password: string; note: string },
+): Promise<import("./types").ProposalDto> {
+  const data = await apiRequest(`${BASE}/proposals/${encodeURIComponent(proposalId)}/release`, {
+    method: "POST",
+    body: payload,
+  })
+  if (!data || typeof data !== "object") throw new Error("改进提案数据格式异常")
+  return data as import("./types").ProposalDto
+}
+
+export async function rollbackProposal(
+  apiRequest: SimulationApiRequest,
+  proposalId: string,
+  payload: { password: string; note: string },
+): Promise<import("./types").ProposalDto> {
+  const data = await apiRequest(`${BASE}/proposals/${encodeURIComponent(proposalId)}/rollback`, {
+    method: "POST",
+    body: payload,
+  })
+  if (!data || typeof data !== "object") throw new Error("改进提案数据格式异常")
+  return data as import("./types").ProposalDto
+}
+
 export async function listRegressionSuites(
   apiRequest: SimulationApiRequest,
 ): Promise<{ items: import("./types").RegressionSuiteDto[]; total: number }> {

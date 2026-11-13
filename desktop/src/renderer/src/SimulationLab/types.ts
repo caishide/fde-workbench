@@ -278,6 +278,20 @@ export interface FindingDto {
   status: string
 }
 
+export interface ProposalRollbackDto {
+  rolled_back_at: string
+  rolled_back_by_user_id: string
+  rollback_note: string
+}
+
+export interface ProposalReleaseDto {
+  released_at: string
+  released_by_user_id: string
+  released_version: string
+  release_note: string
+  rollback: ProposalRollbackDto | null
+}
+
 export interface ProposalDto {
   id: string
   proposal_key: string
@@ -293,7 +307,8 @@ export interface ProposalDto {
   impact_scope: string[]
   regression_plan: Record<string, unknown>
   override_json: Record<string, unknown>
-  status: "draft" | "in_review" | "approved" | "rejected"
+  status: "draft" | "in_review" | "approved" | "rejected" | "published"
+  release?: ProposalReleaseDto | null
   decided_by_user_id: string | null
   decided_at: string | null
   note: string | null
