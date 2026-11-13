@@ -2,7 +2,7 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
-## [未发布] — 项目详情页第二批桌面 AI 辅助闭环：交付方案面板＋测试计划面板＋工作流「从方案生成草稿」（桌面变更·零服务端改动·零迁移零路由，便携版 r46，2026-11-14）
+## [未发布] — 项目详情页第二批桌面 AI 辅助闭环：交付方案面板＋测试计划面板＋工作流「从方案生成草稿」（桌面变更·零服务端改动·零迁移零路由，便携版 r47，2026-11-14）
 
 打通项目详情页三块 AI 辅助消费面（plans／quality／workflows 蓝图路由早已上线，本轮补齐桌面最后一公里），严守双来源并列、产物恒 draft、闸不代拍与错误码原样呈现纪律：
 
@@ -10,7 +10,7 @@
 - **测试计划面板**：新增 `desktop/src/renderer/src/quality/TestPlansPanel.tsx` 挂入 tasks 分支（TaskTable 下方）。`generate`/`generate-ai` 双来源且「来源任务」下拉选中即透传 `source_task_id`；用例表（`case_key`/`title`/`risk_level`/`acceptance_mode`/`requirement_key`）；draft「批准/驳回」（覆盖闸 409 `requirement_coverage_incomplete` 连 `missing_requirement_keys` 原样呈现）；approved「登记执行」——环境仅 dev/staging（production 恒 409 不出 UI 选项）、逐用例勾 result（passed/failed/blocked）、`report_uri` 与 `report_sha256` 缺一前端拦截不提交（成对后放行）。
 - **工作流控制台升级**：`desktop/src/renderer/src/workflows/WorkflowConsole.tsx` 既有行为零回归，canManage 顶部新增「从方案生成草稿」区＝交付方案下拉（过滤 approved/published）＋实施技能下拉（GET `/api/v1/extensions` skills 过滤 published，ref=`key@current_version`）＋审批能力默认 `workbench.write`，并列「编译草稿」（POST `draft-from-plan`，落库为 draft 定义）与「AI 起草草稿」（POST `generate-ai-draft`，返件式零落库）；AI 返件就地预览（节点表＋validate 明细＋`dag_sha256`），「采纳为定义」POST `/workflows` body 恰含 `name`/`dag`（`description` 非空才携带，validate 明细不进 body）；draft 卡片加「干跑校验」（validate 干跑明细就地呈现），isAdmin 加「发布」；`ProjectDetailPage` 增传 `isAdmin`。
 - **错误码纪律**：全部写动作 403/409/422 原样呈现 `[code] message` 不吞；草稿来源列表（方案/技能）加载失败静默降级为空下拉（沿面板族 fail-静默纪律），生成动作仍受服务端闸约束。
-- **验证与打包**：vitest 新增 22 例（`delivery-plans-panel` 8＋`test-plans-panel` 7＋`workflow-console` 6＋`workflow-console-launch` 1），全量 98 文件 **1142 passed**＋`npm run typecheck` 零错＋M1–M3 反向验证（分解 dry_run 提交腿／报告成对闸／采纳 dag payload）全红→字节级还原→复绿＋`server/tests/test_diagnostic_sample_surface.py` 与 `server/tests/test_ledger_sync_nail.py` 全绿（7 passed）＋`git diff fork/main -- server/` 为空；合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r46` 并完成新旧 `app.asar` 四特征串（`draft-from-plan`、`generate-ai-draft`、`delivery-plans/generate-ai`、`test-plans/generate-ai`）正反向核验。
+- **验证与打包**：vitest 新增 22 例（`delivery-plans-panel` 8＋`test-plans-panel` 7＋`workflow-console` 6＋`workflow-console-launch` 1），全量 98 文件 **1142 passed**＋`npm run typecheck` 零错＋M1–M3 反向验证（分解 dry_run 提交腿／报告成对闸／采纳 dag payload）全红→字节级还原→复绿＋`server/tests/test_diagnostic_sample_surface.py` 与 `server/tests/test_ledger_sync_nail.py` 全绿（7 passed）＋`git diff fork/main -- server/` 为空；合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r47` 并完成新旧 `app.asar` 四特征串（`draft-from-plan`、`generate-ai-draft`、`delivery-plans/generate-ai`、`test-plans/generate-ai`）正反向核验。
 
 ## [未发布] — 桌面端五处前后端断链与静默缺陷收口：图片预览 CSP `blob:`＋训练场交付原文展开＋提案五态与发布/回滚＋产物采纳方案与跳转＋派单 AI 撮合（桌面变更·零服务端改动·零迁移零路由，便携版 r45，2026-11-13）
 
