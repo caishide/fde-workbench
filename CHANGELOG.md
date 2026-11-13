@@ -2,9 +2,24 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-sprint r3：端到端真机验收（宿主代理进程本体 NEW＋spawn 段整体重划＋⑦闸回环豁免修复＋真机 PASS；＋1 路由 488→489，2026-11-13）
+
+任务书 §3 r3 行全项达成：`ZcodeAdapter` spawn 段按真实宿主形态重划（`adapter.py:93` 定向警示清偿）、隔离环境一次非交互执行产出可校验产物（**VERIFY-R3 PASS**：completed／产物指纹字节级一致 `a34bc4d8…`／billable 195,582 tokens／context 消费／egress 审计零 blocked）、台账 §12 `adapter_missing` 解除回执（①实装＋N2 签核两项齐备）、E10 解锁判定成立（条件触发，见台账 §3 行）。工程级验收**不创建生产 AgentRun**（H4 边界不碰；N1 首个生产 run 仍归蔡工亲手，窗口 11-19 止）。
+
+- **宿主代理进程本体** NEW `server/src/fde_api/agents/host_agent.py`（P2-b 架构半最后一块）：一次进程＝至多一次 `status→claim→context→spawn→receipt` 生命周期、run 终态即回收（通道例外⑤）；`from_env` 五必需键＋闸开白名单空 fail-closed；`HttpHostTransport` 信封协议（200 拆 `{data}`／非 200 回信封读 error）；`preflight` 复用 N2 校验器对 **fail-fast 于 claim 前**（部署半态不领取，避免 run 白挂 host_running）；`materialize_workspace`（run_id 形状钉＋根锚＋拒绝清单＋空 task.md 不 spawn）；spawn 真身＝`run_host_channel`（契约 argv＋超时熔断＋⑦闸全复用）；spawn 失败如实回执 failed 不悬挂；零凭据注入。
+- **服务端 context 读取面**：NEW `agents/host_context.py`＋第四条宿主路由 `GET /agents/host/runs/<run_id>/context`（**+1 路由 488→489**，零迁移零新表）——状态闸族（404/409×3/403 令牌与领取不符/413 超 4MB）＋context_ref 前缀剥除重新 join 当前根＋越界拒；面料「服务端渲染一次、宿主逐字落盘」（不两侧各渲染）。
+- **adapter.py spawn 段整体重划**：删虚构容器契约；`spawn_argv`＝契约层 `build_cli_argv(prompt=task_prompt(workspace), cwd=…)` 单一真身（prompt 文字面并入 `zcode_contract`）；`AgentRunResult.summary_payload` 回执保真；**QR-094** done 终态立即终止批内遍历（completed 不得被同批尾随越界 cost 翻成 budget_exceeded 丢产物）；`ManifestOutputScanner` 自 service 搬入 adapter（宿主代理不拖 Flask/db 依赖面；`_MANIFEST_FILE` 收归 workspace_files 单一真身）。
+- **QR-092（宿主进程 env 白名单继承）**：`host_channel_env` 允许前缀集（node/Windows 定位/`ZCODE_` provider 注入面/代理透传）＋拒绝清单双层（`FDE_`·密钥语义子串即使命中允许前缀也剔除）。**QR-095**：回执缺 `exit_code` ⇒ None 不缺省 0；`completed` 而 exit≠0 ⇒ 降档 failed。
+- **★⑦闸回环豁免**（真机首跑撞出的生产缺陷，`host_egress_proxy.py`）：zcode 运行时经桌面端本地 broker（127.0.0.1:18787）回环 IPC，其客户端**无视 NO_PROXY** 把回环 CONNECT 推进代理 ⇒ 白名单闸拦截 ⇒ API 调用取消（EXIT=1 零产物）。隔离两腿定位（裸跑全过/闸腿复现＋审计 `tunnel_blocked 127.0.0.1`）后修复＝回环目标 CONNECT 一律转发＋审计新类别 `tunnel_loopback`（`proxy_env` NO_PROXY 声明的回环直连语义由闸侧补齐；⑦ 管出站互联网面）；明文 absolute-form 仍一律拒绝。
+- **回执携 ⑦ 审计证据**：`build_receipt_payload` 增 `egress_audit`（`summarize_audit` 有界形状：计数＋去重域名 ≤20，只记域名）——宿主单发进程的审计留证出口。**pilot 警示换代**：「执行契约已实装……尚无真实完成的 run」。
+- **crv 吸收**（QR 台账 147 行终态重扫，agents 面零新增相交）：QR-092/094/095 本轮吸收；QR-086/087/090/091 相邻不吸收照走修复批。**providerId 真机事实吸收**：实测 zcode 0.17.1 strict schema 下 `defaultModelSelection` 字段名为 `providerId`（写 `providerKey` 被整键丢弃静默回退默认）⇒ r2 校验器换代（`host_preflight.py` 带实测更正框）。
+- **验证**：NEW `test_host_agent.py` 14 例＋test_host_poll +7（QR-095 两例＋context 五例含**令牌轮换领取绑定钉**＋路由接线）＋test_host_channel +3（env 白名单三层）＋adapter pin 换代＋QR-094 一例＋egress 回环豁免两例＋**M8 完整性钉吸收**（全量复跑撞出新 GET 面未登记 ⇒ 排除登记增 `internal_service` 条目 403×3 现测互锁＋条数基线 64→65，红队套件 43 passed 复绿）；**变异五连全数收口**（M1 env 拒绝层 2 红／M2 done 终止 1 红／M3 缺 exit_code 缺省 2 红／M4 preflight fail-fast 1 红／M5 领取绑定 1 红→字节级还原→绿）——★M5 判别力自纠（单令牌下绑定检查不可达＝假绿，令牌轮换场景才杀灭）；★变异脚本 try/finally 强制还原（v2 超时崩溃残留生产变异一次的家族教训硬化）。NEW `scripts/verify/host_agent_real_machine_check.py`（工程级验收器：进程内存根四咬合面形状同源＋真实传输＋真实 spawn＋真实出站闸＋TEMP 隔离工作区）。定向套件 **134 passed**＋全量本地 **3594 passed + 7 skipped**（1 红即 M8 钉，吸收后复绿）；ruff 绿；mypy **277/102 基线不变**。
+- **口径**：路由 **488→489**／蓝图 52／表 153／迁移 74 rev 单头 `c8e2a6f0b9d4` 不变；inventory＋route CSV＋archify 刷新（candidate.json 489＋finalize 四闸绿＋整页实拍 1440×2098）。`server/` 生产 diff＝agents 域 9 文件＋NEW host_agent/host_context 两件＋verify 脚本 1 件；零迁移零桌面。
+
 ## [未发布] — goal-crv 拍板回写＋修复批 B/F 立项（needs-decision 8 项全按推荐 A；2026-11-13）
 
 蔡工交互拍板（推荐项 A 前置逐项确认）：QR-041 留资行存明文（mask_pii 豁免开关＋读取受控留痕）／QR-042 懒检查＋过期即处置／QR-067 补 `is_platform_operator` 门（M3b 红线回归）／QR-073 按 P1 直接修复（形态核证后置随修复轮）／SNS 关闭态维持 403＋例外登记（服务间面，零代码）／QR-133 指纹化复核清单（红线字面全守）／QR-134 录入卡豁免登记＋编辑面输出端复扫／修复批 **B（QR-024/025）＋F（QR-117/118）连投立项**。逐项结论与归属批＝`docs/goal-crv-BLOCKED.md` §5；任务书＝`docs/goal-crv-fix-批BF-任务书.md`（批 C 解锁、批 G＝QR-133/134 新立）；总报告 §11 仅引用续注（v1.0 不回写台账）。纯文档轮：零生产代码零迁移零路由。
+
 
 ## [未发布] — goal-crv 全仓全面代码审查循环收口（十域·只审不修·零生产 diff；评审会纪要授权线，2026-11-13）
 
@@ -21,6 +36,7 @@
 ①**「导入 JSON」钮**（案例库头部，隐藏 file input）：NEW 纯函数 `parseScenarioImportText` 兼容裸数组与 `{"scenarios":[…]}` 包裹两形态（服务端 `routes._payload()` 非 dict 一律 400——行业批文件首版裸列表形态照 curl 必 400，真相层批文件已随本轮重写为包裹形态）；POST 后回执「已导入 N／失败 M 条（前 3 条 #index code：message）」并刷新列表；空数组客户端拦不发请求；jsdom 缺 `File.text()` ⇒ `readFileText` 兜底 FileReader（Electron 真机走 `.text()` 零行为差异）。②**行内「启用/停用」钮**：draft→启用／active→停用／archived 无钮（与服务端 409 同构），PATCH `{status}` 复用既有「追加不可变新版本」通道（archive 同款部分更新形态）。③修过时硬编码提示「6 个案例 × 3 种客户行为」→ 通用文案（134 例导入后旧文案失真）。**红线自证**：激活仍是人工点击（导入建行与激活恒人工），无任何自动激活路径。
 
 测试 NEW 6 例进 `simulation-scenario-library.test.tsx`（纯函数两形态／导入成功携 `{scenarios}` 包体／空数组不发请求／失败逐条回显／启用 PATCH status=active／停用与归档行无钮）⇒ 文件 14 例；本地 `test:desktop` 全量 **1106 passed (96 files)**＋typecheck 绿；PR #426 CI 四绿（desktop 1106／server-tests **3553 passed + 8 skipped**，双触发并行 run 四 job×2 全 success）。服务端零改动 ⇒ 口径不变（488 路由/52 蓝图/153 表/74 rev 单头 `c8e2a6f0b9d4`）。合并 `876f7cc` 后便携版 **r38** 重打包交付（asar sha256 `30d23819…`；本轮独有中文 marker「批量导入与启用/停用都会追加新版本」「导入文件须是场景数组」双命中）。真相层底单同步：行业批文件 11 份重写包裹形态＋清单补界面路径（方式 A）与形态勘误。
+
 
 ## [未发布] — goal-sprint r2：P2′ 服务端咬合面收口（crv 吸收 QR-073/088/089 ＋ N2 两实测事实接线；迁移 73→74 单头 `c8e2a6f0b9d4`；488/52/153 口径不变，2026-11-13）
 

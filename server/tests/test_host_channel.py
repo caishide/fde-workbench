@@ -110,7 +110,7 @@ def _ctx(*, timeout_ms=300_000, max_cost_units=0, credentials=None, workspace="D
 # （CI 无 ~/.zcode/cli/config.json，缺省路径必失败；注入即确定性绿）。
 _CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
 _CLI_CONFIG_PATH.write_text(
-    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    json.dumps({"defaultModelSelection": {"providerId": "prov", "modelId": "model-x"}}),
     encoding="utf-8",
 )
 _SETTINGS = HostChannelSettings(
@@ -162,6 +162,43 @@ def test_argv_matches_tz1_measured_contract() -> None:
 def test_env_carries_electron_run_as_node_and_no_platform_credentials() -> None:
     env = host_channel_env()
     assert env[ZCODE_CJS_ENV] == "1"
+
+
+# ---------------------------------------------------------------------------
+# env 白名单继承（QR-092，goal-sprint r3 吸收）：原 dict(os.environ) 全量
+# 继承把平台密钥族带进 zcode 子进程——白名单收窄 + 拒绝清单兜底。
+# ---------------------------------------------------------------------------
+
+
+def test_env_whitelist_denies_platform_secrets(monkeypatch) -> None:
+    """平台密钥族（FDE_*/密钥后缀）即使进程 env 在场也不进 zcode 子进程。"""
+    monkeypatch.setenv("FDE_DB_PASSWORD", "p-super-secret")
+    monkeypatch.setenv("FDE_JWT_SECRET", "j-super-secret")
+    monkeypatch.setenv("SOMETHING_ELSE_TOKEN", "t")
+    env = host_channel_env()
+    assert env[ZCODE_CJS_ENV] == "1"
+    for key in env:
+        assert not key.upper().startswith("FDE_"), f"平台密钥泄漏：{key}"
+        assert not any(
+            marker in key.upper() for marker in ("TOKEN", "PASSWORD", "SECRET", "API_KEY", "PRIVATE_KEY")
+        ), f"密钥语义键泄漏：{key}"
+
+
+def test_env_whitelist_deny_layer_beats_allow_prefix(monkeypatch) -> None:
+    """拒绝清单兜底生效：命中允许前缀（ZCODE_）但含密钥语义的键仍剔除。"""
+    monkeypatch.setenv("ZCODE_AUTH_TOKEN", "should-not-leak")
+    monkeypatch.setenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", "D:/prov/builtin.json")
+    env = host_channel_env()
+    assert "ZCODE_AUTH_TOKEN" not in env
+    assert env["ZCODE_BUILTIN_PROVIDER_CONFIG_FILE"] == "D:/prov/builtin.json"  # provider 开关（N2 事实①）必须存活
+
+
+def test_env_whitelist_keeps_runtime_paths_and_drops_unknown(monkeypatch) -> None:
+    """node 运行时必需面存活；无关变量不继承（白名单语义本身）。"""
+    monkeypatch.setenv("TOTALLY_UNRELATED_VAR", "x")
+    env = host_channel_env()
+    assert "PATH" in env  # node 定位必需
+    assert "TOTALLY_UNRELATED_VAR" not in env
 
 
 def test_prompt_carries_task_file_path() -> None:
@@ -413,8 +450,8 @@ def test_preflight_model_selection_missing_file_blocks_spawn(tmp_path) -> None:
     [
         "{}",  # 键缺失
         '{"defaultModelSelection": {}}',  # 空对象
-        '{"defaultModelSelection": {"providerKey": "p"}}',  # 缺 modelId
-        '{"defaultModelSelection": {"modelId": "m"}}',  # 缺 providerKey
+        '{"defaultModelSelection": {"providerId": "p"}}',  # 缺 modelId
+        '{"defaultModelSelection": {"modelId": "m"}}',  # 缺 providerId
         '{"defaultModelSelection": "x"}',  # 形状坏
         "not-json{",  # 解析失败
     ],

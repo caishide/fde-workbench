@@ -49,6 +49,7 @@ from fde_api.agents.adapter import (
     ADAPTER_KINDS,
     AgentRunContext,
     ArtifactFile,
+    ManifestOutputScanner,
     OutputScanner,
     RunEventProvider,
     ZcodeAdapter,
@@ -64,7 +65,6 @@ from fde_api.agents.execution_policy import normalize_workspace_under_root, poli
 from fde_api.agents.lessons import knowledge_snippets_for
 from fde_api.agents.workspace_files import (
     _CONTEXT_FILE,
-    _MANIFEST_FILE,
     _OUTPUT_DIR,
     _write_workspace,
     is_unsafe_artifact_path,
@@ -158,52 +158,13 @@ class NdjsonEventProvider:
         return events
 
 
-class ManifestOutputScanner:
-    """回收段产物扫描：output/manifest.json → ArtifactFile 清单。
+# ---------------------------------------------------------------------------
+# 生产事件源 / 产物扫描器（容器内文件协议；测试注入假实现）
+# ---------------------------------------------------------------------------
 
-    B#2 回执状态面：scan() 返回类型不变（OutputScanner Protocol 兼容），
-    回执判定落 ``receipt_state`` 属性——``ok``（manifest 可解析）/
-    ``no_output``（无 output 目录或零文件=合法零产物任务）/
-    ``files_without_manifest``（output/ 有文件但没写 manifest=回执缺失）/
-    ``manifest_invalid``（manifest 不是合法 JSON 数组=回执写坏）。
-    """
-
-    def __init__(self, output_dir: Path) -> None:
-        self._output_dir = output_dir
-        self.receipt_state = "ok"
-
-    def _classify_missing_manifest(self) -> str:
-        if not self._output_dir.exists():
-            return "no_output"
-        has_files = any(p.is_file() for p in self._output_dir.rglob("*"))
-        return "files_without_manifest" if has_files else "no_output"
-
-    def scan(self) -> list[ArtifactFile]:
-        manifest = self._output_dir / _MANIFEST_FILE
-        if not manifest.exists():
-            self.receipt_state = self._classify_missing_manifest()
-            return []
-        try:
-            value = json.loads(manifest.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            self.receipt_state = "manifest_invalid"
-            return []
-        if not isinstance(value, list):
-            self.receipt_state = "manifest_invalid"
-            return []
-        self.receipt_state = "ok"
-        items: list[ArtifactFile] = []
-        for entry in value:
-            if not isinstance(entry, dict):
-                continue
-            path = entry.get("path")
-            kind = entry.get("kind")
-            if not isinstance(path, str) or not isinstance(kind, str):
-                continue
-            raw_refs = entry.get("source_refs")
-            refs = tuple(ref for ref in raw_refs if isinstance(ref, str)) if isinstance(raw_refs, list) else ()
-            items.append(ArtifactFile(path=path, kind=kind, source_refs=refs))
-        return items
+# ManifestOutputScanner（goal-sprint r3）：类体机械搬至 agents/adapter.py——
+# 宿主代理进程本体（agents/host_agent.py）需要同一扫描器但不拖 service 的
+# Flask/db 依赖面；本名经顶部导入回引（行为逐字节不变，引用面零改动）。
 
 
 # ---------------------------------------------------------------------------

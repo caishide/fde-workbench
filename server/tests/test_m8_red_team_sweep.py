@@ -144,6 +144,14 @@ _EXCLUSION_RECORDS = {
         "b_owner_status": 403,
         "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
     },
+    ("GET", "/api/v1/agents/host/runs/<run_id>/context"): {
+        "reason": "宿主机器通道 X-Host-Poll-Token 闸面（goal-sprint r3 新增；非用户 JWT 读面，claim/receipt 同族）：A 实测 403、同角色 A 实测 403、B 属主实测 403——缺令牌即 403 host_poll_token_missing，JWT 不进鉴权，无跨企业语义可爬",
+        "exclusion_kind": "internal_service",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 403,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
+    },
     ("GET", "/api/v1/ai/chat/messages/<turn_id>/progress"): {
         "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
         "exclusion_kind": "positive_control_infeasible",
@@ -962,7 +970,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
     assert len(ROUTES) == 38, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 64, (
+    assert len(_EXCLUSION_RECORDS) == 65, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

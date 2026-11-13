@@ -15,12 +15,16 @@ RunEventProvider/OutputScanner），超时/退避时钟可注入——断言全�
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
-from fde_api.agents.sandbox import WORKSPACE_MOUNT_POINT, SandboxHandle
+from fde_api.agents import zcode_contract as zc
+from fde_api.agents.sandbox import SandboxHandle
+from fde_api.agents.workspace_files import _MANIFEST_FILE
 
 ADAPTER_KINDS: frozenset[str] = frozenset({"zcode", "codex", "claude_code", "opencode"})
 
@@ -83,6 +87,10 @@ class AgentRunResult:
     # ⑦ 出站审计（宿主通道方案 A 专有）：域名级条目（ts/kind/host/port），
     # 容器适配器恒缺省空表——service 层据此落 agent_egress_audit 事件。
     egress_audit: tuple[Mapping[str, Any], ...] = ()
+    # goal-sprint r3：`--json` 原始汇总对象（宿主通道 completed/failed 路径
+    # 在场，容器骨架恒 None）。宿主代理据此构造回执 `summary` 字段（服务端
+    # 再解析计账）——进程只 spawn 一次，payload 不二次提取。
+    summary_payload: Mapping[str, Any] | None = None
 
 
 class RunEventProvider(Protocol):
@@ -97,27 +105,80 @@ class OutputScanner(Protocol):
     def scan(self) -> Sequence[ArtifactFile]: ...
 
 
-# TODO(T-Z1 实施轮 / D1=A)：本函数仍是登记期的「容器内 zcode run」虚构契约，
-# 与真机实测的 0.17.1 不符。真实 argv 与 `--json` 单对象汇总解析已独立落在
-# `agents/zcode_contract.py`（纯函数、夹具回放），供宿主侧代理与实施轮共用。
-# A 通道裁定后 zcode **不进容器**：本段连同其 `sandbox.exec` 的 spawn 位置，
-# 须在「宿主代理 ↔ agent_runs 状态机咬合方式」拍板后整体重划——在此之前
-# 只改 argv 会制造「契约修好了但执行位置仍错」的假象，故此处刻意不预改。
-def spawn_argv(*, cli_command: str, task_file: str, output_dir: str) -> list[str]:
-    """容器内 CLI 启动参数（三段之①；经 SandboxHandle.exec 注入凭据）。
+class ManifestOutputScanner:
+    """回收段产物扫描：output/manifest.json → ArtifactFile 清单。
 
-    ⚠️ 现存形态为占位契约，**不得**据此断言真实 zcode CLI；见上方 TODO。
+    B#2 回执状态面：scan() 返回类型不变（OutputScanner Protocol 兼容），
+    回执判定落 ``receipt_state`` 属性——``ok``（manifest 可解析）/
+    ``no_output``（无 output 目录或零文件=合法零产物任务）/
+    ``files_without_manifest``（output/ 有文件但没写 manifest=回执缺失）/
+    ``manifest_invalid``（manifest 不是合法 JSON 数组=回执写坏）。
+    （goal-sprint r3 自 service.py 机械搬入——行为逐字节不变，service 侧
+    经导入回引名字不变。）
     """
-    return [
-        cli_command,
-        "run",
-        "--task",
-        f"{WORKSPACE_MOUNT_POINT}/{task_file}",
-        "--output",
-        f"{WORKSPACE_MOUNT_POINT}/{output_dir}",
-        "--events",
-        "ndjson",
-    ]
+
+    def __init__(self, output_dir: Path) -> None:
+        self._output_dir = output_dir
+        self.receipt_state = "ok"
+
+    def _classify_missing_manifest(self) -> str:
+        if not self._output_dir.exists():
+            return "no_output"
+        has_files = any(p.is_file() for p in self._output_dir.rglob("*"))
+        return "files_without_manifest" if has_files else "no_output"
+
+    def scan(self) -> list[ArtifactFile]:
+        manifest = self._output_dir / _MANIFEST_FILE
+        if not manifest.exists():
+            self.receipt_state = self._classify_missing_manifest()
+            return []
+        try:
+            value = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            self.receipt_state = "manifest_invalid"
+            return []
+        if not isinstance(value, list):
+            self.receipt_state = "manifest_invalid"
+            return []
+        self.receipt_state = "ok"
+        items: list[ArtifactFile] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path")
+            kind = entry.get("kind")
+            if not isinstance(path, str) or not isinstance(kind, str):
+                continue
+            raw_refs = entry.get("source_refs")
+            refs = tuple(ref for ref in raw_refs if isinstance(ref, str)) if isinstance(raw_refs, list) else ()
+            items.append(ArtifactFile(path=path, kind=kind, source_refs=refs))
+        return items
+
+
+# ---------------------------------------------------------------------------
+# spawn 段（goal-sprint r3 整体重划收口——adapter.py 定向警示清偿）
+# ---------------------------------------------------------------------------
+# 登记期的「容器内 zcode run」虚构契约（`run --task --output --events`，
+# T-Z1 勘误确认该 CLI 形态不存在）已删除；原 TODO 说明的清偿条件已齐：
+# 「宿主代理 ↔ agent_runs 状态机」咬合方式已于 P2′①（#204）拍板，r3 落地
+# 宿主代理本体（agents/host_agent.py）。**生产 spawn 真身 ＝ 宿主侧**
+# （dev 直连 run_host_channel / 轮询宿主代理，均经 zcode_contract 唯一
+# argv 源）；zcode 不进容器（⑦/A′ 铁证 + Dockerfile 不装 zcode）。本模块
+# 保留的容器 spawn 位置只服务 CI 注入骨架（SandboxHandle 替身 + 事件源
+# 注入），argv 同样委托契约层生成——「适配器与宿主通道共享同一契约源」
+# 由 test_agents_adapter 等价性钉住，两侧不得各写一套。
+
+
+def spawn_argv(*, cli_command: str, workspace: str) -> list[str]:
+    """容器骨架 spawn 参数（三段之①；经 SandboxHandle.exec 注入凭据）。
+
+    **委托 ``zcode_contract.build_cli_argv``**（§11.3 约束 5 同族：唯一
+    argv 形状来源）——prompt 文字面用契约层 ``task_prompt``（与宿主通道
+    同一任务书载体），``cwd`` 锚定 workspace；宿主壳前缀（bin 与 cjs 之间
+    插 cjs 入口）不属容器骨架语义，由宿主通道 ``host_channel_argv`` 承担。
+    """
+    core = zc.build_cli_argv(prompt=zc.task_prompt(workspace), cwd=workspace, cli_command=cli_command)
+    return core
 
 
 class ZcodeAdapter:
@@ -125,10 +186,8 @@ class ZcodeAdapter:
 
     kind = "zcode"
 
-    def __init__(self, *, cli_command: str = "zcode", task_file: str = "task.md", output_dir: str = "output") -> None:
+    def __init__(self, *, cli_command: str = "zcode") -> None:
         self.cli_command = cli_command
-        self.task_file = task_file
-        self.output_dir = output_dir
 
     @property
     def agent_id(self) -> str:
@@ -148,7 +207,7 @@ class ZcodeAdapter:
         started = clock()
 
         # ① spawn：AGENTS.md 纪律已由 service 写入 workspace；此处拉起 CLI
-        sandbox.exec(ctx.credentials, spawn_argv(cli_command=self.cli_command, task_file=self.task_file, output_dir=self.output_dir))
+        sandbox.exec(ctx.credentials, spawn_argv(cli_command=self.cli_command, workspace=ctx.workspace_host))
         try:
             return self._listen_and_reclaim(
                 ctx,
@@ -213,6 +272,11 @@ class ZcodeAdapter:
                     exit_code = event.get("exit_code") if isinstance(event.get("exit_code"), int) else None
                     status = "completed" if exit_code == 0 else "failed"
                     terminal = True
+                    # QR-094（goal-crv r5 发现，goal-sprint r3 吸收）：done 是
+                    # 终态事件——立即终止本批遍历，同批后续事件不得翻转终态
+                    # （否则 completed 可被同批尾随的越界 cost 翻成
+                    # budget_exceeded ⇒ 产物被丢弃）。
+                    break
             if terminal:
                 break
             sleeper(POLL_INTERVAL_SECONDS)
@@ -267,6 +331,7 @@ __all__ = [
     "AgentRunContext",
     "AgentRunResult",
     "ArtifactFile",
+    "ManifestOutputScanner",
     "OutputScanner",
     "RunEventProvider",
     "ToolCallRecord",

@@ -82,7 +82,7 @@ def _ctx() -> AgentRunContext:
 # 配置让 spawn 前置校验确定性放行；provider 覆盖开关不进单测 env。
 _CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
 _CLI_CONFIG_PATH.write_text(
-    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    json.dumps({"defaultModelSelection": {"providerId": "prov", "modelId": "model-x"}}),
     encoding="utf-8",
 )
 _SETTINGS = HostChannelSettings(
@@ -179,21 +179,42 @@ def _connect_via_proxy(proxy_port: int, authority: str) -> tuple[bytes, socket.s
     return status_line, client
 
 
-def test_tunnel_allowed_roundtrip_and_audit() -> None:
+def test_loopback_connect_exempt_from_allowlist_and_relays() -> None:
+    """goal-sprint r3 真机验收发现钉（2026-11-13）：zcode 本地 broker 回环
+    IPC（127.0.0.1:18787）不在白名单内、其客户端又无视 NO_PROXY——闸侧
+    回环豁免必须放行回环 CONNECT（审计 ``tunnel_loopback``，不参与白名单
+    判定），否则宿主通道在闸开启时死在 API 调用前。"""
     echo, echo_port = _echo_server()
-    gate = HostEgressGate(["127.0.0.1"])
+    gate = HostEgressGate(["api.z.ai"])  # 部署态同款白名单：不含 127.0.0.1
     proxy_port = gate.start()
     try:
         status, tunnel = _connect_via_proxy(proxy_port, f"127.0.0.1:{echo_port}")
         assert b"200" in status
         assert tunnel is not None
-        tunnel.sendall(b"ping-egress")
-        assert tunnel.recv(65536) == b"ping-egress"
+        tunnel.sendall(b"ping-loopback")
+        assert tunnel.recv(65536) == b"ping-loopback"
         tunnel.close()
         entries = gate.drain_audit()
-        assert [entry.kind for entry in entries] == ["tunnel_allowed"]
+        assert [entry.kind for entry in entries] == ["tunnel_loopback"]
         assert entries[0].host == "127.0.0.1"
         assert entries[0].port == echo_port
+    finally:
+        gate.stop()
+        echo.close()
+
+
+def test_loopback_alias_localhost_also_exempt() -> None:
+    echo, echo_port = _echo_server()
+    gate = HostEgressGate(["api.z.ai"])
+    proxy_port = gate.start()
+    try:
+        status, tunnel = _connect_via_proxy(proxy_port, f"localhost:{echo_port}")
+        assert b"200" in status
+        assert tunnel is not None
+        tunnel.close()
+        entries = gate.drain_audit()
+        assert [entry.kind for entry in entries] == ["tunnel_loopback"]
+        assert entries[0].host == "localhost"
     finally:
         gate.stop()
         echo.close()

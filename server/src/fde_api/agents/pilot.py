@@ -98,9 +98,12 @@ def pilot_status(session: Any, settings: Any, *, now: datetime | None = None) ->
     contract_unverified = active and not proven
     warnings: list[str] = []
     if contract_unverified:
+        # goal-sprint r3 换代：Q5「spawn 段契约须重写」已清偿（宿主代理本体
+        # + adapter spawn 段重划 + 隔离环境真机验收），警示只剩「窗口内尚无
+        # 真实 completed run」这一事实——指标解读边界不变，前提文本如实。
         warnings.append(
-            "ZcodeAdapter 契约尚未经任何真实完成的 run 验证（售前方案 Q5：spawn 段契约须重写，见 T-Z1）；"
-            "spawn 失败将全部落入 L2 降级并污染试点指标，建议先完成执行通道裁定（T-Z1）再解读试点数据。"
+            "执行契约已实装（宿主代理通道 goal-sprint r3），但试点窗口内尚无真实完成的 run；"
+            "一次通过率/降级率等试点指标待首个真实 run 后再解读。"
         )
     return {
         "enabled": True,

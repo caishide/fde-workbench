@@ -30,6 +30,23 @@ from typing import Any
 ZCODE_CLI_VERSION = "0.17.1"
 
 
+def task_prompt(workspace: str) -> str:
+    """单发执行的任务书文字面（`-p` 载荷形状；goal-sprint r3 并入契约层）。
+
+    工具白名单语义由任务书承载（``--json`` 单对象汇总无逐工具事件）；产物
+    落 ``output/`` 并附 manifest.json（B#2 回执契约）。原实现住在
+    ``host_channel``，r3 spawn 段重划后 adapter 与宿主代理都要消费同一文字
+    面——**prompt 形状也是 argv 契约的一部分**，故并入本模块单一真身；
+    ``host_channel`` 侧保留再导出（既有引用面不变）。
+    """
+    task_path = f"{workspace}/task.md"
+    return (
+        "请阅读并执行当前工作区 task.md 中的任务书，产物一律写入 output/ 子目录；"
+        "任务书即完整需求与工具边界，超出任务书的动作一律不做。"
+        f"任务书路径：{task_path}"
+    )
+
+
 def build_cli_argv(
     *,
     prompt: str,
