@@ -9,8 +9,8 @@
 | r1 | 批 A | `QR-001` / `QR-002` / `QR-003` / `QR-004` + `QR-018` | 已合并 | `#444` / `a8a2c25c` | 7 组全红→字节级还原核 sha256→25 passed |
 | r2 | 批 C | `QR-041` / `QR-042` / `QR-043` / `QR-044` | 已合并 | `#451` / `f4cb5e9f` | 7 组全红→字节级还原核 sha256→4 passed + 168 邻域绿 |
 | r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 `d4b8e1f6a9c3` | 已合并 | `#456` / `b11b8b3f` | 5 组全红→字节级还原核 sha256→4 passed + 300 邻域绿 |
-| r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→5 passed + 213 邻域绿 |
-| r5 | 批 G | `QR-133` / `QR-134` | 待开工 | - | - |
+| r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 已验待合并 | `#462` / `1df421bd`（rebase `d8a98ed0`） | 3 组全红→字节级还原核 sha256→5 passed + 213 邻域绿 |
+| r5 | 批 G | `QR-133` / `QR-134` | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→10 passed + 97 邻域绿 |
 | r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 | 待开工 | - | - |
 | r7 | 收口与部署 | 总报告销号节 + `BLOCKED`/`PROGRESS` + `AGENTS` bullet + 活体部署三验 | 待开工 | - | - |
 
@@ -76,3 +76,19 @@
     - `M2_QR072_definition_gate`：red=True → 还原 `sha256=3601e0db6dc904ff…` MATCH
     - `M3_QR072_compiler_contract`：red=True → 还原 `sha256=4eee24050b9082bb…` MATCH
     - 还原终验：`5 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
+
+---
+
+## r5 批 G（脱敏事件账指纹化＋编辑复扫，零迁移零新路由）
+
+- **修复明细**：
+  1. `QR-133`（#6A 拍板 A 指纹化复核清单，`guidance/redaction.py` 单一真身 + 4 锚写入侧 + 读侧）：`redaction_review` 事件账零真名——NEW `redaction_name_hash`（域分隔 `fde-redaction-v1:{name}` sha256）与 `fingerprint_review_entries`（确证命中→`{"name_hash","occurrences","matched_dict":True}`；疑似→不入条目账只留聚合计数 `suspect_count`）；写入侧四锚接线（`guidance/jobs.py::_write_redaction_event`、`translator/service.py::create_translation` input 阶段、`translator/jobs.py` output 阶段、采纳流 `_merge_carried_changes` 指纹形状原样搬运）；读侧 NEW `resolve_redaction_display`（词典反解：命中显示词目原文、未命中 `name=None` 软失败不 500）＋ `_review_projection`（条目按 name_hash 排序＋疑似计数项殿后）；`_split_review_events` 兼容历史 name 形状事件（现算指纹归一、matched=False 折算计数——投影语义统一零真名）；confirm 复核闸与 `redaction_review_hits` 口径同步换代。
+  2. `QR-134`（#7A 拍板 A 豁免登记＋编辑复扫，`guidance/service.py::update_analysis`）：保存时输出端复扫三文本字段＋LIST_FIELDS 列表 str 值——词典确证命中 422 `redaction_name_detected` fail-closed（错误消息不回显命中原文）；疑似名替换为代号放行＋`manual_edit` 复核事件（仅聚合计数）；`RedactionConfigError` 422 `pseudonym_dict_unavailable` 同码、`SensitiveCredentialDetected` 422 同闸；presurvey 录入卡维持零脱敏豁免（用户自填自述≠AI 加工面），豁免与指纹化语义一并登记 `AGENTS.md` 独立 bullet。
+- **测试与变异证据**：
+  - NEW `server/tests/test_crv_batch_g.py`（10 例：指纹形状单一真身／反解命中与未命中软失败／worker 全链事件账 JSON 序列化零真名＋指纹在场＋suspect_count 在场／投影聚合（指纹条目+计数项）／历史 name 形状兼容归一／update_analysis 词典命中 422 不回显原文／列表字段命中即拒／疑似替换放行＋manual_edit 计数事件零真名／干净编辑零事件／凭据串 422 同闸）；旧钉换代 4 文件（`test_guidance_redaction_worker.py` 事件账零真名断言、`test_translator_redaction.py` 3 处事件断言＋投影断言、`test_guidance_confirm_review_gate.py` 4 处投影断言、`test_guidance_retry.py` CR-051 防翻倍断言指纹化）。
+  - 邻域回归 12 套件 **97 passed**（guidance/translator 全家）；`test_guidance_retry.py::test_unexpected_failure_keeps_the_background_job_green` 1 例红经 **stash 基线验证为既有失败**（#455 合并后 no_handler，非批 G 改动面，不越界修）。
+  - 变异三连（`try/finally` 字节还原核对 `sha256`）：
+    - `M1_QR133_fingerprint_bypass`：red=True → 还原 `sha256=c5344296bf926715…` MATCH
+    - `M2_QR134_dict_hit_reject`：red=True → 还原 `sha256=e7e6dbb4431d42a2…` MATCH
+    - `M3_QR133_suspect_count`：red=True → 还原 `sha256=0989639f4b32d5d7…` MATCH
+    - 还原终验：`10 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
