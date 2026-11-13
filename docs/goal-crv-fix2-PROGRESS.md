@@ -6,8 +6,8 @@
 
 | 轮次 | 批次 | 覆盖范围 | 状态 | PR / SHA | 变异红→绿记录 |
 |---|---|---|---|---|---|
-| r1 | 批 A | `QR-001` / `QR-002` / `QR-003` / `QR-004` + `QR-018` | 已验待合并 | 待填 | 7 组全红→字节级还原核 sha256→25 passed |
-| r2 | 批 C | `QR-041` / `QR-042` / `QR-043` / `QR-044` | 待开工 | - | - |
+| r1 | 批 A | `QR-001` / `QR-002` / `QR-003` / `QR-004` + `QR-018` | 已合并 | `#444` / `a8a2c25c` | 7 组全红→字节级还原核 sha256→25 passed |
+| r2 | 批 C | `QR-041` / `QR-042` / `QR-043` / `QR-044` | 已验待合并 | 待填 | 7 组全红→字节级还原核 sha256→4 passed + 168 邻域绿 |
 | r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 | 待开工 | - | - |
 | r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 待开工 | - | - |
 | r5 | 批 G | `QR-133` / `QR-134` | 待开工 | - | - |
@@ -18,19 +18,31 @@
 
 ## r1 批 A（权限·身份·项目闸，零迁移零新路由）
 
+- **合并记录**：PR `#444` → squash `a8a2c25c`（4 个必需 CI job 全绿）。
 - **修复明细**：
   1. `QR-001`（`server/src/fde_api/auth/routes.py::_login_fail_key`）：登录失败计数与清零键改调 `normalize_username(username)`（NFKC + strip + lower），大小写/全角/首尾空白变体共享同一限流桶。
   2. `QR-002`（`server/src/fde_api/auth/service.py::change_password` + `registration/service.py`）：`change_password` 在旧密验证后补 `_registration_state_gate(current_user)`，拦截 `suspended` / `rejected` / `pending_email` 改密换发新令牌对；`suspend_registration` 与 `review_registration(decision="reject")` 递增 `user.auth_version += 1` 使存量 15min JWT 立即 401 失效，同时保留 `/auth/refresh` 返回 `403 account_suspended` / `registration_rejected` 契约。
   3. `QR-003`（`server/src/fde_api/control/api_actions.py::_authorized`）：新增 `_target_project_id` 兼容 `agents.run_start` 的 `body.project_id`，将 `_require_run_start_scope_binding` 并入 `_authorized` 单点（propose 与 confirm 双侧必经），消除路径无 `{project_id}` 致先 403 死代码。
   4. `QR-004` + `QR-018`（`server/src/fde_api/projects/service.py::update_project` + `projects/quote_service.py::create_quote`）：PATCH `enterprise_code` 发生实质变更时复跑 `ensure_enterprise_channel`（H2 池内企业 / G4 商机保护期均拦 422）；`create_quote` 改为先 `for_update=True` 锁定并 `populate_existing` 重读 `Project` 后再跑 `ensure_enterprise_channel`；`projects/service.py` 1943 行 ≤ 1946 热点上限。
+- **测试与变异证据**：NEW `server/tests/test_crv_batch_a.py`（9 例）+ `test_ai_run_proposal.py`（16 例）；7 组变异全红→还原 `sha256` 全绿。
+
+---
+
+## r2 批 C（公网写面与个保法留存期，零迁移零新路由）
+
+- **修复明细**：
+  1. `QR-041`（#1A，`server/src/fde_api/guidance/redaction.py::redact_text_detailed` + `diagnostics/service.py::capture_lead` + `diagnostics/claim_service.py::reveal_claimed_lead_contact`）：新增 `mask_pii: bool = True` 开关（默认仍掩码手机号/邮箱/固话），仅留资 `contact` 传 `mask_pii=False` 保留联系方式明文（企业名代号化与凭据 422 拦截恒在位）；受控读函数仅允许 `admin` 或已接受认领单本人读取并写 `diagnostic_lead_contact_revealed` 审计事件（事件 `changes` 零明文联系方式）。
+  2. `QR-042`（#2A，`server/src/fde_api/diagnostics/service.py::_enforce_retention` + `claim_service.py` + `diagnostics/jobs.py`）：30 天 `expires_at` 读写懒检查——未认领且 `expires_at <= now` 的会话立即转 `expired` 并匿名化清空 `answers`/`assessment`/`report`/`lead_contact`/`subject_fingerprint`/`region_name`/`share_token_sha256`；续写返 `409 session_closed`、分享返 `404`、线索池排除、认领与裁定返 `409 lead_expired`、worker 跳过 AI 调用；已 `claimed` 会话保全。
+  3. `QR-043`（`server/src/fde_api/registration/routes.py` + `commercial/routes.py`）：四入口注册、重发验证邮件与 legacy 企业注册三处将 `_ensure_surface_open` 移至限流器前，部署闸关闭时即使超限或 Redis 故障也恒返 **404 `not_found`**。
+  4. `QR-044`（`server/src/fde_api/diagnostics/claim_service.py::get_claim` + `lead_routes.py`）：补 `ensure_enabled()` 与 `admin` / `claimant_user_id == actor.id` 归属校验，越权一律返 **404 `claim_not_found`**。
 - **测试与变异证据**：
-  - NEW `server/tests/test_crv_batch_a.py`（9 例）+ `test_ai_run_proposal.py` 源钉更新（16 例）+ 邻域回归全绿。
+  - NEW `server/tests/test_crv_batch_c.py`（4 组端到端套件）+ 既有诊断/注册/污染/脱敏回归 168 例全绿。
   - 变异七连（`try/finally` 字节还原核对 `sha256`）：
-    - `M1_QR001_auth_routes_raw_username`：2 failed → 还原 `sha256=75872a1eef72`
-    - `M2_QR002_change_password_drop_state_gate`：3 failed → 还原 `sha256=30aec1935011`
-    - `M2b_QR002_suspend_drop_auth_version_bump`：1 failed → 还原 `sha256=7bcbe5bd1c63`
-    - `M3a_QR003_target_project_id_ignore_agents_body`：1 failed → 还原 `sha256=bb426fdf90b6`
-    - `M3b_QR003_drop_scope_binding_gate`：1 failed → 还原 `sha256=bb426fdf90b6`
-    - `M4_QR004_projects_patch_drop_channel_guard`：1 failed → 还原 `sha256=61176abf42c5`
-    - `M5_QR018_quote_drop_for_update_lock`：1 failed → 还原 `sha256=af0e0e2dbeb2`
-    - 还原终验：`25 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
+    - `M1_QR041_mask_pii_exemption`：red=True → 还原 `sha256=0b70cbe6b0c7`
+    - `M1b_QR041_reveal_audit_gate`：red=True → 还原 `sha256=eaa4a85ef780`
+    - `M2_QR042_retention_lazy_check`：red=True → 还原 `sha256=0b70cbe6b0c7`
+    - `M3_QR043_register_surface_gate_order`：red=True → 还原 `sha256=bdec6398814d`
+    - `M3b_QR043_resend_surface_gate_order`：red=True → 还原 `sha256=bdec6398814d`
+    - `M3c_QR043_legacy_surface_gate_order`：red=True → 还原 `sha256=40078a8125fc`
+    - `M4_QR044_get_claim_ownership`：red=True → 还原 `sha256=eaa4a85ef780`
+    - 还原终验：`4 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
