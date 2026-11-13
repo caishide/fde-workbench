@@ -165,9 +165,20 @@ def _kimi_client(session):
     )
 
 
+def _docx_bytes() -> io.BytesIO:
+    from docx import Document
+
+    document = Document()
+    document.add_paragraph("客户愿景全文")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 def _analyze(client, request_id):
     return client.analyze_docx_json(
-        stream=io.BytesIO(b"docx-bytes"), filename="a.docx",
+        stream=_docx_bytes(), filename="a.docx",
         request_id=request_id,
         build_messages=lambda content: [{"role": "user", "content": content}],
     )

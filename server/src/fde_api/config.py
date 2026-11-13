@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     #   改为服务端本地解析 DOCX 取文本后送模型（文件不出本机）
     # - kimi_openai_compatible=True：按通用 OpenAI 兼容端点发请求
     #   （用 max_tokens 而非 max_completion_tokens，不发 reasoning_effort）
-    kimi_local_docx_extract: bool = False
+    kimi_local_docx_extract: bool = True
     kimi_openai_compatible: bool = False
     dsh_enabled: bool = False
     dsh_base_url: str = "http://127.0.0.1:8020"
