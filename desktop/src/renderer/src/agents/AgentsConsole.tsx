@@ -45,6 +45,10 @@ interface AgentRunRowDto {
 interface AgentRunDetailDto extends AgentRunRowDto {
   agent: { name: string; kind: string } | null
   artifacts: AgentArtifactDto[] | null
+  // 宿主通道溯源面（PR #435 起 detail 面透出；列表面不透出）。
+  execution_provider?: string | null
+  host_claimed_at?: string | null
+  host_receipt_at?: string | null
 }
 
 interface AgentToolCallDto {
@@ -101,12 +105,23 @@ interface ArtifactPreviewState {
 const RUN_STATUS_LABEL: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
+  host_running: "宿主执行中",
   completed: "已完成",
   succeeded_but_receipt_invalid: "成功但回执无效",
   failed: "失败",
   timeout: "超时",
   budget_exceeded: "预算超限",
 }
+
+// 采纳闸的终态集合（与服务端 adopt-solution 的 agent_run_not_terminal 闸同源：
+// 只有终态 run 的产物可采纳；queued/running/host_running 一律不可）。
+const RUN_TERMINAL_STATUSES = new Set([
+  "completed",
+  "succeeded_but_receipt_invalid",
+  "failed",
+  "timeout",
+  "budget_exceeded",
+])
 
 const DECISION_LABEL: Record<string, string> = {
   allowed: "放行",
@@ -183,6 +198,10 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
   const [previews, setPreviews] = useState<Record<string, ArtifactPreviewState>>({})
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set())
   const [downloadBusyId, setDownloadBusyId] = useState<string | null>(null)
+  // —— 采纳为方案（PR #435 人工采纳入口；canManage + run 终态 + 未采纳才可点）——
+  const [adoptBusyId, setAdoptBusyId] = useState<string | null>(null)
+  const [adoptNamingId, setAdoptNamingId] = useState<string | null>(null)
+  const [adoptName, setAdoptName] = useState("")
 
   const load = useCallback(async (): Promise<void> => {
     setError("")
@@ -238,6 +257,33 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
       setError(actionMessage(caught))
     } finally {
       setArtifactBusyId(null)
+    }
+  }
+
+  // 采纳为方案（PR #435：POST adopt-solution；AI 只产候选、人工点确认才进台账）。
+  // 同 run 一方案（服务端闸 409 artifact_already_adopted）；成功后重拉详情回真。
+  async function adoptArtifactSolution(runId: string, artifactId: string, name: string): Promise<void> {
+    setAdoptBusyId(artifactId)
+    setArtifactNotice("")
+    setError("")
+    try {
+      const body: Record<string, string> = name.trim() ? { name: name.trim() } : {}
+      await apiRequest(
+        `/api/v1/agents/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/adopt-solution`,
+        { method: "POST", body },
+      )
+      setArtifactNotice("已采纳为方案。")
+      setAdoptNamingId(null)
+      setAdoptName("")
+      const refreshed = await apiRequest<AgentRunDetailDto>(
+        `/api/v1/agents/runs/${encodeURIComponent(runId)}`,
+        { method: "GET" },
+      )
+      setDetail(refreshed)
+    } catch (caught) {
+      setError(actionMessage(caught))
+    } finally {
+      setAdoptBusyId(null)
     }
   }
 
@@ -609,6 +655,9 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                 {detail?.agent ? `${detail.agent.name}（${detail.agent.kind}）` : <code>{shortId(expandedRunId)}</code>}
                 {detail?.fallback_level ? ` · 降级链 ${detail.fallback_level}` : ""}
                 {detail?.degraded_reason ? ` · ${detail.degraded_reason}` : ""}
+                {detail?.execution_provider ? ` · 通道 ${detail.execution_provider}` : ""}
+                {detail?.host_claimed_at ? ` · 宿主领取 ${detail.host_claimed_at.slice(0, 19).replace("T", " ")}` : ""}
+                {detail?.host_receipt_at ? ` · 宿主回执 ${detail.host_receipt_at.slice(0, 19).replace("T", " ")}` : ""}
               </p>
             </div>
           </div>
@@ -624,6 +673,7 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                     <th scope="col">类型</th>
                     <th scope="col">指纹 (sha256)</th>
                     <th scope="col">复核</th>
+                    <th scope="col">方案</th>
                   {canManage ? <th scope="col">操作</th> : null}
                   </tr>
                 </thead>
@@ -642,6 +692,13 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                               <small> · {Object.entries(artifact.derived_summary).map(([key, value]) => `${key}=${value}`).join(" / ")}</small>
                             ) : null}
                           </td>
+                          <td>
+                            {artifact.linked_solution_id ? (
+                              <small>已采纳 <code>{artifact.linked_solution_id.slice(0, 8)}…</code></small>
+                            ) : (
+                              <small>—</small>
+                            )}
+                          </td>
                           {canManage ? (
                             <td>
                               <button
@@ -651,13 +708,53 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                               >
                                 {artifactBusyId === artifact.id ? "正在提交…" : artifact.reviewed ? "撤回复核" : "标记复核"}
                               </button>{" "}
+                              {/* 采纳为方案：run 终态 + 该产物未被采纳 + 同 run 尚无任何产物被采纳（一 run 一方案，
+                                  服务端闸 409 artifact_already_adopted——按钮前置置灰只是省一次徒劳请求，闸仍在服务端）。 */}
+                              {RUN_TERMINAL_STATUSES.has(detail.status) && !artifact.linked_solution_id && !detail.artifacts?.some((a) => a.linked_solution_id) ? (
+                                adoptNamingId === artifact.id ? (
+                                  <span>
+                                    <input
+                                      value={adoptName}
+                                      placeholder="方案名（留空自动命名）"
+                                      onChange={(event) => setAdoptName(event.target.value)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" && adoptBusyId !== artifact.id) {
+                                          void adoptArtifactSolution(expandedRunId ?? "", artifact.id, adoptName)
+                                        }
+                                      }}
+                                    />{" "}
+                                    <button
+                                      className="secondary-button"
+                                      disabled={adoptBusyId === artifact.id}
+                                      onClick={() => { void adoptArtifactSolution(expandedRunId ?? "", artifact.id, adoptName) }}
+                                    >
+                                      {adoptBusyId === artifact.id ? "正在采纳…" : "确认采纳"}
+                                    </button>{" "}
+                                    <button
+                                      className="secondary-button"
+                                      disabled={adoptBusyId === artifact.id}
+                                      onClick={() => { setAdoptNamingId(null); setAdoptName("") }}
+                                    >
+                                      取消
+                                    </button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    className="secondary-button"
+                                    disabled={adoptBusyId === artifact.id}
+                                    onClick={() => { setAdoptNamingId(artifact.id); setAdoptName("") }}
+                                  >
+                                    采纳为方案
+                                  </button>
+                                )
+                              ) : null}{" "}
                               {previewActions(expandedRunId ?? "", artifact)}
                             </td>
                           ) : null}
                         </tr>
                         {canManage && openPreviews.has(artifact.id) ? (
                           <tr>
-                            <td colSpan={canManage ? 5 : 4}>
+                            <td colSpan={canManage ? 6 : 5}>
                               <PreviewBlock state={previews[artifact.id] ?? { status: "loading" }} kind={artifact.kind} />
                             </td>
                           </tr>
@@ -665,7 +762,7 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                       </Fragment>
                     ))
                   ) : (
-                    <tr><td colSpan={canManage ? 5 : 4}>该运行暂无产物。</td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5}>该运行暂无产物。</td></tr>
                   )}
                 </tbody>
               </table>
