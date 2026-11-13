@@ -2,6 +2,20 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 学习闭环 2.0 L4 服务端：workbench 真执行面＋analyze_run 三源化＋AI 蒸馏返件起草＋断点⑥ lessons 键名修正（迁移① `d4b7e2f9a6c1`：candidate_payload_json 加列＋adapter_mode 扩值，2026-11-14）
+
+goal-l2.0 任务书 L4 轮服务端半（桌面「失败→AI 起草→建案」另 PR）；按设计稿 v1.1 §2.1–§2.3 落六断点中的断点①②③⑥：
+
+- **NEW `simulation/adapters/workbench.py`（第三执行档）**：`adapter_mode="workbench"` 注册进 `ADAPTER_MODES` 与 `build_adapter`（mock/real 零回归）；probe/analyze/design 走 `execute_ai_prompt` 单一入口（purpose=`simulation_workbench`＋注册表版本 `simulation-workbench-prompt-v1`＋预算/审计全继承），JSON 契约失败带拒因重试一次后回落 `structured=False`（real.py 语义）；implement/validate 复用确定性腿；usage 逐调用累计回填 `cost_json`（修正 v1 硬编码 `tokens:0`）。模型槽位 NEW `deepseek_simulation_workbench_model`（空＝回落评估槽位；缺端点/密钥 fail-closed ⇒ 运行诚实失败不静默退回 mock）。候选载荷通道：run config `candidate_payload.prompt_overlay_fragment` 以 ≤200 字追加条款进 system 消息（J-1 登记例外 `system_content`）。
+- **runner 逐轮 ctx（评审 P0-Ⅴ）**：访谈循环内逐轮 `dataclasses.replace(base_ctx, disclosed=…, config={…, "history": …})`——修正 v1 全程传同一 ctx（disclosed 恒空）失真；mock 忽略新键零回归；probe 模型面不可用 ⇒ `_fail_unavailable(phase="interview")` 诚实失败。
+- **异步化**：workbench 单跑经 outbox 入 `simulation.run` 后台作业（`BackgroundJob` 状态承载零迁移；入 `RECOVERABLE_JOB_TYPES`，终态幂等不重复执行不重复计费）；mock/real 小跑保持同步。
+- **analyze_run 三源化（断点②）**：L-A 不动；L-B 查询钉 `layer=="model" AND evaluator_id=="model:server"`＋`verdict!="unavailable"` 二道 ⇒ 低分产 `likely` 发现（不解锁提案，单独提案 409；模型自写 evidence/reason 不采信——evidence_refs 恒空）；L-C 取 `created_at` 最新人工行产 `confirmed` 发现（FA-C1），note 全文先过答案句黑名单（场景 rubric 三桶＋期望结果＋验收标准原文句洗刷＋`note_redacted` 留痕）；幂等键 `(evaluation_id, code)` 三源各挂各行。
+- **NEW `POST /simulation/findings/draft-ai`（断点③，返件式零落库，不进 api_catalog）**：蒸馏输入＝字段允许名单投影 `{code, dimension, severity, score, 脱敏 description}`（description 过 T-A2 脱敏管线 fail-closed；evidence_refs/reason/note 物理不进提示词）；train split 服务端过滤；跨题按 FA 码聚类；产出三型候选载荷（lesson_entry≤300 字／skill_version_draft／prompt_overlay_fragment≤200 字）；契约失败整批丢弃重试一次 ⇒ 409 `ai_draft_contract_failed`；输出夹带答案侧键拒（键清单从 `schemas.ANSWER_SIDE_KEYS` 单一真身取）。静态钉：蒸馏器模块 AST import ⊆ 白名单（禁 scenarios.loader/reference 面）。
+- **指纹修正（评审 P0-Ⅶ）**：`_finding_fingerprint` canonical 增 `payload_sha256`（无 payload 固定空值）——同 findings 同 target 不同候选载荷两案并存（不再被旧指纹 409 挡死）、同 payload 重复提交幂等 409、老提案互不误伤；`create_proposal` 收 `candidate_payload`（键闭集＝三载体类型＋长度闸）入 NEW 列 `candidate_payload_json`（与 `override_json` 分工：override＝run 参数，candidate＝三载体载荷）。
+- **断点⑥修正**：`agents/lessons.py` 键名 `fde_agent_lessons_*`→`agent_lessons_*`（只修 lessons 侧——config 字段真名；此前生产注入恒关）；假 settings 测试同步修正＋NEW 真实 Settings 验收钉（`create_app` 实例断言注入默认生效/可关——同坑两次复发家族）。
+- **迁移① `d4b7e2f9a6c1`（75→76 单头，挂 `d4b8e1f6a9c3`）**：`improvement_proposals.candidate_payload_json`（JSON NOT NULL server_default '{}'）＋`simulation_runs.adapter_mode` 列宽 String(8)→16＋CHECK 闭集扩 `'workbench'`——**设计稿 v1.1 勘误**：§2.1 只记注册两处、漏记列宽与 CHECK 两处 DB 落点（"workbench" 9 字符＞8），不随迁则 workbench 运行行在 DB 层必被拒。
+- **验证**：NEW 测试三套 41 例（workbench 12＋三源化 8＋蒸馏 16＋真实 Settings 钉并入 lessons 套件 1＋静态钉等）全绿；模拟域回归 135 例＋lessons/registry/J 系/纯度/预算/台账钉 42 例＋迁移套件 32 例全绿；`ruff check` 绿；`check-python-types.py` 277 基线零新增；**变异四连红→sha256 逐字节还原→复绿**（M1 摘 L-B evaluator 钉／M2 摘蒸馏允许名单／M3 还原 lessons 键名错配／M4 摘指纹 payload_sha256）；审计清单三件套重生成（路由 491/76 rev 单头 `d4b7e2f9a6c1`）＋archify architecture 四件套刷新（finalize 四闸绿＋preview 整页实拍 1440×2098）＋防陈旧闸绿。真机 workbench 证据（run id＋活库）另附待蔡工放行额度（配额购买属 OWNER 决策）。
+
 ## [未发布] — goal-sprint r6：E8/E11 意图↔实现验收与 A 轨只读降级三处真缺口闭合（零迁移零路由；server 变更，2026-11-14）
 
 任务书 §3 r6 条件轮（开工闸＝r4 D7 复审报告出齐＋蔡工显式开工令，两项齐备；`goal-crv` 147 条 QR 台账扫描与 E8/E11 零交集缺陷）：对 `#414` 合入的 E8 A 轨只读降级层与 E11 智能体凭据管理面执行 N3 五问逐条意图↔实现（intended-vs-implemented）核对，当场修复 E8 三处「测试绿而生产断/漏」真缺口并同步台账。

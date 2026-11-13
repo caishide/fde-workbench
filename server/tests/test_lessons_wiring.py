@@ -140,11 +140,13 @@ def test_select_top_k_and_max_chars_caps():
 
 
 def _settings(**overrides):
+    # 键名＝config.Settings 字段名（L4 断点⑥修正：此前假键 fde_agent_lessons_*
+    # 与 config 字段 agent_lessons_* 错配，掩盖了生产注入恒关的真缺陷）。
     base = {
         "agent_forbidden_terms": "",
-        "fde_agent_lessons_enabled": True,
-        "fde_agent_lessons_top_k": 3,
-        "fde_agent_lessons_max_chars": 400,
+        "agent_lessons_enabled": True,
+        "agent_lessons_top_k": 3,
+        "agent_lessons_max_chars": 400,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -154,8 +156,25 @@ def test_snippets_disabled_returns_empty():
     agent = SimpleNamespace(capability_tier="agent.module.solution")
     project = SimpleNamespace(template_snapshot=None)
     assert lessons.knowledge_snippets_for(
-        project=project, agent=agent, settings=_settings(fde_agent_lessons_enabled=False)
+        project=project, agent=agent, settings=_settings(agent_lessons_enabled=False)
     ) == ()
+
+
+def test_real_settings_injection_on_by_default_and_closable(app):
+    """断点⑥验收钉（L4）：create_app 真实 Settings 下注入默认生效、可关。
+
+    此前 lessons.py 读 ``fde_agent_lessons_*`` 而配置字段是 ``agent_lessons_*``
+    ⇒ 生产注入恒关且任何「真实 Settings」测试都测不出（假 settings 掩盖）。
+    本钉用 app 夹具的真实 SETTINGS 实例断言：默认开 ⇒ 非空；翻关 ⇒ 空。
+    """
+    settings = app.config["SETTINGS"]
+    assert bool(settings.agent_lessons_enabled) is True
+    agent = SimpleNamespace(capability_tier="agent.module.solution")
+    project = SimpleNamespace(template_snapshot=None)
+    snippets = lessons.knowledge_snippets_for(project=project, agent=agent, settings=settings)
+    assert snippets, "真实 Settings 下知识片段注入应为默认开启（断点⑥防复发）"
+    closed = settings.model_copy(update={"agent_lessons_enabled": False})
+    assert lessons.knowledge_snippets_for(project=project, agent=agent, settings=closed) == ()
 
 
 def test_snippets_soft_fail_on_missing_or_broken_seed(tmp_path):

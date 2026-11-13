@@ -92,6 +92,9 @@ RECOVERABLE_JOB_TYPES = frozenset({
     # 获客诊断 T-10b：报告生成的 handler 幂等（已有报告就跳过），
     # 允许在 worker 死后重跑一次。
     "diagnostics.report",
+    # 学习闭环 2.0 L4：训练场 workbench 档单跑——run 终态幂等承载
+    # （终态直接返回，不重复执行不重复计费），worker 死后可重跑。
+    "simulation.run",
 })
 
 # Written to `last_error` when a job is given up on, so an operator can tell
