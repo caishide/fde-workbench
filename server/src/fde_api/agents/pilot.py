@@ -65,7 +65,7 @@ def pilot_status(session: Any, settings: Any, *, now: datetime | None = None) ->
         return {"enabled": bool(getattr(settings, "agent_pilot_enabled", False)), "active": False}
     started, expires = window
     now = now or datetime.now(timezone.utc)
-    max_runs = int(getattr(settings, "agent_pilot_max_runs", 20) or 20)
+    max_runs = int(getattr(settings, "agent_pilot_max_runs", 10) or 10)
     runs_used = int(
         session.scalar(
             select(func.count())
