@@ -303,8 +303,8 @@ class DeepSeekClient:
 
         try:
             if on_event is not None:
-                content = self._read_stream(response, on_event)
-                self._last_usage = _usage_from_stream(response)
+                content, usage = self._read_stream(response, on_event)
+                self._last_usage = usage
             else:
                 payload = response.json()
                 content = payload["choices"][0]["message"]["content"]
@@ -348,8 +348,9 @@ class DeepSeekClient:
     def _read_stream(
         response: Any,
         on_event: Callable[[dict[str, str]], None],
-    ) -> str:
+    ) -> tuple[str, dict[str, int] | None]:
         content_parts: list[str] = []
+        usage: dict[str, int] | None = None
         for raw_line in response.iter_lines(decode_unicode=False):
             if not raw_line:
                 continue
@@ -360,8 +361,19 @@ class DeepSeekClient:
             if data == "[DONE]":
                 break
             try:
-                delta = json.loads(data)["choices"][0]["delta"]
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                payload = json.loads(data)
+                if not isinstance(payload, dict):
+                    continue
+                parsed_usage = _usage_from_payload(payload)
+                if parsed_usage is not None:
+                    usage = parsed_usage
+                choices = payload.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    continue
+                delta = choices[0]["delta"]
+                if not isinstance(delta, dict):
+                    continue
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError):
                 continue
             reasoning = delta.get("reasoning_content")
             if isinstance(reasoning, str) and reasoning:
@@ -370,7 +382,7 @@ class DeepSeekClient:
             if isinstance(content, str) and content:
                 content_parts.append(content)
                 on_event({"type": "content_delta", "text": content})
-        return "".join(content_parts)
+        return "".join(content_parts), usage
 
     def _post_with_connection_retry(
         self,
@@ -382,19 +394,22 @@ class DeepSeekClient:
         max_tokens: int,
         stream: bool = False,
     ) -> Any:
+        json_body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+        if stream:
+            json_body["stream_options"] = {"include_usage": True}
         request_kwargs = {
             "headers": {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "X-Request-ID": request_id,
             },
-            "json": {
-                "model": model,
-                "messages": messages,
-                "response_format": {"type": "json_object"},
-                "max_tokens": max_tokens,
-                "stream": stream,
-            },
+            "json": json_body,
             "timeout": self._timeout_seconds,
             "stream": stream,
         }
@@ -494,22 +509,19 @@ def _parse_json_object(content: str) -> dict[str, Any]:
 
 
 def _usage_from_payload(payload: Any) -> dict[str, int] | None:
-    """从非流式响应体取 token 用量；缺失或非整数时不记录。"""
+    """从响应体或流式 chunk 取 token 用量；缺失、非整数或负值时诚实返回 None。"""
     try:
         usage = payload["usage"]
-        input_tokens = int(usage["prompt_tokens"])
-        output_tokens = int(usage["completion_tokens"])
+        if not isinstance(usage, dict):
+            return None
+        raw_in = usage["prompt_tokens"]
+        raw_out = usage["completion_tokens"]
+        if isinstance(raw_in, bool) or isinstance(raw_out, bool):
+            return None
+        input_tokens = int(raw_in)
+        output_tokens = int(raw_out)
     except (KeyError, IndexError, TypeError, ValueError):
         return None
-    return {"input": input_tokens, "output": output_tokens}
-
-
-def _usage_from_stream(response: Any) -> dict[str, int] | None:
-    """流式响应的用量挂在末端 chunk 的 usage 字段（OpenAI 兼容）。"""
-    try:
-        usage = response.json().get("usage")
-        input_tokens = int(usage["prompt_tokens"])
-        output_tokens = int(usage["completion_tokens"])
-    except (AttributeError, KeyError, TypeError, ValueError):
+    if input_tokens < 0 or output_tokens < 0:
         return None
     return {"input": input_tokens, "output": output_tokens}

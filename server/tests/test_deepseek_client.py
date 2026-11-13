@@ -77,6 +77,7 @@ def test_complete_json_parses_content_and_sets_json_mode():
     assert result == {"status": "ready"}
     _, call = session.calls[0]
     assert call["json"]["response_format"] == {"type": "json_object"}
+    assert "stream_options" not in call["json"]
     assert call["headers"]["Authorization"] == "Bearer secret-value"
     assert call["headers"]["X-Request-ID"] == "req-1"
 
@@ -104,7 +105,8 @@ def test_complete_json_streams_reasoning_and_content_before_parsing_result():
     session = FakeSession(response)
     events = []
 
-    result = make_client(session).complete_json(
+    client = make_client(session)
+    result = client.complete_json(
         messages=[{"role": "user", "content": "hello"}],
         request_id="req-stream",
         on_event=events.append,
@@ -119,7 +121,9 @@ def test_complete_json_streams_reasoning_and_content_before_parsing_result():
     ]
     _, call = session.calls[0]
     assert call["json"]["stream"] is True
+    assert call["json"]["stream_options"] == {"include_usage": True}
     assert call["stream"] is True
+    assert client._last_usage is None
 
 
 @pytest.mark.parametrize(

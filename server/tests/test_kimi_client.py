@@ -51,11 +51,13 @@ def make_client(session, api_key="secret"):
     return KimiFileClient(base_url="https://api.moonshot.example/v1", api_key=api_key, model="kimi-k3", timeout_seconds=30, session=session)
 
 
-def test_uploads_docx_uses_kimi_content_and_cleans_up_file():
+def test_analyze_docx_uses_local_extraction_and_does_not_upload():
+    """QR-025 换代留痕（原 test_uploads_docx_uses_kimi_content_and_cleans_up_file）：
+    废弃 /files 未脱敏原件上传腿后，默认构造即走本地解析，全程零 /files 调用，
+    同时完整保留 Kimi K3 chat/completions 载荷契约断言（只增不降）。
+    """
     result = {"customer_vision": "长期目标"}
     session = FakeSession(
-        upload=FakeResponse(payload={"id": "file-1", "status": "ready"}),
-        content=FakeResponse(text="Kimi 原生提取的文档内容"),
         completion=FakeResponse(stream_lines=[
             ("data: " + json.dumps({"choices": [{"delta": {"content": json.dumps(result, ensure_ascii=False)}}]}, ensure_ascii=False)).encode("utf-8"),
             b"data: [DONE]",
@@ -64,15 +66,17 @@ def test_uploads_docx_uses_kimi_content_and_cleans_up_file():
     messages_seen = []
 
     parsed = make_client(session).analyze_docx_json(
-        stream=io.BytesIO(b"docx"), filename="预调研表.docx", request_id="job-1",
+        stream=_docx_bytes(), filename="预调研表.docx", request_id="job-1",
         build_messages=lambda content: messages_seen.append(content) or [{"role": "system", "content": content}],
     )
 
     assert parsed == result
-    assert messages_seen == ["Kimi 原生提取的文档内容"]
-    upload = session.calls[0]
-    assert upload[2]["data"] == {"purpose": "file-extract"}
-    assert upload[2]["files"]["file"][0] == "预调研表.docx"
+    assert len(messages_seen) == 1
+    assert "FDE 预调研" in messages_seen[0]
+    assert "50万" in messages_seen[0]
+    # 全程没有 /files 上传、内容拉取与删除
+    assert not any("/files" in call[1] for call in session.calls)
+    assert not any(call[0] == "delete" for call in session.calls)
     chat = next(call for call in session.calls if call[1].endswith("/chat/completions"))
     assert chat[2]["json"]["model"] == "kimi-k3"
     assert chat[2]["json"]["response_format"] == {"type": "json_object"}
@@ -81,7 +85,6 @@ def test_uploads_docx_uses_kimi_content_and_cleans_up_file():
     assert chat[2]["json"]["stream"] is True
     assert chat[2]["stream"] is True
     assert "temperature" not in chat[2]["json"]
-    assert session.calls[-1][0:2] == ("delete", "https://api.moonshot.example/v1/files/file-1")
 
 
 def test_missing_key_stops_before_upload():
@@ -95,21 +98,19 @@ def test_missing_key_stops_before_upload():
 def test_timeout_has_chinese_public_error():
     session = FakeSession(error=requests.Timeout("private timeout"))
     with pytest.raises(KimiError) as caught:
-        make_client(session).analyze_docx_json(stream=io.BytesIO(), filename="a.docx", request_id="job", build_messages=lambda _: [])
+        make_client(session).analyze_docx_json(stream=_docx_bytes(), filename="a.docx", request_id="job", build_messages=lambda _: [])
     assert caught.value.code == "ai_timeout"
     assert caught.value.public_message == "AI 分析超时，请稍后重试。"
 
 
-def test_invalid_completion_is_reported_and_remote_file_is_removed():
+def test_invalid_completion_is_reported():
     session = FakeSession(
-        upload=FakeResponse(payload={"id": "file-2", "status": "ready"}),
-        content=FakeResponse(text="content"),
         completion=FakeResponse(stream_lines=["data: [DONE]"]),
     )
     with pytest.raises(KimiError) as caught:
-        make_client(session).analyze_docx_json(stream=io.BytesIO(), filename="a.docx", request_id="job", build_messages=lambda _: [])
+        make_client(session).analyze_docx_json(stream=_docx_bytes(), filename="a.docx", request_id="job", build_messages=lambda _: [])
     assert caught.value.code == "ai_empty_response"
-    assert session.calls[-1][0] == "delete"
+    assert not any(call[0] == "delete" for call in session.calls)
 
 
 def _docx_bytes(paragraph: str = "FDE 预调研：客户希望 AI 落地", table_cell: str = "50万") -> io.BytesIO:

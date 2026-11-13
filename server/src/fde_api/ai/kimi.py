@@ -30,7 +30,7 @@ class KimiFileClient:
         model: str,
         timeout_seconds: int,
         session: Any | None = None,
-        local_extract: bool = False,
+        local_extract: bool = True,
         openai_compatible: bool = False,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -38,13 +38,12 @@ class KimiFileClient:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._session = session or requests.Session()
-        # local_extract=True：不走供应商的 /files 上传接口，改为本地解析 DOCX
-        # 取文本后再交给 chat/completions。
-        # MiniMax 官方 purpose 枚举中没有 file-extract（只有 voice_clone /
-        # prompt_audio / t2a_async_input / video_understanding /
-        # video_generation_input），所以它无法替代 Kimi 的文件解析能力，
-        # 必须走本地提取这条路。
-        self._local_extract = local_extract
+        # QR-025 收口（E4/A2 外发红线）：预调研 DOCX 原件严禁在 T-A2 代号化与
+        # E4 凭据检测之前上传第三方 /files 端点；一律本地提取纯文本再经
+        # build_messages 脱敏后送模型。保留 local_extract 形参仅为兼容存量配置。
+        if not local_extract:
+            logger.warning("KimiFileClient local_extract=False ignored: raw DOCX upload is disabled by E4/A2 policy")
+        self._local_extract = True
         # openai_compatible=True：按通用 OpenAI 兼容端点发请求——用 max_tokens
         # 而非 max_completion_tokens，且不下发 reasoning_effort（那是 Kimi K3
         # 的专有参数，MiniMax 用 thinking 开关控制推理强度）。
@@ -67,93 +66,70 @@ class KimiFileClient:
         # 门守本地直连腿入口（含文件上传花费），审计见 _write_local_audit。
         self._enforce_monthly_budget(request_id=request_id)
         headers = {"Authorization": f"Bearer {api_key}", "X-Request-ID": request_id}
-        file_id = ""
-        try:
-            if self._local_extract:
-                file_content = self._extract_docx_locally(stream, filename)
-            else:
-                upload = self._request(
-                    "post",
-                    f"{self._base_url}/files",
-                    headers=headers,
-                    files={"file": (filename, stream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-                    data={"purpose": "file-extract"},
-                )
-                upload_payload = self._json(upload, "kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。")
-                file_id = upload_payload.get("id", "") if isinstance(upload_payload, dict) else ""
-                if not file_id or upload_payload.get("status") not in {None, "ready", "ok"}:
-                    raise KimiError("kimi_file_upload_failed", "AI 无法接收该 DOCX 文件，请稍后重试。", retryable=True)
+        # QR-025 收口：强制本地解析，DOCX 原件不出本机。
+        file_content = self._extract_docx_locally(stream, filename)
+        if not isinstance(file_content, str) or not file_content.strip():
+            raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=False)
 
-                content_response = self._request("get", f"{self._base_url}/files/{file_id}/content", headers=headers)
-                file_content = self._utf8_text(content_response)
-            if not isinstance(file_content, str) or not file_content.strip():
-                raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=True)
-
-            from flask import current_app, has_app_context
-            if has_app_context() and current_app.config["SETTINGS"].dsh_enabled:
-                from fde_api.control.ai_server_client import structured_completion
-                from fde_api.control.dsh_runtime import DSHRuntimeError
-                try:
-                    return structured_completion(messages=build_messages(file_content), model=self._model,
-                        base_url=self._base_url, api_key=self._api_key, max_tokens=32768, on_event=on_event)
-                except DSHRuntimeError as error:
-                    raise KimiError(error.code, error.public_message, retryable=error.retryable) from error
-
-            completion_payload: dict[str, Any] = {
-                "model": self._model,
-                "messages": build_messages(file_content),
-                "response_format": {"type": "json_object"},
-                "stream": True,
-            }
-            if self._openai_compatible:
-                # 通用 OpenAI 兼容端点（MiniMax 等）：用 max_tokens，不发
-                # reasoning_effort（那是 Kimi K3 专有参数，MiniMax 侧不识别）。
-                completion_payload["max_tokens"] = 32768
-            else:
-                # Kimi K3 always reasons before returning the final answer. Keep
-                # extraction-oriented jobs on low effort and leave enough room
-                # for both its reasoning tokens and the structured JSON result.
-                completion_payload["reasoning_effort"] = "low"
-                completion_payload["max_completion_tokens"] = 32768
-
-            leg_started = time.monotonic()
-            completion = self._request(
-                "post",
-                f"{self._base_url}/chat/completions",
-                headers={**headers, "Content-Type": "application/json"},
-                json=completion_payload,
-                stream=True,
-            )
+        from flask import current_app, has_app_context
+        if has_app_context() and current_app.config["SETTINGS"].dsh_enabled:
+            from fde_api.control.ai_server_client import structured_completion
+            from fde_api.control.dsh_runtime import DSHRuntimeError
             try:
-                content = self._read_streamed_content(completion, on_event=on_event)
-                if not content.strip():
-                    raise KimiError("ai_empty_response", "AI 未返回有效分析结果，请重试。", retryable=True)
-                try:
-                    parsed = json.loads(content)
-                except json.JSONDecodeError as error:
-                    raise KimiError("ai_output_invalid", "AI 返回的项目指引格式不正确，请重试。", retryable=True) from error
-                if not isinstance(parsed, dict):
-                    raise KimiError("ai_output_invalid", "AI 返回的项目指引格式不正确，请重试。", retryable=True)
-            except Exception as error:  # noqa: BLE001 - 失败也记账（CR-006），原样上抛
-                self._write_local_audit(
-                    request_id=request_id, status="failed",
-                    error_code=str(getattr(error, "code", "") or "ai_unavailable"),
-                    duration_ms=int((time.monotonic() - leg_started) * 1000),
-                )
-                raise
-            # 流式响应不回传 usage：token 记 None（账本记元数据，预算按可测
-            # 口径汇总，不发明数字）——DSH 主路径有 provider_usage 精确入账。
+                return structured_completion(messages=build_messages(file_content), model=self._model,
+                    base_url=self._base_url, api_key=self._api_key, max_tokens=32768, on_event=on_event)
+            except DSHRuntimeError as error:
+                raise KimiError(error.code, error.public_message, retryable=error.retryable) from error
+
+        completion_payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": build_messages(file_content),
+            "response_format": {"type": "json_object"},
+            "stream": True,
+        }
+        if self._openai_compatible:
+            # 通用 OpenAI 兼容端点（MiniMax 等）：用 max_tokens，不发
+            # reasoning_effort（那是 Kimi K3 专有参数，MiniMax 侧不识别）。
+            completion_payload["max_tokens"] = 32768
+        else:
+            # Kimi K3 always reasons before returning the final answer. Keep
+            # extraction-oriented jobs on low effort and leave enough room
+            # for both its reasoning tokens and the structured JSON result.
+            completion_payload["reasoning_effort"] = "low"
+            completion_payload["max_completion_tokens"] = 32768
+
+        leg_started = time.monotonic()
+        completion = self._request(
+            "post",
+            f"{self._base_url}/chat/completions",
+            headers={**headers, "Content-Type": "application/json"},
+            json=completion_payload,
+            stream=True,
+        )
+        try:
+            content = self._read_streamed_content(completion, on_event=on_event)
+            if not content.strip():
+                raise KimiError("ai_empty_response", "AI 未返回有效分析结果，请重试。", retryable=True)
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as error:
+                raise KimiError("ai_output_invalid", "AI 返回的项目指引格式不正确，请重试。", retryable=True) from error
+            if not isinstance(parsed, dict):
+                raise KimiError("ai_output_invalid", "AI 返回的项目指引格式不正确，请重试。", retryable=True)
+        except Exception as error:  # noqa: BLE001 - 失败也记账（CR-006），原样上抛
             self._write_local_audit(
-                request_id=request_id, status="succeeded", error_code=None,
+                request_id=request_id, status="failed",
+                error_code=str(getattr(error, "code", "") or "ai_unavailable"),
                 duration_ms=int((time.monotonic() - leg_started) * 1000),
             )
-            return parsed
-        finally:
-            if file_id:
-                try:
-                    self._session.delete(f"{self._base_url}/files/{file_id}", headers=headers, timeout=15)
-                except requests.RequestException:
-                    pass
+            raise
+        # 流式响应不回传 usage：token 记 None（账本记元数据，预算按可测
+        # 口径汇总，不发明数字）——DSH 主路径有 provider_usage 精确入账。
+        self._write_local_audit(
+            request_id=request_id, status="succeeded", error_code=None,
+            duration_ms=int((time.monotonic() - leg_started) * 1000),
+        )
+        return parsed
 
     def _enforce_monthly_budget(self, *, request_id: str) -> None:
         """CR-006 本地直连腿预算门（E7 统一口径）：超限先留痕再拒（retryable=False）。
@@ -224,13 +200,6 @@ class KimiFileClient:
         return response
 
     @staticmethod
-    def _json(response: Any, code: str, message: str) -> Any:
-        try:
-            return response.json()
-        except (TypeError, ValueError) as error:
-            raise KimiError(code, message, retryable=True) from error
-
-    @staticmethod
     def _read_streamed_content(response: Any, on_event: Callable[[dict[str, str]], None] | None = None) -> str:
         parts: list[str] = []
         try:
@@ -268,12 +237,11 @@ class KimiFileClient:
     def _extract_docx_locally(stream: BinaryIO, filename: str) -> str:
         """本地解析 DOCX 取全文（复用文档 QA 的提取实现，含表格/页眉页脚）。
 
-        供应商不提供 file-extract 接口时走这条路：文件不出本机，只把提取出的
-        文本交给对话模型。
+        QR-025 收口：DOCX 原件不出本机，只把本地提取且经 build_messages 脱敏后的
+        纯文本交给对话模型。
 
         本地解析是字节的纯函数：同一份文件每次都得到同样的结果，所以解析
         失败（文件损坏/无有效文字）不可重试——重试只是把同一个错误再算一遍。
-        供应商侧的提取失败是另一回事（见 analyze_docx_json），那是瞬时故障。
         存储读取本身出错（OSError）仍然是瞬时的，保持可重试。
         """
         from fde_api.documents.qa import extract_docx_xml_text
@@ -294,21 +262,6 @@ class KimiFileClient:
         if not isinstance(content, str) or not content.strip():
             raise KimiError("kimi_file_extract_failed", "AI 未能从 DOCX 中提取有效内容，请检查文件后重试。", retryable=False)
         return content
-
-    @staticmethod
-    def _utf8_text(response: Any) -> str:
-        raw = getattr(response, "content", None)
-        if isinstance(raw, bytes):
-            try:
-                return raw.decode("utf-8")
-            except UnicodeDecodeError as error:
-                raise KimiError(
-                    "kimi_file_extract_failed",
-                    "AI 返回的 DOCX 解析内容编码异常，请稍后重试。",
-                    retryable=True,
-                ) from error
-        text = getattr(response, "text", "")
-        return text if isinstance(text, str) else ""
 
     def _secret_value(self) -> str | None:
         if isinstance(self._api_key, SecretStr):

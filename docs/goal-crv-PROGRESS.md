@@ -107,3 +107,9 @@
 - 蔡工交互拍板 needs-decision 7 项＋修复批启动共 8 项，**全部按推荐 A**：逐项结论与归属批＝`docs/goal-crv-BLOCKED.md` §5（留痕可推翻）。
 - 修复批 **B（QR-024/025）＋F（QR-117/118）连投立项**，任务书＝`docs/goal-crv-fix-批BF-任务书.md`；批 C 解锁（QR-041/042 已拍板）、QR-067 并入批 D、QR-073 归属批 E、新立批 G＝QR-133/134；SNS 403 例外登记随批 B 带落。
 - 总报告 §11 仅作引用续注（定稿 v1.0 不回写台账）；各批销号在各自修复轮记录。
+
+## 修复批 B 收口记录（2026-11-13）
+
+- **范围**：QR-024（P1→CLOSED）＋QR-025（随批裁定 P1→P0→CLOSED）＋拍板 §5-5 SNS 关闭态 403 例外登记随带（CLOSED）。
+- **实施**：`ai/deepseek.py` 流式 `stream_options.include_usage`＋SSE `usage` 帧解析（缺失/畸形诚实置 `None` 不写 `0`）；`ai/kimi.py` 移除 `/files` 未脱敏原件上传/拉取/删除分支、统一本地提取后经 `build_messages` 脱敏送模型，`config.py`/`.env.example` `kimi_local_docx_extract` 默认改 `True`（兼容存量 `false`）；`test_kimi_client.py` 上传正例钉换代留痕；`AGENTS.md` 红线区与 `goal-crv-r6-后台作业与队列.md` §5-1 落 SNS 403 例外销号。
+- **验证**：NEW `server/tests/test_crv_batch_b.py` 12 例＋邻域 149 passed＋变异 M1–M4 全真红→`try/finally` sha256 逐字节还原→复绿＋ruff 绿＋mypy 277/102 不变；下一棒＝修复批 F（QR-117＋QR-118）。

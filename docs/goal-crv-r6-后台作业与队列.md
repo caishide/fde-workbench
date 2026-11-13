@@ -44,7 +44,7 @@
 
 ## 5 备注
 
-1. 关闭态口径裁决项（shard 2 移交）：mailing SNS 回调在 SES 关闭时 403 mailing_disabled（有钉）vs 仓库「公网免注册写面关闭=404」纪律——消费者是 AWS SNS 机器对机器、403/404 语义等价；若按纪律收口须同步换代 test_sns_route_disabled_403 钉——**needs-decision**。
+1. 关闭态口径裁决项（shard 2 移交）：mailing SNS 回调在 SES 关闭时 403 mailing_disabled（有钉）vs 仓库「公网免注册写面关闭=404」纪律——消费者是 AWS SNS 机器对机器、403/404 语义等价；若按纪律收口须同步换代 test_sns_route_disabled_403 钉——**needs-decision**。（**2026-11-13 随修复批 B 销号 CLOSED**：蔡工拍板 `BLOCKED.md` §5-5 维持 403 `mailing_disabled`＋引用 M3b 服务间面机器判定先例登记入 `AGENTS.md`，零代码零改钉。）
 2. policy.retry_allows/next_retry_delay 退避契约全仓零生产消费点（throttle 重试未实现）——接线时消费或显式放弃。
 3. models.py:44-47 active_key 生成列 MySQL `||` 歧义（裁剪候选）——部署 PG-only 纯潜伏，文档勘误随修复批。
 4. registration/commercial 在 HTTP 请求内同步调 SES（分钟级最坏阻塞）——r3 已审 registration 面，此处备注不立条。

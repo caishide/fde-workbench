@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-crv 修复批 B：QR-024 直连流式 usage 计量修复＋QR-025 预调研 DOCX 原件上传腿收口（升 P0）＋SNS 403 例外登记（零迁移零路由，2026-11-13）
+
+按 `docs/goal-crv-fix-批BF-任务书.md` 完成首投批 B：
+
+- **QR-024（P1 CLOSED）直连腿流式 usage 采集与预算闸对齐**：`server/src/fde_api/ai/deepseek.py` 流式请求注入 `stream_options: {"include_usage": True}`（非流式不带该键），`_read_stream` 逐帧提取顶层 `usage` 并兼容末端 `choices: []` 空帧、防止尾帧 `usage: null` 覆盖已采值，移除对已消费 SSE 响应体调 `.json()` 恒败的 `_usage_from_stream`；上游缺失或返回非整数/布尔/负值 `usage` 时诚实置 `None`（严禁静默写 `0` 冒充免费调用），流式调用真实计入 `tokens_used_this_month` 与 `subject_budget_exceeded`。
+- **QR-025（随批裁定 P1→P0 CLOSED）预调研 DOCX 原件脱敏前禁出站**：`server/src/fde_api/ai/kimi.py` 废弃并移除向第三方 `/files` 上传/读取/删除未脱敏 DOCX 原件分支，强制统一走 `_extract_docx_locally` 本地提取纯文本后再经 `build_messages`（E4 凭据拦截 400＋T-A2 企业名代号化与 PII 脱敏）送对话模型；`Settings.kimi_local_docx_extract` 与 `server/.env.example` 默认值改 `True`（存量 `.env` 若留 `false` 记 warning 仍强制走本地提取）；`server/tests/test_kimi_client.py` 原上传正例钉同步换代为本地提取正例钉并完整保留 Kimi K3 chat 载荷契约断言（只增不降）。
+- **随带（拍板 §5-5 CLOSED，零代码）**：AWS SNS 回调在 SES 关闭态维持 403 `mailing_disabled` 例外登记入 `AGENTS.md` 红线区（引用 M3b 服务间面机器判定先例），`docs/goal-crv-r6-后台作业与队列.md` §5-1 销号。
+- **验证**：NEW `server/tests/test_crv_batch_b.py`（pytest +12 收集：流式与非流式计量对齐、流式预算闸拦截、5 组缺失/畸形 usage 置 `None`、尾帧 null 不覆盖、静态钉、兼容钉、E4 凭据 400 零外呼与 A2 企业名/手机号脱敏端到端钉）＋邻域回归 149 passed＋变异四连 M1–M4 全真红→`try/finally` sha256 逐字节还原→复绿＋ruff 绿＋mypy 277/102 基线不变；零迁移零新路由零蓝图零桌面。
+
 ## [未发布] — 产物采纳流闭环＋宿主产物可读（G-07 证据候选回填；＋1 路由 489→490，2026-11-13）
 
 首个真实 host_poll run 端到端跑通后的下游收口：run 完成后产物停在 `agent_artifacts`，缺「采纳为方案」的人工入口，且**宿主通道产物在桌面端 100% 预览失败**。本轮补两处集成缺口＋开一条人工采纳入口。
