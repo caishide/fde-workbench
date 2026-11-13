@@ -2,9 +2,9 @@
  "route_count": 490,
  "blueprint_count": 52,
  "table_count": 153,
- "revision_count": 74,
+ "revision_count": 75,
  "heads": [
-  "c8e2a6f0b9d4"
+  "d4b8e1f6a9c3"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -361,6 +361,12 @@
    "add_column_tables": [
     "gates"
    ]
+  },
+  "d4b8e1f6a9c3": {
+   "file": "d4b8e1f6a9c3_commercial_batch_d_hardening.py",
+   "down_revision": "c8e2a6f0b9d4",
+   "create_tables": [],
+   "add_column_tables": []
   },
   "d4e6f8a2c7b9": {
    "file": "d4e6f8a2c7b9_v5_subject_merge.py",
