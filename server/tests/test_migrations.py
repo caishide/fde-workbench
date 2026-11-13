@@ -102,7 +102,9 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 #          闭集扩 published（受控发布通道；发布/回滚状态唯一承载列）
 # goal-sprint r2（QR-089 吸收）：agent_runs 加 frozen_tools 列（发起时刻
 #          白名单快照——「允许名单随 run 冻结」的结构化真身；additive 可空）
-HEAD_REVISION = "c8e2a6f0b9d4"
+# V3.3 M2 WP4 段 1：项目本体绑定与升级留痕两表（9d4f2b7e8c1a；挂
+#          c8e2a6f0b9d4 之后保单头；D7 段 2 回填 org_id NOT NULL 随 0044 后续）
+HEAD_REVISION = "9d4f2b7e8c1a"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1166,8 +1168,9 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + 获客诊断 T-16 价格轮 f2a7c4e9b6d3（挂 T-15 之后保单头）之后 = 72；
     # + AI 原生化 N4 发布通道 b5d9e2f4a7c1（挂 T-16 之后保单头）之后 = 73；
     # + goal-sprint r2 白名单快照列 c8e2a6f0b9d4（挂 N4 之后保单头）之后 = 74；
+    # + V3.3 M2 WP4 段 1 项目本体绑定 9d4f2b7e8c1a（挂 c8e2a6f0b9d4 之后保单头）之后 = 75；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 74
+    assert len(known) == 75
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical

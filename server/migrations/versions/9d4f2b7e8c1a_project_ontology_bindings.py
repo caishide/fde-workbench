@@ -1,14 +1,17 @@
 """项目本体绑定与升级留痕（V3.3 WP4 段 1；additive；hex 链重接主线）。
 
 规格 = Fde-Ontology docs/v3.3/m1/ontology-data-model.md §3；D7 决策单：
-org_id 预留可空列，orgs 轨道合流后回填 NOT NULL（段 2）。现有项目/证据数据
-不受影响。原 0043 编号形态重接主线 hex 链（down_revision=c8e2a6f0b9d4，
-主线已废弃 0002-0042 旧链）——内容不变，仅链位与 id 形态对齐主线纪律
+org_id 预留可空列，orgs 轨道合流后回填 NOT NULL（段 2）。评审 W-A（m2/02 报告）：
+单活跃绑定 uq 带 active_marker（retired 行 NULL 退出唯一键，MySQL 无部分
+索引的标准等价）——全量 uq 会卡死 retire+successor 升级流。时间戳 DDL
+对齐主线兄弟迁移惯例。原 0043 编号形态重接主线 hex 链
+（down_revision=c8e2a6f0b9d4，主线已废弃 0002-0042 旧链）——内容不变，
+仅链位与 id 形态对齐主线纪律
 （tests/test_migrations.py::_parse_migration_graph 只认 [a-f0-9]+）。
 """
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.mysql import DATETIME, TIMESTAMP
+from alembic import op
+from sqlalchemy.dialects import mysql
 
 revision = "9d4f2b7e8c1a"
 down_revision = "c8e2a6f0b9d4"
@@ -18,13 +21,12 @@ depends_on = None
 
 def _timestamps():
     return [
-        sa.Column("created_at", DATETIME(fsp=6), nullable=False, server_default=sa.text("UTC_TIMESTAMP(6)")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("UTC_TIMESTAMP(6)"), nullable=False),
         sa.Column(
             "updated_at",
-            TIMESTAMP(fsp=6),
+            mysql.TIMESTAMP(fsp=6),
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)"),
-            server_onupdate=sa.text("CURRENT_TIMESTAMP(6)"),
         ),
     ]
 
@@ -40,12 +42,21 @@ def upgrade():
         sa.Column("pinned_version", sa.String(32), nullable=False, server_default=""),
         sa.Column("binding_role", sa.String(40), nullable=False, server_default="primary"),
         sa.Column("status", sa.String(16), nullable=False, server_default="active"),
+        sa.Column("active_marker", sa.String(16), nullable=True),  # W-A：active 行占用，其余 NULL
         sa.Column("bound_by_user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("approved_by_user_id", sa.String(36), nullable=True),
+        sa.Column("approved_by_user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=True),
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         *_timestamps(),
-        sa.CheckConstraint("status IN ('active', 'retired')", name="ck_project_ontology_bindings_status"),
-        sa.UniqueConstraint("project_id", "ontology_id", name="uq_project_ontology_bindings_project_ontology"),
+        sa.CheckConstraint(
+            "status IN ('active', 'upgrade_pending', 'retired')",
+            name="ck_project_ontology_bindings_status",
+        ),
+        sa.UniqueConstraint(
+            "project_id",
+            "ontology_id",
+            "active_marker",
+            name="uq_project_ontology_bindings_project_ontology_active",
+        ),
         sa.Index("ix_project_ontology_bindings_project", "project_id"),
         sa.Index("ix_project_ontology_bindings_org", "org_id"),
     )
@@ -60,7 +71,7 @@ def upgrade():
         sa.Column("source_change_set_id", sa.String(36), nullable=True),
         sa.Column("status", sa.String(16), nullable=False, server_default="proposed"),
         sa.Column("proposed_by_user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("approved_by_user_id", sa.String(36), nullable=True),
+        sa.Column("approved_by_user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=True),
         sa.Column("acted_at", sa.DateTime(timezone=True), nullable=True),
         *_timestamps(),
         sa.CheckConstraint(

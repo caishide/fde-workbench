@@ -1,14 +1,16 @@
 """项目本体绑定与升级留痕（V3.3 任务书 §5.2；规格 = Fde-Ontology docs/v3.3/m1/ontology-data-model.md §3）。
 
 **两段交付（D7 决策单，m2/00-m2-work-order.md）**：org_id 列预留（可空+索引），
-orgs 多租户轨道合流后回填 NOT NULL；ontology-service 侧已按 org 强制隔离
-（跨租户一律 404），本表 org_id 段 1 阶段不作鉴权谓词。
+orgs 多租户轨道合流后回填 NOT NULL；I5 运行时调用的 org 上下文段 1 来自
+FDE_ONTOLOGY_ORG_ID 配置（D10 决策单，m2/02-code-review-workbench-2026-11-13.md）。
 
 硬规则（§5.2 + I5）：
-- 绑定必须指向已发布版本（draft 拒绝——由 ontology-service 校验，本侧 pin 的
-  version_id 必须来自 publish 响应）；
-- 一个项目可绑定多个本体（uq: project+ontology 单活跃绑定）；
-- 版本升级必须差异审查+批准（ontology_binding_upgrades 留痕，retire 不删行）；
+- 绑定必须指向已发布版本（draft 拒绝=409——由 service 层经 runtime 核实，I5/D10）；
+- 一个项目可绑定多个本体；同项目同本体**单活跃**绑定：
+  uq(project_id, ontology_id, active_marker)，retired 行 active_marker=NULL
+  （MySQL 无部分索引的标准 NULL 等价；评审 W-A：全量 uq 会卡死 retire+successor 流）；
+- 版本升级必须差异审查+批准（ontology_binding_upgrades 留痕，retire 不删行；
+  status 含 upgrade_pending——data-model §3 原文）；
 - 保留历史绑定与执行时版本。
 """
 
@@ -20,6 +22,7 @@ from typing import Any
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     String,
     Text,
@@ -32,17 +35,22 @@ from fde_api.auth.models import (
 )
 from fde_api.workbench.models import TimestampMixin, VersionedMixin, new_uuid
 
+ACTIVE_MARKER = "active"  # active_marker 列的占用值；retired/upgrade_pending 为 NULL
+
 
 class ProjectOntologyBinding(Base, TimestampMixin, VersionedMixin):
     __tablename__ = "project_ontology_bindings"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active', 'retired')", name="ck_project_ontology_bindings_status"
+            "status IN ('active', 'upgrade_pending', 'retired')",
+            name="ck_project_ontology_bindings_status",
         ),
-        # 单活跃绑定：同项目同本体至多一行 active（status='active' 唯一性由服务层保证，
-        # 部分唯一索引段 2 org 合流后补；先以 (project_id, ontology_id) 唯一约束收口）
+        # 单活跃绑定（评审 W-A）：retired 行以 NULL marker 退出唯一键
         UniqueConstraint(
-            "project_id", "ontology_id", name="uq_project_ontology_bindings_project_ontology"
+            "project_id",
+            "ontology_id",
+            "active_marker",
+            name="uq_project_ontology_bindings_project_ontology_active",
         ),
         Index("ix_project_ontology_bindings_project", "project_id"),
         Index("ix_project_ontology_bindings_org", "org_id"),
@@ -51,25 +59,39 @@ class ProjectOntologyBinding(Base, TimestampMixin, VersionedMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     # D7 段 1：预留列；orgs 轨道合流后回填 NOT NULL（append-only 演进）
     org_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
     ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
     # opaque 指针（→ ontology-service ontology_versions.id，无 FK 跨库）
     pinned_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
     pinned_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     binding_role: Mapped[str] = mapped_column(String(40), nullable=False, default="primary")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
-    bound_by_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    approved_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # 唯一键状态位：status='active' ⇔ 'active'，其余 NULL（service 层同步维护）
+    active_marker: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    bound_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    approved_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "project_id": self.project_id,
             "ontology_id": self.ontology_id,
+            "org_id": self.org_id,
             "pinned_version_id": self.pinned_version_id,
             "pinned_version": self.pinned_version,
             "binding_role": self.binding_role,
             "status": self.status,
+            "version": self.version,
+            "bound_by_user_id": self.bound_by_user_id,
+            "approved_by_user_id": self.approved_by_user_id,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
         }
 
 
@@ -85,7 +107,9 @@ class OntologyBindingUpgrade(Base, TimestampMixin):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project_ontology_bindings.id", ondelete="RESTRICT"), nullable=False
+    )
     from_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
     to_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
     to_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
@@ -93,6 +117,25 @@ class OntologyBindingUpgrade(Base, TimestampMixin):
     diff_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     source_change_set_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
-    proposed_by_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    approved_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    proposed_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    approved_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
     acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "binding_id": self.binding_id,
+            "from_version_id": self.from_version_id,
+            "to_version_id": self.to_version_id,
+            "to_version": self.to_version,
+            "diff_summary": self.diff_summary,
+            "source_change_set_id": self.source_change_set_id,
+            "status": self.status,
+            "proposed_by_user_id": self.proposed_by_user_id,
+            "approved_by_user_id": self.approved_by_user_id,
+            "acted_at": str(self.acted_at) if self.acted_at is not None else None,
+        }

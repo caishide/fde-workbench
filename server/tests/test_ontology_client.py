@@ -11,8 +11,10 @@ from urllib.parse import urlparse
 import pytest
 
 from fde_api.integrations.ontology_client import (
+    OntologyAuthError,
     OntologyClient,
     OntologyClientError,
+    OntologyConflict,
     OntologyUnavailable,
     build_context_header,
 )
@@ -129,14 +131,97 @@ def test_5xx_maps_to_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
         _client().get_change_set(actor_id="u", org_id="o", project_id="p", change_set_id="cs")
 
 
-def test_4xx_passthrough_with_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_409_conflict_maps_to_ontology_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+    """契约 §2-5：409 base_conflict 分型（并发/漂移 → 业务层提示重试）。"""
+
     def fake_request(*args: object, **kwargs: object) -> _FakeResponse:
         return _FakeResponse(409, json.dumps({"code": "base_conflict"}).encode())
 
     monkeypatch.setattr("fde_api.integrations.ontology_client.requests.request", fake_request)
+    with pytest.raises(OntologyConflict) as excinfo:
+        _client().get_change_set(actor_id="u", org_id="o", project_id="p", change_set_id="cs")
+    assert excinfo.value.body["code"] == "base_conflict"
+
+
+def test_401_403_map_to_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """契约 §2-5：401/403 分型（配置错误告警，不伪装领域错误）。"""
+    for status in (401, 403):
+        payload = json.dumps({"message": "denied"}).encode()
+
+        def _make(_s: int = status, _body: bytes = payload) -> object:
+            def fake_request(*args: object, **kwargs: object) -> _FakeResponse:
+                return _FakeResponse(_s, _body)
+
+            return fake_request
+
+        monkeypatch.setattr(
+            "fde_api.integrations.ontology_client.requests.request", _make()
+        )
+        with pytest.raises(OntologyAuthError):
+            _client().get_change_set(actor_id="u", org_id="o", project_id="p", change_set_id="cs")
+
+
+def test_4xx_passthrough_with_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_request(*args: object, **kwargs: object) -> _FakeResponse:
+        return _FakeResponse(400, json.dumps({"code": "validation_failed"}).encode())
+
+    monkeypatch.setattr("fde_api.integrations.ontology_client.requests.request", fake_request)
     body = _client().get_change_set(actor_id="u", org_id="o", project_id="p", change_set_id="cs")
-    assert body["_status"] == 409
-    assert body["code"] == "base_conflict"
+    assert body["_status"] == 400
+    assert body["code"] == "validation_failed"
+
+
+def test_non_dict_body_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """runtime 返回数组/标量体不得 TypeError（评审 W-D）。"""
+
+    def fake_request(*args: object, **kwargs: object) -> _FakeResponse:
+        return _FakeResponse(200, json.dumps([1, 2]).encode())
+
+    monkeypatch.setattr("fde_api.integrations.ontology_client.requests.request", fake_request)
+    body = _client().get_change_set(actor_id="u", org_id="o", project_id="p", change_set_id="cs")
+    assert body["_status"] == 200
+    assert body["raw"] == [1, 2]
+
+
+def test_approval_idem_deterministic_and_decision_sensitive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ap- 幂等键含 decision：异决定重试不得复放首票；同参重试同键（评审 W-D）。"""
+    captured: list[str] = []
+
+    def fake_request(method: str, url: str, **kwargs: object) -> _FakeResponse:
+        headers = kwargs.get("headers")
+        assert isinstance(headers, dict)
+        captured.append(headers["X-Idempotency-Key"])
+        return _FakeResponse(200, b"{}")
+
+    monkeypatch.setattr("fde_api.integrations.ontology_client.requests.request", fake_request)
+    client = _client()
+    kw: dict[str, object] = {
+        "actor_id": "u",
+        "org_id": "o",
+        "project_id": "p",
+        "change_set_id": "cs-9",
+        "role": "business_owner",
+    }
+    client.approve_change_set(**kw, decision="approved")  # type: ignore[arg-type]
+    client.approve_change_set(**kw, decision="approved")  # type: ignore[arg-type]
+    client.approve_change_set(**kw, decision="rejected")  # type: ignore[arg-type]
+    assert captured[0] == captured[1]
+    assert captured[0] != captured[2]
+    assert len(captured[0]) <= 64
+
+
+def test_long_idem_key_clamped_not_truncated() -> None:
+    """超 64 字符键按 sha256 收敛（截断会使不同长键互撞，评审 W-D）；
+    防御性兜底——现有方法的键长恒 ≤64。"""
+    client = _client()
+    headers = client._headers("u", "o", "p", "x" * 100)
+    key = headers["X-Idempotency-Key"]
+    assert len(key) <= 64
+    assert key != "x" * 100
+    short = client._headers("u", "o", "p", "short-key")
+    assert short["X-Idempotency-Key"] == "short-key"
 
 
 def test_health_true_on_200(monkeypatch: pytest.MonkeyPatch) -> None:

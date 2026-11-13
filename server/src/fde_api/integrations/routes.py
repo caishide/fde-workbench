@@ -29,6 +29,12 @@ def _binding_error(exc: BindingError):
     return error_response(exc.code, exc.message, exc.status)
 
 
+def _json_object() -> dict[str, Any]:
+    """请求体必须是 JSON object（评审 W-E：数组/标量体此前 AttributeError→500）。"""
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
 @ontology_bindings_blueprint.get("/<project_id>/ontology-bindings")
 @require_auth
 def list_bindings_route(project_id: str):
@@ -42,9 +48,8 @@ def list_bindings_route(project_id: str):
 @ontology_bindings_blueprint.post("/<project_id>/ontology-bindings")
 @require_auth
 def create_binding_route(project_id: str):
-    payload: dict[str, Any] = request.get_json(silent=True) or {}
     try:
-        binding = create_binding(actor=g.current_user, project_id=project_id, input=payload)
+        binding = create_binding(actor=g.current_user, project_id=project_id, payload=_json_object())
     except BindingError as exc:
         return _binding_error(exc)
     return jsonify({"data": binding, "error": None}), 201
@@ -55,10 +60,9 @@ def create_binding_route(project_id: str):
 )
 @require_auth
 def propose_upgrade_route(project_id: str, binding_id: str):
-    payload: dict[str, Any] = request.get_json(silent=True) or {}
     try:
         upgrade = propose_upgrade(
-            actor=g.current_user, project_id=project_id, binding_id=binding_id, input=payload
+            actor=g.current_user, project_id=project_id, binding_id=binding_id, payload=_json_object()
         )
     except BindingError as exc:
         return _binding_error(exc)
@@ -70,8 +74,7 @@ def propose_upgrade_route(project_id: str, binding_id: str):
 )
 @require_auth
 def approve_upgrade_route(project_id: str, binding_id: str, upgrade_id: str):
-    payload: dict[str, Any] = request.get_json(silent=True) or {}
-    decision = str(payload.get("decision", ""))
+    decision = str(_json_object().get("decision", ""))
     try:
         result = approve_upgrade(
             actor=g.current_user,

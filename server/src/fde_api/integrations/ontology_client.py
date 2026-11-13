@@ -34,6 +34,22 @@ class OntologyUnavailable(OntologyClientError):
     """连接失败/超时（契约 §3 依赖等级：审计最强=拒写，查询=降级空结果）。"""
 
 
+class OntologyConflict(OntologyClientError):
+    """runtime 409 base_conflict（契约 §2-5：并发/漂移冲突 → 业务层提示重试）。"""
+
+    def __init__(self, body: dict[str, Any]) -> None:
+        super().__init__(str(body.get("message", "ontology conflict")))
+        self.body = body
+
+
+class OntologyAuthError(OntologyClientError):
+    """runtime 401/403（契约 §2-5：配置错误 → 告警，不自动重试）。"""
+
+    def __init__(self, body: dict[str, Any]) -> None:
+        super().__init__(f"ontology auth rejected: {body.get('message', '')}")
+        self.body = body
+
+
 def _b64e(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
@@ -89,7 +105,11 @@ class OntologyClient:
             "Content-Type": "application/json",
         }
         if idem:
-            headers["X-Idempotency-Key"] = idem[:64]
+            # runtime 对 >64 键 422 拒收（e9efb54 起），此处保证不超长：超长截断
+            # 会使不同键互撞引发错误复放（评审 W-D），故按 sha256 收敛
+            if len(idem) > 64:
+                idem = "h-" + hashlib.sha256(idem.encode()).hexdigest()[:30]
+            headers["X-Idempotency-Key"] = idem
         return headers
 
     def _request(
@@ -117,9 +137,15 @@ class OntologyClient:
         body: dict[str, Any] = {}
         if resp.content:
             try:
-                body = resp.json()
+                decoded = resp.json()
             except ValueError:
-                body = {"raw": resp.text}
+                decoded = {"raw": resp.text}
+            # runtime 非对象体（数组/标量） defensively 包裹（评审 W-D）
+            body = decoded if isinstance(decoded, dict) else {"raw": decoded}
+        if resp.status_code == 409:
+            raise OntologyConflict(body)
+        if resp.status_code in (401, 403):
+            raise OntologyAuthError(body)
         body["_status"] = resp.status_code
         return body
 
@@ -154,9 +180,16 @@ class OntologyClient:
         description: str = "",
     ) -> dict[str, Any]:
         """discovery 候选直提（决议 2/D5/D6）。items 每条须含 §6.2 六件套（captured_from 条目）。"""
+        # 内容寻址幂等：同候选重推=复放；纳入 ontology_id+title（评审 W-D：
+        # 同 items 异目标复用键会重放错目标）
         idem = "cs-" + hashlib.sha256(
-            json.dumps(items, sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()[:28]  # 内容寻址幂等：同候选重推=复放
+            json.dumps(
+                {"ontology_id": ontology_id, "title": title, "items": items},
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ).encode()
+        ).hexdigest()[:28]
         return self._request(
             "POST", f"/api/v1/ontologies/{ontology_id}/change-sets",
             actor_id=actor_id, org_id=org_id, project_id=project_id, idem=idem,
@@ -182,7 +215,10 @@ class OntologyClient:
         payload: dict[str, Any] = {"role": role, "decision": decision, "comment": comment}
         if annotation_evidence_id:
             payload["annotation_evidence_id"] = annotation_evidence_id
-        idem = f"ap-{change_set_id}-{role}-{actor_id}"[:64]
+        # 确定性幂等：含 decision（异决定重试不得复放首票，评审 W-D）
+        idem = "ap-" + hashlib.sha256(
+            f"{change_set_id}|{role}|{actor_id}|{decision}".encode()
+        ).hexdigest()[:28]
         return self._request(
             "POST", f"/api/v1/change-sets/{change_set_id}/approvals",
             actor_id=actor_id, org_id=org_id, project_id=project_id, idem=idem, json_body=payload,
@@ -192,7 +228,9 @@ class OntologyClient:
         self, *, actor_id: str, org_id: str, project_id: str, change_set_id: str, version: str,
         confirm_breaking: bool = False,
     ) -> dict[str, Any]:
-        idem = f"pb-{change_set_id}-{version}"[:64]
+        idem = "pb-" + hashlib.sha256(
+            f"{change_set_id}|{version}|{confirm_breaking}".encode()
+        ).hexdigest()[:28]
         return self._request(
             "POST", f"/api/v1/change-sets/{change_set_id}/publish",
             actor_id=actor_id, org_id=org_id, project_id=project_id, idem=idem,
