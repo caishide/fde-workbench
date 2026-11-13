@@ -209,3 +209,41 @@ def test_missing_password_without_stdin_exits(api_server, monkeypatch):
     with pytest.raises(SystemExit) as error:
         module.main(["--username", "admin", "--base-url", api_server])
     assert "密码" in str(error.value)
+
+
+# --- 自举（PowerShell / bash 通吃） ---------------------------------------
+
+
+def test_venv_python_is_discoverable():
+    """脚本必须能找到 server venv 的解释器（否则「一条命令」跑不起来）。"""
+    module = _load_module()
+    found = module._venv_python()
+    assert found is not None, "server venv 解释器未找到"
+    assert found.is_file()
+
+
+def test_server_src_is_put_on_sys_path():
+    """脚本必须自己把 server/src 挂进 sys.path —— 免去用户手工设 PYTHONPATH。"""
+    module = _load_module()
+    module._ensure_server_on_path()
+    assert str(module._server_dir() / "src") in module.sys.path
+
+
+def test_bootstrap_flag_prevents_repeated_relaunch():
+    """自举只能发生一次（`FDE_SET_CREDENTIAL_BOOTSTRAPPED=1` 时不再 execve）。"""
+    module = _load_module()
+    import os
+
+    original = os.environ.get("FDE_SET_CREDENTIAL_BOOTSTRAPPED")
+    os.environ["FDE_SET_CREDENTIAL_BOOTSTRAPPED"] = "1"
+    try:
+        # 已置标志 ⇒ 不应触发 execve（否则测试进程会被替换掉）
+        module.main(["--username", "admin", "--password", "pw", "--base-url", "http://127.0.0.1:1"])
+    except SystemExit:
+        pass  # 连接失败是预期的（base-url 指向不可达端口）
+    finally:
+        if original is None:
+            os.environ.pop("FDE_SET_CREDENTIAL_BOOTSTRAPPED", None)
+        else:
+            os.environ["FDE_SET_CREDENTIAL_BOOTSTRAPPED"] = original
+
