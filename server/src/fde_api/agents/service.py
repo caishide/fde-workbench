@@ -309,6 +309,12 @@ def _serialize_run(session: Any, run: AgentRun, *, detail: bool = False) -> dict
     if detail:
         agent = session.get(AgentRegistry, run.agent_id)
         data["agent"] = {"name": agent.name, "kind": agent.kind} if agent else None
+        # 宿主通道溯源面：执行通道标识＋领取/回执两时刻（桌面端据此展示
+        # 「本次 run 是宿主执行的、谁在何时领走、何时回执」）。只透出可公开
+        # 的面——host_token_hash 是领取令牌哈希（鉴权凭据派生），**不外发**。
+        data["execution_provider"] = run.execution_provider
+        data["host_claimed_at"] = run.host_claimed_at.isoformat() if run.host_claimed_at else None
+        data["host_receipt_at"] = run.host_receipt_at.isoformat() if run.host_receipt_at else None
         data["artifacts"] = [
             {
                 "id": artifact.id,

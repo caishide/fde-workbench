@@ -228,3 +228,33 @@ def test_adopt_route_not_in_catalog():
     paths = [row["path"] for row in CATALOG.values()]
     assert not any("adopt-solution" in path for path in paths)
     assert not any("adopt-solution" in key for key in CATALOG)
+
+
+def test_run_detail_exposes_host_channel_provenance(client, db_session, settings):
+    """run 详情透出宿主通道溯源面；领取令牌哈希**不外泄**。
+
+    桌面端要展示「本次 run 是宿主执行的、何时领走、何时回执」，需要
+    ``execution_provider``／``host_claimed_at``／``host_receipt_at`` 三个
+    字段；``host_token_hash`` 是领取令牌的哈希（鉴权凭据派生）⇒ 绝不外发。
+    """
+    from datetime import datetime, timezone
+
+    _admin, _viewer, _project, run, _artifact = _seed_bundle(db_session, settings)
+    run.execution_provider = "host_poll"
+    run.host_token_hash = "a" * 64
+    run.host_claimed_at = datetime(2026, 11, 13, 9, 47, 2, tzinfo=timezone.utc)
+    run.host_receipt_at = datetime(2026, 11, 13, 9, 50, 7, tzinfo=timezone.utc)
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/agents/runs/{run.id}",
+        headers=_headers(settings, _admin),
+    )
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["execution_provider"] == "host_poll"
+    assert data["host_claimed_at"].startswith("2026-11-13")
+    assert data["host_receipt_at"].startswith("2026-11-13")
+    # 领取令牌哈希不得出现在任何响应面
+    assert "host_token_hash" not in data
+    assert "a" * 64 not in response.get_data(as_text=True)
