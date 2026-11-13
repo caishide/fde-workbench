@@ -157,6 +157,47 @@ def test_content_path_traversal_rejected(content_env, db_session) -> None:
     assert response.get_json()["error"]["code"] == "artifact_content_path_unsafe"
 
 
+def test_content_host_poll_prefixed_ref_readable_on_bare_metal(content_env, db_session) -> None:
+    """host_poll 回执产物（host: 前缀指针）在裸跑态可读——剥前缀同套校验。
+
+    N3c 拍板「宿主裸跑态全量可用」对 host: 形状同样成立：服务端与宿主同机，
+    剥 host: 后与容器形状 {run_id}/output/{path} 同构。防穿越语义不变：
+    host: + ../ 逃逸与 host: + 绝对路径仍 404 path_unsafe。
+    """
+    admin, _viewer, _project, run, artifact, content = _seed_bundle(
+        content_env["db_session"], content_env["settings"], content_env["tmp_path"]
+    )
+    session = content_env["db_session"]
+    # ①裸跑态回执真实形状：host:{run_id}/output/{path} ⇒ 200 可读（sha256 自证）
+    artifact.storage_ref = f"host:{artifact.storage_ref}"
+    session.commit()
+    response = _get(content_env, admin, run, artifact)
+    assert response.status_code == 200, response.get_json()
+    data = response.get_json()["data"]
+    assert base64.b64decode(data["content_base64"]) == content
+    assert data["storage_ref"].startswith("host:")  # 响应回显库行原指针
+    # ②host: 形状的穿越逃逸仍拒绝（前缀剥离不放松安全语义）
+    artifact.storage_ref = f"host:{run.id}/output/../../secret.md"
+    session.commit()
+    response = _get(content_env, admin, run, artifact)
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "artifact_content_path_unsafe"
+    # ③host: + 绝对路径仍拒绝
+    artifact.storage_ref = "host:/etc/passwd"
+    session.commit()
+    response = _get(content_env, admin, run, artifact)
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "artifact_content_path_unsafe"
+    # ④指纹不符 fail-closed 对 host: 形状同尺
+    target = content_env["tmp_path"] / "platform" / f"{run.id}/output/report.md"
+    target.write_bytes("# 被人改过的原件".encode("utf-8"))
+    artifact.storage_ref = f"host:{run.id}/output/report.md"
+    session.commit()
+    response = _get(content_env, admin, run, artifact)
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "artifact_content_fingerprint_mismatch"
+
+
 def test_content_fingerprint_mismatch_fail_closed(content_env, db_session) -> None:
     admin, _viewer, _project, run, artifact, _content = _seed_bundle(
         content_env["db_session"], content_env["settings"], content_env["tmp_path"]
