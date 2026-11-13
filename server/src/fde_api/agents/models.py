@@ -152,6 +152,12 @@ class AgentRun(Base, TimestampMixin):
     workspace_ref: Mapped[str | None] = mapped_column(String(255))
     resume_session_ref: Mapped[str | None] = mapped_column(String(120))
     policy_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    # 发起时刻 run 白名单快照（goal-sprint r2 吸收 goal-crv QR-089，迁移
+    # c8e2a6f0b9d4）：start_run 三重交集（声明 ∖ 平台 deny ∖ 能力不可行）
+    # 的冻结落点——「允许名单随 run 冻结」（_execute_run docstring 既有承诺）
+    # 的结构化真身；宿主领取载荷读本列而非 registry 实时值。可空：旧行
+    # NULL ⇒ 领取面回落 registry 读（行为兼容），新行一律落快照。
+    frozen_tools: Mapped[list[Any] | None] = mapped_column(JSON)
 
 
 class AgentArtifact(Base, TimestampMixin):

@@ -230,6 +230,9 @@ class Settings(BaseSettings):
     agent_host_zcode_bin: str = ""
     # zcode.cjs 全路径（相对安装根 resources/glm/zcode.cjs；宿主通道 spawn 段）
     agent_host_zcode_cjs: str = ""
+    # zcode CLI 配置文件路径（N2 事实② defaultModelSelection 键校验用；
+    # 空 = 缺省 ~/.zcode/cli/config.json——goal-sprint r2，2026-11-13）
+    agent_host_zcode_cli_config: str = ""
     # P2′① 宿主轮询领取（§11.3 六条约束，迁移 f6d3a9c1e7b2；2026-11-08）：
     # 开启后 kind=zcode 的 run 发起时落 queued + execution_provider=host_poll
     # 即返回（HTTP 不阻塞），由宿主代理轮询领取（POST /agents/host/claim）→

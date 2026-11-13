@@ -8,6 +8,7 @@ G9b 真机实测需要在任务书头部补 manifest 回执契约行（B#2 形�
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fde_api.agents.context import SANDBOX_AGENT_DISCIPLINE
@@ -18,6 +19,24 @@ _DISCIPLINE_FILE = "AGENTS.md"
 _OUTPUT_DIR = "output"
 _MANIFEST_FILE = "manifest.json"
 _RUN_HEADER_LIMIT = 400  # 任务书正文上限（上下文本体在 context.md）；G9 起含 manifest 回执契约行
+
+# QR-073（goal-crv r5，2026-11-13 吸收进 goal-sprint r2）：产物路径越界
+# 三形态族——盘符（`D:\…`／`D:/…`）、反斜杠分隔（`a\b`）、根锚（`\…`）。
+# 原「`/` 前缀 + `..` 部件」判定放行上述形态：宿主回执面可把任意宿主文件
+# （含真相层路径）伪装成 output/ 相对产物登记指纹——证据完整性污染。
+# 产物 path 语义恒为 POSIX 相对 output/ 文件名：含盘符/反斜杠一律 unsafe。
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+
+
+def is_unsafe_artifact_path(path: str) -> bool:
+    """产物路径越界判定（容器 ``_finalize`` 与宿主回执校验共用单一真身）。"""
+    return (
+        path.startswith("/")
+        or path.startswith("\\")
+        or "\\" in path
+        or ".." in Path(path).parts
+        or _WINDOWS_DRIVE_PREFIX.match(path) is not None
+    )
 
 
 def _write_workspace(workspace: Path, *, context_text: str, project_code: str, capability: str) -> None:

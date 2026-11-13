@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -152,11 +154,27 @@ class _NoArtifactScanner:
         return []
 
 
+# N2 前置校验注入（goal-sprint r2）：宿主通道走真 run_host_channel——临时
+# CLI 配置让 spawn 前置校验确定性放行；provider 覆盖开关不进单测 env。
+_CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
+_CLI_CONFIG_PATH.write_text(
+    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    encoding="utf-8",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clean_provider_switch_env(monkeypatch):
+    monkeypatch.delenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE", raising=False)
+
+
 def _host_settings(base, **overrides):
     payload = {
         "agent_host_channel_enabled": True,
         "agent_host_zcode_bin": "C:/zcode/ZCode.exe",
         "agent_host_zcode_cjs": "C:/zcode/resources/glm/zcode.cjs",
+        "agent_host_zcode_cli_config": str(_CLI_CONFIG_PATH),
     }
     payload.update(overrides)
     return base.model_copy(update=payload)

@@ -8,13 +8,15 @@ HTTP 面跑 1 例烟测（路由→service 接线 + 错误投影）。
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from fde_api.agents import service as svc
-from fde_api.agents.models import AgentArtifact, AgentRun
-from sqlalchemy import select
+from fde_api.agents.models import AgentArtifact, AgentRegistry, AgentRun
+from sqlalchemy import select, text
 
 from pydantic import SecretStr
 
@@ -275,6 +277,133 @@ def test_receipt_failure_details_not_fatal(db_session, poll_settings):
     assert out["status"] == "completed"  # 终态不被校验失败劫持
     reasons = {r for item in out["failures"] for r in item["reasons"]}
     assert "unsafe_path" in reasons and "missing_source_refs" in reasons and "sha256_missing_in_receipt" in reasons
+
+
+# ---------------------------------------------------------------------------
+# goal-sprint r2 吸收钉（goal-crv QR-088 / QR-089 / QR-073）
+# ---------------------------------------------------------------------------
+
+
+def test_claim_run_id_revalidates_after_rival_commit(db_session, poll_settings):
+    """QR-088：带 run_id 领取取行锁——rival 代理已提交领取（host_running+异
+    token）时，后来者等锁后**重读最新状态**判 403 host_claim_conflict，绝不
+    覆写劫持（无锁实现：快照停在 queued ⇒ 无条件赋值覆写 rival 的 token ⇒
+    双代理同时执行同一 run）。"""
+    rival_hash = svc._host_poll_token_hash("rival-proxy-token")
+    run = _seed_host_run(db_session, poll_settings)
+    holder = db_session.get_bind().connect()
+    tx = holder.begin()
+    # rival 领取（未提交）：模拟与后来者并发的另一代理
+    holder.execute(
+        text(
+            "UPDATE agent_runs SET status = 'host_running', host_token_hash = :h,"
+            " host_claimed_at = now() WHERE id = :id"
+        ),
+        {"h": rival_hash, "id": run.id},
+    )
+    outcome: dict = {}
+
+    def claimer():
+        # Flask-SQLAlchemy 的 scoped session 按线程取上下文——领取线程须自带
+        # app context（主线程 fixture 的上下文不跨线程）。
+        from fde_api.app import create_app
+
+        with create_app(poll_settings).app_context():
+            try:
+                outcome["payload"] = svc.claim_host_run(presented_token=TOKEN, run_id=run.id)
+            except Exception as error:  # noqa: BLE001 - 线程边界收集
+                outcome["error"] = error
+
+    worker = threading.Thread(target=claimer)
+    worker.start()
+    time.sleep(0.5)  # 让后来者先落到锁等待点（无锁实现则已拿到 queued 快照）
+    tx.commit()  # rival 领取生效
+    holder.close()
+    worker.join(timeout=15)
+    assert isinstance(outcome.get("error"), svc.AgentsServiceError), outcome
+    assert outcome["error"].code == "host_claim_conflict"
+    db_session.expire_all()
+    row = db_session.get(AgentRun, run.id)
+    assert row.status == "host_running"
+    assert row.host_token_hash == rival_hash  # rival 所有权未被覆写
+
+
+def test_claim_run_id_conflict_after_other_token_claim(db_session, poll_settings, monkeypatch):
+    """QR-088 邻面：run_id 路径同样走「已领取 + 异 token ⇒ 403」判定
+    （行锁等锁后按最新状态判定——不同时代理不抢别人手里的活）。"""
+    from pydantic import SecretStr
+
+    run = _seed_host_run(db_session, poll_settings)
+    svc.claim_host_run(presented_token=TOKEN)  # FIFO 领取（同 token）
+    other = poll_settings.model_copy(update={"agent_host_poll_token": SecretStr("other-proxy-token")})
+    monkeypatch.setattr(svc, "_settings", lambda: other)
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        svc.claim_host_run(presented_token="other-proxy-token", run_id=run.id)
+    assert ei.value.code == "host_claim_conflict"
+
+
+def test_claim_payload_uses_frozen_tools_snapshot(db_session, poll_settings):
+    """QR-089：领取载荷读发起时刻快照——发起后 registry 名单变更不进领取面。"""
+    run = _seed_host_run(db_session, poll_settings)
+    run.frozen_tools = ["fs_read", "code_search"]  # 模拟 start_run 发起时刻快照
+    agent = db_session.get(AgentRegistry, run.agent_id)
+    agent.allowed_tools = ["fs_read", "code_search", "http_post"]
+    db_session.commit()
+    payload = svc.claim_host_run(presented_token=TOKEN, run_id=run.id)
+    assert payload["allowed_tools"] == ["fs_read", "code_search"]
+
+
+def test_claim_payload_falls_back_to_registry_without_snapshot(db_session, poll_settings):
+    """旧行兼容：frozen_tools NULL（迁移 c8e2a6f0b9d4 前落库）⇒ 回落 registry 读。"""
+    run = _seed_host_run(db_session, poll_settings)
+    assert run.frozen_tools is None
+    payload = svc.claim_host_run(presented_token=TOKEN, run_id=run.id)
+    agent = db_session.get(AgentRegistry, run.agent_id)
+    assert payload["allowed_tools"] == list(agent.allowed_tools)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["D:\\abs\\secret.md", "C:/abs/x.md", "\\rooted.md", "a\\b.md", "D:\\test\\FDE\\truth.md"],
+)
+def test_receipt_windows_form_paths_never_register_rows(db_session, poll_settings, bad):
+    """QR-073：盘符/反斜杠/根锚三形态 = unsafe_path——failures 留痕且零产物行
+    （宿主自报 path 是不可信面，防任意宿主文件伪装产物污染证据链）。"""
+    run = _seed_host_run(db_session, poll_settings)
+    svc.claim_host_run(presented_token=TOKEN)
+    arts = [{"path": bad, "kind": "doc", "source_refs": ["t"], "sha256": "a" * 64}]
+    out = svc.submit_host_receipt(presented_token=TOKEN, run_id=run.id, payload=_receipt_payload(artifacts=arts))
+    assert out["status"] == "completed"
+    assert any("unsafe_path" in item["reasons"] for item in out["failures"])
+    db_session.expire_all()
+    assert db_session.scalars(select(AgentArtifact).where(AgentArtifact.run_id == run.id)).all() == []
+
+
+def test_start_run_persists_frozen_tools_snapshot(db_session, poll_settings):
+    """QR-089 上游半边：host_poll 受理（202）时发起时刻三重交集快照落 run 行。"""
+    import uuid as _uuid
+
+    from fde_api.app import create_app
+    from test_agents_d4_harness import ApiClient, issue_access_token, make_user, seed_agent
+    from test_document_drafts_api import _persist_project
+
+    app = create_app(poll_settings)
+    app.config.update(TESTING=True)
+    user = make_user(db_session, "project_lead")
+    token = issue_access_token(user, poll_settings)
+    client = ApiClient(app.test_client(), user, {"Authorization": f"Bearer {token}"})
+    project = _persist_project(db_session, user, code=f"FT{_uuid.uuid4().hex[:6].upper()}")
+    agent = seed_agent(db_session, poll_settings)
+    body = client.post(
+        f"/api/v1/agents/{agent.id}/run",
+        json={"project_id": project.id, "idempotency_key": f"ft-{_uuid.uuid4().hex[:8]}"},
+    )
+    assert body.status_code == 202, body.json
+    assert body.json["data"]["execution_provider"] == "host_poll"
+    db_session.expire_all()
+    row = db_session.scalar(select(AgentRun).where(AgentRun.project_id == project.id))
+    assert row is not None and row.status == "queued"
+    assert row.frozen_tools is not None and len(row.frozen_tools) >= 1
 
 
 # ---------------------------------------------------------------------------
