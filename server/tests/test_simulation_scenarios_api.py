@@ -316,3 +316,79 @@ def test_scenario_write_is_audited_as_operation_event(operator, db_session):
     assert events[0].event_type == "simulation_scenario_created"
     # 模拟对象不属于任何真实项目
     assert events[0].project_id is None
+
+
+def test_status_only_toggle_updates_in_place_without_bumping_version(operator, db_session):
+    created = operator.post(
+        "/api/v1/simulation/scenarios", json=_case_payload("CASE-STATUS-IN-PLACE")
+    ).get_json()["data"]
+    assert created["version"] == 1
+    assert created["status"] == "draft"
+
+    enabled = operator.patch(
+        f"/api/v1/simulation/scenarios/{created['id']}",
+        json={"status": "active"},
+    )
+    assert enabled.status_code == 200
+    enabled_data = enabled.get_json()["data"]
+    assert enabled_data["id"] == created["id"]
+    assert enabled_data["version"] == 1
+    assert enabled_data["status"] == "active"
+
+    disabled = operator.patch(
+        f"/api/v1/simulation/scenarios/{created['id']}",
+        json={"status": "draft"},
+    )
+    assert disabled.status_code == 200
+    disabled_data = disabled.get_json()["data"]
+    assert disabled_data["id"] == created["id"]
+    assert disabled_data["version"] == 1
+    assert disabled_data["status"] == "draft"
+
+    versions = operator.get(
+        f"/api/v1/simulation/scenarios/{created['id']}/versions"
+    ).get_json()["data"]["items"]
+    assert [item["version"] for item in versions] == [1]
+
+    db_session.rollback()
+    events = list(
+        db_session.scalars(
+            select(OperationEvent).where(
+                OperationEvent.target_type == "simulation_scenario",
+                OperationEvent.target_id == created["id"],
+                OperationEvent.event_type == "simulation_scenario_status_changed",
+            )
+        )
+    )
+    assert len(events) == 2
+    assert {e.changes["status"] for e in events} == {"active", "draft"}
+
+
+def test_status_only_toggle_rejects_stale_historical_version(operator):
+    v1 = operator.post(
+        "/api/v1/simulation/scenarios", json=_case_payload("CASE-STATUS-STALE")
+    ).get_json()["data"]
+    v2 = operator.patch(
+        f"/api/v1/simulation/scenarios/{v1['id']}",
+        json={"name": "测试案例 v2"},
+    ).get_json()["data"]
+    assert v2["version"] == 2
+
+    stale_toggle = operator.patch(
+        f"/api/v1/simulation/scenarios/{v1['id']}",
+        json={"status": "active"},
+    )
+    assert stale_toggle.status_code == 409
+    assert stale_toggle.get_json()["error"]["code"] == "conflict"
+
+
+def test_patch_invalid_status_is_rejected(operator):
+    created = operator.post(
+        "/api/v1/simulation/scenarios", json=_case_payload("CASE-STATUS-BAD")
+    ).get_json()["data"]
+    resp = operator.patch(
+        f"/api/v1/simulation/scenarios/{created['id']}",
+        json={"status": "bogus"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "invalid_request"

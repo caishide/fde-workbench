@@ -86,16 +86,33 @@ def _http(method: str, url: str, *, token: str, body: dict | None = None):
 
 
 def _resolve_active_scenario(base: str, token: str, scenario_key: str) -> dict:
+    """解析某业务键的**当前有效** active 场景（默认 normal 分支优先）。
+
+    走默认有效版本投影（include_history=false + q={scenario_key}），不走
+    include_history=true——否则历史版本链里残留的旧 active 行会被升序遍历先捞到，
+    绕过当前有效版本的真实状态与内容快照。
+    """
+    from urllib.parse import quote
+
     status, resp = _http(
-        "GET", f"{base}/simulation/scenarios?include_history=true&limit=200", token=token
+        "GET",
+        f"{base}/simulation/scenarios?q={quote(scenario_key, safe='')}&limit=200",
+        token=token,
     )
     if status != 200:
         raise SystemExit(f"场景列表失败 http={status}")
     rows = (resp.get("data") or {}).get("items") or []
-    for row in rows:
-        if row.get("scenario_key") == scenario_key and row.get("status") == "active":
+    matched = [
+        row
+        for row in rows
+        if row.get("scenario_key") == scenario_key and row.get("status") == "active"
+    ]
+    if not matched:
+        raise SystemExit(f"场景无 active 有效版本：{scenario_key}")
+    for row in matched:
+        if row.get("variant") == "normal":
             return row
-    raise SystemExit(f"场景无 active 版本：{scenario_key}")
+    return matched[0]
 
 
 def _run_once(base: str, token: str, scenario: dict, *, adapter: str, seed: int) -> dict:

@@ -221,10 +221,14 @@ export function ScenarioLibrary(): ReactElement {
     try {
       const updated = await updateScenario(apiRequest, scenario.id, { status: next })
       await load()
+      const filterHint =
+        status && status !== next
+          ? `当前正在按「${STATUS_LABEL[status]}」筛选，该行已移入「${STATUS_LABEL[next]}」视图（切到「全部状态」即可查看）。`
+          : ""
       setActionError(
         next === "active"
-          ? `已启用「${updated.name}」（追加新版本 v${updated.version}，历史版本保持不可变）。`
-          : `已停用「${updated.name}」（追加新版本 v${updated.version}，历史版本保持不可变）。`,
+          ? `已启用「${updated.name}」（版本 v${updated.version} 保持不变）。${filterHint}`
+          : `已停用「${updated.name}」（版本 v${updated.version} 保持不变）。${filterHint}`,
       )
     } catch (caught) {
       setActionError(errorText(caught))
@@ -237,7 +241,7 @@ export function ScenarioLibrary(): ReactElement {
         <div>
           <h2>案例库</h2>
           <p className="simulation-hint">
-            共 {total} 个案例分支。编辑、批量导入与启用/停用都会追加新版本，历史版本保持不可变。
+            共 {total} 个案例分支。编辑案例内容会追加不可变新版本；启用/停用仅切换当前版本状态，不增加版本号。
           </p>
         </div>
         <div className="simulation-actions">
@@ -352,8 +356,10 @@ export function ScenarioLibrary(): ReactElement {
             </tr>
           </thead>
           <tbody>
-            {items.map((scenario) => (
-              <tr key={scenario.id}>
+            {items.map((scenario) => {
+              const branchKey = `${scenario.scenario_key}:${scenario.variant}`
+              return (
+              <tr key={branchKey} data-scenario-branch={branchKey}>
                 <td>
                   <div className="simulation-case-name">{scenario.name}</div>
                   <code className="simulation-case-key">{scenario.scenario_key}</code>
@@ -369,7 +375,7 @@ export function ScenarioLibrary(): ReactElement {
                   {scenario.status !== "archived" ? (
                     <AsyncButton
                       compact
-                      actionKey={`status-${scenario.id}`}
+                      actionKey={`scenario-status-in-place-${branchKey}`}
                       onRun={async () => {
                         await handleSetStatus(scenario)
                       }}
@@ -391,7 +397,7 @@ export function ScenarioLibrary(): ReactElement {
                   </UiButton>
                   <AsyncButton
                     compact
-                    actionKey={`archive-${scenario.id}`}
+                    actionKey={`archive-${branchKey}`}
                     onRun={async () => {
                       await handleArchive(scenario)
                     }}
@@ -400,7 +406,8 @@ export function ScenarioLibrary(): ReactElement {
                   </AsyncButton>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       ) : null}

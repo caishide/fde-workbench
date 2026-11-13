@@ -265,28 +265,56 @@ it("导入部分失败时逐条回显失败详情", async () => {
 })
 
 // ---------------------------------------------------------------------------
-// 行内启用/停用（激活的界面化：PATCH status 追加不可变新版本）
+// 行内启用/停用（原地切换当前有效版本状态，不增加版本号）
 // ---------------------------------------------------------------------------
 
-it("草稿行显示「启用」，点击走 PATCH status=active", async () => {
+it("草稿行显示「启用」，点击走 PATCH status=active 且版本号保持不变", async () => {
   mocks.apiRequest.mockImplementation((_path: string, options: { method: string }) => {
     if (options.method === "PATCH") {
-      return Promise.resolve(scenario({ status: "active", version: 2 }))
+      return Promise.resolve(scenario({ status: "active", version: 1 }))
     }
-    return Promise.resolve(listDto([scenario({ status: "draft" })]))
+    return Promise.resolve(listDto([scenario({ status: "draft", version: 1 })]))
   })
   const user = userEvent.setup()
 
   render(<ScenarioLibrary />)
   const table = await screen.findByRole("table")
   const row = within(table).getByText("汽车零部件质量追溯").closest("tr") as HTMLElement
+  expect(row).toHaveAttribute("data-scenario-branch", "CASE-A-QUALITY-TRACE:normal")
   await user.click(within(row).getByRole("button", { name: "启用" }))
 
-  expect(await screen.findByRole("status")).toHaveTextContent("已启用「汽车零部件质量追溯」")
+  const notice = await screen.findByRole("status")
+  expect(notice).toHaveTextContent("已启用「汽车零部件质量追溯」（版本 v1 保持不变）。")
   const patch = mocks.apiRequest.mock.calls.find(([, options]) => options.method === "PATCH")
   expect(patch).toBeTruthy()
   const [, options] = patch as [string, { method: string; body?: unknown }]
   expect(options.body).toEqual({ status: "active" })
+})
+
+it("按「草稿」状态筛选时点击启用，回执明确提示已移入「启用」视图", async () => {
+  let currentStatus = "draft"
+  mocks.apiRequest.mockImplementation((path: string, options: { method: string }) => {
+    if (options.method === "PATCH") {
+      currentStatus = "active"
+      return Promise.resolve(scenario({ status: "active", version: 1 }))
+    }
+    if (String(path).includes("status=draft") && currentStatus !== "draft") {
+      return Promise.resolve(listDto([]))
+    }
+    return Promise.resolve(listDto([scenario({ status: currentStatus, version: 1 })]))
+  })
+  const user = userEvent.setup()
+
+  render(<ScenarioLibrary />)
+  await screen.findByRole("table")
+  await user.selectOptions(screen.getByLabelText("状态"), "draft")
+
+  const row = (await screen.findByText("汽车零部件质量追溯")).closest("tr") as HTMLElement
+  await user.click(within(row).getByRole("button", { name: "启用" }))
+
+  const notice = await screen.findByRole("status")
+  expect(notice).toHaveTextContent("版本 v1 保持不变")
+  expect(notice).toHaveTextContent("当前正在按「草稿」筛选，该行已移入「启用」视图")
 })
 
 it("启用行显示「停用」；已归档行无状态钮", async () => {

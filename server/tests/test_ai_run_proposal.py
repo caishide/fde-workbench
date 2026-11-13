@@ -67,7 +67,11 @@ def _run_count(db_session, model, key: str) -> int:
 
 
 def _events(db_session, identifier: str) -> list[OperationEvent]:
-    return db_session.scalars(select(OperationEvent).where(OperationEvent.target_id == identifier)).all()
+    return db_session.scalars(
+        select(OperationEvent)
+        .where(OperationEvent.target_id == identifier)
+        .order_by(OperationEvent.created_at)
+    ).all()
 
 
 # ---------------------------------------------------------------- 目录双钉
