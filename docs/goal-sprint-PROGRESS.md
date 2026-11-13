@@ -81,7 +81,8 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 - 测试：test_host_poll +6 例（参数化展开 10 项：rival 提交重读 403／frozen 快照／旧行回落／五形态路径零行×5／202 受理快照落库）、test_host_channel +5 例（参数化展开 10 项：preflight 正负例＋校验先于出站闸）；既有 host 三件套补 preflight 注入点（临时 CLI 配置＋env 开关清理）。
 - **变异五连全红→字节级还原→绿**（M1 去行锁／M2 快照退实时／M3 路径退旧判定／M4 模型键短路／M5 成对短路）。★教训：M1 首版判别力不足——持锁者**未提交**时无锁实现的 UPDATE 同样阻塞在行锁上，测试假绿；改「rival **提交**后等锁重读判 403」形态才杀灭（判别力本身要验收的家族教训再现）。
 - 验证：定向 155+ 例绿；ruff 绿；mypy **277/102 基线不变**；inventory 重提取（revision_count 73→74；路由 488/蓝图 52/表 153 不变）；防陈旧闸绿（图纸无迁移数声明，M4 纯迁移轮先例不重生 archify）；全量 pytest（见收口回执）。
-- 环境注记：sprint worktree 新建独立 `server/.venv`（xdist worker 全新解释器不带 `-c` 前导 sys.path，主 venv editable 指向主树——每工作树一份环境纪律）。
+- 环境注记：sprint worktree 新建独立 `server/.venv`（xdist worker 全新解释器不带 `-c` 前导 sys.path，主 venv editable 指向主树——每工作树一份环境纪律）。★教训：venv 必须按 CI 配方 `pip install -r requirements.lock -e ".[test,dev]"` 安装——裸 `pip install -e` 拉到 SQLAlchemy 2.1.8/新 pydantic，mypy 基线检查假红 9 条（全在未触碰文件）；且 `scripts/check-python-types.py` **优先用树内 server/.venv**（存在即用），同一命令在树内有/无 venv 时走不同解释器。
+- ★CI 首轮红例与修复（run 43337413266 server-tests 1 failed）：`test_agent_execution_grant_wiring.py::test_host_channel_run_records_authorization_fingerprint`——该测试的 `_host_settings` 未带 `agent_host_zcode_cli_config`，CI（无 ~/.zcode/cli/config.json）撞本轮新增 spawn 前置校验 ⇒ run 落 L2 而非 completed。修复＝与 test_host_channel_service 同款注入（`c6a060f`）；全仓 `agent_host_zcode_bin` 构造点闭集复扫＝2 处均已注入。★教训：新增机械闸后，测试面的构造点闭集扫描要按 **settings 键名**（`agent_host_zcode_bin`）而非类名（`HostChannelSettings(`）——前者抓到了后者漏掉的 service 级构造点。
 
 ### r2 收口回执
 
