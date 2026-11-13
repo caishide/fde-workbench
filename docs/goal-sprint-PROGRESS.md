@@ -84,6 +84,10 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 - 环境注记：sprint worktree 新建独立 `server/.venv`（xdist worker 全新解释器不带 `-c` 前导 sys.path，主 venv editable 指向主树——每工作树一份环境纪律）。★教训：venv 必须按 CI 配方 `pip install -r requirements.lock -e ".[test,dev]"` 安装——裸 `pip install -e` 拉到 SQLAlchemy 2.1.8/新 pydantic，mypy 基线检查假红 9 条（全在未触碰文件）；且 `scripts/check-python-types.py` **优先用树内 server/.venv**（存在即用），同一命令在树内有/无 venv 时走不同解释器。
 - ★CI 首轮红例与修复（run 43337413266 server-tests 1 failed）：`test_agent_execution_grant_wiring.py::test_host_channel_run_records_authorization_fingerprint`——该测试的 `_host_settings` 未带 `agent_host_zcode_cli_config`，CI（无 ~/.zcode/cli/config.json）撞本轮新增 spawn 前置校验 ⇒ run 落 L2 而非 completed。修复＝与 test_host_channel_service 同款注入（`c6a060f`）；全仓 `agent_host_zcode_bin` 构造点闭集复扫＝2 处均已注入。★教训：新增机械闸后，测试面的构造点闭集扫描要按 **settings 键名**（`agent_host_zcode_bin`）而非类名（`HostChannelSettings(`）——前者抓到了后者漏掉的 service 级构造点。
 
-### r2 收口回执
+### r2 收口回执（2026-11-13）
 
-（CI/合并后回填）
+- PR **#422** squash 合并 **`3dc07fe`**；PR CI 两轮（首轮 server-tests 1 红＝授权票据测试缺 preflight 注入点，`c6a060f` 修复）⇒ tip run **43340038319** 四 job 全绿（desktop/server-tests/secrets-scan/pseudonymization；另一同 sha run 43340030857 亦四绿）。合并树权威 main run **43342235002** 被并发合并取消（家族行为）⇒ 以 tip run **43343183487**（`979eeed`＝`3dc07fe`＋docs-only #423）为 superset 权威。
+- main 追平：`git fetch fork main:main`（并发线 #418/#420/#421/#423 四 PR 插队窗口内落地）；`goal-sprint-r2` 远端已删、本地分支在 r3 分支建后删除；合并树 CHANGELOG 结构终扫零丢失（我方 r2 节＋节体逐字在场；插队方本就无 CHANGELOG 节）。
+- 活体部署三验全绿（从本树 `-p fde-workbench` 接管）：**alembic 真实升级 `b5d9e2f4a7c1 → c8e2a6f0b9d4 (head)`**（frozen_tools 列上活库）／url_map **488** non-static ＝ 口径／三镜像逐位一致 api `33eff9e990a7`／worker `36c3e692e176`／scheduler `b949caac6a02`／ready 200。★部署配方坑：worktree 部署必须 `docker compose -p fde-workbench build/up`（不带 `-p` 落目录名项目，撞活体 8010 端口Bind 失败＋镜像 tag 错项目——首次 up 失败即发现，`-p fde-wt-sprint down` 清场后正名重build 接管）。
+- 本地全量 pytest（lock 对齐前 sqlalchemy 2.1.8 环境）：3530 收集＝3527 passed＋8 skipped 内含 3 迁移口径钉红（`HEAD_REVISION` 常量＋`known==73` 双钉漏同步，当场修复复绿——新增迁移必同步两处口径钉入教训）＋1 zcode teardown 环境 ERROR（复跑绿）；CI 锁定环境为权威。mypy **277/102 基线不变**（lock 对齐 venv 复核；裸装 2.1.8 时假红 9 条已甄别为环境漂移）。
+- r2 遗留移交 r3：宿主代理进程本体（轮询循环→spawn zcode→回执）；`adapter_missing` 解除回执落台账 §12（①实装＋N2 签核两项已齐，待 r3 真机验收）；crv 台账已 134 行（#423 r8 出 P1×2 迁移存储域）——r3 开工吸收扫描按新台账重扫。
