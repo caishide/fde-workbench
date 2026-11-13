@@ -131,4 +131,15 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 
 - [x] 台账 §12 `adapter_missing` 解除回执＋§4 P2-b 行收口＋§3 E10 解锁判定落记录
 - [x] backlog T-Z1 状态行更新＋CHANGELOG r3 节＋AGENTS bullet
-- [ ] rebase fork/main（#431/#432 插队窗，已 rebase 至 `a122f28`）→ 全量 pytest（本地 3596 passed + 7 skipped 绿）→ PR **#433** → CI 四绿 → squash 合并 → 部署三验（url_map **489**／alembic `c8e2a6f0b9d4` head 不变／三镜像逐位）→ 收口回执回填
+- [x] rebase fork/main（#431/#432 插队窗，已 rebase 至 `a122f28`）→ 全量 pytest（本地 3596 passed + 7 skipped 绿）→ PR **#433** → CI 四绿 → squash 合并 → 部署三验（url_map **489**／alembic `c8e2a6f0b9d4` head 不变／三镜像逐位）→ 收口回执回填（**收口回执见下节**）
+
+
+### r3 收口回执（2026-11-13，PR #433 合并＋活体部署三验）
+
+- **PR 与合并**：PR **#433**（`goal-sprint-r3`）→ **squash `93658650e74100b7916d373ec26104583cc3f58e`**（mergedAt 2026-11-13T08:29:15Z）＝fork/main 新顶。★**树哈希核对零漂移**：合并树 `0d7e9fb307c12ac4691909e463db96410422ec0a` ≡ 分支树（`git diff --stat` 空）。
+- **CI 四绿**：run **43390885851**（head `704772a`）——server-tests ✅（15m52s）／desktop ✅／secrets-scan ✅／pseudonymization ✅。★**旧 SHA 红行残留登记**：run 43390878726（head `1d2119a`）server-tests 1 红＝`tests/test_ai_run_proposal.py::test_workflows_confirm_runs_and_audits_end_to_end` 事件顺序 flake（实测 `ai.api.started` ≠ `ai.api.requested`），r3 diff **不含** `ai/` 域与该测试文件＝跨线观察登记，**不在本轮修**；权威＝head SHA 对应的 run（`gh pr checks` 仍显示旧 SHA 红行时以 head SHA 的 run 为准）。
+- **活体部署三验（全绿，从冲刺树 `D:\test\fde-wt-sprint` `docker compose -p fde-workbench build/up`）**：①活体 `url_map`＝**489**（non-static，≡ 本轮口径）；②容器内 `alembic current`＝**`c8e2a6f0b9d4 (head)`**、`alembic heads` 同（迁移头不变，本轮零迁移）；③三镜像 ID 与**本工作树构建产物**逐位一致——api `887c1f46f30f`／worker `e08c0cbaae70`／scheduler `f9356fbc6620`（容器 `.Image` 与 `docker images` 同 tag ID 归一后比对；短/长 ID 与 `sha256:` 前缀形式差异不作不符）。附：三容器 healthy、ready 200、live 200。
+- **★部署配置保全与拓扑登记（本轮自查发现并当场还原）**：冲刺树 `server/.env` 相对主树缺 6 键（`FDE_AGENT_HOST_CHANNEL_ENABLED`／`FDE_AGENT_HOST_POLL_ENABLED`／`FDE_AGENT_HOST_POLL_TOKEN`／`FDE_AGENT_HOST_ZCODE_BIN`／`FDE_AGENT_HOST_ZCODE_CJS`／`FDE_AGENT_WORKSPACE_ROOT`）⇒ 先抄入保全（`.env` 被 gitignore 忽略，不进 VCS）。抄入后实测发现**把「宿主裸跑态（路线 B）」取值带进了「容器态（路线 A）」**：容器拿到 Windows 工作区根 `D:/test/agent-workspaces`＋host_poll 开关/令牌；而并发线《宿主代理裸跑部署runbook》明写「路线 A 的工作区在容器内、**host_poll 只能在路线 B 裸跑态使用**」⇒ 已在部署树**还原**（工作区根回 `/app/.fde-storage/agent-workspaces`＋移除 POLL 两键）→ recreate 后 env 逐项对平＝与部署前活体一致（**活体零行为漂移**）。**遗留登记（不裁决）**：容器态与裸跑态共用一份 `.env` 的长期解（compose `environment:` 覆写容器态工作区根，仿既有 `FDE_DATABASE_URL`／`FDE_REDIS_URL` 覆写模式）属并发线宿主通道部署拓扑域。
+- **⑦闸留授权**：活体容器 env **无** `FDE_AGENT_HOST_EGRESS_GATE_ENABLED`／`FDE_AGENT_HOST_EGRESS_ALLOWLIST`（主树与冲刺树 `.env` 均无此二键）⇒ 本轮**不代拍重开**（闸不代拍），缺口记此留授权；r3 真机验收的闸腿走的是**部署态同款六域白名单的进程内闸**（工程级，非活体容器 env）。
+- **r3 收口条件全部达成**：台账 §12 `adapter_missing` 解除回执＋§4 P2-b 行收口＋§3 **E10 解锁判定成立**（条件触发、不排期）＋backlog T-Z1 全收口＋CHANGELOG r3 节＋AGENTS bullet。
+- **下一轮**：r4 D7 复审报告（D7 阈值归蔡工不预支）；N1 首个生产 run 仍待**蔡工亲手**发起（窗口 2026-11-19 止）。
