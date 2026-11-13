@@ -14,6 +14,7 @@ from test_agents_d4_harness import (
     api_client,
     seed_agent,
 )
+from fde_api.agents import zcode_contract as zc
 from fde_api.agents.adapter import AgentRunContext, ArtifactFile, ZcodeAdapter, spawn_argv
 from fde_api.agents.sandbox import SandboxError
 from fde_api.agents.service import list_agents
@@ -79,15 +80,18 @@ def test_spawn_listen_reclaim_completed_path() -> None:
     )
     result = _run(_ctx(), handle, events, scanner=FakeScanner([ArtifactFile(path="plan.md", kind="doc", source_refs=("src-1",))]))
 
-    # ① spawn：容器内 CLI 参数口径，凭据经 handle.exec（env 内存管道）
+    # ① spawn：goal-sprint r3 重划——虚构容器契约（run --task --events）已
+    # 删除，argv 委托 zcode_contract 唯一源；等价性钉：适配器与宿主通道
+    # （host_channel_argv → build_cli_argv）共享同一契约，两侧不得漂移。
     assert len(handle.execs) == 1
     credentials, command = handle.execs[0]
-    assert command == [
-        "zcode", "run", "--task", "/workspace/task.md",
-        "--output", "/workspace/output", "--events", "ndjson",
-    ]
+    assert command == zc.build_cli_argv(
+        prompt=zc.task_prompt("/tmp/ws"), cwd="/tmp/ws", cli_command="zcode"
+    )
+    assert "run" not in command  # T-Z1 勘误③：不存在 run 子命令（虚构契约清除钉）
+    assert "--json" in command and command[command.index("--cwd") + 1] == "/tmp/ws"
     assert credentials == {"FDE_AGENT_ZCODE_PROD": "zkey-1234567890"}
-    assert spawn_argv(cli_command="zcode", task_file="task.md", output_dir="output") == command
+    assert spawn_argv(cli_command="zcode", workspace="/tmp/ws") == command
     # ② 监听：成本与白名单判定
     assert result.token_cost == 40
     assert result.tool_calls[0].decision == "allowed"
@@ -142,6 +146,28 @@ def test_budget_circuit_keeps_cost_under_cap() -> None:
     result = _run(_ctx(max_cost_units=10), handle, events, clock=FakeClock(), sleeper=lambda _s: None)
     assert result.status == "budget_exceeded"
     assert result.token_cost == 5  # 5 + 10 > 10：第二条不应用
+    assert handle.kill_count == 1
+
+
+def test_done_is_terminal_within_batch_qr094() -> None:
+    """QR-094（goal-crv r5 发现，goal-sprint r3 吸收）：done 即终态。
+
+    同批尾随的越界 cost 不得翻转终态——修复前 done 分支无 break，同批
+    后续 cost 事件可把 completed 翻成 budget_exceeded ⇒ 产物被丢弃。
+    """
+    handle = FakeHandle()
+    events = ScriptedEvents(
+        [[{"type": "cost", "units": 5}, {"type": "done", "exit_code": 0}, {"type": "cost", "units": 999}]]
+    )
+    result = _run(
+        _ctx(max_cost_units=10),
+        handle,
+        events,
+        scanner=FakeScanner([ArtifactFile(path="plan.md", kind="doc", source_refs=("src-1",))]),
+    )
+    assert result.status == "completed"
+    assert result.token_cost == 5
+    assert len(result.artifacts) == 1 and result.artifacts[0].path == "plan.md"
     assert handle.kill_count == 1
 
 

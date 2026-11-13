@@ -339,3 +339,17 @@ def host_receipt(run_id):
         return _data(service.submit_host_receipt(presented_token=token, run_id=run_id, payload=_payload()))
     except service.AgentsServiceError as error:
         return _host_error_response(error)
+
+
+@agents_blueprint.get("/host/runs/<run_id>/context")
+def host_run_context(run_id):
+    """任务书面料读取（goal-sprint r3：宿主代理领取后 spawn 前取三件渲染产物）。"""
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    token = _host_token()
+    if not token:
+        return _host_error_response(service.AgentsServiceError("host_poll_token_missing", "缺少令牌。", 403))
+    try:
+        return _data(fetch_host_run_context(presented_token=token, run_id=run_id))
+    except service.AgentsServiceError as error:
+        return _host_error_response(error)

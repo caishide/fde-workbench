@@ -9,10 +9,18 @@
    解析行为未定义 ⇒ spawn 前显式失败（fail-closed，不带病起跑）。
 2. **默认模型选择键在场校验**：`-p` 无 `--model` 开关（会被当未知选项
    报错）；默认模型持久化在 `~/.zcode/cli/config.json` 的
-   `defaultModelSelection` 键（`{providerKey, modelId}`）。键缺失时 CLI
+   `defaultModelSelection` 键。键缺失时 CLI
    EXIT=1「Select a model before sending a message」⇒ 与其让进程死在
    半路零留痕，不如 spawn 前显式失败——**明确失败并留痕，不得静默重试**
    （N2 登记原话）。
+   ★字段名实测更正（goal-sprint r3 吸收，2026-11-13 09:35 真机实测，证据
+   同并发线 `fix/credential-script-win-compat` a95af5a 留痕）：zcode 0.17.1
+   schema 为 strict 模式，`defaultModelSelection = {providerId, modelId}`
+   ——**字段是 `providerId` 不是 `providerKey`**；写成 `providerKey` 会被
+   schema 校验拒绝并**丢弃整个键** ⇒ CLI 静默回退内置默认模型（把 modelId
+   改成不存在的值仍 EXIT=0 即证明配置根本未被读取）。r2 轮按 N2 检查单
+   原文校验 `providerKey` 属「对合法配置误拒」＋「对非法配置放行」双向
+   失真，本轮以实测 schema 为准。
 
 失败语义：抛 ``HostChannelError`` → 调用链既有映射（``_mark_l2`` + 503
 agent_unavailable，零 spawn 零计费）——失败原因留痕在 run 上，重试由人
@@ -87,5 +95,5 @@ def validate_default_model_selection(config_path: Path) -> None:
     selection = payload.get(MODEL_SELECTION_KEY)
     if not isinstance(selection, dict):
         raise _reject("键缺失或不是对象")
-    if not str(selection.get("providerKey", "")).strip() or not str(selection.get("modelId", "")).strip():
-        raise _reject("providerKey/modelId 缺失或为空")
+    if not str(selection.get("providerId", "")).strip() or not str(selection.get("modelId", "")).strip():
+        raise _reject("providerId/modelId 缺失或为空（实测字段名为 providerId，providerKey 会被 strict schema 丢弃）")

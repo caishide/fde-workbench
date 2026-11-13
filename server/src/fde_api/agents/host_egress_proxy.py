@@ -25,6 +25,14 @@
 子域）；大小写不敏感；裸 IP 不命中域名条目（如需放行必须显式列出 IP
 字面量）。匹配发生在 DNS 解析**之前**（先审域名再 connect，防绕行）。
 
+**回环豁免**（goal-sprint r3 真机验收 2026-11-13 实测补丁）：zcode 运行
+时有本地 broker 回环 IPC（实测 ``127.0.0.1:18787``），且其客户端无视
+``NO_PROXY`` 把回环 CONNECT 也推进代理——``proxy_env`` 声明的「回环直连」
+语义由闸侧补齐：回环目标 CONNECT 一律转发（审计类别
+``tunnel_loopback``，不参与白名单判定）。⑦ 闸管的是**出站互联网面**，
+回环 IPC 不出机器；明文 absolute-form 仍一律拒绝（实测回环走 CONNECT，
+未观测到回环明文面，不预设放宽）。
+
 与 zcode 的兼容前提（设计提请 §3 方案 A 前置实测）：zcode 网络栈尊重
 ``HTTPS_PROXY`` 环境变量——实测记录见设计提请实施注记；若实测不过则按
 提请退方案 B（OS 防火墙），本模块保持闸门语义不变。
@@ -49,6 +57,9 @@ _MAX_HEAD_BYTES = 16 * 1024
 # 头部读取/上游连接的 socket 超时（秒）。隧道建立后不设 idle 超时——
 # 流式响应与工具执行期的静默间隔可能远超分钟级，靠 run 生命周期兜底。
 _HEAD_TIMEOUT_SECONDS = 30.0
+
+# 回环豁免目标集（见模块 docstring「回环豁免」）：zcode 本地 broker IPC 面。
+_LOOPBACK_TARGETS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 class EgressGateError(RuntimeError):
@@ -86,7 +97,7 @@ class EgressAuditEntry:
     """单次出站判定（只记域名与端口，绝不记路径/内容）。"""
 
     ts: float
-    kind: str  # tunnel_allowed / tunnel_blocked / tunnel_upstream_error / plain_http_blocked
+    kind: str  # tunnel_allowed / tunnel_blocked / tunnel_loopback / tunnel_upstream_error / plain_http_blocked
     host: str
     port: int
 
@@ -120,10 +131,16 @@ class _EgressProxyHandler(socketserver.BaseRequestHandler):
             self._audit_and_respond("tunnel_blocked", target, 0, blocked=True)
             return
         host, port = authority[0], int(authority[1])
-        if not host_matches_allowlist(host, self.server.egress_allowlist):  # type: ignore[attr-defined]
+        candidate = host.strip().lower().rstrip(".")
+        if candidate.startswith("[") and candidate.endswith("]"):
+            candidate = candidate[1:-1]
+        if candidate in _LOOPBACK_TARGETS:
+            self._audit("tunnel_loopback", host, port)
+        elif not host_matches_allowlist(host, self.server.egress_allowlist):  # type: ignore[attr-defined]
             self._audit_and_respond("tunnel_blocked", host, port, blocked=True)
             return
-        self._audit("tunnel_allowed", host, port)
+        else:
+            self._audit("tunnel_allowed", host, port)
         try:
             upstream = socket.create_connection((host, port), timeout=_HEAD_TIMEOUT_SECONDS)
         except OSError:
@@ -276,7 +293,12 @@ class HostEgressGate:
         server.server_close()
 
     def proxy_env(self) -> dict[str, str]:
-        """spawn env 注入：代理指向自身，回环地址直连（NO_PROXY 防自环）。
+        """spawn env 注入：代理指向自身＋回环直连声明＋Node 24 代理开关。
+
+        ``NO_PROXY`` 是回环直连的**声明**（防代理自环）；goal-sprint r3 真机
+        验收实测 zcode 客户端**无视 no_proxy**（回环 CONNECT 仍推进代理）——
+        该语义由闸侧回环豁免兜底实现（见模块 docstring），此键仍保留：约束
+        守规矩的客户端，并为闸侧豁免提供口径依据。
 
         ``NODE_USE_ENV_PROXY=1`` 是 zcode 兼容前提的实测补件（2026-11-11
         四探针实录）：zcode 0.17.1（Electron 44 / 内嵌 Node 24.21）**默认

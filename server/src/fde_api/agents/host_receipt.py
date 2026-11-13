@@ -88,10 +88,18 @@ def submit_host_receipt(*, presented_token: str, run_id: str, payload: dict[str,
             )
 
     parsed = parse_json_summary(raw_summary)
-    exit_code = payload.get("exit_code") if isinstance(payload.get("exit_code"), int) else 0
+    # QR-095（goal-crv r5 发现，goal-sprint r3 吸收）：exit_code 缺失/坏类型
+    # 原缺省按 0＝「缺省即成功」——与容器面保守语义反向（宿主自报载荷是不
+    # 可信面）。收口：非 int 一律 None；completed 终态**必须** int 0 支撑，
+    # 缺失/非零的 completed 一律降 failed（fail-closed，人工按 failures
+    # 处置）；timeout/budget_exceeded/failed 显式态不受影响（与 dev 直连
+    # 同口径——timeout 路径 exit_code 本就为 None）。
+    exit_code = payload.get("exit_code") if isinstance(payload.get("exit_code"), int) else None
     host_status = payload.get("status")
     if host_status not in ("completed", "timeout", "budget_exceeded", "failed"):
         host_status = "completed" if exit_code == 0 else "failed"
+    elif host_status == "completed" and exit_code != 0:
+        host_status = "failed"
 
     artifacts: list[ArtifactFile] = []
     host_digests: dict[str, str] = {}

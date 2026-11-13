@@ -215,14 +215,15 @@ _NOW = datetime(2026, 1, 5, tzinfo=timezone.utc)
 def test_pilot_contract_unverified_warns_with_zero_runs(db_session, d4_settings) -> None:
     """架构评估 2026-11-07 D4：窗口激活但零真实完成 run → contract_unverified 警示。
 
-    ZcodeAdapter spawn 契约未经真机验证（售前方案 Q5/T-Z1）——spawn 失败全落
-    L2 会污染试点指标；警示只读呈现，不拦 run（pilot_capacity_error 不变）。
+    goal-sprint r3 换代：Q5「spawn 段契约须重写」已清偿（宿主代理本体＋
+    adapter 重划＋隔离环境真机验收），警示前提只剩「窗口内尚无真实
+    completed run」——指标解读边界不变；警示只读呈现，不拦 run。
     """
     settings, user, project, agent = _contract_world(db_session, d4_settings)
     status = pilot_status(db_session, settings, now=_NOW)
     assert status["active"] is True and status["runs_used"] == 0
     assert status["contract_unverified"] is True
-    assert status["warnings"] and "T-Z1" in status["warnings"][0]
+    assert status["warnings"] and "尚无真实完成的 run" in status["warnings"][0]
 
 
 def test_pilot_contract_warning_clears_after_real_completed_run(db_session, d4_settings) -> None:

@@ -26,7 +26,7 @@ from fde_api.agents import host_channel as hc
 # 临时 CLI 配置让前置校验确定性放行；provider 覆盖开关不进单测 env。
 _CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
 _CLI_CONFIG_PATH.write_text(
-    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    json.dumps({"defaultModelSelection": {"providerId": "prov", "modelId": "model-x"}}),
     encoding="utf-8",
 )
 

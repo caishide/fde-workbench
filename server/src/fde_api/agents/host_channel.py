@@ -155,13 +155,43 @@ def host_channel_argv(
     return [core_argv[0], cjs_path, *core_argv[1:]]
 
 
-def host_channel_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
-    """宿主进程 env：继承系统 env（PATH 等 node 运行时所需）+ 转 node 开关。
+# QR-092（goal-crv r5 发现，goal-sprint r3 吸收）：宿主进程 env **白名单
+# 继承**——原 `dict(os.environ)` 全量继承会把平台密钥族（FDE_DB_PASSWORD /
+# FDE_JWT_SECRET / FDE_BRIDGE_TOKEN 等）带进 zcode 子进程环境。白名单按
+# 「node 运行时 + Windows 系统定位 + zcode 自身发现面 + 代理透传」收窄
+# （键名大小写不敏感前缀匹配），并以拒绝清单兜底（含 `FDE_` / 密钥后缀
+# 语义的键即使命中允许前缀也剔除）。`ZCODE_` 前缀必须保留（provider 覆盖
+# 开关成对注入面，N2 事实①）；HTTP(S)_PROXY/NO_PROXY 保留系统代理透传
+# （⑦ 闸开启时 proxy_env 显式覆盖）。
+_HOST_ENV_PREFIX_ALLOW = (
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+    "TEMP", "TMP", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+    "PROGRAMW6432", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
+    "ALLUSERSPROFILE", "LANG", "LC_ALL", "TZ", "TERM",
+    "NODE_", "ELECTRON_", "ZCODE_",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+)
+# 拒绝清单（子串匹配，白名单命中后二次过滤）：平台密钥族 + 通用密钥语义
+# 后缀——防未来有人往允许前缀里加宽泛条目时密钥漏网。
+_HOST_ENV_DENY_MARKERS = ("FDE_", "TOKEN", "PASSWORD", "SECRET", "API_KEY", "PRIVATE_KEY")
 
-    平台凭据**绝不**进入 env（差异 3）：``extra`` 仅测试注入用，生产调用
-    不传。
+
+def host_channel_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """宿主进程 env：**白名单继承**系统 env + 转 node 开关（QR-092 收口）。
+
+    平台凭据**绝不**进入 env（差异 3）：继承面先过前缀允许集，再过拒绝
+    清单（`FDE_` / 密钥后缀子串一律剔除）；``extra`` 仅测试注入用（在
+    白名单之后合入，生产调用不传——注入面语义不变）。
     """
-    env = dict(os.environ)
+    env: dict[str, str] = {}
+    for key, value in os.environ.items():
+        upper = key.upper()
+        if not upper.startswith(_HOST_ENV_PREFIX_ALLOW):
+            continue
+        if any(marker in upper for marker in _HOST_ENV_DENY_MARKERS):
+            continue
+        env[key] = value
     env[ZCODE_CJS_ENV] = "1"
     if extra:
         env.update(extra)
@@ -182,13 +212,12 @@ def assert_host_workspace_allowed(workspace: str) -> None:
 
 
 def task_prompt(workspace: str) -> str:
-    """任务书文字面（工具白名单语义由任务书承载——模块 docstring 差异 2）。"""
-    task_path = f"{workspace}/task.md"
-    return (
-        "请阅读并执行当前工作区 task.md 中的任务书，产物一律写入 output/ 子目录；"
-        "任务书即完整需求与工具边界，超出任务书的动作一律不做。"
-        f"任务书路径：{task_path}"
-    )
+    """任务书文字面——**委托 ``zcode_contract.task_prompt``**（goal-sprint r3：
+
+    prompt 形状并入唯一契约源，adapter 重划面与宿主代理共用同一文字面；
+    本模块保留再导出，既有引用面（测试/服务层）不变。
+    """
+    return zc.task_prompt(workspace)
 
 
 def parse_host_summary(stdout_text: str) -> Mapping[str, Any]:
@@ -337,6 +366,7 @@ def run_host_channel(
         degraded = bool(ctx.credentials)  # 平台凭据解密结果未被宿主通道使用 ⇒ L1
         degraded_reason = "host_channel_no_credential_injection" if degraded else None
 
+        payload: Mapping[str, Any] | None = None  # r3：原始汇总随 result 回传（回执保真）
         try:
             payload = parse_host_summary(stdout_text)
             tokens = summarize_host_payload(payload)
@@ -360,6 +390,7 @@ def run_host_channel(
                 degraded_reason=degraded_reason,
                 policy_snapshot_hash=ctx.policy_snapshot_hash,
                 egress_audit=_audit(),
+                summary_payload=payload,
             )
 
         # B-2 宿主版：成本汇总后计账；超上限按上限截断 + budget_exceeded
@@ -376,6 +407,7 @@ def run_host_channel(
                 degraded_reason=degraded_reason,
                 policy_snapshot_hash=ctx.policy_snapshot_hash,
                 egress_audit=_audit(),
+                summary_payload=payload,
             )
 
         artifacts = tuple(output_scanner.scan())
@@ -391,6 +423,7 @@ def run_host_channel(
             receipt_state=str(getattr(output_scanner, "receipt_state", "ok")),
             policy_snapshot_hash=ctx.policy_snapshot_hash,
             egress_audit=_audit(),
+            summary_payload=payload,
         )
     finally:
         if egress_gate is not None:

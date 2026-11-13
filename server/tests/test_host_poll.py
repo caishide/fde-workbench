@@ -11,6 +11,7 @@ import json
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -468,3 +469,140 @@ def test_host_routes_http_smoke(db_session, poll_settings, d4_settings, monkeypa
     # 错误投影：坏令牌
     body = client.get("/api/v1/agents/host/status", headers={"X-Host-Poll-Token": "bad"})
     assert body.status_code == 403 and body.json["error"]["code"] == "host_poll_forbidden"
+
+
+# ---------------------------------------------------------------------------
+# QR-095（goal-crv r5 发现，goal-sprint r3 吸收）：exit_code 缺省不再
+# 「缺省即成功」——completed 必须 int 0 支撑，缺失/非零一律 fail-closed。
+# ---------------------------------------------------------------------------
+
+
+def test_receipt_missing_exit_code_lands_failed(db_session, poll_settings):
+    """缺 exit_code 缺 status ⇒ failed（原缺省按 0＝缺省即成功，QR-095 收口）。"""
+    run = _seed_host_run(db_session, poll_settings)
+    svc.claim_host_run(presented_token=TOKEN)
+    out = svc.submit_host_receipt(presented_token=TOKEN, run_id=run.id, payload={"summary": SUMMARY, "artifacts": []})
+    assert out["status"] == "failed"
+    db_session.expire_all()
+    assert db_session.get(AgentRun, run.id).status == "failed"
+
+
+def test_receipt_completed_without_zero_exit_downgraded(db_session, poll_settings):
+    """显式 completed 但无 int 0 支撑 ⇒ 降 failed（宿主自报载荷不可信面）。"""
+    run = _seed_host_run(db_session, poll_settings)
+    svc.claim_host_run(presented_token=TOKEN)
+    out = svc.submit_host_receipt(
+        presented_token=TOKEN, run_id=run.id, payload=_receipt_payload(exit_code=2, status="completed")
+    )
+    assert out["status"] == "failed"
+    db_session.expire_all()
+    assert db_session.get(AgentRun, run.id).status == "failed"
+
+
+# ---------------------------------------------------------------------------
+# 任务书面料读取面（goal-sprint r3：host_context——宿主代理 spawn 前取
+# 服务端已渲染的三件；渲染一次、消费两侧）
+# ---------------------------------------------------------------------------
+
+
+def _write_server_workspace(db_session, settings, run, *, with_files=True):
+    """服务端侧工作区落盘（模拟 _write_workspace 渲染产物）＋指针对齐。"""
+    root = Path(settings.agent_workspace_root)
+    run_dir = root / "org-x" / run.id
+    (run_dir / "output").mkdir(parents=True, exist_ok=True)
+    if with_files:
+        (run_dir / "context.md").write_text("CTX-BODY", encoding="utf-8")
+        (run_dir / "task.md").write_text("TASK-BODY", encoding="utf-8")
+        (run_dir / "AGENTS.md").write_text("AGENTS-BODY", encoding="utf-8")
+    prefix = f"{Path(settings.agent_workspace_root).as_posix().strip('/')}/"
+    run.context_ref = f"{prefix}org-x/{run.id}/context.md"
+    db_session.commit()
+    return run_dir
+
+
+def test_context_returns_rendered_files(db_session, poll_settings):
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    run = _seed_host_run(db_session, poll_settings)
+    _write_server_workspace(db_session, poll_settings, run)
+    svc.claim_host_run(presented_token=TOKEN)
+    out = fetch_host_run_context(presented_token=TOKEN, run_id=run.id)
+    assert out["files"] == {"context.md": "CTX-BODY", "task.md": "TASK-BODY", "AGENTS.md": "AGENTS-BODY"}
+
+
+def test_context_missing_files_return_empty_strings(db_session, poll_settings):
+    """面料缺席返回空串（形状恒定，宿主侧不猜、不 spawn 缺任务书的 run）。"""
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    run = _seed_host_run(db_session, poll_settings)
+    _write_server_workspace(db_session, poll_settings, run, with_files=False)
+    svc.claim_host_run(presented_token=TOKEN)
+    out = fetch_host_run_context(presented_token=TOKEN, run_id=run.id)
+    assert out["files"] == {"context.md": "", "task.md": "", "AGENTS.md": ""}
+
+
+def test_context_gates_on_claim_and_token(db_session, poll_settings):
+    """状态闸族：未领取 409／他 token 403／已回执 409（信息最小暴露同回执面）。"""
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    run = _seed_host_run(db_session, poll_settings)
+    _write_server_workspace(db_session, poll_settings, run)
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        fetch_host_run_context(presented_token=TOKEN, run_id=run.id)
+    assert ei.value.status == 409
+    svc.claim_host_run(presented_token=TOKEN)
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        fetch_host_run_context(presented_token="other-token", run_id=run.id)
+    assert ei.value.status == 403
+    svc.submit_host_receipt(presented_token=TOKEN, run_id=run.id, payload=_receipt_payload())
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        fetch_host_run_context(presented_token=TOKEN, run_id=run.id)
+    assert ei.value.status == 409
+
+
+def test_context_gates_on_claim_binding_after_token_rotation(db_session, poll_settings, monkeypatch):
+    """领取绑定闸（轮换可判）：配置侧令牌轮换后，新令牌合法但非领取者 ⇒ 403。
+
+    单令牌常态下该绑定检查与入口校验重合；轮换场景才可判别——旧领取者
+    持有的 run，新令牌（对当前配置合法）读面料必须按领取绑定拒绝。
+    """
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    run = _seed_host_run(db_session, poll_settings)
+    _write_server_workspace(db_session, poll_settings, run)
+    svc.claim_host_run(presented_token=TOKEN)
+    rotated = poll_settings.model_copy(
+        update={"agent_host_poll_token": SecretStr("rotated-token-0123456789abc")}
+    )
+    monkeypatch.setattr(svc, "_settings", lambda: rotated)
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        fetch_host_run_context(presented_token="rotated-token-0123456789abc", run_id=run.id)
+    assert ei.value.status == 403 and ei.value.code == "host_poll_forbidden"
+
+
+def test_context_rejects_non_host_poll_run(db_session, poll_settings):
+    from fde_api.agents.host_context import fetch_host_run_context
+
+    run = _seed_host_run(db_session, poll_settings, provider="sandbox")
+    _write_server_workspace(db_session, poll_settings, run)
+    with pytest.raises(svc.AgentsServiceError) as ei:
+        fetch_host_run_context(presented_token=TOKEN, run_id=run.id)
+    assert ei.value.code == "host_context_rejected"
+
+
+def test_context_route_http_wiring(db_session, poll_settings):
+    """路由→模块接线烟测（第四条宿主面路由；200 投影形状）。"""
+    from fde_api.app import create_app
+
+    app = create_app(poll_settings)
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    headers = {"X-Host-Poll-Token": TOKEN}
+    run = _seed_host_run(db_session, poll_settings)
+    _write_server_workspace(db_session, poll_settings, run)
+    svc.claim_host_run(presented_token=TOKEN)
+    body = client.get(f"/api/v1/agents/host/runs/{run.id}/context", headers=headers)
+    assert body.status_code == 200
+    assert body.json["data"]["files"]["task.md"] == "TASK-BODY"
+    # 无头 403
+    assert client.get(f"/api/v1/agents/host/runs/{run.id}/context").status_code == 403
