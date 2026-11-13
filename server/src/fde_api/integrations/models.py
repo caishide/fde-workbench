@@ -126,6 +126,11 @@ class OntologyBindingUpgrade(Base, TimestampMixin):
         String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # D16：批注回执指针——升级审批携带的 ontology_annotation 证据行
+    # （§15 版本升级必须记录审批人和证据）
+    annotation_evidence_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("project_evidence.id", ondelete="SET NULL"), nullable=True
+    )
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -140,4 +145,5 @@ class OntologyBindingUpgrade(Base, TimestampMixin):
             "proposed_by_user_id": self.proposed_by_user_id,
             "approved_by_user_id": self.approved_by_user_id,
             "acted_at": str(self.acted_at) if self.acted_at is not None else None,
+            "annotation_evidence_id": self.annotation_evidence_id,
         }

@@ -105,8 +105,8 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # V3.3 M2 WP4 段 1：项目本体绑定与升级留痕两表（9d4f2b7e8c1a；挂
 #          c8e2a6f0b9d4 之后保单头）
 # V3.3 M2 WP4 段 2 步 3+4：绑定 org_id 回填为项目归属并收紧 NOT NULL
-#          （c4a8f2e6b1d9；挂 9d4f2b7e8c1a 之后保单头；孤儿行响亮失败）
-HEAD_REVISION = "c4a8f2e6b1d9"
+#          （b7d3f9a1c5e2；挂 c4a8f2e6b1d9 之后保单头；evidence kind 扩 ontology_annotation）
+HEAD_REVISION = "b7d3f9a1c5e2"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1171,9 +1171,10 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + AI 原生化 N4 发布通道 b5d9e2f4a7c1（挂 T-16 之后保单头）之后 = 73；
     # + goal-sprint r2 白名单快照列 c8e2a6f0b9d4（挂 N4 之后保单头）之后 = 74；
     # + V3.3 M2 WP4 段 1 项目本体绑定 9d4f2b7e8c1a（挂 c8e2a6f0b9d4 之后保单头）之后 = 75；
-    # + V3.3 M2 WP4 段 2 绑定 org_id 回填 c4a8f2e6b1d9（挂 9d4f2b7e8c1a 之后保单头）之后 = 76；
+    # + V3.3 M2 WP4 段 2 绑定 org_id 回填 c4a8f2e6b1d9 之后 = 76；
+    # + V3.3 M2 WP4 段 2 步 5 evidence kind 扩 ontology_annotation b7d3f9a1c5e2 之后 = 77；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 76
+    assert len(known) == 77
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical
@@ -1432,3 +1433,108 @@ def test_c4a8f2e6b1d9_fails_loudly_on_orphan_binding(alembic_config, engine):
         # 失败的迁移已回滚（schema 仍在 9d4f2b7e8c1a）：清掉孤儿行后回到 head
         _cleanup_binding_project(engine, project_id=project_id, ids=ids)
         command.upgrade(alembic_config, "head")
+
+
+# --- V3.3 M2 WP4 段 2 步 5：b7d3f9a1c5e2 evidence kind 扩 ontology_annotation ---
+
+
+def _seed_evidence_project(engine, *, project_id, user_id, org_id):
+    """种一条项目（供 project_evidence 外键）。"""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO projects (id, project_code, name, background, notes, status, "
+                "planned_start_date, leader_user_id, template_snapshot, research_snapshot, "
+                "enterprise_code, org_id) "
+                "VALUES (:id, :code, :name, '', '', 'active', '2026-01-01', :leader, "
+                "'{}'::json, '{}'::json, :ent, :org)"
+            ),
+            {
+                "id": project_id,
+                "code": f"MIG-EV-{project_id}",
+                "name": f"迁移证据项目 {project_id}",
+                "leader": user_id,
+                "ent": "ENT-MIG",
+                "org": org_id,
+            },
+        )
+
+
+def _insert_evidence_row(engine, *, evidence_id, project_id, kind):
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO project_evidence (id, project_id, kind, source_uri, "
+                "content_sha256, captured_from) "
+                "VALUES (:id, :pid, :kind, :uri, :sha, :cap)"
+            ),
+            {
+                "id": evidence_id,
+                "pid": project_id,
+                "kind": kind,
+                "uri": "ontology_review:pkg-1#意见-1",
+                "sha": "c" * 64,
+                "cap": "ontology_review:pkg-1",
+            },
+        )
+
+
+def _cleanup_evidence_rows(engine, *, project_id, ids):
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM project_evidence WHERE project_id = :pid"), {"pid": project_id}
+        )
+        connection.execute(
+            text("DELETE FROM projects WHERE id = :id"), {"id": project_id}
+        )
+    cleanup_seeded_rows(engine, ids)
+
+
+def test_b7d3f9a1c5e2_extends_evidence_kind_and_annotation_pointer(
+    alembic_config, engine
+):
+    """evidence kind 闭集扩 ontology_annotation + 升级留痕增批注指针（可回退可重放）。"""
+    from fde_api.orgs.models import INTERNAL_ORG_ID
+    from sqlalchemy.exc import IntegrityError
+
+    command.downgrade(alembic_config, "c4a8f2e6b1d9")
+    ids = seed_user_and_template(engine, username="migration.evidence.kind")
+    project_id = "mig-evidence-project"
+    _seed_evidence_project(
+        engine, project_id=project_id, user_id=ids["user_id"], org_id=INTERNAL_ORG_ID
+    )
+
+    # 回退态：闭集回到 7 种 ⇒ ontology_annotation 被 CHECK 拒
+    with pytest.raises(IntegrityError):
+        _insert_evidence_row(
+            engine, evidence_id="mig-evidence-row", project_id=project_id,
+            kind="ontology_annotation",
+        )
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("ontology_binding_upgrades")
+    }
+    assert "annotation_evidence_id" not in columns
+
+    command.upgrade(alembic_config, "head")
+
+    # 升级态：新 kind 被接受、指针列回归
+    _insert_evidence_row(
+        engine, evidence_id="mig-evidence-row", project_id=project_id,
+        kind="ontology_annotation",
+    )
+    assert (
+        scalar(
+            engine,
+            "SELECT kind FROM project_evidence WHERE id = :id",
+            {"id": "mig-evidence-row"},
+        )
+        == "ontology_annotation"
+    )
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("ontology_binding_upgrades")
+    }
+    assert "annotation_evidence_id" in columns
+
+    _cleanup_evidence_rows(engine, project_id=project_id, ids=ids)

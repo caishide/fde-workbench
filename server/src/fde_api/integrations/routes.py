@@ -98,7 +98,9 @@ def propose_upgrade_route(project_id: str, binding_id: str):
 )
 @require_auth
 def approve_upgrade_route(project_id: str, binding_id: str, upgrade_id: str):
-    decision = str(_json_object().get("decision", ""))
+    payload = _json_object()
+    decision = str(payload.get("decision", ""))
+    annotation = payload.get("annotation")
     try:
         result = approve_upgrade(
             actor=g.current_user,
@@ -106,6 +108,7 @@ def approve_upgrade_route(project_id: str, binding_id: str, upgrade_id: str):
             binding_id=binding_id,
             upgrade_id=upgrade_id,
             decision=decision,
+            annotation=annotation,
         )
     except BindingError as exc:
         return _binding_error(exc)

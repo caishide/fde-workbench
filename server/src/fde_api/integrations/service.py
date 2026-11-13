@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -30,6 +32,7 @@ from sqlalchemy.exc import IntegrityError
 
 from fde_api.auth.models import User
 from fde_api.errors import NOT_FOUND_MESSAGE
+from fde_api.evidence.service import upsert_evidence
 from fde_api.extensions import db
 from fde_api.integrations.models import (
     ACTIVE_MARKER,
@@ -43,10 +46,15 @@ from fde_api.integrations.ontology_client import (
     OntologyConflict,
     OntologyUnavailable,
 )
+from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
 from fde_api.workbench.models import Project
 
 BINDING_ROLES = ("primary",)
+
+# D16：批注回执的包 ID = 内容寻址 sha256（契约 §5：内容寻址，重复导出可检测）
+_ANNOTATION_PACKAGE_ID = re.compile(r"^[0-9a-f]{64}$")
+_ANNOTATION_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class BindingError(ValueError):
@@ -86,6 +94,85 @@ def client_from_settings() -> OntologyClient:
         settings.ontology_signing_key.get_secret_value(),
         timeout=settings.ontology_timeout_seconds,
     )
+
+
+def _validated_annotation(annotation: Mapping[str, Any]) -> dict[str, str | None]:
+    """D16 批注回执入参校验（形状不合 ⇒ 400，零写入零出站）。
+
+    契约（integration-contract §5 + data-model §162）：意见落 project_evidence，
+    kind=ontology_annotation，captured_from=ontology_review:<package_id>；
+    package_id 是内容寻址 sha256（64 hex）。
+    """
+    if not isinstance(annotation, Mapping):
+        raise BindingError("annotation must be an object", code="invalid_request")
+    package_id = str(annotation.get("review_package_id", "")).strip().lower()
+    if not _ANNOTATION_PACKAGE_ID.fullmatch(package_id):
+        raise BindingError(
+            "annotation.review_package_id must be a 64-hex content address",
+            code="invalid_request",
+        )
+    content_sha256 = str(annotation.get("content_sha256", "")).strip().lower()
+    if not _ANNOTATION_SHA256.fullmatch(content_sha256):
+        raise BindingError(
+            "annotation.content_sha256 must be a 64-hex sha256",
+            code="invalid_request",
+        )
+    source_uri = str(annotation.get("source_uri", "")).strip()
+    if not 0 < len(source_uri) <= 500:
+        raise BindingError(
+            "annotation.source_uri must be a 1-500 character pointer",
+            code="invalid_request",
+        )
+    origin = annotation.get("origin")
+    if origin is not None:
+        if not isinstance(origin, str) or len(origin) > 2000:
+            raise BindingError(
+                "annotation.origin must be a string of at most 2000 characters",
+                code="invalid_request",
+            )
+        origin = origin.strip() or None
+    return {
+        "review_package_id": package_id,
+        "content_sha256": content_sha256,
+        "source_uri": source_uri,
+        "origin": origin,
+    }
+
+
+def _record_annotation_receipt(
+    session: Any, *, actor: User, project: Project, annotation: Mapping[str, Any]
+) -> str:
+    """D16：批注回执落 project_evidence（kind=ontology_annotation），返回证据行 id。
+
+    幂等：指纹 (project_id, source_uri, content_sha256) 命中既有行则原样复用
+    （证据不可变，不改写任何列）；新建行落审计事件（§15 写操作须审计）。
+    """
+    package_id = str(annotation["review_package_id"])
+    row, created = upsert_evidence(
+        session,
+        project_id=project.id,
+        kind="ontology_annotation",
+        source_uri=str(annotation["source_uri"]),
+        content_sha256=str(annotation["content_sha256"]),
+        origin=annotation["origin"],
+        captured_from=f"ontology_review:{package_id}",
+        created_by_user_id=str(actor.id),
+    )
+    if created:
+        record_event(
+            session,
+            actor,
+            "evidence_registered",
+            project,
+            {
+                "evidence_id": row.id,
+                "kind": "ontology_annotation",
+                "source_uri": str(annotation["source_uri"]),
+                "content_sha256": str(annotation["content_sha256"]),
+                "captured_from": f"ontology_review:{package_id}",
+            },
+        )
+    return row.id
 
 
 def _project_org(project: Project) -> str:
@@ -336,11 +423,19 @@ def propose_upgrade(
 
 
 def approve_upgrade(
-    *, actor: User, project_id: str, binding_id: str, upgrade_id: str, decision: str
+    *,
+    actor: User,
+    project_id: str,
+    binding_id: str,
+    upgrade_id: str,
+    decision: str,
+    annotation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     ensure_enabled()
     if decision not in ("approved", "rejected"):
         raise BindingError("decision must be approved|rejected", code="invalid_request")
+    # D16：批注入参形状校验先于一切（零写入、零出站）
+    validated = _validated_annotation(annotation) if annotation is not None else None
     session = db.session()
     try:
         with session.begin():
@@ -378,6 +473,11 @@ def approve_upgrade(
             if upgrade.proposed_by_user_id == str(actor.id):
                 raise BindingError(
                     "proposer cannot approve own upgrade (I4)", status=403, code="self_approval"
+                )
+            # D16：批注回执入 evidence（审批/升级须留证据，§15）
+            if validated is not None:
+                upgrade.annotation_evidence_id = _record_annotation_receipt(
+                    session, actor=actor, project=project, annotation=validated
                 )
             if decision == "approved":
                 # approve 时点二次 I5（写不降级 + propose→approve 间版本可能下架）
