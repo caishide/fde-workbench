@@ -10,6 +10,13 @@
 - **收口机械闸（任务书 §8）**：台账终扫闭集 grep 147/147；批量核锚 **147/147 GREEN**（145 行级锚在 HEAD `4634a8d` 直过＋2 文件级锚在场，零基点回退零 FAIL）；**反向验证**＝注入假锚点 QR-999→扫描 FAIL 1 转 RED→剔除还原→复跑 GREEN（核锚判别力在案）；误报率 0/147。
 - **修复候选批**：6 批建议表在总报告 §11（**不拍板**）；最优先＝QR-025（DOCX 脱敏前上传供应商，复核注可升 P0）与 QR-117（富文本键名契约断裂＝编辑器正文全丢，趋 P0）；goal-sprint r2 #422 已按 crv 吸收条款消化 QR-073/088/089。
 - **口径**：审查基点 `35ffbea` 时点结构口径 485/52/153/73 留档总报告 §0；结构口径随上游线自行推进（goal-sprint r2 后 488/52/153/74），本线十轮零生产 diff 未动任何口径。
+## [未发布] — 训练场案例库界面导入与启用轮：NEW `desktop/src/renderer/src/SimulationLab/ScenarioLibrary.tsx`两钮——「导入 JSON」批量建行＋行内「启用/停用」激活（纯桌面零服务端零迁移零路由，2026-11-13）
+
+蔡工实测反馈「建行在哪儿建？核对加激活在哪儿操作？没找到地方」——L1 导入管线（#360）与 round2 134 包行业底单落地后，建行（批量导入）与激活（PATCH status）两步桌面端没有界面入口：`importScenarios` API 封装G2 起在库但从未挂按钮，编辑弹层四分区也无状态字段。本轮两钮界面化，134 包全程界面点击。
+
+①**「导入 JSON」钮**（案例库头部，隐藏 file input）：NEW 纯函数 `parseScenarioImportText` 兼容裸数组与 `{"scenarios":[…]}` 包裹两形态（服务端 `routes._payload()` 非 dict 一律 400——行业批文件首版裸列表形态照 curl 必 400，真相层批文件已随本轮重写为包裹形态）；POST 后回执「已导入 N／失败 M 条（前 3 条 #index code：message）」并刷新列表；空数组客户端拦不发请求；jsdom 缺 `File.text()` ⇒ `readFileText` 兜底 FileReader（Electron 真机走 `.text()` 零行为差异）。②**行内「启用/停用」钮**：draft→启用／active→停用／archived 无钮（与服务端 409 同构），PATCH `{status}` 复用既有「追加不可变新版本」通道（archive 同款部分更新形态）。③修过时硬编码提示「6 个案例 × 3 种客户行为」→ 通用文案（134 例导入后旧文案失真）。**红线自证**：激活仍是人工点击（导入建行与激活恒人工），无任何自动激活路径。
+
+测试 NEW 6 例进 `simulation-scenario-library.test.tsx`（纯函数两形态／导入成功携 `{scenarios}` 包体／空数组不发请求／失败逐条回显／启用 PATCH status=active／停用与归档行无钮）⇒ 文件 14 例；本地 `test:desktop` 全量 **1106 passed (96 files)**＋typecheck 绿；PR #426 CI 四绿（desktop 1106／server-tests **3553 passed + 8 skipped**，双触发并行 run 四 job×2 全 success）。服务端零改动 ⇒ 口径不变（488 路由/52 蓝图/153 表/74 rev 单头 `c8e2a6f0b9d4`）。合并 `876f7cc` 后便携版 **r38** 重打包交付（asar sha256 `30d23819…`；本轮独有中文 marker「批量导入与启用/停用都会追加新版本」「导入文件须是场景数组」双命中）。真相层底单同步：行业批文件 11 份重写包裹形态＋清单补界面路径（方式 A）与形态勘误。
 
 ## [未发布] — goal-sprint r2：P2′ 服务端咬合面收口（crv 吸收 QR-073/088/089 ＋ N2 两实测事实接线；迁移 73→74 单头 `c8e2a6f0b9d4`；488/52/153 口径不变，2026-11-13）
 
