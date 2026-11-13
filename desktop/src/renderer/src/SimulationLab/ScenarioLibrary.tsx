@@ -1,6 +1,6 @@
 // V3.2 G2 模拟训练场 · 案例库。
 //
-// 只读列表 + 分类过滤 + 版本可见；写动作（新建/编辑/复制/归档/导入导出）全部
+// 只读列表 + 分类过滤 + 版本可见；写动作（新建/编辑/复制/归档/启用停用/批量导入/导出）全部
 // 走服务端闸（can_write 由服务端判定，前端不做业务判定）。403/409 原样呈现。
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react"
@@ -13,6 +13,7 @@ import {
   createScenario,
   duplicateScenario,
   exportScenarios,
+  importScenarios,
   listScenarios,
   updateScenario,
   type ScenarioWritePayload,
@@ -55,6 +56,36 @@ function errorText(caught: unknown): string {
   return "操作失败，请稍后重试。"
 }
 
+/** 读取文件文本：优先 Blob.text()，环境缺失时退 FileReader（jsdom 兼容）。 */
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error("读取导入文件失败。"))
+    reader.readAsText(file)
+  })
+}
+
+/** 批量导入文件解析：兼容「裸场景数组」与 {scenarios:[…]} 包裹两种形态（服务端契约要对象）。 */
+export function parseScenarioImportText(text: string): unknown[] {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error("导入文件不是合法 JSON。")
+  }
+  if (Array.isArray(data)) return data
+  if (
+    data &&
+    typeof data === "object" &&
+    Array.isArray((data as { scenarios?: unknown }).scenarios)
+  ) {
+    return (data as { scenarios: unknown[] }).scenarios
+  }
+  throw new Error("导入文件须是场景数组，或含 scenarios 数组的 JSON 对象。")
+}
+
 export function ScenarioLibrary(): ReactElement {
   const { apiRequest } = useAuth()
   const [items, setItems] = useState<ScenarioDto[]>([])
@@ -68,6 +99,7 @@ export function ScenarioLibrary(): ReactElement {
   const [keyword, setKeyword] = useState("")
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<ScenarioDto | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const sequence = useRef(0)
   const loadedOnce = useRef(false)
 
@@ -158,13 +190,54 @@ export function ScenarioLibrary(): ReactElement {
     }
   }
 
+  async function handleImportFile(file: File): Promise<void> {
+    try {
+      const scenarios = parseScenarioImportText(await readFileText(file))
+      if (scenarios.length === 0) {
+        setActionError("导入文件里没有场景（空数组）。")
+        return
+      }
+      const result = await importScenarios(apiRequest, scenarios)
+      if (result.failures.length) {
+        const head = result.failures
+          .slice(0, 3)
+          .map((failure) => `#${failure.index} ${failure.code}：${failure.message}`)
+          .join("；")
+        const more = result.failures.length > 3 ? "…" : ""
+        setActionError(
+          `已导入 ${result.created_count} 个场景；失败 ${result.failures.length} 条（${head}${more}）`,
+        )
+      } else {
+        setActionError(`已导入 ${result.created_count} 个场景。`)
+      }
+      await load()
+    } catch (caught) {
+      setActionError(errorText(caught))
+    }
+  }
+
+  async function handleSetStatus(scenario: ScenarioDto): Promise<void> {
+    const next: ScenarioStatus = scenario.status === "active" ? "draft" : "active"
+    try {
+      const updated = await updateScenario(apiRequest, scenario.id, { status: next })
+      await load()
+      setActionError(
+        next === "active"
+          ? `已启用「${updated.name}」（追加新版本 v${updated.version}，历史版本保持不可变）。`
+          : `已停用「${updated.name}」（追加新版本 v${updated.version}，历史版本保持不可变）。`,
+      )
+    } catch (caught) {
+      setActionError(errorText(caught))
+    }
+  }
+
   return (
     <section className="simulation-library" aria-label="模拟案例库">
       <header className="simulation-library-header">
         <div>
           <h2>案例库</h2>
           <p className="simulation-hint">
-            共 {total} 个案例分支（6 个案例 × 3 种客户行为）。编辑场景会追加新版本，历史版本保持不可变。
+            共 {total} 个案例分支。编辑、批量导入与启用/停用都会追加新版本，历史版本保持不可变。
           </p>
         </div>
         <div className="simulation-actions">
@@ -177,7 +250,19 @@ export function ScenarioLibrary(): ReactElement {
           >
             新建场景
           </UiButton>
+          <UiButton onClick={() => fileInputRef.current?.click()}>导入 JSON</UiButton>
           <UiButton onClick={() => void handleExport()}>导出</UiButton>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: "none" }}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ""
+              if (file) void handleImportFile(file)
+            }}
+          />
         </div>
       </header>
 
@@ -281,6 +366,17 @@ export function ScenarioLibrary(): ReactElement {
                   {scenario.tags.length ? scenario.tags.join("、") : "—"}
                 </td>
                 <td className="simulation-row-actions">
+                  {scenario.status !== "archived" ? (
+                    <AsyncButton
+                      compact
+                      actionKey={`status-${scenario.id}`}
+                      onRun={async () => {
+                        await handleSetStatus(scenario)
+                      }}
+                    >
+                      {scenario.status === "active" ? "停用" : "启用"}
+                    </AsyncButton>
+                  ) : null}
                   <UiButton
                     compact
                     onClick={() => {
