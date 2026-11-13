@@ -85,7 +85,12 @@ def _alias(project_code: str) -> str:
     return head or "客户代号"
 
 
-def redact_text_detailed(value: str, *, project_code: str = "") -> RedactionResult:
+def redact_text_detailed(
+    value: str,
+    *,
+    project_code: str = "",
+    mask_pii: bool = True,
+) -> RedactionResult:
     """分层失败语义（闸①拍板）的完整实现。
 
     第①层 fail-closed：凭据正则命中（既有行为）、词典机制性异常
@@ -119,10 +124,13 @@ def redact_text_detailed(value: str, *, project_code: str = "") -> RedactionResu
             text = text.replace(candidate, alias)
             suspects[candidate] = suspects.get(candidate, 0) + 1
 
-    value = _EMAIL.sub("[邮箱已脱敏]", text)
-    value = _MOBILE.sub("[手机号已脱敏]", value)
-    value = _ID_CARD.sub("[证件号已脱敏]", value)
-    value = _LANDLINE.sub("[电话已脱敏]", value)
+    if mask_pii:
+        value = _EMAIL.sub("[邮箱已脱敏]", text)
+        value = _MOBILE.sub("[手机号已脱敏]", value)
+        value = _ID_CARD.sub("[证件号已脱敏]", value)
+        value = _LANDLINE.sub("[电话已脱敏]", value)
+    else:
+        value = text
     return RedactionResult(
         text=value,
         suspects=tuple(SuspectName(name=k, occurrences=v) for k, v in suspects.items()),
