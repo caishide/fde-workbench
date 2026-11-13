@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-sprint r5：T-14b 全收口（`diag.fde18.com` 443 签证上线＋官网 CTA 切 `diag` 双锚点＋公网只读校验器，2026-11-13）
+
+任务书 §3 r5 行＋§9 硬指标 4 全项兑现：蔡工添加阿里云 `diag.fde18.com → 141.95.33.198` A 记录后完成 D-3 独立轻部署 HTTPS 开闸、官网 CTA 锚点切换与跨三域公网复测。
+
+- **远端 `diag.fde18.com` 443 签证与潜伏真缺陷修复**：预检抓出 `/www/server/panel/vhost/nginx/diag.fde18.com.conf` 漏写 `server` 级 `root`/`index` 致 `/` 返回 58KB 宝塔停用页真缺陷并修复；`certbot` webroot 签发 Let's Encrypt 证书（有效期至 `2027-02-11`），升级 80→`301`＋443 SSL HTTP/2（同主站 CSP/安全头），公网 HTTPS 7 项冒烟（含 `POST /api/v1/diagnostics/sessions` 匿名会话创建、`diag` 注册面 404、`app.fde18.com` 诊断面 404 隔离）全绿。
+- **官网仓 `fde-ops` CTA 切换与线上表单密钥恢复**：`caishide/fde-ops` PR `#55`（`04f4220`）将 `/diagnosis-samples/` 主 CTA 切至 `https://diag.fde18.com/#diagnostics`（政策补贴测算·免注册）、次 CTA 切至 `https://diag.fde18.com/#diagnostics/sample`，E38 正式收回 `app.fde18.com` 临时直链豁免（全站零出现）＋E39 持 `diag` 双直链（变异 M1/M2 红→还原→绿）；并从远端历史备份找回真 UUID 修复前序部署误截断的 `/contact/` `PUBLIC_FORM_KEY`，`deploy-ovh-fde18.sh` STAMP `20261113-201958`（`99/99 PASS`＋tag `deploy-20261113-2019`＋补记 PR `#56` `a2b40f1`）上线。
+- **公网只读校验器与任务书收口**：NEW `scripts/verify/verify_diag_public_live.py`（6 项公网直连校验：DNS／80→301／443 TLS+SPA+CSP／问卷 200+注册闸 404／主站诊断闸 404／官网 `diag` 双直链且零 `app.fde18.com`，实跑 `VERIFY-R5-DIAG-PUBLIC-LIVE PASS`）；`获客诊断工具实施任务书-v1.md` T-14 标全收口并锚定 R-A 3 个月止损线起算日 `2026-11-13`（复盘日 `2027-02-13`）。零后端/桌面生产代码改动・零迁移・零新路由（490/52/153/74 全不变）。
+
 ## [未发布] — AI 原生化 G-10 CI 评测凭据接线轮：ai-eval workflow 四槽 secret 全接线（端点/模型/超时缺省回落＝既有语义零改动；零迁移零路由零桌面，2026-11-13）
 
 - **挂账消解第一段（凭据面）**：N4 轮挂账「上游 CI 配 `secrets.FDE_DEEPSEEK_API_KEY`（按量付费 key）后 ai-eval 出首份非 insufficient 报告」。本轮现测发现**只灌 key 一槽不足以消解**——生产 `server/.env` 的 `FDE_DEEPSEEK_*` 槽现行实际为 **MiniMax 端点**（`FDE_DEEPSEEK_BASE_URL=https://api.minimaxi.com/v1`＋`FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL=MiniMax-M3.1-Flash`，按量付费），而 workflow 只接 `API_KEY`、harness `BASE_URL` 缺省 `https://api.deepseek.com` ⇒ MiniMax key 调 DeepSeek 官方端点＝真模型腿 9 例全错 ⇒ 报告**仍 `insufficient_data`**（误导性绿）。key 来源/接线深度三选拍板问询未获答复 ⇒ 按「按推荐执行＋留痕可推翻」先例走推荐项：**复用生产 key＋四槽全接线**（secret 随时可覆盖/删除，workflow 走 PR 可回退）。
