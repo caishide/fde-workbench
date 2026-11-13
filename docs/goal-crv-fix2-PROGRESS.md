@@ -8,8 +8,8 @@
 |---|---|---|---|---|---|
 | r1 | 批 A | `QR-001` / `QR-002` / `QR-003` / `QR-004` + `QR-018` | 已合并 | `#444` / `a8a2c25c` | 7 组全红→字节级还原核 sha256→25 passed |
 | r2 | 批 C | `QR-041` / `QR-042` / `QR-043` / `QR-044` | 已合并 | `#451` / `f4cb5e9f` | 7 组全红→字节级还原核 sha256→4 passed + 168 邻域绿 |
-| r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 `d4b8e1f6a9c3` | 已验待合并 | 待填 | 5 组全红→字节级还原核 sha256→4 passed + 300 邻域绿 |
-| r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 待开工 | - | - |
+| r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 `d4b8e1f6a9c3` | 已合并 | `#456` / `b11b8b3f` | 5 组全红→字节级还原核 sha256→4 passed + 300 邻域绿 |
+| r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→5 passed + 213 邻域绿 |
 | r5 | 批 G | `QR-133` / `QR-134` | 待开工 | - | - |
 | r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 | 待开工 | - | - |
 | r7 | 收口与部署 | 总报告销号节 + `BLOCKED`/`PROGRESS` + `AGENTS` bullet + 活体部署三验 | 待开工 | - | - |
@@ -57,3 +57,22 @@
     - `M4_QR057_migration_column_width_revert`：red=True → 还原 `sha256=41ad63b871bc363a`
     - `M5_QR067_platform_operator_read_gate`：red=True → 还原 `sha256=9eb8dffe7cf0ca70`
     - 还原终验：`4 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
+  - **合并记录**：PR `#456` → squash `b11b8b3f`（4 个必需 CI job 全绿，run 43471375645）。
+
+---
+
+## r4 批 E（编排执行域，零迁移零新路由）
+
+- **修复明细**：
+  1. `QR-071`（续 CR-028，`server/src/fde_api/dispatch/packages.py::transition_package` + `dispatch/settlements.py`）：published 态 `seat_delivery=None` 生成的 draft 结算行在四条路径同步回填 `seat_delivery_user_id`——①接单（accept 分支扫 draft 行回填）；②`allocate_five_seats`（分配即落 `seat_payees["delivery"]`，空缺席位恒 None）；③`record_receipt_settlements` 刷新（行空且包已在位时回填）；④`accrue_settlements_for_project` 兜底（行空时经 `DispatchSettlementAllocation` paid 明细解析 → `package.seat_delivery` → `accepted_user_id` 逐级回退并持久化）。保证当期预扣税非零且同自然年后续里程碑把已计提行计入 `past_rows` 累计预扣递进基数。
+  2. `QR-072`（`workflows/compiler.py` + `seeds/workflow-templates.json` + `workflows/definition_service.py` + `workflows/dispatch.py`）：①`compile_delivery_preview` 与种子模板 `plan_execution` 的 `solutions.create` 节点补 `params.project_id="{{project_id}}"` 并把骨架字段包进 `params.body`（对齐 api_catalog 路由契约）；②`validate_dag` 新增 `call_contracts` 注入（`catalog_call_contracts()` 由 CATALOG 派生 `{method, path_params}`），定义期拦截缺路径必填参数（`call_missing_path_param`）、`body` 非对象（`call_invalid_body`）、写操作字段散落顶层（`call_unwrapped_body_params`）——三类均 422 `dag_invalid`；③`_dispatch_skill` 把 skill JSON 输出的字典字段（剔除 `text`）透出节点上下文，下游 `{{research_brief.opportunity_ids}}` 引用可达；`test_delivery_compiler.py` 期望结构同步换代。
+  3. `QR-073` 及宿主通道核销：`is_unsafe_artifact_path` 三形态钉（POSIX 绝对／`..` 穿越／Windows 盘符·反斜杠根·UNC）+ `#422`（`QR-088/089`：`claim_host_run` `with_for_update`＋`frozen_tools`）与 `#433`（`QR-092` env 白名单继承＋密钥拒绝清单；`QR-094` done 终态 break；`QR-095` exit_code fail-closed）在位核验，写核销记录不重复造例。
+  4. **附带真缺陷收口**（QR-095 家族延展）：`host_receipt.py` exit_code 原判 `isinstance(raw_exit, int)` 未排 `bool`——Python 中 `isinstance(False, int) is True` 且 `False == 0`，宿主回执传 `"exit_code": false` 会误判成功。补 `not isinstance(raw_exit, bool)` 排除（fail-closed 语义补全）。
+- **测试与变异证据**：
+  - NEW `server/tests/test_crv_batch_e.py`（5 例：QR-071 主链同月跨档累计预扣递进／QR-071 辅链五席位分配＋accrue 兜底回填／QR-072 定义期契约闸三码＋种子模板全集过闸／QR-072 端到端 compile→definition→publish→run 真实落库 `ProjectSolution` 停于 `waiting_approval`／QR-073 三形态＋吸收项核销）；`test_delivery_compiler.py` 期望结构换代。
+  - 邻域回归 14 套件 **213 passed**（workflows 全家＋dispatch P0-R2/P1-R5＋five_seat＋T6 票税＋host_poll＋host_agent＋architecture_purity＋source_size_budgets）。
+  - 变异三连（`try/finally` 字节还原核对 `sha256`）：
+    - `M1_QR071_accept_backfill`：red=True → 还原 `sha256=a21bd969090cda0e…` MATCH
+    - `M2_QR072_definition_gate`：red=True → 还原 `sha256=3601e0db6dc904ff…` MATCH
+    - `M3_QR072_compiler_contract`：red=True → 还原 `sha256=4eee24050b9082bb…` MATCH
+    - 还原终验：`5 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
