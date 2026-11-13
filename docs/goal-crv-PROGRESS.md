@@ -84,10 +84,9 @@
 | r3 | 公网免注册写面 | **完成**（PR #415 squash `9b26133`＝main 顶；四 CI 绿；分支双删） | #415 | 4331~（双 run 绿） | QR-041～054 | 17 文件逐行＋红线横扫 |
 | r4 | 资金敏感面 | **完成**（PR #416 squash `466766c`＝main 顶；四 CI 绿；分支双删） | #416 | 双 run 绿 | QR-055～070 | 16 文件逐行 |
 | r5 | dispatch·workflow·agents | **完成**（PR #417 squash `86722e6`＝main 顶；四 CI 绿；分支双删） | #417 | 双 run 绿 | QR-071～098 | 72 文件全域逐行 |
-| r6 | 后台作业与队列 | **审读＋E0 完成，PR 中** | — | — | QR-099～108（P2×7/P3×3 合并 11 锚） | 23 文件全域入工作流＋横扫；详见轮记录 |
-| r7 | 桌面端 | 审读准备中（190 文件 40K 行已枚举） | — | — | — | |
-| r7 | 桌面端 | 未开 | | | | |
-| r8 | 迁移·存储·数据模型 | 未开 | | | | |
+| r6 | 后台作业与队列 | **完成**（PR #418 squash `11a01f6f`＝main 顶；server-tests 三连红后第 4 次重跑绿＝两枚既有 flake 家族轮番〔`test_ai_run_proposal`×2＋`test_task_decomposition`×1，r5/r4 合并 main run 同窗同红佐证非本 PR 引入〕；分支双删） | #418 | 43321731962（重跑 4） | QR-099～108（P2×7/P3×3 合并 11 锚） | 23 文件全域入工作流＋横扫；详见轮记录 |
+| r7 | 桌面端（部分覆盖域） | 审读＋E0 完成，PR 中 | — | — | QR-109～116（P2×5/P3×3 合并 17 锚） | 工作流 4 片 19 文件＋renderer 业务页 ~169 文件部分覆盖申报（BLOCKED §1.1）；run `dwfrun-bc68ec74` |
+| r8 | 迁移·存储·数据模型 | 审读＋E0 完成，待 r7 合并后提交 | — | — | QR-117～132（P1×2/P2×11/P3×3 合并 ~20 锚） | 工作流 4 片 27＋直审 14＋迁移链脚本核全绿；run `dwfrun-11a05b48` |
 | r9 | 评测·模拟·知识 | 未开 | | | | |
 | r10 | 测试质量与口径文档 | 未开 | | | | |
 | 收口 | 台账回填 | 未开 | | | | 不计 14 轮预算 |
@@ -99,5 +98,5 @@
 | 结构口径 | 485 路由 / 52 蓝图 / 153 表 / 73 rev 单头 `b5d9e2f4a7c1` | `docs/audit/v3-workbench-inventory.json`（生成于 `3f9a9ce`） | 2026-11-13 读 |
 | mypy | 279 occurrences / 104 distinct（不变） | `python scripts/check-python-types.py` | 2026-11-13 |
 | typecheck | exit 0 | `npm run typecheck` | 2026-11-13 |
-| pytest 全量 | （待回填） | `npm run test:server`（仅此一次） | 2026-11-13 |
-| vitest 总数 | （待回填 run 号） | 最近 fork/main CI desktop job | 2026-11-13 |
+| pytest 全量 | 本地尝试 1＝环境失败（DeadlockDetected，59 分钟）；**CI 权威＝3508 passed + 8 skipped**（PR #418 run 43321731962 重跑绿，r6 树） | 本地 1 次＋CI run 号 | 2026-11-13 |
+| vitest 总数 | 96 文件 / 1100 例 passed | CI run 43269972808（§0 同源）；main run 43332619868 @ 18a4337e desktop 绿维持 | 2026-11-13 |
