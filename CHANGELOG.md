@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-sprint r6：E8/E11 意图↔实现验收与 A 轨只读降级三处真缺口闭合（零迁移零路由；server 变更，2026-11-14）
+
+任务书 §3 r6 条件轮（开工闸＝r4 D7 复审报告出齐＋蔡工显式开工令，两项齐备；`goal-crv` 147 条 QR 台账扫描与 E8/E11 零交集缺陷）：对 `#414` 合入的 E8 A 轨只读降级层与 E11 智能体凭据管理面执行 N3 五问逐条意图↔实现（intended-vs-implemented）核对，当场修复 E8 三处「测试绿而生产断/漏」真缺口并同步台账。
+
+- **E8 点分能力→只读工具权威映射（修复真实任务无法降级断层）**：`server/src/fde_api/control/automation_fallback.py` 新增 `_build_capability_read_only_map()`，从 `mcp_gateway.TOOLS` 单一真身派生 `CAPABILITY_READ_ONLY_TOOLS` 与 `UNSCOPED_READ_ONLY_TOOLS`（`project.summarize` 共享 `project.read` 4 项只读工具，命中点分只读能力时附带 5 项无能力门槛通用只读工具），修复桌面端/ClawBot 创建任务持久化的点分能力名（默认 `["project.read", "project.summarize", "file.search"]`）此前与下划线工具名 `READ_ONLY_TOOLS` 交集恒空导致生产 100% 不降级的断层；同时保留直传下划线只读工具名兼容与纯写/编排能力集返回 `None` 的诚实失败语义。
+- **E8 降级调用链能力与工具白名单双重收窄**：`server/src/fde_api/control/ai_tool_loop.py` 的 `tool_definitions` 与 `direct_tool_completion` 新增可选关键字参数 `capabilities` 与 `allowed_tools`；`server/src/fde_api/control/automation_jobs.py` 在 `_record_degraded_execution → _run_degraded_readonly` 中显式透传任务级 `capabilities=execution["allowed_tools"]` 与 `allowed_tools=plan.allowed_tools`，对齐 `output_json.degraded_allowed_tools` 审计留痕与实际暴露给模型的工具集；`server/src/fde_api/control/ai_server_client.py` 在 `execute_ai_prompt` 两处 `_degraded_direct_result` 降级分支同步透传 `capabilities`。
+- **直连/降级循环执行期只读硬闸（N3-Q4 纵深防御）**：`ai_tool_loop._run_tools` 在调用 `mcp_gateway.call_tool` 前强制校验 `name in _permitted_read_only_tools(allowed_tools)`（恒 `<= READ_ONLY_TOOLS`），即使高权限账号遇模型幻觉或提示词注入返回 `capability=None` 的 `api_execute` 或外发工具 `file_send_wechat`/`lcsc_search`，亦直接返回 `{"error": "forbidden", ...}` 绝不执行写操作。
+- **E11 凭据管理面核验与验证回执**：核实 `agents/credentials.py` 三路由（`is_platform_operator` 平台双轴闸、凭据名正则 `^[A-Za-z0-9_]{1,120}$`、Fernet 密文零回显、不进 `api_catalog`、7 个 zcode 种子赋 `default`）100% 吻合规格；pytest +6 例（`test_automation_fallback` +2、`test_automation_fallback_wiring` +1 真实 API 点分能力端到端、`test_ai_tool_loop` +2、`test_ai_server_direct_fallback` +1），M1–M3 串行变异三连全真红→`try/finally` sha256 逐字节还原→控制面与安全邻域 13 套件 **209 passed**＋ruff 绿＋mypy 277/102 基线不变＋架构图防陈旧闸与台账钉全绿。零迁移・零新表・零新路由・零桌面改动（现测结构口径 490 路由 / 52 蓝图 / 153 表 / 75 rev 单头 `d4b8e1f6a9c3` / 98 ENTRIES 不变）。
+
 ## [未发布] — 项目详情页第二批桌面 AI 辅助闭环：交付方案面板＋测试计划面板＋工作流「从方案生成草稿」（桌面变更·零服务端改动·零迁移零路由，便携版 r47，2026-11-14）
 
 打通项目详情页三块 AI 辅助消费面（plans／quality／workflows 蓝图路由早已上线，本轮补齐桌面最后一公里），严守双来源并列、产物恒 draft、闸不代拍与错误码原样呈现纪律：
