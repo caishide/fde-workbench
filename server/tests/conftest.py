@@ -71,15 +71,22 @@ class PerTestIPClient(FlaskClient):
 
 
 
-def _read_local_db_password() -> str:
+def _read_local_env_file() -> dict[str, str]:
+    """读仓根 .env 的键值对。
+
+    认三个键：``FDE_DB_PASSWORD``（口令）、``FDE_TEST_DATABASE_URL``（整条
+    URL，显式指定优先）、``FDE_TEST_DATABASE_NAME``（只给库名，口令仍走
+    .env——worktree 用它把自己钉在专属测试库上，见 D14）。
+    """
+    values: dict[str, str] = {}
     env_path = SERVER_ROOT.parent / ".env"
     if not env_path.exists():
-        return ""
+        return values
     for line in env_path.read_text(encoding="utf-8").splitlines():
         key, separator, value = line.partition("=")
-        if separator and key.strip() == "FDE_DB_PASSWORD":
-            return value.strip()
-    return ""
+        if separator:
+            values[key.strip()] = value.strip()
+    return values
 
 
 def resolve_test_database_url() -> str:
@@ -88,15 +95,28 @@ def resolve_test_database_url() -> str:
     Safety contract (goal prompt §0.6): tests must never fall back to the
     development/production FDE_DATABASE_URL, and the resolved database name
     must be an allowed test database before any migration (downgrade) runs.
+
+    现地治理（D14）：解析优先级 = 进程环境 FDE_TEST_DATABASE_URL
+    > 仓根 .env 的 FDE_TEST_DATABASE_URL > 仓根 .env 的 FDE_TEST_DATABASE_NAME
+    + FDE_DB_PASSWORD 合成 > 默认共享库 fde_workbench_test。
+    每个 worktree 用 .env 把自己钉在专属库上（库名仍
+    必须以 _test 结尾）——其他会话的外来戳“外来戳”
+    不再能抹掉本会话的 schema（见 05 清单 §0 第 2 步记录）。
     """
     url = os.environ.get("FDE_TEST_DATABASE_URL", "").strip()
+    local = _read_local_env_file()
     if not url:
-        password = _read_local_db_password()
+        url = local.get("FDE_TEST_DATABASE_URL", "").strip()
+    if not url:
+        password = local.get("FDE_DB_PASSWORD", "")
         if password:
+            database = local.get("FDE_TEST_DATABASE_NAME", "").strip()
+            database = database or "fde_workbench_test"
             url = (
                 "postgresql+psycopg://fde:"
                 + quote_plus(password)
-                + "@127.0.0.1:15432/fde_workbench_test"
+                + "@127.0.0.1:15432/"
+                + database
             )
     if not url:
         raise RuntimeError(
@@ -516,6 +536,8 @@ def db_session(app) -> Session:
     )
 
     cleanup_models = (
+        __import__("fde_api.integrations.models", fromlist=["OntologyBindingUpgrade"]).OntologyBindingUpgrade,
+        __import__("fde_api.integrations.models", fromlist=["ProjectOntologyBinding"]).ProjectOntologyBinding,
         __import__("fde_api.system_configuration", fromlist=["SystemConfiguration"]).SystemConfiguration,
         # 获客诊断 T-15：渠道链接注册表。``created_by`` 指向 users（**FK
         # SET NULL**）；与线索行零外键（channel_ref 是字符串列）——先于

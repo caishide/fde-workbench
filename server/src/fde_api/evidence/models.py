@@ -13,9 +13,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from fde_api.workbench.models import Base, TimestampMixin, new_uuid
 
-EVIDENCE_KINDS = ("gate", "task", "guidance", "research", "bridge", "workflow", "solution")
-# captured_from 通道：human | bridge_sync:{id} | agent_run:{id} | job:{id} | workflow_node:{id}
-CAPTURED_FROM_PREFIXES = ("human", "bridge_sync:", "agent_run:", "job:", "workflow_node:")
+EVIDENCE_KINDS = (
+    "gate", "task", "guidance", "research", "bridge", "workflow", "solution",
+    "ontology_annotation",  # D16：本体批注回执（决议 03 §6 附注）
+)
+# captured_from 通道：human | bridge_sync:{id} | agent_run:{id} | job:{id} |
+# workflow_node:{id} | ontology_review:{package_id}（D16：评审包批注回执通道）
+CAPTURED_FROM_PREFIXES = (
+    "human", "bridge_sync:", "agent_run:", "job:", "workflow_node:", "ontology_review:",
+)
 
 
 class ProjectEvidence(Base, TimestampMixin):
@@ -26,7 +32,8 @@ class ProjectEvidence(Base, TimestampMixin):
             name="uq_project_evidence_fingerprint",
         ),
         CheckConstraint(
-            "kind IN ('gate', 'task', 'guidance', 'research', 'bridge', 'workflow', 'solution')",
+            "kind IN ('gate', 'task', 'guidance', 'research', 'bridge', 'workflow', "
+            "'solution', 'ontology_annotation')",
             name="ck_project_evidence_kind",
         ),
         CheckConstraint("char_length(content_sha256) = 64", name="ck_project_evidence_sha256_len"),
@@ -41,7 +48,8 @@ class ProjectEvidence(Base, TimestampMixin):
     source_uri: Mapped[str] = mapped_column(String(500), nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     origin: Mapped[str | None] = mapped_column(Text)
-    captured_from: Mapped[str | None] = mapped_column(String(64))
+    # D16：放宽到 128——captured_from=ontology_review:<64-hex 内容寻址包 ID> = 80 字符
+    captured_from: Mapped[str | None] = mapped_column(String(128))
     created_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

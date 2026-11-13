@@ -312,6 +312,18 @@ class Settings(BaseSettings):
     # 不可带错跑（也挡住「填 20 想表达 20%」的经典笔误）。
     diagnostics_fee_ratio_tier_a: Decimal = Field(default=Decimal("0.20"), ge=0, le=1)
     diagnostics_fee_ratio_tier_b: Decimal = Field(default=Decimal("0.10"), ge=0, le=1)
+    # V3.3 本体运行时（M2 WP4；关闭时绑定面整体 404 not_found——D12/D13 门控；
+    # discovery 不推候选——原系统行为不变）
+    ontology_enabled: bool = False
+    ontology_base_url: str = "http://127.0.0.1:8030"
+    ontology_api_key: SecretStr | None = Field(default=None, repr=False)
+    ontology_signing_key: SecretStr | None = Field(default=None, repr=False)
+    # D10 段 2：FDE_ONTOLOGY_ORG_ID 配置**已退役**——I5 运行时调用的 org 上下文
+    # 唯一来源 = 项目归属（projects.org_id）；租户身份不得来自外部配置（§15 红线）。
+    ontology_timeout_seconds: int = Field(default=10, ge=3, le=60)
+    # 契约 §1 预留字段（M3 起：模型端点 / Gate 依赖声明）——本阶段仅占位声明
+    ontology_model_endpoint: str = ""
+    ontology_gate_dependency: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="FDE_",
@@ -319,6 +331,23 @@ class Settings(BaseSettings):
         extra="ignore",
         hide_input_in_errors=True,
     )
+
+    @model_validator(mode="after")
+    def validate_ontology_environment(self) -> "Settings":
+        if self.ontology_enabled and not (
+            self.ontology_api_key and self.ontology_signing_key
+        ):
+            raise ValueError(
+                "FDE_ONTOLOGY_ENABLED=true requires FDE_ONTOLOGY_API_KEY and "
+                "FDE_ONTOLOGY_SIGNING_KEY (ontology-service S-02/S-03)"
+            )
+        if self.ontology_enabled and not self.ontology_base_url.strip():
+            raise ValueError(
+                "FDE_ONTOLOGY_ENABLED=true requires non-empty FDE_ONTOLOGY_BASE_URL "
+                "(runtime endpoint; the I5 org context comes from the project's org "
+                "attribution — D10 stage 2)"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_storage_environment(self) -> "Settings":

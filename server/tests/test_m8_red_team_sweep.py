@@ -22,7 +22,7 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
   ``sweep_required``／``b_owner_status``／``measured``（三套 token 实测码）。
 - **降级即红（反逃逸闸，本轮新增）**：并集恒等对「把爬扫面降级成排除登记」
   是不变量，故另配四道闸：
-  ① 条数基线 ``len(ROUTES) == 38``／``len(_EXCLUSION_RECORDS) == 64``；
+  ① 条数基线 ``len(ROUTES) == 38``／``len(_EXCLUSION_RECORDS) == 67``；
   ② **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
      均被拒」的路由若停留在排除登记里即转红；
   ③ 排除登记的 ``measured`` 与**现测重测**逐条一致（登记不可伪造、不可陈旧）；
@@ -125,7 +125,7 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/workflow-runs"): lambda w: f"/api/v1/projects/{w['project_b'].id}/workflow-runs",
     ("GET", "/api/v1/projects/<project_id>/workflows"): lambda w: f"/api/v1/projects/{w['project_b'].id}/workflows",
 }
-# 候选面中未纳入本轮爬扫的 64 条，逐条结构化登记：
+# 候选面中未纳入本轮爬扫的 67 条，逐条结构化登记：
 #   reason                  —— 人读理由（必须含自身实测状态码）
 #   exclusion_kind          —— 硬排除形态（阳性对照不可行/admin-only/
 #                             公开面/内部服务间面/角色面）
@@ -434,6 +434,26 @@ _EXCLUSION_RECORDS = {
     },
     ("GET", "/api/v1/projects/<project_id>/guidance-analyses/<analysis_id>"): {
         "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/change-sets/<change_set_id>/review-package"): {
+        "reason": (
+            "本体变更集评审包 HTML 导出面（V3.3 M2 段 2 步 6 / D8+D17）：FDE_ONTOLOGY_ENABLED 默认关闭（D12/D13 门控先于鉴权），"
+            "默认夹具下 A/同角色A/B属主实测均为 404，无法在默认夹具内构造 200 正向对照；"
+            "启用态的项目归属与跨租户 404 隔离由 test_ontology_ingest.py 专项契约钉覆盖"
+        ),
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology-bindings"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 WP4 本体绑定面默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；本轮夹具无该面启用前置状态",
         "exclusion_kind": "positive_control_infeasible",
         "verified_positive_control": False,
         "sweep_required": False,
@@ -970,7 +990,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
     assert len(ROUTES) == 38, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 65, (
+    assert len(_EXCLUSION_RECORDS) == 67, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

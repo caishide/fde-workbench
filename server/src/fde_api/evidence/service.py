@@ -81,10 +81,11 @@ def normalize_origin(value: object) -> str | None:
 
 
 def normalize_captured_from(value: object) -> str:
-    """来源通道：human | bridge_sync:{id} | agent_run:{id} | job:{id} | workflow_node:{id}。"""
+    """来源通道：human | bridge_sync:{id} | agent_run:{id} | job:{id} |
+    workflow_node:{id} | ontology_review:{package_id}（D16：80 字符 ⇒ 上限 128）。"""
     if value is None:
         return "human"
-    if isinstance(value, str) and 0 < len(value) <= 64:
+    if isinstance(value, str) and 0 < len(value) <= 128:
         if value == "human":
             return value
         if any(
@@ -95,7 +96,8 @@ def normalize_captured_from(value: object) -> str:
             return value
     raise EvidenceServiceError(
         "invalid_request",
-        "captured_from 须为 human 或 bridge_sync:/agent_run:/job:/workflow_node: 前缀加标识。",
+        "captured_from 须为 human 或 bridge_sync:/agent_run:/job:/workflow_node:/"
+        "ontology_review: 前缀加标识。",
         400,
     )
 
