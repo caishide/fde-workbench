@@ -393,3 +393,60 @@ def test_temp_dir_is_outside_repo():
     """真相层输出目录在仓外（守卫按本仓根路径比，不是按「祖先链有 .git」）。"""
     with tempfile.TemporaryDirectory() as tmp:
         assert not str(Path(tmp).resolve()).startswith(str(Path(run_batch._REPO_ROOT).resolve()))
+
+
+def test_resolve_active_scenario_queries_effective_versions_not_stale_history():
+    calls: list[str] = []
+
+    def fake_http(method, url, *, token, body=None):
+        calls.append(url)
+        return 200, {
+            "data": {
+                "items": [
+                    {
+                        "id": "sc-vague",
+                        "scenario_key": "SC-A",
+                        "variant": "vague",
+                        "version": 3,
+                        "status": "active",
+                    },
+                    {
+                        "id": "sc-normal",
+                        "scenario_key": "SC-A",
+                        "variant": "normal",
+                        "version": 5,
+                        "status": "active",
+                    },
+                ]
+            }
+        }
+
+    with mock.patch.object(run_batch, "_http", side_effect=fake_http):
+        picked = run_batch._resolve_active_scenario("http://127.0.0.1:8010/api/v1", "tok", "SC-A")
+
+    assert len(calls) == 1
+    assert "include_history=true" not in calls[0]
+    assert "q=SC-A" in calls[0]
+    assert picked["id"] == "sc-normal"
+    assert picked["version"] == 5
+
+
+def test_resolve_active_scenario_fails_when_effective_version_is_draft():
+    def fake_http(method, url, *, token, body=None):
+        return 200, {
+            "data": {
+                "items": [
+                    {
+                        "id": "sc-draft",
+                        "scenario_key": "SC-DRAFT",
+                        "variant": "normal",
+                        "version": 3,
+                        "status": "draft",
+                    }
+                ]
+            }
+        }
+
+    with mock.patch.object(run_batch, "_http", side_effect=fake_http):
+        with pytest.raises(SystemExit):
+            run_batch._resolve_active_scenario("http://127.0.0.1:8010/api/v1", "tok", "SC-DRAFT")

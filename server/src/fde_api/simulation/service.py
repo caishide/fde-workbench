@@ -390,10 +390,18 @@ def create_scenario(*, actor: User, payload: dict[str, Any]) -> dict[str, Any]:
         return _serialize(row)
 
 
+def _is_status_only_toggle(updates: dict[str, Any]) -> bool:
+    """单键 status ∈ (draft, active) 为纯状态切换（原地改，不追加新版本）。"""
+    return set(updates.keys()) == {"status"} and updates.get("status") in (
+        "draft",
+        "active",
+    )
+
+
 def update_scenario(
     *, actor: User, scenario_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """编辑场景 → **追加新版本**（既有版本不可变，不原地改）。"""
+    """编辑场景：内容变更**追加新版本**（既有版本不可变）；纯 draft⇄active 状态切换原地更新当前有效版本。"""
     _require_level(actor)
     with db.session() as session:
         current = session.get(SimulationScenario, scenario_id)
@@ -404,6 +412,42 @@ def update_scenario(
                 "conflict", "已归档场景不可编辑。", 409, {"scenario_id": scenario_id}
             )
         updates = dict(payload)
+        if "status" in updates and updates["status"] not in SCENARIO_STATUSES:
+            raise ScenarioServiceError("invalid_request", "status 取值非法。")
+        if _is_status_only_toggle(updates):
+            max_version = session.scalar(
+                select(func.max(SimulationScenario.version)).where(
+                    SimulationScenario.scenario_key == current.scenario_key,
+                    SimulationScenario.variant == current.variant,
+                )
+            )
+            if max_version is not None and current.version != max_version:
+                raise ScenarioServiceError(
+                    "conflict",
+                    "仅允许对当前有效版本切换启用状态。",
+                    409,
+                    {"scenario_id": scenario_id, "effective_version": max_version},
+                )
+            previous_status = current.status
+            next_status = str(updates["status"])
+            if previous_status != next_status:
+                current.status = next_status
+                session.flush()
+                _record(
+                    session,
+                    actor,
+                    "simulation_scenario_status_changed",
+                    current,
+                    {
+                        "scenario_key": current.scenario_key,
+                        "variant": current.variant,
+                        "version": current.version,
+                        "previous_status": previous_status,
+                        "status": next_status,
+                    },
+                )
+                session.commit()
+            return _serialize(current)
         variant = updates.get("variant") or current.variant
         split = updates.get("split") or current.split
         content = updates.get("content")

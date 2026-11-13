@@ -96,11 +96,13 @@ def get_scenario(scenario_id):
 @simulation_blueprint.patch("/scenarios/<scenario_id>")
 @require_auth
 def update_scenario(scenario_id):
-    """编辑场景 → 追加新版本（既有版本不可变）。"""
+    """编辑场景（内容变更追加新版本 201；纯 draft⇄active 状态切换原地更新 200）。"""
+    body = _payload()
     data = service.update_scenario(
-        actor=g.current_user, scenario_id=scenario_id, payload=_payload()
+        actor=g.current_user, scenario_id=scenario_id, payload=body
     )
-    return _data(data), 201
+    status_code = 200 if service._is_status_only_toggle(body) else 201
+    return _data(data), status_code
 
 
 @simulation_blueprint.post("/scenarios/<scenario_id>/duplicate")
