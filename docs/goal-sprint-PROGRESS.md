@@ -175,3 +175,29 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 - [x] 按推进包 §4 骨架出具真实四口径复审报告（含 C/B 口径源码级裁决与 N1 窗口实况）
 - [x] 阈值拍板位状态明确落档为「待蔡工拍板」（零预支数值，闸态变更数 = 0）
 - [x] 静态防预支机械钉 + 台账同步钉本地实跑全绿（PR 与 CI 四绿见收口回执，回填式）
+
+---
+
+## r5 · T-14b 收尾（`diag.fde18.com` 443 上线＋官网 CTA 锚点切换＋线上复测，2026-11-13）
+
+### 开工前检查单与两条潜伏线上真缺陷修复
+
+- `git fetch fork` 对齐 `fork/main` `67c0c867`（#440）；在途 open PR（`#443`/`#442`/`#441`/`#439`/`#424`）均与 T-14b 部署及台账面无冲突。
+- **★真机缺陷 1（远端 `diag.fde18.com.conf` 漏写 `server` 级 `root`/`index`）**：SSH 预检 `141.95.33.198` 时发现 `/www/server/panel/vhost/nginx/diag.fde18.com.conf` 仅在 `location ^~ /.well-known/acme-challenge/` 内写了 `root`，`server` 级缺失 `root /www/wwwroot/diag.fde18.com; index index.html;`，导致 `/` 落入宝塔默认目录返回 **58,286B 的 `<title>Sorry, the website has been stopped</title>`**（状态码同为 200，前序只测 `%{http_code}` 漏检）。备份 `/root/diag.fde18.com.conf.bak-20261113-r5` 后补齐重载，恢复为 `1,246B` 工作台 SPA。
+- **★真机缺陷 2（线上 `fde18.com/contact/` 的 `PUBLIC_FORM_KEY` 被前序部署截断）**：部署官网前提取线上联系页 `formKey` 时发现 `185827` 次部署因解析正则失误把残串 `formKey = \` 烤入线上页面导致表单回退失效；从远端历史备份 `/www/wwwroot/fde18.com.bak-20261110-140044/contact/index.html` 找回完整 36 位真 UUID 并随本次部署恢复（校验 `formKey_is_valid_uuid=True`，密钥全文零入库零打印）。
+
+### 执行链与线上实测回执（任务书 §3 r5 行＋§9 硬指标 4 全兑现）
+
+1. **DNS 前置（人工，蔡工亲手完成）**：阿里云云解析添加 `diag.fde18.com → 141.95.33.198` A 记录；权威 NS（`dns31/32.hichina.com`）与 `1.1.1.1`/`8.8.8.8` 实测全部命中 `141.95.33.198`。
+2. **certbot 443 签证与 vhost 升级**：`certbot certonly --webroot -w /www/wwwroot/diag.fde18.com -d diag.fde18.com` 签发成功（Issuer `Let's Encrypt YR1`，有效期 `2026-11-13` 至 `2027-02-11`）；备份 `/root/diag.fde18.com.conf.bak-pre443-r5` 后升级为 80→`301 https://$host$request_uri`（保留 ACME challenge）＋443 SSL HTTP/2（CSP/X-Frame-Options/覆盖写 XFF 同主站）。
+3. **`diag.fde18.com` 公网 HTTPS 7 项冒烟全绿**：①`http://diag.fde18.com/` → `301 https://diag.fde18.com/`；②`https://diag.fde18.com/` → `200`（SPA + CSP）；③JS 资产 `200`（`1,499,257B`，`x-diagnostic-token`/`#diagnostics` 在位）；④`health/ready` & `live` `200`；⑤`questionnaire` `200`（`7,233B`）；⑥`POST /api/v1/diagnostics/sessions` 真建匿名会话 `200`（`sid=8ab84475…`）；⑦闸隔离：`diag` 注册面 `404`、`app.fde18.com` 诊断面 `404`。
+4. **官网仓 `caishide/fde-ops` 切换 CTA 与部署上线**：
+   - PR **#55**（squash **`04f4220`**，`website-ci` runs `43423553682`/`43423561348` 全绿）：`/diagnosis-samples/` 主 CTA 切 `https://diag.fde18.com/#diagnostics`（政策补贴测算·免注册）、次 CTA 切 `https://diag.fde18.com/#diagnostics/sample`、辅助行保留初诊入口；E38 正式收回 `_APP_LINK_OK` 过渡豁免（`app.fde18.com` 全站零容忍）、E39 持 `diag` 双直链；变异 M1/M2 双红→字节级还原→绿；口径表升 v2.3（§4.18）、运营台账升 v1.6（row 21）。
+   - 部署：`deploy-ovh-fde18.sh` STAMP **`20261113-201958`** exit 0（**99/99 PASS**＋85 文件＋IndexNow 50 URL 200×2）→ 推送部署 tag **`deploy-20261113-2019`** → 台账回执补记 PR **#56**（squash **`a2b40f1`**，CI 双绿）。
+5. **本仓公网只读校验器与台账同步**：NEW `scripts/verify/verify_diag_public_live.py` 实跑 `VERIFY-R5-DIAG-PUBLIC-LIVE PASS`（6/6 全绿）；同步 `docs/architecture/获客诊断工具实施任务书-v1.md`（T-14 → ✅ 全收口，R-A 止损线起算日锚定 `2026-11-13`→`2027-02-13`）、`CHANGELOG.md` r5 节、`AGENTS.md` 当前状态头。**零后端/桌面生产代码改动・零迁移・零新路由**（490/52/153/74 不变）。
+
+### r5 待办（收口条件）
+
+- [x] 蔡工配齐 `diag.fde18.com` A 记录 → Let's Encrypt 443 签证生效＋nginx 80→301/443 上线
+- [x] `fde-ops` 官网 CTA 切换 `diag.fde18.com` 双锚点＋收回 `app.fde18.com` 豁免（PR #55 `04f4220`＋tag `deploy-20261113-2019`＋PR #56 `a2b40f1`）
+- [x] 公网 HTTPS 线上复测全绿（`verify_diag_public_live.py` 6/6 PASS；本仓 PR 与 CI 四绿见收口回执）
