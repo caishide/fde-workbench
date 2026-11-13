@@ -21,6 +21,14 @@
 - **NEW `docs/goal-sprint-BLOCKED.md`**：待授权 3 项（D7 阈值拍板／G-B、G-C 闸签署与账号发放／N1 窗口 11-19 到期处置）＋共享活体现测风险 2 项（跨栈 Redis 服务别名 `redis` DNS 轮询致心跳键跨栈串写、healthcheck 探针 FAIL 不置非零退出码致「healthy」对心跳缺失无判别力——均非本线改动面，处置待拍板后单独立项）。
 - **台账三同步**：`docs/goal-sprint-PROGRESS.md` 至终态（r1–r6＋收口全 ✅ 冲刺线收官）；`AGENTS.md` 本线收口行；实施台账 §12 收口行。冲刺线八轮（r1–r6＋收口）至此全收官。
 
+## [未发布] — goal-crv 修复批 G：复核清单指纹化零真名＋update_analysis 编辑复扫（零迁移零新路由，2026-11-14）
+
+依据 `docs/goal-crv-fix2-剩余批次总循环-任务书.md` r5 批 G 完成 `QR-133`/`QR-134` 两项拍板修复（零迁移零新表零新路由）：
+
+- **QR-133（拍板 #6A）复核清单指纹化**：`guidance.redaction_review` 事件账零真名——`guidance/redaction.py` 落 `redaction_name_hash`（域分隔 sha256）与 `fingerprint_review_entries` 单一真身，确证命中只存指纹、未确证疑似名不入条目账只留聚合计数（`suspect_count`）；guidance worker／translator 创建与落库两阶段／采纳流搬运四锚写入侧接线；读面 `resolve_redaction_display` 经词典反解显示词目原文（未命中 `name=None` 软失败），历史 name 形状事件现算指纹归一兼容。
+- **QR-134（拍板 #7A）编辑复扫＋豁免登记**：`update_analysis` 保存时对编辑文本与列表 str 值输出端复扫——词典确证命中 422 `redaction_name_detected` fail-closed（不回显原文）、疑似名替换为代号放行＋`manual_edit` 计数事件、凭据串 422 同闸；presurvey 录入卡维持零脱敏豁免（用户自填自述≠AI 加工面），随指纹化语义一并登记 `AGENTS.md` 独立 bullet。
+- **验证**：NEW `tests/test_crv_batch_g.py` 10 例＋旧钉换代 4 文件＋邻域回归 12 套件 97 passed＋变异三连（`M1_QR133_fingerprint_bypass`/`M2_QR134_dict_hit_reject`/`M3_QR133_suspect_count`）全红→`try/finally` 字节还原核 sha256→10 passed 复绿；`ruff` 零告警；`check-python-types.py` 277 基线零新增。
+
 ## [未发布] — 学习闭环 2.0 L4 服务端：workbench 真执行面＋analyze_run 三源化＋AI 蒸馏返件起草＋断点⑥ lessons 键名修正（迁移① `d4b7e2f9a6c1`：candidate_payload_json 加列＋adapter_mode 扩值，2026-11-14）
 
 goal-l2.0 任务书 L4 轮服务端半（桌面「失败→AI 起草→建案」另 PR）；按设计稿 v1.1 §2.1–§2.3 落六断点中的断点①②③⑥：

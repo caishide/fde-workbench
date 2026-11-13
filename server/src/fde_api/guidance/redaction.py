@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from fde_api.guidance.docx_extract import ExtractedBlock, ExtractedPresurvey
 from fde_api.guidance.enterprise_dict import (
@@ -146,6 +147,68 @@ def redact_text(value: str) -> str:
     需要复核清单的调用方走 redact_text_detailed。
     """
     return redact_text_detailed(value).text
+
+
+# ---------------------------------------------------------------------------
+# QR-133（goal-crv-fix2 批 G，拍板 #6A 指纹化复核清单）：redaction_review 事件
+# 账零真名——确证命中名只存 sha256 指纹（复核 UI 经词典反解显示），未确证疑似
+# 名不入事件账只留聚合计数（复核人看草稿原文判定）。红线「数据库只存代号」
+# 字面全守；复核功能保留。写入侧单一真身（guidance/translator 四锚共用）。
+# ---------------------------------------------------------------------------
+
+_REDACTION_HASH_DOMAIN = "fde-redaction-v1"
+
+
+def redaction_name_hash(name: str) -> str:
+    """复核条目指纹（域分隔 sha256）：事件账与读面反解共用同一真身。"""
+    import hashlib
+
+    return hashlib.sha256(f"{_REDACTION_HASH_DOMAIN}:{name}".encode("utf-8")).hexdigest()
+
+
+def fingerprint_review_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """旧形状（name/occurrences/matched_dict）→ 事件账新形状（零真名）。
+
+    返回（指纹化条目列表, 疑似名聚合计数）：
+    - matched_dict=True（词典确证命中）→ ``{"name_hash", "occurrences", "matched_dict": True}``；
+    - matched_dict=False（疑似）→ 不逐条入账，名字出现次数并入 suspect_count。
+    """
+    fingerprinted: list[dict[str, Any]] = []
+    suspect_count = 0
+    for item in entries:
+        occurrences = int(item.get("occurrences", 1) or 0)
+        if item.get("matched_dict"):
+            fingerprinted.append(
+                {
+                    "name_hash": redaction_name_hash(str(item.get("name", ""))),
+                    "occurrences": occurrences,
+                    "matched_dict": True,
+                }
+            )
+        else:
+            suspect_count += occurrences
+    return fingerprinted, suspect_count
+
+
+def resolve_redaction_display(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """读面反解：指纹 → 词典词目原文（仅显示，不落库）。
+
+    词典命中 → ``name`` 为词目原文；词典故障或指纹未命中（词典已更新删词）
+    → ``name=None``（UI 显示指纹前 8 位占位，诚实缺失）。软失败不抛——
+    读面（get_analysis/confirm/adopt 投影）不得因词典机制故障 500。
+    """
+    if not entries:
+        return []
+    try:
+        digest_to_name = {redaction_name_hash(n): n for n in enterprise_names()}
+    except Exception:  # noqa: BLE001 - 读面软失败（词典故障不阻断复核投影）
+        digest_to_name = {}
+    out: list[dict[str, Any]] = []
+    for item in entries:
+        row = dict(item)
+        row["name"] = digest_to_name.get(str(item.get("name_hash", "")))
+        out.append(row)
+    return out
 
 
 def redact_presurvey(extracted: ExtractedPresurvey, *, project_code: str = "") -> tuple[ExtractedPresurvey, tuple[SuspectName, ...], tuple[str, ...]]:
