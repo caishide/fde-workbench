@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 桌面第三批业务与治理闭环：本体写面与候选＋方案 AI 生成＋智能体凭据＋到期与队列监控（桌面变更·零服务端改动·零迁移零路由，便携版 r48，2026-11-14）
+
+补齐桌面 4 处「后端完备、前端零入口」的业务与治理面（本体/solutions/agents/jobs 契约早已上线，本轮接最后一公里），严守闭集键、明文零驻留与禁自审纪律：
+
+- **本体写面与候选（`GlossaryPage.tsx`）**：canManage 三块写面——①「候选生成」面板懒加载（展开才拉 `GET /projects/<id>/discovery/extractions?limit=50`，前端预筛 `status==="review_required"`），`POST .../ontology/candidates/generate` body 恰 `{extraction_id}`，结果 `{change_set, created, skipped, cross_project_conflicts}` 就地呈现（跳过清单与跨项目同名告警如实显示、后者只读不阻断）并刷新变更集清单；②「手工提变更集」起草表单（create_term/update_term/merge_terms 三动作条目化），body 闭集 `{title, description?, proposed_json}`——description 留空不传、**绝不传 `captured_from`**（AI 通道专用，服务端显式 400），同名合并在前端拦下不发请求，`term_type` 五值闭集（entity/attribute/metric/alias_target/generic）；③关系类型「登记类型／停用」：登记 body 闭集 `{kind, code, label?, description?, scope}`，code 与服务端同尺（`^[a-z][a-z0-9_]*$` ≤60），`global` 范围仅 admin 可见可选；**link_type 另附 `allowed_source_types`/`allowed_target_types` 两键**（任务书闭集未列，服务端硬闸必填——缺一即 400 invalid_request，前端同尺补齐、仍在服务端字段允许名单内）；停用走两步确认 `POST .../relation-types/<id>/retire`（无 body），非 retired 行才可停、全局行仅 admin（否则呈现「全局类型仅系统运维员可停用」）；变更集评审列表补**禁自审闸**——`in_review` 且 `created_by_user_id===user.id` 的行禁点确认/否决并提示「须由另一管理员审阅」（服务端 403 语义的前端预拦）。
+- **方案 AI 生成（`SolutionDetailPage.tsx`）**：头部新增 `SolutionAgentGenerator`（仅 `canManage && status!=="archived"` 渲染，与服务端 409 `solution_archived` 同口径）：`GET /api/v1/agents` 清单默认选中可用且 `capability_tier==="agent.module.solution"` 的智能体，不可用项禁选并展示 `unavailable_reason`；`POST /projects/<id>/solutions/<sid>/generate-agent` body 闭集 `{agent_id, idempotency_key?}`（键留空不传、幂等键 ≤160 字客户端拦截）；`wired===true` 经 onWired 回写 solution（溯源徽标「智能体生成」就地联动刷新）；`wired===false` 呈现 `run.status` 并以 `allowNextHashNavigation()` 放行锚点跳转 `#projects/<projectId>?tab=agents`；清单拉取失败静默降级（辅助入口不阻断方案详情主内容）。
+- **智能体凭据（`ExtensionsPage.tsx`＋NEW `AgentCredentialsPanel.tsx`）**：「AI 与扩展」新增「智能体凭据」Tab（仅 canManage 显）：`GET /api/v1/agents/credentials` 直接返数组（403 呈现「仅平台操作者可管理智能体凭据」）；保存 `POST` body 闭集 `{name, credential}`——凭据名与服务端同尺 `^[A-Za-z0-9_]{1,120}$`（提示 default 槽），明文非空 ≤8000；**明文零驻留：提交入口 await 前即清空明文 state、清空按钮与取消同步清空**（明文只在本次请求的内存 body 出现一次）；删除走两步确认 `DELETE /api/v1/agents/credentials/<name>`（404 原样呈现）；清单只出名字与 `credential_configured` 布尔、绝不回显。
+- **运行治理卡（`SystemConfigurationPage.tsx`＋NEW `PlatformGovernancePanel.tsx`）**：`<form>` 外下方渲染（结构约定有 DOM 断言钉住），失败不阻保存——两路数据独立加载各自呈现错误：①到期事项 `GET /api/v1/expirations?due=true`，域按服务端 `EXPIRY_ACTIONS` 四键闭集（automation_approval/api_confirmation/dispatch_offer/upload_session）防御性过滤，中文域标签＋对象/截止时间/状态/到期动作表格；②队列计量 `GET /api/v1/admin/jobs/metering`，`queue_depth`（null 呈「—」）＋`groups`（`org_id??"平台级"`/active/terminal）；③取消任务两步确认 `POST /api/v1/admin/jobs/<job_id>/cancel`（无 body），幂等 `cancelled=false` 如实呈现、409 already_terminal/job_running 与 404 原样透传，成功后刷新计量。
+- **验证与打包**：vitest 新增 28 例（`ontology-write` 9＋`solution-agent-generate` 5＋`agent-credentials` 8＋`platform-governance` 6，覆盖闭环/闭集键/明文清空/禁自审/403/409/404 与 `<form>` 外结构断言），全量 **102 文件 1170 passed**＋`npm run typecheck` 零错＋变异三连全红→字节级 sha256 还原→复绿（M1 手工变更集塞 `captured_from`／M2 generate-agent 多塞 `solution_id`／M3 注释凭据 await 前明文清空）；★M1 变异当场暴露一处**真空断言缺陷**（mock 的 GET 清单分支排在 POST 分支前且不区分 method，body 断言成死代码）——修分支顺序后变异才真红，变异机制自身被反向验证；`git diff fork/main -- server/` 为空（零服务端改动）。合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r48` 并完成新旧 `app.asar` 四特征串（`ontology/candidates/generate`、`generate-agent`、`agents/credentials`、`admin/jobs/metering`）旧=0 新≥1 正反向核验。
+
 ## [未发布] — goal-sprint 收口轮：上线就绪终扫＋BLOCKED 登记＋冲刺线收官（纯文档零代码零迁移零路由＝490/52/153/75 rev 单头 `d4b8e1f6a9c3`/98 ENTRIES 全不变，2026-11-14）
 
 任务书 §8/§9 收口轮：对照 `docs/deployment/对外试用部署方案-v1.md` §8 十三项验收清单逐项终扫（技术判据引用 2026-11-09 T6 现测＋本轮只读复测，业务闸不代拍）并核销 §9 六条硬指标。
@@ -10,6 +20,7 @@
 - **§9 硬指标 6/6 核销**：①`adapter_missing` 解除回执在场（台账 §12，r3）；②N1 窗口终态＝2 条 `host_poll` run 全 `completed` 且 **8/8 产物全部人工复核**（活库现测，r4 时 5 件待复核已清零；sha256 指针纪律）；③D7 报告出齐＋拍板位「待蔡工拍板」（零预支）；④T-14b 终态（r5＋本轮复测）；⑤六轮 PR（#411/#422/#433/#438/#445/#459）各自四 CI job 绿＋活体三验绿；⑥全程零闸代拍零预支零造假。
 - **NEW `docs/goal-sprint-BLOCKED.md`**：待授权 3 项（D7 阈值拍板／G-B、G-C 闸签署与账号发放／N1 窗口 11-19 到期处置）＋共享活体现测风险 2 项（跨栈 Redis 服务别名 `redis` DNS 轮询致心跳键跨栈串写、healthcheck 探针 FAIL 不置非零退出码致「healthy」对心跳缺失无判别力——均非本线改动面，处置待拍板后单独立项）。
 - **台账三同步**：`docs/goal-sprint-PROGRESS.md` 至终态（r1–r6＋收口全 ✅ 冲刺线收官）；`AGENTS.md` 本线收口行；实施台账 §12 收口行。冲刺线八轮（r1–r6＋收口）至此全收官。
+
 ## [未发布] — 学习闭环 2.0 L4 服务端：workbench 真执行面＋analyze_run 三源化＋AI 蒸馏返件起草＋断点⑥ lessons 键名修正（迁移① `d4b7e2f9a6c1`：candidate_payload_json 加列＋adapter_mode 扩值，2026-11-14）
 
 goal-l2.0 任务书 L4 轮服务端半（桌面「失败→AI 起草→建案」另 PR）；按设计稿 v1.1 §2.1–§2.3 落六断点中的断点①②③⑥：
