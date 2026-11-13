@@ -66,32 +66,46 @@ curl -s -H "X-Host-Poll-Token: $TOKEN" http://127.0.0.1:8011/api/v1/agents/host/
 
 ---
 
-## 2. 启动宿主代理 daemon（repo 根目录）
+## 2. 启动宿主代理（仓库根目录）
 
-> ⚠️ **脚本位置陷阱**：`host_agent.py` 在 **仓库根** `scripts/agents/`（不是 `server/scripts/`），
-> 且必须从**仓库根**启动——脚本靠自身路径推导 `SERVER_ROOT`，再拼接 `server/src` 进 `sys.path`。
+> ⚠️ **生命周期口径（上游定稿，2026-11-13 goal-sprint r3）**：宿主代理是**一次进程＝至多一次
+> `claim→context→spawn→receipt`**，run 终态即回收（通道例外⑤）——**不是常驻轮询 daemon**，
+> 由外部调度反复拉起即可。spawn 前跑 `preflight`（fail-fast 于 claim 前：部署半态**不领取**，
+> 避免 run 白挂 `host_running`）。
+>
+> **配置键五个必需，缺一即拒绝起跑**（`HostAgentConfig.from_env`）：
+> `FDE_AGENT_HOST_API_BASE`／`FDE_AGENT_HOST_POLL_TOKEN`／`FDE_AGENT_WORKSPACE_ROOT`／
+> `FDE_AGENT_HOST_ZCODE_BIN`／`FDE_AGENT_HOST_ZCODE_CJS`。**env 驱动、无参数面**
+> （配置只经环境变量读取，不落 argv、不进日志）。
 
 ```bash
 cd D:/test/fde-workbench
 
+export FDE_AGENT_HOST_API_BASE="http://127.0.0.1:8011"
 export FDE_AGENT_HOST_POLL_TOKEN="<与 server/.env 相同的 FDE_AGENT_HOST_POLL_TOKEN>"
 export FDE_AGENT_HOST_ZCODE_BIN="D:/software/zcode/ZCode.exe"
 export FDE_AGENT_HOST_ZCODE_CJS="D:/software/zcode/resources/glm/zcode.cjs"
 export FDE_AGENT_WORKSPACE_ROOT="D:/test/agent-workspaces"   # 必须与 §1 服务端完全一致
-export FDE_API_BASE_URL="http://127.0.0.1:8011"
 export PYTHONPATH=server/src
 
-server/.venv/Scripts/python.exe scripts/agents/host_agent.py
+# 一次进程＝至多一个 run
+server/.venv/Scripts/python.exe -m fde_api.agents.host_agent
 ```
 
-正常输出（每 15s 轮询一次）：
-```
-[2026-11-13 11:46:32] 宿主代理启动 base=http://127.0.0.1:8011 interval=15.0s once=False run_id=None
-[2026-11-13 11:46:32] 无待领取 run
+正常输出（stdout 一行 JSON 回执）：
+```json
+{"outcome": "idle", "run_id": null, "status": null, "receipt": null}
 ```
 
-> 后台运行：末尾加 `> host_agent.log 2>&1 &`。
-> 调试单次：`python scripts/agents/host_agent.py --once`（轮询+执行一轮后退出）。
+> **反复拉起**：让外部调度（Windows 计划任务 / CI / supervisor）循环调用上面这条命令即可；
+> 每次调用领取至多一个 run，没有待领取 run 时输出 `idle` 并以退出码 0 结束。
+> 退出码：`0` 正常／`2` 配置缺失／`3` preflight 失败／`4` 领取失败／`5` 回执被拒。
+>
+> **⑦出站闸**（可选启用）：`FDE_AGENT_HOST_EGRESS_GATE_ENABLED=1` ＋
+> `FDE_AGENT_HOST_EGRESS_ALLOWLIST=<逗号分隔白名单>`——**闸开而白名单空 = 配置半态，不起跑**
+> （fail-closed，与宿主 preflight 同尺）。
+>
+> ⚠️ **零凭据注入**：宿主通道不注入任何解密凭据（红线：解密结果不进 argv/env/磁盘）。
 
 ---
 
@@ -148,13 +162,23 @@ PY
 
 ## 5. 监视：领取 → 执行 → 回执 → 完成
 
-宿主代理每 15s 轮询，发现 `pending>0` 即 `claim` → 状态变 `host_running` → 拉起 `ZCode.exe`
-→ 扫产物 → 回执 → 状态变 `completed`。观察 `host_agent.log`：
+外部调度拉起一次宿主代理进程 → 它 `claim`（状态变 `host_running`）→ 取任务书面料
+（`GET /agents/host/runs/<id>/context`）→ 拉起 `ZCode.exe` → 扫产物 → 回执 → 状态变
+`completed`，进程退出（一次进程＝至多一个 run）。进程 stdout 是一行 JSON 回执：
 
 ```
-[11:47:02] run=b647945e-... 工作区=D:\test\agent-workspaces\platform\b647945e-... 开始执行
-[11:50:07] run=b647945e-... 回执完成 status=completed artifacts=3 resp={...'status':'completed'}
+{"outcome": "receipted", "run_id": "b647945e-...", "status": "completed", "receipt": {...}}
 ```
+
+> `outcome` 三态：`idle`（无待领取 run）／`receipted`（已回执）／`failed_receipted`
+> （回执为失败终态——进程职责已尽，服务端拥有 run 终态，退出码仍为 0）。
+> **spawn 失败会如实回执 `failed` 不悬挂**（run 不会永远停在 `host_running`）。
+
+DB 侧核对：
+```sql
+select status, execution_provider, host_claimed_at, host_receipt_at
+from agent_runs where id='<RUN_ID>';
+-- 期望 status='completed', execution_provider='host_poll', 两个时间戳非空
 
 DB 侧核对：
 ```sql
@@ -289,10 +313,11 @@ PY
 | `ModuleNotFoundError: No module named 'fcntl'` | 用 gunicorn 在 Windows 原生启动 | 改用 Flask `app.run()` |
 | `/host/status` 403 `host_poll_token_missing` | 没带令牌 | 加 `X-Host-Poll-Token` 头 |
 | run 落 `sandbox` + `agent-workspaces/...` 默认根 | 幂等键被 8010 占用 / `.env` 未开 host_poll | 用全新 idempotency_key；确认 `.env` 或显式 env 开了 `FDE_AGENT_HOST_POLL_ENABLED=1` 且 `FDE_AGENT_WORKSPACE_ROOT` 为 Windows 路径；若要复用该键，先按 **§7.1** 清掉幽灵 run |
-| 代理日志 `can't open file .../server/scripts/agents/host_agent.py` | 在 `server/` 下启动脚本 | 改到**仓库根** `scripts/agents/` 启动 |
-| 代理 `缺少宿主代理环境变量` | 没 export 那 4 个变量 | 补 `FDE_AGENT_HOST_POLL_TOKEN/ZCODE_BIN/ZCODE_CJS/WORKSPACE_ROOT` |
+| 代理 `环境变量 FDE_AGENT_HOST_API_BASE 未配置` | 没 export 五个必需变量 | 补 `FDE_AGENT_HOST_API_BASE/HOST_POLL_TOKEN/WORKSPACE_ROOT/HOST_ZCODE_BIN/HOST_ZCODE_CJS`（**缺一即拒绝起跑**） |
+| 代理 `出站闸已启用但 FDE_AGENT_HOST_EGRESS_ALLOWLIST 为空` | 闸开而白名单空（配置半态） | 补白名单，或关掉 `FDE_AGENT_HOST_EGRESS_GATE_ENABLED`（fail-closed，同 preflight 尺） |
+| 代理 `zcode 默认模型未配置` | `~/.zcode/cli/config.json` 缺 `defaultModelSelection` 键 | 补该键（`{providerId, modelId}`）；缺键时 CLI 会 EXIT=1「Select a model before sending a message」 |
 | 代理 `ZCode 二进制不存在` / `zcode.cjs 不存在` | 路径错 | 核对 `D:/software/zcode/...` 实际路径 |
-| run 一直 `host_running` 不回执 | zcode 执行中或卡住 | 看 `host_agent.log`；查 `tasklist | grep zcode`；超时由 `max_duration_ms` 兜底后自动转 `timeout` 回执 |
+| run 一直 `host_running` 不回执 | zcode 执行中或卡住 | 看代理 stdout 的 JSON 行；查 `tasklist | grep zcode`；超时由 `max_duration_ms` 兜底后自动转 `timeout` 回执 |
 | DB 连不上 | `.env` 仍是 docker 别名 | 显式 export `FDE_DATABASE_URL` / `FDE_REDIS_URL` 为 `127.0.0.1` 地址 |
 | 产物预览 404 `artifact_content_path_unsafe` | 指针带 `host:` 前缀（服务端版本早于本次修复） | 升级服务端到含 `host:` 剥前缀的版本；或确认 `agent_workspace_root` 与代理侧一致 |
 | 产物预览 404 `artifact_content_unavailable` | 服务端读不到宿主工作区（容器部署态常态） | 裸跑态检查 `FDE_AGENT_WORKSPACE_ROOT` 与代理侧**完全一致**；容器态属预期降级 |
