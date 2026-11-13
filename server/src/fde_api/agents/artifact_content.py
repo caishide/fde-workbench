@@ -93,13 +93,20 @@ def read_artifact_content(
     org_segment = org_object_prefix(getattr(initiator, "org_id", None))
     settings = current_app.config["SETTINGS"]
     workspace_root = Path(settings.agent_workspace_root)
-    ref = PurePosixPath(artifact.storage_ref)
+    raw_ref = artifact.storage_ref
+    # host_poll 回执落账的指针带 host: 前缀（host_receipt 约定：原件在宿主
+    # 磁盘，回执只登记宿主侧指纹）。裸跑态服务端与宿主同机 ⇒ 剥前缀后与
+    # 容器形状 {run_id}/output/{path} 同构可读（N3c 拍板：宿主裸跑态全量
+    # 可用）；容器态原件不在场 ⇒ 自然落到下方 artifact_content_unavailable
+    # 显式降级。剥前缀后防穿越校验与容器指针完全同套（安全语义不变）。
+    ref_text = raw_ref.removeprefix("host:")
+    ref = PurePosixPath(ref_text)
     if ref.is_absolute() or ".." in ref.parts:
         raise ArtifactContentError(
             "artifact_content_path_unsafe", "产物指针非法（拒绝绝对路径与上跳）。", 404
         )
     output_root = (workspace_root / org_segment / run_id / "output").resolve()
-    candidate = (workspace_root / org_segment / artifact.storage_ref).resolve()
+    candidate = (workspace_root / org_segment / ref_text).resolve()
     try:
         candidate.relative_to(output_root)
     except ValueError as error:

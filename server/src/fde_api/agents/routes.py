@@ -186,6 +186,31 @@ def get_artifact_content(run_id, artifact_id):
         session.close()
 
 
+@agents_blueprint.post("/runs/<run_id>/artifacts/<artifact_id>/adopt-solution")
+@require_auth
+def adopt_artifact_as_solution(run_id, artifact_id):
+    """产物采纳为方案（人工动作；can_manage；采纳流反向入口）。
+
+    族内先例同尺：AI 只产候选、**人工点确认**才进方案台账（translator_draft
+    adopt / ontology candidate confirm / workflow draft publish 同族）——本
+    路由是人工显式动作，不存在自动采纳路径。幂等：同产物重复采纳返回既有
+    方案。不进 api_catalog（终审动作沿业务对象纪律）。
+    """
+    from fde_api.agents.artifact_adoption import ArtifactAdoptionError, adopt_artifact_as_solution
+
+    try:
+        return _data(
+            adopt_artifact_as_solution(
+                actor=g.current_user,
+                run_id=run_id,
+                artifact_id=artifact_id,
+                payload=_payload(),
+            )
+        )
+    except ArtifactAdoptionError as error:
+        return error_response(error.code, error.message, error.status, error.detail)
+
+
 @agents_blueprint.get("/cost")
 @require_auth
 def get_cost():

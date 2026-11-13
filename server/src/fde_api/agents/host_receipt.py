@@ -17,6 +17,10 @@ from __future__ import annotations
 from typing import Any
 
 from fde_api.agents.adapter import AgentRunResult, ArtifactFile
+from fde_api.agents.evidence_candidates import (
+    evidence_kind_for_agent_run,
+    register_agent_run_evidence_candidate,
+)
 from fde_api.agents.models import AgentArtifact, AgentRun
 from fde_api.agents.workspace_files import is_unsafe_artifact_path
 from fde_api.extensions import db
@@ -171,18 +175,32 @@ def submit_host_receipt(*, presented_token: str, run_id: str, payload: dict[str,
                     # 宿主自报 path 是不可信面，防任意宿主文件伪装产物污染
                     # 证据链；该校验失败已记入 failures 供人工处置。
                     continue
+                storage_ref = f"host:{run_id}/output/{artifact.path}"[:255]
                 session.add(
                     AgentArtifact(
                         run_id=run_id,
                         kind=artifact.kind,
                         # 指针带 host: 前缀——与容器 storage_ref 语义区分
                         # （原件在宿主磁盘，服务端永不回读）。
-                        storage_ref=f"host:{run_id}/output/{artifact.path}"[:255],
+                        storage_ref=storage_ref,
                         sha256=digest,
                         reviewed=False,
                         linked_solution_id=None,
                         derived_summary=None,  # 服务端无原件，可重建派生摘要不可算——诚实置空
                     )
+                )
+                # G-07：产物自动登记为**建议性证据候选**（captured_from=
+                # agent_run:<run_id>）——与容器路径（artifact_persistence）同款。
+                # 只登记不采纳：采纳仍走人工提交闸（gate_service.submit_gate_evidence），
+                # 本登记不触碰清单项 claim_status 与门禁状态机（红线：AI 不代拍板）。
+                # 仅 completed run 的产物登记——失败 run 的产物是「留痕」不是「候选」。
+                register_agent_run_evidence_candidate(
+                    session,
+                    project_id=run_row.project_id,
+                    run_id=run_id,
+                    storage_ref=storage_ref,
+                    content_sha256=digest,
+                    kind=evidence_kind_for_agent_run(linked_solution_id=None),
                 )
         elif result.status in _svc.FAILED_STATUSES:
             run_row.status = result.status

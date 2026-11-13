@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 产物采纳流闭环＋宿主产物可读（G-07 证据候选回填；＋1 路由 489→490，2026-11-13）
+
+首个真实 host_poll run 端到端跑通后的下游收口：run 完成后产物停在 `agent_artifacts`，缺「采纳为方案」的人工入口，且**宿主通道产物在桌面端 100% 预览失败**。本轮补两处集成缺口＋开一条人工采纳入口。
+
+- **宿主产物内容读取修复**：`agents/artifact_content.py` 剥 `host:` 指针前缀后与容器形状 `{run_id}/output/{path}` 同构解析（裸跑态服务端与宿主同机 ⇒ 可读，N3c 拍板「宿主裸跑态全量可用」）；剥前缀后防穿越校验与容器指针**完全同套**（绝对路径/上跳仍拒，安全语义零放松）；容器态原件不在场 ⇒ 仍落 `artifact_content_unavailable` 显式降级。**修复前**：host_poll 产物预览 404 全灭；**修复后**：3 产物全 200（逐字节 sha256 自证）。
+- **宿主回执补 G-07 证据候选登记**：`agents/host_receipt.py` 按容器路径（`artifact_persistence.py`）同款语义登记建议性证据候选（`captured_from=agent_run:<run_id>`）——**只登记不采纳**（采纳仍走人工提交闸，不触碰清单项 `claim_status` 与门禁状态机，红线：AI 不代拍板）；仅 completed run 的产物登记（失败 run 的产物是「留痕」不是「候选」）。**修复前**：宿主 run 证据候选恒 0 条；**修复后**：5 产物 ↔ 5 候选一一对应。
+- **产物采纳为方案**（人工动作）：NEW `agents/artifact_adoption.py`＋`POST /agents/runs/<run_id>/artifacts/<artifact_id>/adopt-solution`（**+1 路由 489→490**，零迁移零新表）——族内先例同尺（translator adopt／ontology candidate confirm／workflow draft publish）：**AI 只产候选、人工点确认**才进方案台账，**不存在自动采纳路径**；can_manage 同复核动作尺；幂等（重复采纳返 `duplicate=true`，不重复建方案不重复落事件）；一 run 一方案（同 run 第二产物 409 `artifact_already_adopted`）；终态闸（未终态 409 `agent_run_not_terminal`）；红线 §6.6——方案只存**指针**（storage_ref＋sha256），产物原件永不进库。溯源三段可反查：`solution.agent_run_id` ↔ `run` ↔ `artifact.linked_solution_id`。
+- **口径**：路由 **489→490**／蓝图 52／表 153／迁移 74 rev 单头 `c8e2a6f0b9d4` 不变；inventory＋架构图 candidate.json 已同步（防陈旧闸 OK）。
+- **测试**：NEW `tests/test_agent_artifact_adoption.py`（7 例）＋`tests/test_agent_artifact_content.py` 增 host_poll 指针形状例（合计 16 passed）；`tests/test_host_poll.py`＋架构纯净度＋行数预算闸 44 passed 1 failed（该 1 例为本机 `server/.env` 开了 `FDE_AGENT_HOST_POLL_ENABLED=1` 渗入测试 settings 的**既有环境性失败**，`FDE_AGENT_HOST_POLL_ENABLED=0` 即 passed，CI 无此文件不受影响）；ruff（F401/F841）clean；`agents/service.py` 1755 行未超 1836 预算。
+- **部署文档**：NEW `docs/deployment/宿主代理裸跑部署runbook.md`——面向小白的路线 B（Windows 裸跑）全流程：起服务端（gunicorn 在 Windows 不可用 ⇒ Flask `app.run()`）＋起宿主代理＋发起 run＋验证证据＋排错速查表（含共享库幂等键碰撞、`host_agent.py` 启动位置、DB/Redis 覆盖等实测坑）。
+
 ## [未发布] — goal-sprint r3：端到端真机验收（宿主代理进程本体 NEW＋spawn 段整体重划＋⑦闸回环豁免修复＋真机 PASS；＋1 路由 488→489，2026-11-13）
 
 任务书 §3 r3 行全项达成：`ZcodeAdapter` spawn 段按真实宿主形态重划（`adapter.py:93` 定向警示清偿）、隔离环境一次非交互执行产出可校验产物（**VERIFY-R3 PASS**：completed／产物指纹字节级一致 `a34bc4d8…`／billable 195,582 tokens／context 消费／egress 审计零 blocked）、台账 §12 `adapter_missing` 解除回执（①实装＋N2 签核两项齐备）、E10 解锁判定成立（条件触发，见台账 §3 行）。工程级验收**不创建生产 AgentRun**（H4 边界不碰；N1 首个生产 run 仍归蔡工亲手，窗口 11-19 止）。
