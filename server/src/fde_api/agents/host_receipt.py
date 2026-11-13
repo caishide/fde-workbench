@@ -14,11 +14,11 @@ workflows/executor 拆分同款纪律：①不造顶层 import 环（architectur
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fde_api.agents.adapter import AgentRunResult, ArtifactFile
 from fde_api.agents.models import AgentArtifact, AgentRun
+from fde_api.agents.workspace_files import is_unsafe_artifact_path
 from fde_api.extensions import db
 from fde_api.agents.zcode_contract import parse_json_summary
 
@@ -158,6 +158,11 @@ def submit_host_receipt(*, presented_token: str, run_id: str, payload: dict[str,
                     # 指纹缺失/非法（非 64hex）：不落 AgentArtifact（红线：指纹
                     # 必须完整成对）——该校验失败已记入 failures 供人工处置。
                     continue
+                if is_unsafe_artifact_path(artifact.path):
+                    # QR-073（goal-crv r5 吸收）：unsafe 路径不登记指纹行——
+                    # 宿主自报 path 是不可信面，防任意宿主文件伪装产物污染
+                    # 证据链；该校验失败已记入 failures 供人工处置。
+                    continue
                 session.add(
                     AgentArtifact(
                         run_id=run_id,
@@ -186,7 +191,11 @@ def submit_host_receipt(*, presented_token: str, run_id: str, payload: dict[str,
                 problems.append("invalid_kind")
             if not artifact.source_refs:
                 problems.append("missing_source_refs")
-            if artifact.path.startswith("/") or ".." in Path(artifact.path).parts:
+            # QR-073（goal-crv r5 吸收）：盘符/反斜杠/根锚三形态并入 unsafe
+            # 判定（单一真身 workspace_files.is_unsafe_artifact_path——宿主
+            # 自报 path 恒为 POSIX 相对 output/ 文件名，含盘符/反斜杠即拒绝
+            # 登记指纹，防任意宿主文件伪装产物污染证据链）。
+            if is_unsafe_artifact_path(artifact.path):
                 problems.append("unsafe_path")
             if artifact.path not in host_digests:
                 problems.append("sha256_missing_in_receipt")

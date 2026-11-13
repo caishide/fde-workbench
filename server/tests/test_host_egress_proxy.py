@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import socket
+import tempfile
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -76,11 +78,28 @@ def _ctx() -> AgentRunContext:
     )
 
 
-_SETTINGS = HostChannelSettings(zcode_bin="C:/zcode/ZCode.exe", cjs_path="C:/zcode/resources/glm/zcode.cjs")
+# N2 前置校验注入（goal-sprint r2）：与 test_host_channel 同款——临时 CLI
+# 配置让 spawn 前置校验确定性放行；provider 覆盖开关不进单测 env。
+_CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
+_CLI_CONFIG_PATH.write_text(
+    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    encoding="utf-8",
+)
+_SETTINGS = HostChannelSettings(
+    zcode_bin="C:/zcode/ZCode.exe",
+    cjs_path="C:/zcode/resources/glm/zcode.cjs",
+    cli_config_path=str(_CLI_CONFIG_PATH),
+)
 _SUMMARY = json.dumps({
     "sessionId": "sess_1",
     "usage": {"outputTokens": 8, "inputTokens": 4},
 })
+
+
+@pytest.fixture(autouse=True)
+def _clean_provider_switch_env(monkeypatch):
+    monkeypatch.delenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE", raising=False)
 
 
 # ---------------------------------------------------------------------------

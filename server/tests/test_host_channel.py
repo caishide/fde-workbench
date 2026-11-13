@@ -7,6 +7,8 @@ fail-closed · 超时熔断 · 预算截断 · 凭据零注入降级 L1 · 失�
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -103,7 +105,26 @@ def _ctx(*, timeout_ms=300_000, max_cost_units=0, credentials=None, workspace="D
     )
 
 
-_SETTINGS = HostChannelSettings(zcode_bin="C:/zcode/ZCode.exe", cjs_path="C:/zcode/resources/glm/zcode.cjs")
+# N2 前置校验注入（goal-sprint r2）：单元测试用临时 CLI 配置（含合法
+# defaultModelSelection）——run_host_channel 的 spawn 前置校验会真读该文件
+# （CI 无 ~/.zcode/cli/config.json，缺省路径必失败；注入即确定性绿）。
+_CLI_CONFIG_PATH = Path(tempfile.mkdtemp(prefix="zcode-cli-config-")) / "config.json"
+_CLI_CONFIG_PATH.write_text(
+    json.dumps({"defaultModelSelection": {"providerKey": "prov", "modelId": "model-x"}}),
+    encoding="utf-8",
+)
+_SETTINGS = HostChannelSettings(
+    zcode_bin="C:/zcode/ZCode.exe",
+    cjs_path="C:/zcode/resources/glm/zcode.cjs",
+    cli_config_path=str(_CLI_CONFIG_PATH),
+)
+
+
+@pytest.fixture(autouse=True)
+def _clean_provider_switch_env(monkeypatch):
+    """provider 覆盖开关不进单测 env（开发机可能只设了其一——那是负例专属）。"""
+    monkeypatch.delenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE", raising=False)
 
 _SUMMARY = {
     "sessionId": "sess_abbc2b87",
@@ -346,3 +367,94 @@ def test_workspace_marker_checked_before_spawn() -> None:
             clock=FakeClock(),
         )
     assert ran is False
+
+
+# ---------------------------------------------------------------------------
+# N2 前置校验（goal-sprint r2，backlog T-Z1 段 2026-11-13 补充事实接线）：
+# spawn 前明确失败留痕，不静默重试（失败 → HostChannelError → 既有 L2 映射）
+# ---------------------------------------------------------------------------
+
+
+def test_preflight_provider_pair_incomplete_blocks_spawn(monkeypatch) -> None:
+    """N2 事实①：provider 覆盖开关只设其一 = 部署半态 ⇒ 拒绝，零 spawn。"""
+    spawner = RecordingSpawner(FakeProc(stdout=json.dumps(_SUMMARY)))
+    monkeypatch.setenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", "D:/prov/builtin.json")
+    with pytest.raises(HostChannelError, match="成对"):
+        run_host_channel(_ctx(), _SETTINGS, output_scanner=FakeScanner(), spawner=spawner)
+    assert spawner.calls == []
+
+
+def test_preflight_provider_pair_complete_allows_spawn(monkeypatch) -> None:
+    """成对设置：校验放行，spawn 照常（argv 契约不受前置校验影响）。"""
+    spawner = RecordingSpawner(FakeProc(stdout=json.dumps(_SUMMARY)))
+    monkeypatch.setenv("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", "D:/prov/builtin.json")
+    monkeypatch.setenv("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE", "D:/prov/personal.json")
+    result = run_host_channel(_ctx(), _SETTINGS, output_scanner=FakeScanner(), spawner=spawner)
+    assert result.status == "completed"
+    assert len(spawner.calls) == 1
+    assert "-p" in spawner.calls[0]["argv"] and "--json" in spawner.calls[0]["argv"]
+
+
+def test_preflight_model_selection_missing_file_blocks_spawn(tmp_path) -> None:
+    """N2 事实②：CLI 配置文件不存在 ⇒ 显式拒绝（CLI 将以 EXIT=1 死半路零留痕）。"""
+    spawner = RecordingSpawner(FakeProc(stdout=json.dumps(_SUMMARY)))
+    settings = HostChannelSettings(
+        zcode_bin="C:/zcode/ZCode.exe",
+        cjs_path="C:/zcode/resources/glm/zcode.cjs",
+        cli_config_path=str(tmp_path / "missing.json"),
+    )
+    with pytest.raises(HostChannelError, match="defaultModelSelection"):
+        run_host_channel(_ctx(), settings, output_scanner=FakeScanner(), spawner=spawner)
+    assert spawner.calls == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "{}",  # 键缺失
+        '{"defaultModelSelection": {}}',  # 空对象
+        '{"defaultModelSelection": {"providerKey": "p"}}',  # 缺 modelId
+        '{"defaultModelSelection": {"modelId": "m"}}',  # 缺 providerKey
+        '{"defaultModelSelection": "x"}',  # 形状坏
+        "not-json{",  # 解析失败
+    ],
+)
+def test_preflight_model_selection_malformed_blocks_spawn(tmp_path, raw) -> None:
+    """键缺失/残缺/形状坏/解析失败 ⇒ 显式拒绝；spawner 零调用（零外部副作用）。"""
+    config = tmp_path / "config.json"
+    config.write_text(raw, encoding="utf-8")
+    spawner = RecordingSpawner(FakeProc(stdout=json.dumps(_SUMMARY)))
+    settings = HostChannelSettings(
+        zcode_bin="C:/zcode/ZCode.exe",
+        cjs_path="C:/zcode/resources/glm/zcode.cjs",
+        cli_config_path=str(config),
+    )
+    with pytest.raises(HostChannelError, match="默认模型"):
+        run_host_channel(_ctx(), settings, output_scanner=FakeScanner(), spawner=spawner)
+    assert spawner.calls == []
+
+
+def test_preflight_order_before_egress_gate_start(tmp_path) -> None:
+    """前置校验先于出站闸代理启动：配置坏 ⇒ 代理根本不起（无端口残留）。"""
+    started = {"gate": False}
+
+    class GuardGate:
+        def start(self):
+            started["gate"] = True
+
+        def proxy_env(self):
+            return {}
+
+        def drain_audit(self):
+            return ()
+
+    config = tmp_path / "config.json"
+    config.write_text("{}", encoding="utf-8")
+    settings = HostChannelSettings(
+        zcode_bin="C:/zcode/ZCode.exe",
+        cjs_path="C:/zcode/resources/glm/zcode.cjs",
+        cli_config_path=str(config),
+    )
+    with pytest.raises(HostChannelError):
+        run_host_channel(_ctx(), settings, output_scanner=FakeScanner(), spawner=RecordingSpawner(FakeProc()), egress_gate=GuardGate())
+    assert started["gate"] is False

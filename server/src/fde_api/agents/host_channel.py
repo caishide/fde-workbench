@@ -47,11 +47,17 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from fde_api.agents import zcode_contract as zc
 from fde_api.agents.adapter import AgentRunContext, AgentRunResult
 from fde_api.agents.execution_policy import assert_command_allowed, clamp_timeout_ms
+from fde_api.agents.host_preflight import (
+    default_cli_config_path,
+    validate_default_model_selection,
+    validate_provider_switch_pair,
+)
 from fde_api.agents.sandbox import FORBIDDEN_MOUNT_MARKERS
 
 # zcode CLI 契约（T-Z1 实测 0.17.1 §1.1）：Electron 壳 + cjs 入口；
@@ -74,6 +80,8 @@ class HostChannelSettings:
 
     zcode_bin: str  # ZCode.exe 全路径
     cjs_path: str  # zcode.cjs 全路径（相对安装根 resources/glm/zcode.cjs）
+    # zcode CLI 配置文件路径（N2 事实②校验用；空 = 缺省 ~/.zcode/cli/config.json）
+    cli_config_path: str = ""
 
 
 class HostProcess(Protocol):
@@ -255,6 +263,16 @@ def run_host_channel(
     # 长度上限）+ 超时上限钳制（运行期熔断窗口仍以钳后值为准）。
     assert_command_allowed(argv, allowed_bin=settings.zcode_bin)
     effective_timeout_ms = clamp_timeout_ms(ctx.timeout_ms)
+    # N2 真机联调实测事实接线（backlog T-Z1 段 2026-11-13 补充；goal-sprint
+    # r2）：spawn 前置校验，失败 = HostChannelError → 既有 L2 明确失败映射
+    # （零 spawn 零计费，失败留痕在 run 上，重试由人 H4）。校验器唯一真身
+    # ＝ host_preflight（r3 宿主代理复用同一对，不另写一套）。
+    # ① provider 覆盖开关成对（校验对象 = 实际注入进程的 env）；② 默认模型
+    # 选择键在场（缺失时 CLI 会以 EXIT=1 死在半路零留痕——提前到 spawn 前）。
+    validate_provider_switch_pair(host_channel_env(env_extra))
+    validate_default_model_selection(
+        Path(settings.cli_config_path) if settings.cli_config_path else default_cli_config_path()
+    )
     # ⑦ 出站闸：先起代理再拼 env——注入失败（端口异常等）属通道故障，
     # 不 spawn 不计费（A 类，同 spawner OSError 语义）。
     if egress_gate is not None:

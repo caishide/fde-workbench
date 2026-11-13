@@ -67,6 +67,7 @@ from fde_api.agents.workspace_files import (
     _MANIFEST_FILE,
     _OUTPUT_DIR,
     _write_workspace,
+    is_unsafe_artifact_path,
 )
 from fde_api.agents.host_channel import (
     HostChannelError,
@@ -447,15 +448,22 @@ def _finalize(
             elif not set(artifact.source_refs) <= known_refs:
                 problems.append("unknown_source_refs")
             relative = artifact.path
-            if relative.startswith("/") or ".." in Path(relative).parts:
+            # QR-073（goal-crv r5 吸收）：盘符/反斜杠/根锚三形态并入 unsafe
+            # 判定（单一真身 workspace_files.is_unsafe_artifact_path）——
+            # Windows 裸跑态下 Path 连接会把盘符绝对路径当基座替换，直读
+            # 工作区外宿主文件（含真相层）算指纹入库。unsafe 路径不读文件、
+            # 不进 prepared（零行登记），只记校验失败留痕。
+            unsafe = is_unsafe_artifact_path(relative)
+            if unsafe:
                 problems.append("unsafe_path")
-            file_path = workspace / _OUTPUT_DIR / relative
-            if file_path.exists():
-                content = file_path.read_bytes()
-                digest = sha256(content).hexdigest()
-                prepared.append((artifact, digest, content))
             else:
-                problems.append("file_missing")
+                file_path = workspace / _OUTPUT_DIR / relative
+                if file_path.exists():
+                    content = file_path.read_bytes()
+                    digest = sha256(content).hexdigest()
+                    prepared.append((artifact, digest, content))
+                else:
+                    problems.append("file_missing")
             if problems:
                 validation_failures.append({"path": relative, "reasons": problems})
 
@@ -614,6 +622,9 @@ def _execute_run(
                 cost_owner_id=project.id,
                 retry_of=retry_of,
                 difficulty=difficulty,
+                # QR-089（goal-crv r5 吸收）：发起时刻三重交集快照随 run 冻结
+                # （宿主领取载荷读快照；registry 实时值不再进领取面）。
+                frozen_tools=sorted(effective_tools),
             )
             session.add(run)
             # O-3（goal-d7）：一次方案生成 run = 一次「工作台动作」，发起时刻
@@ -691,6 +702,9 @@ def _execute_run(
         host_settings = HostChannelSettings(
             zcode_bin=settings.agent_host_zcode_bin,
             cjs_path=settings.agent_host_zcode_cjs,
+            # N2 事实②（goal-sprint r2）：CLI 配置路径可指认（空 = 缺省
+            # ~/.zcode/cli/config.json；host_preflight 校验 defaultModelSelection）。
+            cli_config_path=settings.agent_host_zcode_cli_config,
         )
     if host_settings is not None:
         scanner_factory_host = current_app.extensions.get("fde_agent_output_scanner_factory")
@@ -1603,6 +1617,19 @@ def _verify_host_poll_token(settings: Any, presented: str) -> str:
     return digest
 
 
+def _claim_allowed_tools(run: AgentRun, agent: AgentRegistry | None) -> list[Any]:
+    """领取载荷工具白名单（goal-sprint r2 吸收 goal-crv QR-089）。
+
+    随 run 冻结快照优先——「允许名单随 run 冻结」（``_execute_run``
+    docstring 既有承诺）在领取面的兑现；旧行（``frozen_tools`` NULL，
+    迁移 c8e2a6f0b9d4 前落库的）回落 registry 实时读（行为兼容）。
+    """
+    frozen = run.frozen_tools
+    if frozen is not None:
+        return list(frozen)
+    return list(agent.allowed_tools) if agent is not None else []
+
+
 def claim_host_run(*, presented_token: str, run_id: str | None = None) -> dict[str, Any]:
     """宿主代理领取一个待执行 run（幂等；§11.3 约束 2）。
 
@@ -1651,7 +1678,7 @@ def claim_host_run(*, presented_token: str, run_id: str | None = None) -> dict[s
                     "project_id": run.project_id,
                     "capability": run.capability_used,
                     "context_ref": run.context_ref,
-                    "allowed_tools": list(agent.allowed_tools) if agent is not None else [],
+                    "allowed_tools": _claim_allowed_tools(run, agent),
                     "max_duration_ms": agent.max_duration_ms if agent is not None and agent.max_duration_ms else settings.agent_max_duration_ms,
                     "max_cost_units": agent.max_cost_units if agent is not None else 0,
                     "claimed_at": run.host_claimed_at.isoformat() if run.host_claimed_at else None,
@@ -1660,7 +1687,11 @@ def claim_host_run(*, presented_token: str, run_id: str | None = None) -> dict[s
             stmt = stmt.where(AgentRun.status == "queued")
         stmt = stmt.order_by(AgentRun.created_at.asc(), AgentRun.id.asc())
         if run_id is not None:
-            run = session.scalar(stmt)
+            # QR-088（goal-crv r5 吸收）：带 run_id 重领同样取行锁——不用
+            # skip_locked：目标 run 被并发领取时等锁后按最新状态判定（403/
+            # 幂等回载荷），而不是漏读成 queued 无条件赋值双执行。FIFO 面
+            # 保持 skip_locked（领「别的」run，跳过被锁行即可）。
+            run = session.scalar(stmt.with_for_update())
         else:
             run = session.scalar(stmt.with_for_update(skip_locked=True))
         if run is None:
@@ -1690,7 +1721,7 @@ def claim_host_run(*, presented_token: str, run_id: str | None = None) -> dict[s
 
         agent = session.get(AgentRegistry, run.agent_id)
         context_ref = run.context_ref
-        allowed_tools = list(agent.allowed_tools) if agent is not None else []
+        allowed_tools = _claim_allowed_tools(run, agent)
         max_duration_ms = agent.max_duration_ms if agent is not None and agent.max_duration_ms else settings.agent_max_duration_ms
         max_cost_units = agent.max_cost_units if agent is not None else 0
         capability = run.capability_used

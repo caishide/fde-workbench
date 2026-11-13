@@ -2,9 +2,9 @@
  "route_count": 488,
  "blueprint_count": 52,
  "table_count": 153,
- "revision_count": 73,
+ "revision_count": 74,
  "heads": [
-  "b5d9e2f4a7c1"
+  "c8e2a6f0b9d4"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -316,6 +316,14 @@
    "down_revision": "a9c5e2d7b3f1",
    "create_tables": [],
    "add_column_tables": []
+  },
+  "c8e2a6f0b9d4": {
+   "file": "c8e2a6f0b9d4_agent_run_frozen_tools.py",
+   "down_revision": "b5d9e2f4a7c1",
+   "create_tables": [],
+   "add_column_tables": [
+    "agent_runs"
+   ]
   },
   "c9d2f4a7e1b5": {
    "file": "c9d2f4a7e1b5_simulation_evaluations.py",

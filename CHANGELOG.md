@@ -2,6 +2,18 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-sprint r2：P2′ 服务端咬合面收口（crv 吸收 QR-073/088/089 ＋ N2 两实测事实接线；迁移 73→74 单头 `c8e2a6f0b9d4`；488/52/153 口径不变，2026-11-13）
+
+**范围现测校正**：P2′① 咬合半（状态机 `queued`/`host_running`＋领取/回执三路由＋H4 失联只标记）已于 #204/#215（2026-11-08）落地——本轮不重造；实际工作面＝goal-crv 吸收（QR 台账 98 行中与本轮改动面相交的 P1 一条＋同函数 P2 两条）＋ backlog T-Z1 段 2026-11-13 补充的两条 N2 实测事实接线。§11.3 六约束逐条核对：①③④⑤⑥既有实现在场，②的幂等/鉴权在场但行锁有 QR-088 缺口，本轮补。
+
+- **QR-073（P1）产物路径越界三形态族**：NEW `agents/workspace_files.py::is_unsafe_artifact_path()` 单一真身（盘符 `D:\…`/`D:/…`、反斜杠 `a\b`、根锚 `\…`）替换 `service._finalize` 与 `host_receipt` 两处「`/` 前缀＋`..` 部件」弱判定；且 unsafe 路径**不读文件不进 prepared（容器面零行登记）＋回执面不落 AgentArtifact 指纹行**——原实现只要 digest 形状合法就落行，Windows 裸跑态下 `workspace/output/<盘符绝对路径>` 的 Path 连接会替换基座直读工作区外宿主文件（含真相层路径）算指纹入库＝证据链污染；现 failures 留痕、人工处置（H4）。
+- **QR-088（P2）领取并发洞**：claim 带 `run_id` 重领路径补 `with_for_update()`——等锁后**重读最新状态**判 403 `host_claim_conflict`/幂等回载荷（FIFO 面保持 `skip_locked` 不变）；无锁实现的 lost-update 窗口（后来者快照停在 queued ⇒ 无条件赋值覆写 rival 令牌 ⇒ 双代理双执行）封死。
+- **QR-089（P2）白名单冻结契约**：`agent_runs` 加可空 `frozen_tools` JSON 列（迁移 `c8e2a6f0b9d4`，**73→74 单头**，additive 旧行读路径零变化）＝「允许名单随 run 冻结」（`_execute_run` docstring 既有承诺）的结构化真身；`start_run` 落发起时刻三重交集快照，领取载荷（含续领分支）读快照、旧行 NULL 回落 registry 实时读（行为兼容）。
+- **N2 两实测事实接线**：NEW `agents/host_preflight.py`（宿主代理与 dev 直连共用的**唯一前置校验真身**，r3 宿主代理进程复用不另写）——①provider 覆盖开关成对校验（`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`＋`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 只设其一＝部署半态 ⇒ spawn 前拒绝）；②`defaultModelSelection` 键在场校验（配置文件缺失/键缺失/`providerKey`·`modelId` 残缺/解析失败 ⇒ 显式拒绝——CLI 本会以 EXIT=1「Select a model before sending a message」死在半路，前置拦截把该失败变成**明确失败留痕**）。接线点＝`run_host_channel` spawn 前（出站闸代理启动之前，配置坏⇒代理根本不起）；失败走既有 `HostChannelError`→L2 明确失败映射（零 spawn 零计费，重试由人 H4，不静默重试）。config 新键 `FDE_AGENT_HOST_ZCODE_CLI_CONFIG`（空＝缺省 `~/.zcode/cli/config.json`）。
+- **相邻不吸收留痕**（照常走 QR→修复批轮）：QR-090（容器面 receipt ask 联合唯一）/QR-086/087（retry 授权面）/QR-091/092/094/095（宿主 spawn 段＝r3 端到端验收轮面）。
+- **验证**：test_host_poll +6 例（参数化展开 10 项：rival 提交等锁重读 403＋rival 所有权不被覆写／frozen 快照／旧行回落／五形态路径 failures 零行×5／202 受理快照落库）＋test_host_channel +5 例（参数化展开 10 项：成对正负 2＋配置缺失 1＋键残缺/坏 JSON×6＋校验先于出站闸 1）；既有 host 三件套补 preflight 注入点；**变异五连全红→字节级还原→绿**（M1 去行锁／M2 快照退实时／M3 路径退旧判定／M4 模型键校验短路／M5 成对校验短路）——★M1 首版判别力不足被自纠（持锁未提交时无锁实现同样阻塞 ⇒ 假绿；改 rival 提交后重读形态才杀灭）；定向回归 155+ 例绿＋ruff 绿＋mypy **277/102 基线不变**；inventory 重提取（`revision_count` 73→74，路由/蓝图/表全不变；防陈旧闸绿——图纸零迁移数声明＋M4 纯迁移轮先例不重生 archify）。
+- **口径**：路由 **488**／蓝图 **52**／表 **153** 不变；迁移 **73→74** 单头 `c8e2a6f0b9d4`；`server/` 生产 diff＝agents 域 6 文件＋config.py＋workspace_files.py＋新迁移 1 件。
+
 ## [未发布] — E8 A 轨只读降级层 + E11 智能体凭据管理面（首个 run 三硬阻断解除之二；零迁移零新表＝口径不变，2026-11-13）
 
 事实盘点（只读探查）确认：**N1/N2 全绿后首个真实 run 仍发不出去**——三硬阻断：① 种子 10 个 agent 的 `credential_ref` 全 null ⇒ `agents/service.py:219` 先判 `credential_missing` ⇒ 409 `agent_unavailable`（连执行链都进不去，早于 `adapter_missing`）；② `agent_credentials` 表**无任何 HTTP 路由**（唯一创建点是本地脚本 `sandbox_real_e2e.py:106`，裸机不可复现）；③ 容器路径 `adapter.py:100-120` argv 仍虚构（`zcode run --task --events ndjson` vs 真机 `-p --json --cwd`）。本轮解除①②，③ 归 P2′ 接线轮。
