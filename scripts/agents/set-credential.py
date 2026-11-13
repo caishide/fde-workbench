@@ -320,9 +320,11 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("下一步（步骤三）：改 server/.env 的三个宿主通道变量，然后重建服务：")
     print("  FDE_AGENT_HOST_CHANNEL_ENABLED=1")
-    print("  FDE_AGENT_HOST_ZCODE_BIN=<ZCode.exe 全路径>")
-    print("  FDE_AGENT_HOST_ZCODE_CJS=<zcode.cjs 全路径>")
-    print("  cd server && docker compose build && docker compose up -d && alembic upgrade head")
+    print("  FDE_AGENT_HOST_ZCODE_BIN=D:/software/zcode/ZCode.exe")
+    print("  FDE_AGENT_HOST_ZCODE_CJS=D:/software/zcode/resources/glm/zcode.cjs")
+    print("  然后在仓库根目录跑：")
+    print("    docker compose build && docker compose up -d")
+    print("    cd server && docker compose exec -T api alembic upgrade head")
     return 0
 
 
