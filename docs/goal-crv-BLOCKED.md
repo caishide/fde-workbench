@@ -20,6 +20,8 @@
 | 3 | QR-067（r4） | admin 蓝图四个 GET 读面：补 admin 门 vs 成文「有意公开」＋钉（M3b R1 红线角度判级存疑） |
 | 4 | QR-073（r5） | 宿主通道盘符逃逸暴露面：部署态 host_channel vs host_poll 形态核证（须读部署态 server/.env 两键——禁区，留蔡工） |
 | 5 | r6 §5-1 | SNS 回调关闭态 403 vs 仓库 404 纪律（机器对机器语义等价；收口须换代 test_sns_route_disabled_403 钉） |
+| 6 | QR-133（r8） | redaction_review 事件账携带企业名明文（词典确证命中名＋疑似名原文）vs 红线「数据库只存代号」：复核闸功能需要名字 vs 红线字面——指纹化复核清单（UI 经本地词典反解）or 红线例外登记（测试钉现断言 name 在场＝既有设计，换代须随拍板） |
+| 7 | QR-134（r8） | T-A2 脱敏面覆盖不对称：presurvey 录入卡自由文本零脱敏（models docstring 豁免声明「不触碰 S0–S2 红线」vs 同类别 translator 三道闸）＋update_analysis 人工编辑不复扫（已脱敏草稿可经编辑重引入真名，confirm 闸只看 AI 阶段清单）——录入卡豁免成立则登记 AGENTS；编辑面至少补输出端扫描 |
 
 ## 3 结构性挂账引用（不立 QR，引用既有编号）
 
