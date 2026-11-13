@@ -42,6 +42,14 @@ goal-l2.0 任务书 L4 轮服务端半（桌面「失败→AI 起草→建案」
 - **工作流控制台升级**：`desktop/src/renderer/src/workflows/WorkflowConsole.tsx` 既有行为零回归，canManage 顶部新增「从方案生成草稿」区＝交付方案下拉（过滤 approved/published）＋实施技能下拉（GET `/api/v1/extensions` skills 过滤 published，ref=`key@current_version`）＋审批能力默认 `workbench.write`，并列「编译草稿」（POST `draft-from-plan`，落库为 draft 定义）与「AI 起草草稿」（POST `generate-ai-draft`，返件式零落库）；AI 返件就地预览（节点表＋validate 明细＋`dag_sha256`），「采纳为定义」POST `/workflows` body 恰含 `name`/`dag`（`description` 非空才携带，validate 明细不进 body）；draft 卡片加「干跑校验」（validate 干跑明细就地呈现），isAdmin 加「发布」；`ProjectDetailPage` 增传 `isAdmin`。
 - **错误码纪律**：全部写动作 403/409/422 原样呈现 `[code] message` 不吞；草稿来源列表（方案/技能）加载失败静默降级为空下拉（沿面板族 fail-静默纪律），生成动作仍受服务端闸约束。
 - **验证与打包**：vitest 新增 22 例（`delivery-plans-panel` 8＋`test-plans-panel` 7＋`workflow-console` 6＋`workflow-console-launch` 1），全量 98 文件 **1142 passed**＋`npm run typecheck` 零错＋M1–M3 反向验证（分解 dry_run 提交腿／报告成对闸／采纳 dag payload）全红→字节级还原→复绿＋`server/tests/test_diagnostic_sample_surface.py` 与 `server/tests/test_ledger_sync_nail.py` 全绿（7 passed）＋`git diff fork/main -- server/` 为空；合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r47` 并完成新旧 `app.asar` 四特征串（`draft-from-plan`、`generate-ai-draft`、`delivery-plans/generate-ai`、`test-plans/generate-ai`）正反向核验。
+## [未发布] — goal-crv 修复批 E：席位回填四路径预扣税递进闭合＋工作流 solutions.create 契约闸（零迁移零新路由，2026-11-14）
+
+依据 `docs/goal-crv-fix2-剩余批次总循环-任务书.md` r4 批 E 完成 `QR-071`/`QR-072` 两项 P1 修复与 `QR-073` 宿主通道核销（零迁移零新表零新路由）：
+
+- **QR-071（续 CR-028）席位回填四路径闭合**：published 态 `seat_delivery=None` 生成的 draft 结算行在接单（`transition_package` accept 分支扫 draft 行回填）、五席位分配（`allocate_five_seats` 落 `seat_payees["delivery"]`）、二次收款刷新（`record_receipt_settlements`）与 `accrue_settlements_for_project` 兜底（paid 明细→包指针→接单人逐级回退并持久化）四条路径同步回填 `seat_delivery_user_id`，保证当期预扣税非零且同自然年后续里程碑把已计提行计入累计预扣递进基数。
+- **QR-072 工作流 solutions.create 契约闸**：`compile_delivery_preview` 与种子模板 `plan_execution` 补 `params.project_id` 并把骨架字段包进 `params.body`（对齐 api_catalog 路由契约）；`validate_dag` 新增 `catalog_call_contracts()` 注入，定义期拦截缺路径必填参数（`call_missing_path_param`）、`body` 非对象（`call_invalid_body`）、写操作字段散落顶层（`call_unwrapped_body_params`）三类 422 `dag_invalid`；`_dispatch_skill` 把 skill JSON 输出字典字段透出节点上下文使下游 `{{research_brief.opportunity_ids}}` 引用可达；编译→定义→发布→执行器端到端真实创建 `ProjectSolution` 行。
+- **QR-073 及宿主通道核销**：`is_unsafe_artifact_path` 三形态路径钉（POSIX 绝对／`..` 穿越／Windows 盘符·反斜杠根·UNC）＋ `#422`（`QR-088/089`）与 `#433`（`QR-092/094/095`）吸收项在位核验；附带收口 `host_receipt.py` exit_code 布尔漏点（`isinstance(False, int)` 为真且 `False == 0`，宿主传 `"exit_code": false` 可误判成功——补 `not isinstance(..., bool)` fail-closed 排除）。
+- **验证**：NEW `tests/test_crv_batch_e.py` 5 例＋邻域回归 14 套件 213 passed＋变异三连（`M1_QR071_accept_backfill`/`M2_QR072_definition_gate`/`M3_QR072_compiler_contract`）全红→`try/finally` 字节还原核 sha256→5 passed 复绿；`ruff` 零告警；`check-python-types.py` 277 基线零新增。
 
 ## [未发布] — 桌面端五处前后端断链与静默缺陷收口：图片预览 CSP `blob:`＋训练场交付原文展开＋提案五态与发布/回滚＋产物采纳方案与跳转＋派单 AI 撮合（桌面变更·零服务端改动·零迁移零路由，便携版 r45，2026-11-13）
 
