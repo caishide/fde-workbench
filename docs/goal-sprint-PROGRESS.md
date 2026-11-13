@@ -200,4 +200,37 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 
 - [x] 蔡工配齐 `diag.fde18.com` A 记录 → Let's Encrypt 443 签证生效＋nginx 80→301/443 上线
 - [x] `fde-ops` 官网 CTA 切换 `diag.fde18.com` 双锚点＋收回 `app.fde18.com` 豁免（PR #55 `04f4220`＋tag `deploy-20261113-2019`＋PR #56 `a2b40f1`）
-- [x] 公网 HTTPS 线上复测全绿（`verify_diag_public_live.py` 6/6 PASS；本仓 PR 与 CI 四绿见收口回执）
+- [x] 公网 HTTPS 线上复测全绿（`verify_diag_public_live.py` 6/6 PASS；本仓 PR #445 `2bf8da42` 四绿收口）
+
+---
+
+## r6 · E8 实施与降级验收轮（E8/E11 意图↔实现逐条核对＋三处真缺口闭合修复＋台账同步，2026-11-14）
+
+### 开工闸与并发吸收核对（任务书 §1 吸收条款＋§3 r6 行）
+
+- **开工闸两项齐备**：① D7 四口径运行证据复审报告已于 r4 出齐合并（`#438` `05581872`）；② 蔡工显式下达开工令「继续推进 r6」（不跨闸不自动跳轮）。
+- **`goal-crv` 吸收扫描**：遍历 `docs/goal-crv-r1..r10-*.md` 与 `docs/audit/全面代码审查报告-2026-11-13.md` 全量 147 条 QR 台账，检索 `automation_fallback` / `automation_jobs` / `credentials.py` / `dsh_runtime` / `AutomationTaskRun` / `DEGRADABLE_DSH_CODES` / `READ_ONLY_TOOLS`，仅 `goal-crv-r1:46` 正向确认 `DSHRuntimePool.execute` 开发态合法路径——**与 E8/E11 交集的 P0/P1 缺陷＝0 条**。
+- **并发基线盘点**：PR `#414`（`8cbb21b`）已先行合入 E8 骨架（`control/automation_fallback.py`＋`control/automation_jobs.py`）与 E11 凭据管理面（`agents/credentials.py`＋三路由＋7 个 zcode 种子赋 `credential_ref="default"`）；`#440`（`67c0c867`）已对齐 `agent_pilot_max_runs=10`；`#441`（`d1126d3c`）＋`#446`（`4f4639fb`）已完成 `ai-eval` 四槽凭据接线并产出首份非 `insufficient_data` 报告（`pass` / `kpi=1.0` / `live 9/9`）。按台账 §12 与 `v3-backlog` 指派，本轮对 `#414` 执行 **N3 五问＋E11 意图↔实现（intended-vs-implemented）逐条验收**（注：同名外部技能已迁 `phuryn/product-engineering`，按其指引直接对规格与源码/测试逐行对账）。
+
+### E8/E11 意图↔实现逐条对账与三处潜伏真缺口修复
+
+1. **E11 智能体凭据管理面（100% 吻合，零生产改动）**：
+   - `agents/credentials.py`＋`GET/POST/DELETE /api/v1/agents/credentials`：`is_platform_operator` 平台身份＋`system_operator` 双轴硬闸；凭据名正则 `^[A-Za-z0-9_]{1,120}$` 封死 `FDE_AGENT_<NAME>` 环境变量名注入；Fernet 加密派生链与 `agents/service.py::_decrypt_credential` 逐字节同源；响应仅回 `credential_configured: bool`（零明文零密文回显），且不进 `api_catalog`（98 ENTRIES 不变）；`seeds/agents.json` 7 个 `zcode` 型赋 `"default"`、3 个 `persona` 型保 `null`。`test_agent_credentials.py` 19 例全绿。
+2. **E8 A 轨只读降级层（N3 五问核对抓出三处「测试绿而生产断/漏」真缺口并当场闭合）**：
+   - **N3-Q1 任务封闭集** ✅：`DEGRADABLE_TASK_TYPES = frozenset({"ai"})`，`system` 任务与已成功任务恒返 `None` 不降级；`automation.execute` 不在 `RECOVERABLE_JOB_TYPES` 中，H4 不自动重试红线保持。
+   - **N3-Q2/Q3/Q5 产出物、人工确认与诚实失败语义** ✅：降级不伪造宿主工作区 `sha256` 产物指针，落 `output_json.degraded=True`、`degraded_reason=error.code`、`degraded_confirmation_required=True`（蔡工逐件确认，H1/H11 不自动收敛）与显式只读产出描述；降级面自身再抛 `DSHRuntimeError` 时 `status="failed"` 且保留 `degraded=True` 留痕。
+   - **★真缺口 1（N3-Q4 命名空间断层致真实任务 100% 无法降级）**：`control/service.py:281,418-425` 创建桌面端/ClawBot `AutomationTask` 时强制校验并持久化非空点分能力名（默认 `DEFAULT_AUTOMATION_CAPABILITIES = ["project.read", "project.summarize", "file.search"]`），而 `#414` 的 `automation_fallback._read_only_tools_for` 在 `capabilities` 非空时仅与下划线工具名 `READ_ONLY_TOOLS` 做字面相等匹配（交集为空 `()` ⇒ 恒返 `None`；原接线测试直接 ORM 塞 `requested_capabilities=[]` 掩盖了断层）。**修复**：`automation_fallback.py` 由 `mcp_gateway.TOOLS` 单一真身派生 `CAPABILITY_READ_ONLY_TOOLS` 与 `UNSCOPED_READ_ONLY_TOOLS`（`project.summarize` 共享项目只读工具集，命中点分只读能力时附带 5 项无能力门槛通用只读工具；直传下划线只读工具名保持精确同名兼容；纯写/编排能力集仍返 `()` → `None`）。
+   - **★真缺口 2（N3-Q4 降级调用未收窄任务能力与工具白名单）**：`automation_jobs._record_degraded_execution` 虽把 `plan.allowed_tools` 写入 `output_json["degraded_allowed_tools"]`，但 `_run_degraded_readonly` 与 `ai_server_client._degraded_direct_result` 调 `direct_tool_completion` 时未传 `capabilities` 与 `allowed_tools`，导致模型实际拿到用户档位全量能力工具集，与审计留痕声称的白名单不一致。**修复**：`ai_tool_loop.tool_definitions` / `direct_tool_completion` 新增可选关键字参数 `capabilities` 与 `allowed_tools`；`automation_jobs` 显式透传 `capabilities=execution["allowed_tools"]`、`allowed_tools=plan.allowed_tools`，`ai_server_client.execute_ai_prompt` 两处降级分支透传 `capabilities=capabilities`。
+   - **★真缺口 3（N3-Q4 执行期缺二次只读硬闸）**：`ai_tool_loop._run_tools` 原先只靠 `tool_definitions` 在模型 schema 层过滤 `READ_ONLY_TOOLS`，模型返回 `tool_calls` 时直接调 `call_tool`；因 `mcp_gateway.TOOLS["api_execute"]` 的 `capability=None`（内部靠 `workbench.write` 鉴权），一旦高权限账号在直连/降级循环中遇提示词注入或模型幻觉返回 `api_execute`，写库操作会被直接执行。**修复**：`_run_tools` 新增 `permitted_tools = _permitted_read_only_tools(allowed_tools)`（恒 `<= READ_ONLY_TOOLS`）执行前硬拦截，任何非只读或未授权工具（如 `api_execute` / `file_send_wechat` / `lcsc_search`）一律返回 `{"error": "forbidden", "message": "本次执行未开放该工具。"}`，绝不触达 `call_tool`。
+
+### 验证回执
+
+- **新增测试 +6 例**：`test_automation_fallback.py` +2（11→13：点分能力展开＋`project.summarize` 映射）、`test_automation_fallback_wiring.py` +1（5→6：真实 `POST /api/v1/task-center/automations` 点分能力创建→降级落账→工具收窄端到端）、`test_ai_tool_loop.py` +2（admin 身份写工具 `api_execute` 硬拦截＋能力与白名单双重收窄）、`test_ai_server_direct_fallback.py` +1（`execute_ai_prompt` 降级透传 `capabilities`）。
+- **变异三连全真红→字节级还原（sha256 一致）→复绿**：M1 移除点分能力映射（`3b1fb920b3c9`，2 红）／M2 移除 `automation_jobs` 的 `allowed_tools` 透传（`a4fa3b3a5d99`，1 红）／M3 移除 `_run_tools` 执行期只读硬闸（`7dab87995c89`，2 红）。
+- **广域回归与静态闸**：控制面与安全邻域 13 套件 **209 passed**＋`ruff check` 全绿＋`scripts/check-python-types.py` **OK（277 occurrences / 102 distinct 基线不变）**＋`check_archify_diagram_freshness.py` OK＋台账钉/D7 报告钉全绿。**零迁移・零新表・零新路由・零桌面改动**（现测结构口径 **490 路由 / 52 蓝图 / 153 表 / 75 rev 单头 `d4b8e1f6a9c3` / 98 ENTRIES** 不变）。
+
+### r6 待办（收口条件）
+
+- [x] 开工闸（D7 报告出齐＋蔡工显式令）与 `goal-crv` 吸收条款扫描确认（0 交集缺陷）
+- [x] E8/E11 对照 N3 五问逐条意图↔实现核对，闭合 E8 三处真缺口（点分能力映射／降级收窄透传／`_run_tools` 执行期只读硬闸）并通过 +6 例回归与 M1–M3 变异三连
+- [x] 台账同步（本文件＋下一步实施台账＋`v3-backlog.md`＋`CHANGELOG.md`＋`AGENTS.md`；PR 四绿合并与活体容器追平三验随合并闭环）

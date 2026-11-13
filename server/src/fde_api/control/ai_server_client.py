@@ -383,7 +383,8 @@ def execute_ai_prompt(*, user_id: str, prompt: str, execution_id: str | None = N
             reason="dsh_not_enabled", return_metadata=return_metadata,
             user_id=user_id, project_id=project_id, execution_id=identifier,
             use_tools=use_tools, purpose=purpose,
-            prompt_version=prompt_version, prompt_fingerprint=fingerprint)
+            prompt_version=prompt_version, prompt_fingerprint=fingerprint,
+            capabilities=capabilities)
     body = {"schema_version": "fde-dsh-v1", "execution_id": identifier,
             "actor": {"user_id": user_id}, "scope": {"project_id": project_id},
             "agent_profile": "fde-assistant" if use_tools else "fde-structured",
@@ -413,7 +414,8 @@ def execute_ai_prompt(*, user_id: str, prompt: str, execution_id: str | None = N
             reason=error.code, return_metadata=return_metadata,
             user_id=user_id, project_id=project_id, execution_id=identifier,
             use_tools=use_tools, purpose=purpose,
-            prompt_version=prompt_version, prompt_fingerprint=fingerprint)
+            prompt_version=prompt_version, prompt_fingerprint=fingerprint,
+            capabilities=capabilities)
     if response.status_code >= 400:
         service_error = runtime._service_error(response.status_code)
         _audit_execution(request_id=identifier, actor_id=user_id, purpose=purpose,
@@ -452,7 +454,8 @@ def _degraded_direct_result(*, model: dict[str, Any], prompt: str, system_prompt
                             project_id: str | None = None, execution_id: str | None = None,
                             use_tools: bool = True, purpose: str,
                             prompt_version: str | None = None,
-                            prompt_fingerprint: str | None = None) -> str | dict:
+                            prompt_fingerprint: str | None = None,
+                            capabilities: list[str] | None = None) -> str | dict:
     """Run the direct provider call and shape it like a normal AI Server result.
 
     When tools are wanted, the provider is called with the workbench tool
@@ -475,7 +478,8 @@ def _degraded_direct_result(*, model: dict[str, Any], prompt: str, system_prompt
                         model=model, prompt=prompt, user=user, project_id=project_id,
                         execution_id=request_identifier,
                         system_prompt=system_prompt, max_tokens=max_tokens,
-                        timeout_seconds=timeout_seconds)
+                        timeout_seconds=timeout_seconds,
+                        capabilities=capabilities)
                 except DSHRuntimeError as error:
                     _audit_execution(request_id=request_identifier, actor_id=user_id,
                                      purpose=purpose, model=model_name, used_fallback=True,
