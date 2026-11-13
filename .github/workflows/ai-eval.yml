@@ -10,6 +10,10 @@
 # - 凭据：secrets.FDE_DEEPSEEK_API_KEY（★供应商红线：只允许按量付费 key，
 #   禁止包月/订阅制——无按量用量口径即破坏预算治理）。未配置 ⇒ harness 产
 #   insufficient_data 报告（不编造分数），job 保持绿。
+# - 端点/模型/超时三槽（G-10 凭据接线轮 2026-11-13）：secrets.FDE_DEEPSEEK_BASE_URL／
+#   FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL／FDE_DEEPSEEK_TIMEOUT_SECONDS 同以 secret 供值，
+#   缺省（secret 未配置 ⇒ 空串）回落 harness DEFAULT_*（or 链既有语义零改动）——评测与
+#   生产同款供应商端点与模型；供应商身份不硬编码进仓，换供应商只改 secret 零代码。
 # - 报告：artifact `ai-eval-report`（90 天）；报告只带提示词 sha256 指纹，
 #   正文一字节不落盘（N6 纪律）。
 name: ai-eval
@@ -52,6 +56,9 @@ jobs:
       - name: Run opportunity golden-set eval (observation only)
         env:
           FDE_DEEPSEEK_API_KEY: ${{ secrets.FDE_DEEPSEEK_API_KEY }}
+          FDE_DEEPSEEK_BASE_URL: ${{ secrets.FDE_DEEPSEEK_BASE_URL }}
+          FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL: ${{ secrets.FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL }}
+          FDE_DEEPSEEK_TIMEOUT_SECONDS: ${{ secrets.FDE_DEEPSEEK_TIMEOUT_SECONDS }}
         run: |
           server/.venv/bin/python scripts/ai_eval/run_opportunity_eval.py --output ai-eval-report.json
 

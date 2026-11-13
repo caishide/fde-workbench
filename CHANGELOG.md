@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化 G-10 CI 评测凭据接线轮：ai-eval workflow 四槽 secret 全接线（端点/模型/超时缺省回落＝既有语义零改动；零迁移零路由零桌面，2026-11-13）
+
+- **挂账消解第一段（凭据面）**：N4 轮挂账「上游 CI 配 `secrets.FDE_DEEPSEEK_API_KEY`（按量付费 key）后 ai-eval 出首份非 insufficient 报告」。本轮现测发现**只灌 key 一槽不足以消解**——生产 `server/.env` 的 `FDE_DEEPSEEK_*` 槽现行实际为 **MiniMax 端点**（`FDE_DEEPSEEK_BASE_URL=https://api.minimaxi.com/v1`＋`FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL=MiniMax-M3.1-Flash`，按量付费），而 workflow 只接 `API_KEY`、harness `BASE_URL` 缺省 `https://api.deepseek.com` ⇒ MiniMax key 调 DeepSeek 官方端点＝真模型腿 9 例全错 ⇒ 报告**仍 `insufficient_data`**（误导性绿）。key 来源/接线深度三选拍板问询未获答复 ⇒ 按「按推荐执行＋留痕可推翻」先例走推荐项：**复用生产 key＋四槽全接线**（secret 随时可覆盖/删除，workflow 走 PR 可回退）。
+- **接线内容**：`.github/workflows/ai-eval.yml` env 块在 `FDE_DEEPSEEK_API_KEY` 外新增三槽 `FDE_DEEPSEEK_BASE_URL`／`FDE_DEEPSEEK_AI_OPPORTUNITY_MODEL`／`FDE_DEEPSEEK_TIMEOUT_SECONDS`，同以 `secrets.*` 供值——secret 未配置 ⇒ 空串 ⇒ harness 既有 `os.environ.get(...) or DEFAULT_*` 链回落默认（**缺省语义零改动**，与首轮逐位一致）；注释换代记本轮。供应商身份不硬编码进仓：换供应商只改 secret 零代码。
+- **凭据纪律**：四个 secret（API_KEY／BASE_URL／MODEL／TIMEOUT_SECONDS=180 生产同值）经 `gh secret set` **stdin 管道**灌入 fork（值不落 argv／不回显／不入库不入报告）；**供应商红线自证**——生产现行 key 为按量付费（与活体部署同源），CI 单次 ≈9 调用／3 万 token 量级、周频，成本可忽略（workflow 注释既有成本口径）。
+- **判据**：合并后手动 `workflow_dispatch` 出**首份非 insufficient 报告**（读数与四特征④上行复评随回填 PR 落台账 v1.22）；周一 03:00 UTC 定时 cadence 照常（首跑不再等周一）。
+- 零迁移零路由零蓝图零桌面零生产代码改动；结构口径**不变**（引用前现测 **490 路由／52 蓝图／153 表／74 rev 单头 `c8e2a6f0b9d4`**，inventory 逐位吻合）；无 server 变更 ⇒ 无需 rebuild／alembic／重打包。
+- 文档同步：台账 **v1.21**（G-10 凭据接线注记）＋任务书 §13 **#25**。
+
 ## [未发布] — 试点度量口径两项收口（产物人工接受率分母定义＋`agent_pilot_max_runs` 默认对齐文档拍板值，2026-11-13）
 
 OWNER 拍板「3A＋4A 全按推荐执行」的回写：
