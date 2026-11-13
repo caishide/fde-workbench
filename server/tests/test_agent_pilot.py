@@ -168,7 +168,7 @@ def test_pilot_report_metrics(db_session, d4_client, d4_app, d4_settings) -> Non
     assert report.status_code == 403  # project_lead 非管理员不可读
     data = _api(client, db_session, settings, "admin").get("/api/v1/agents/pilot-report").json["data"]
     assert data["pilot"]["active"] is True and data["pilot"]["runs_used"] == 6
-    assert data["pilot"]["runs_limit"] == 20 and data["pilot"]["runs_remaining"] == 14
+    assert data["pilot"]["runs_limit"] == 10 and data["pilot"]["runs_remaining"] == 4
     metrics = data["metrics"]
     assert metrics["intercept_rate"] == round(1 / 3, 4)  # 1 拦截 / (1 拦截 + 2 过门产物 run)
     assert metrics["first_pass_rate"] == 0.5  # 过门 2 run 中首次尝试 1（A）

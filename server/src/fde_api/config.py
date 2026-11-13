@@ -246,13 +246,15 @@ class Settings(BaseSettings):
     # 失联标记阈值（分钟）：host_running 超此时长未回执 ⇒ 标 host_lost_at
     # （H4 只标记不自动重试；不迁移状态——接管/重试仍由人）。
     agent_host_lost_mark_minutes: int = Field(default=30, ge=1)
-    # goal-d6 试点开关族（PRD §10 / 技术文档 S1-7 / 总纲 UM-1）：30 天 / 20 run
+    # goal-d6 试点开关族（PRD §10 / 技术文档 S1-7 / 总纲 UM-1）：30 天 / 10 run
     # 先到为准；窗口内超限 409 pilot_run_limit_exceeded，窗口走完不再拦（试点
     # 结束由报告定升级）。started_at 留空 = 以最早 agent_run.created_at 推导
     # （首个 run 即试点启动）；演练 run（rehearsal: 前缀幂等键）不计数。
+    # ★max_runs 默认 10＝文档拍板值对齐（2026-11-13 OWNER 拍板「保守值优先」，
+    #   收口 backlog「代码 20 vs 文档 10」口径差；此前默认 20 属实现自由裁量）。
     agent_pilot_enabled: bool = False
     agent_pilot_window_days: int = Field(default=30, ge=1)
-    agent_pilot_max_runs: int = Field(default=20, ge=1)
+    agent_pilot_max_runs: int = Field(default=10, ge=1)
     agent_pilot_started_at: str = ""
     # run 卡死恢复新鲜窗口（分钟）：窗口内不许恢复（防误恢复在途 run）；
     # 0 = 立即可恢复（测试口径）
