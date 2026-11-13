@@ -11,7 +11,6 @@ org_id 预留可空列，orgs 轨道合流后回填 NOT NULL（段 2）。评审
 """
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import mysql
 
 revision = "9d4f2b7e8c1a"
 down_revision = "c8e2a6f0b9d4"
@@ -20,14 +19,13 @@ depends_on = None
 
 
 def _timestamps():
+    # 主线 PG 惯例（orgs 基线 a5e9c3f1b7d4 同款）：server_default now()；
+    # updated_at 的更新时间戳由 ORM 层 TimestampMixin.onupdate=func.now() 负责
+    # （PG 无 ON UPDATE CURRENT_TIMESTAMP）。原 0043 编号形态的 MySQL 方言 DDL
+    # 已随主线全 PG 化退役。
     return [
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("UTC_TIMESTAMP(6)"), nullable=False),
-        sa.Column(
-            "updated_at",
-            mysql.TIMESTAMP(fsp=6),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)"),
-        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     ]
 
 

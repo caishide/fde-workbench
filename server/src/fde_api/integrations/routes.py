@@ -1,7 +1,13 @@
 """项目本体绑定路由（V3.3 WP4 段 1；任务书 §5.2 API 路径）。
 
-挂载由 FDE_ONTOLOGY_ENABLED 控制（app.py）：关闭时蓝图不注册——
-原系统路由表与行为完全不变（§13 验收 8）。
+蓝图无条件进 _BLUEPRINT_SPECS（蓝图注册表单一真身机器闸 P2-5，禁止
+app.py 出现绕注册表的直接注册）；FDE_ONTOLOGY_ENABLED 门控收敛在
+integrations.service.ensure_enabled()——关闭 ⇒ 全部路由 404 not_found，
+禁用面与不存在面不可区分（对齐 diagnostics_enabled 先例，D12）。
+
+D13：门控判定**先于**鉴权（蓝图级 before_request 预闸）——本蓝图四入口
+挂 @require_auth，若只在服务层设闸，未鉴权探针得 401（=面存在）而非
+404（=面不存在），构成存在性泄露。
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from fde_api.integrations.service import (
     BindingError,
     approve_upgrade,
     create_binding,
+    ensure_enabled,
     list_bindings,
     propose_upgrade,
 )
@@ -27,6 +34,23 @@ ontology_bindings_blueprint = Blueprint(
 
 def _binding_error(exc: BindingError):
     return error_response(exc.code, exc.message, exc.status)
+
+
+@ontology_bindings_blueprint.before_request
+def _gate_disabled_surface():
+    """D13：关闭态判定**先于**鉴权。
+
+    D12 把门控收敛在服务层，而本蓝图四入口挂 `@require_auth` ⇒ 未鉴权探针
+    先撞鉴权（401）而非 404——「该面存在」被泄露（与 M8 红队扫描面冲突）。
+    蓝图级预闸把判定提到鉴权之前：关闭态下无论是否鉴权，一律与「路径不
+    存在」同形（404 not_found，同一文案）。服务层闸保留作纵深防御（绕
+    过蓝图直调服务层仍 404）。
+    """
+    try:
+        ensure_enabled()
+    except BindingError as exc:
+        return _binding_error(exc)
+    return None
 
 
 def _json_object() -> dict[str, Any]:

@@ -100,6 +100,15 @@ class FakeClient:
 
 
 @pytest.fixture
+def wb_app_off(tmp_path: Path) -> Iterator[Flask]:
+    """ontology_enabled=False 的同构应用（D12 契约钉用；建库但零 seed）。"""
+    base = dict(_BASE)
+    base["database_url"] = f"sqlite:///{tmp_path / 'wb-off.db'}"
+    settings = Settings(env="test", **base)  # type: ignore[arg-type]
+    yield create_app(settings)
+
+
+@pytest.fixture
 def wb_app(tmp_path: Path) -> Iterator[Flask]:
     base = dict(_BASE)
     base["database_url"] = f"sqlite:///{tmp_path / 'wb.db'}"
@@ -160,7 +169,7 @@ def _seed(app: Flask) -> None:
                     id="p-1",
                     project_code="PRJ-1",
                     name="项目一",
-                    enterprise_name="客户甲",
+                    enterprise_code="ENT-1",  # 主线代号制（M4 后明文企业列已废）
                     leader_user_id="u-leader",
                     status="active",
                     planned_start_date=date(2026, 1, 1),
@@ -444,3 +453,32 @@ def test_list_bindings_includes_pending_upgrades(
         with pytest.raises(service.BindingError) as excinfo:
             service.list_bindings(actor=_leader(), project_id="p-missing")
         assert excinfo.value.status == 404
+
+
+def test_flag_off_all_binding_entries_404_not_found(wb_app_off: Flask) -> None:
+    """D12 契约钉：ontology_enabled=False ⇒ 绑定面全部入口 404 not_found。
+
+    蓝图无条件进 _BLUEPRINT_SPECS（注册表单一真身机器闸 P2-5），开关门控
+    收敛在服务层 ensure_enabled——对齐 diagnostics_enabled「不确认面存在」
+    先例：禁用面与不存在面不可区分（无存在性泄露），且在任何业务校验
+    （含 invalid_request / 项目访问控制）之前触发，零出站调用（fail-closed）。
+    """
+    leader = _leader()
+    with wb_app_off.app_context():
+        with pytest.raises(service.BindingError) as excinfo:
+            service.list_bindings(actor=leader, project_id="p-1")
+        assert (excinfo.value.status, excinfo.value.code) == (404, "not_found")
+        with pytest.raises(service.BindingError) as excinfo:
+            service.create_binding(actor=leader, project_id="p-1", payload={})
+        assert (excinfo.value.status, excinfo.value.code) == (404, "not_found")
+        with pytest.raises(service.BindingError) as excinfo:
+            service.propose_upgrade(
+                actor=leader, project_id="p-1", binding_id="b-1", payload={}
+            )
+        assert (excinfo.value.status, excinfo.value.code) == (404, "not_found")
+        with pytest.raises(service.BindingError) as excinfo:
+            service.approve_upgrade(
+                actor=leader, project_id="p-1", binding_id="b-1",
+                upgrade_id="u-1", decision="approved",
+            )
+        assert (excinfo.value.status, excinfo.value.code) == (404, "not_found")

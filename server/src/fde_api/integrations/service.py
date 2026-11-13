@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from fde_api.auth.models import User
+from fde_api.errors import NOT_FOUND_MESSAGE
 from fde_api.extensions import db
 from fde_api.integrations.models import (
     ACTIVE_MARKER,
@@ -54,6 +55,23 @@ class BindingError(ValueError):
         self.status = status
         self.code = code
         super().__init__(message)
+
+
+def ensure_enabled() -> None:
+    """D12/D13：本体绑定面未启用 ⇒ 404（不确认面存在）。
+
+    对齐主线 diagnostics_enabled 先例：蓝图无条件进 _BLUEPRINT_SPECS
+    （蓝图注册表单一真身机器闸 P2-5），门控收敛在服务层——禁用面与
+    不存在面不可区分，无存在性泄露；flag 关时不产生任何对本体运行时
+    的出站调用（fail-closed，§15 红线）。
+
+    D13：文案复用 `errors.NOT_FOUND_MESSAGE`——与「路径不存在」的全局 404
+    信封**逐字节同形**（code/message/details 全同），未鉴权探针无法由
+    响应差异反推该路径存在。
+    """
+    settings = current_app.config["SETTINGS"]
+    if not getattr(settings, "ontology_enabled", False):
+        raise BindingError(NOT_FOUND_MESSAGE, status=404, code="not_found")
 
 
 def client_from_settings() -> OntologyClient:
@@ -135,6 +153,7 @@ def _pending_upgrades(session: Any, binding_id: str) -> list[dict[str, Any]]:
 
 
 def list_bindings(*, actor: User, project_id: str) -> list[dict[str, Any]]:
+    ensure_enabled()
     session = db.session()
     _load_accessible_project(session, actor, project_id)
     bindings = session.scalars(
@@ -151,6 +170,7 @@ def list_bindings(*, actor: User, project_id: str) -> list[dict[str, Any]]:
 
 
 def create_binding(*, actor: User, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_enabled()
     ontology_id = str(payload.get("ontology_id", "")).strip()
     version_id = str(payload.get("pinned_version_id", "")).strip()
     if not ontology_id or not version_id:
@@ -209,6 +229,7 @@ def create_binding(*, actor: User, project_id: str, payload: dict[str, Any]) -> 
 def propose_upgrade(
     *, actor: User, project_id: str, binding_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    ensure_enabled()
     to_version_id = str(payload.get("to_version_id", "")).strip()
     if not to_version_id:
         raise BindingError("to_version_id is required", code="invalid_request")
@@ -284,6 +305,7 @@ def propose_upgrade(
 def approve_upgrade(
     *, actor: User, project_id: str, binding_id: str, upgrade_id: str, decision: str
 ) -> dict[str, Any]:
+    ensure_enabled()
     if decision not in ("approved", "rejected"):
         raise BindingError("decision must be approved|rejected", code="invalid_request")
     session = db.session()

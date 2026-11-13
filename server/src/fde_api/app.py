@@ -79,6 +79,10 @@ _BLUEPRINT_SPECS: tuple[tuple[str, str], ...] = (
     ("fde_api.commercial.admin_routes", "admin_commercial_blueprint"),
     ("fde_api.diagnostics.routes", "diagnostics_blueprint"),
     ("fde_api.diagnostics.lead_routes", "diagnostics_leads_blueprint"),
+    # V3.3 M2（WP4/D12）：无条件进注册表（蓝图注册表单一真身机器闸 P2-5）；
+    # ontology_enabled=False ⇒ integrations.service.ensure_enabled() 全部路由
+    # 404 not_found——对齐 diagnostics_enabled「不确认面存在」先例。
+    ("fde_api.integrations.routes", "ontology_bindings_blueprint"),
 )
 
 
@@ -116,12 +120,6 @@ def create_app(settings: Settings | None = None) -> Flask:
     for blueprint in iter_blueprints():
         app.register_blueprint(blueprint)
 
-    # V3.3 M2（WP4）：开关关闭时不挂载 ontology 绑定路由——原系统路由表不变。
-    # 不进 _BLUEPRINT_SPECS（无门控位，且审计脚本按注册表派生全量清单）
-    if getattr(settings, "ontology_enabled", False):
-        from fde_api.integrations.routes import ontology_bindings_blueprint
-
-        app.register_blueprint(ontology_bindings_blueprint)
     from fde_api.control.ai_server_client import apply_runtime_plugin
     from fde_api.control.chat import weixin_message_handler
 

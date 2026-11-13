@@ -1,16 +1,25 @@
 {
- "route_count": 490,
- "blueprint_count": 52,
- "table_count": 153,
+ "route_count": 494,
+ "blueprint_count": 53,
+ "table_count": 155,
  "revision_count": 75,
  "heads": [
-  "c8e2a6f0b9d4"
+  "9d4f2b7e8c1a"
  ],
  "roots": [
   "ebb003a5c3a8"
  ],
  "tables_without_create_revision": [],
  "revisions": {
+  "9d4f2b7e8c1a": {
+   "file": "9d4f2b7e8c1a_project_ontology_bindings.py",
+   "down_revision": "c8e2a6f0b9d4",
+   "create_tables": [
+    "project_ontology_bindings",
+    "ontology_binding_upgrades"
+   ],
+   "add_column_tables": []
+  },
   "a1d3f5b7c9e2": {
    "file": "a1d3f5b7c9e2_p3_adoption_and_m10_evidence.py",
    "down_revision": "c5e9b3d7a1f5",
