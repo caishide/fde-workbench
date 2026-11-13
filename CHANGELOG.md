@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-crv 修复批 F：富文本段落键名契约双向对齐＋`complete_upload` 唯一键预检与重放恢复（2026-11-13）
+
+依据 `docs/goal-crv-fix-批BF-任务书.md` 完成批 F 两项 P1 修复与契约钉闭合（零迁移零新表零新路由）：
+
+- **QR-117（P1 → 趋 P0 随批注记）富文本键名兼容与桌面往返闭合**：`server/src/fde_api/documents/rich_text.py::sanitize_rich_text` 对 `paragraph`/`heading` 优先读取规范键 `content`，缺省回退旧版桌面 `text` 键并走同一 `bleach.clean` 清洗；`desktop/src/renderer/src/documents/DocumentEditor.tsx` 导出 `plainToRichText`（写出规范键 `content`）与 `richTextToPlain`（兼容服务端 `render_rich_text` 落库返回的 `list[dict]` 数组与 `{type:"doc",content:[...]}` 包装对象及 `content`/`text` 双键），闭合保存→重开→Worker 生成 `.docx` 段落往返链路。
+- **QR-118（P1）`complete_upload` 唯一键预检、409 映射与重放/中止恢复**：`server/src/fde_api/files/service.py` 新增 `_preflight_upload_target` 在 `complete_multipart` 消费 `.multipart/<upload_id>` 前预检目标文件存在性（404 `project_file_not_found`）与新文件 `(project_id, category, display_name)` 同名冲突（409 `file_name_conflict`）；并发竞态下捕获 `IntegrityError` 映射 409 `file_name_conflict`，重试若遇 `multipart_upload_not_found` 通过 `head(storage_prefix)` 回收已合成对象完成入库，`abort_upload` 在分片目录已消费时幂等清理孤儿对象并收敛 `aborted`。
+- **测试钉、变异验证与桌面交付**：NEW `server/tests/test_crv_batch_f.py` 6 例＋`desktop/tests/renderer/project-documents.test.tsx` +1 例（全量 vitest 96 文件 / 1107 passed；PR #442 首轮 CI `server-tests` 3625 passed + 8 skipped）＋变异七连（M1–M6）全红→`try/finally` 逐字节还原→全绿＋服务端文档/上传回归 68 passed＋静态/存储/台账钉 96 passed＋ruff 绿＋mypy 277 基线不变；桌面便携版 `r44` 于合并入 `main` 后重打包并执行 `asar` 指纹与 marker 字节验证。
+
 ## [未发布] — goal-sprint r5：T-14b 全收口（`diag.fde18.com` 443 签证上线＋官网 CTA 切 `diag` 双锚点＋公网只读校验器，2026-11-13）
 
 任务书 §3 r5 行＋§9 硬指标 4 全项兑现：蔡工添加阿里云 `diag.fde18.com → 141.95.33.198` A 记录后完成 D-3 独立轻部署 HTTPS 开闸、官网 CTA 锚点切换与跨三域公网复测。
