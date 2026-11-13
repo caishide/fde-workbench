@@ -730,7 +730,7 @@
 | G1/G2/G3 一次通过率 | gate revision | ✅ | live | — |
 | 人工返工率 | revision 版本差 | ✅ | live | — |
 | 编码智能体一次测试通过率 | **依赖 T-B1 扩 test_results ⇒ 数据源目前不存在** | ⚠️ 需先补字段 | live | T-B1 前不可作验收线 |
-| 智能体产物被人工接受率 | **`agent_artifacts.reviewed` 无写路径 ⇒ 接受率恒 0** | ⚠️ 需先补写路径 | live | 待 T-B1 同轮补 |
+| 智能体产物被人工接受率 | `agent_artifacts.reviewed`（写路径 T-B1 #189 已补：`PATCH /agents/runs/{rid}/artifacts/{aid}`）＋事件 `agent_artifact_reviewed` | ✅ 数据源自此存在 | live | **接受率分母口径待拍板**（分母＝已出产物总数？＝已复核 run 数？）——指标可反证但**当前无分母定义**，不擅自落数；另产物**采纳为方案**通道 2026-11-13 PR #435 已补（`POST .../adopt-solution`，人工动作），采纳事件 `agent_artifact_adopted_as_solution` 可作接受率的补充数据源 |
 | G9 结果验收线达成率 | G9 `exit_condition`（B#21 已接线） | ✅ 但**阈值 0.8 为占位待校准**（借鉴总览 R4 纪律） | live | `uplift`/`kpi_oracle` 服务端零命中 ⇒ 当前不可机器判定 |
 | 每项目占用工程师小时数 | **仓库自标 simulation 口径** | ❌ | simulation | **不可作商业主张验证依据** |
 | 交付毛利率 | 同上 | ❌ | simulation | **不可作商业主张验证依据** |
