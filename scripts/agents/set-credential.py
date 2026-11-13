@@ -9,13 +9,38 @@ r"""E11 一键配置智能体凭据（宿主裸跑态运维脚本）。
 跑法（宿主 Windows，server venv）：
 
 ```bash
-cd server
-PYTHONPATH=src python ../scripts/agents/set-credential.py \
-  --username "<你的平台身份账号>" \
-  --password "<你的密码>" \
-  --credential "<zcode 凭据明文>" \
-  --name default
+# Git Bash / WSL / Linux / macOS
+cd D:/test/fde-workbench/server
+PYTHONPATH=src .venv/Scripts/python.exe ../scripts/agents/set-credential.py \
+  --username "<你的平台身份账号>" --password "<你的密码>"
 ```
+
+**PowerShell（Windows 默认终端）用这一条**——`PYTHONPATH=src` 是 bash 写法，
+PowerShell 会报「无法将『PYTHONPATH=src』项识别为 cmdlet」：
+
+```powershell
+cd D:\test\fde-workbench\server
+$env:PYTHONPATH="src"
+.\.venv\Scripts\python.exe ..\scripts\agents\set-credential.py --username "<你的平台身份账号>" --password "<你的密码>"
+```
+
+**最省事的一条（推荐，两种终端都能跑）**——脚本会自动找 server venv 的解释器
+并自行设置 `PYTHONPATH`，你**不用管 PYTHONPATH 是什么**：
+
+```bash
+python D:/test/fde-workbench/scripts/agents/set-credential.py --username "<你的平台身份账号>" --password "<你的密码>"
+```
+
+### 用户名密码填什么（最容易卡住的一步）
+
+| 项 | 填什么 |
+|---|---|
+| **用户名** | **`admin`**（不是「蔡工FDE智能交付系统」——那是**产品名**，不是账号）。若你已经改过用户名，就填**你在桌面端能登录成功的那个用户名**。 |
+| **密码** | ① **全新库**：`ChangeMe123!`（README「初始化」节的初始值，**首次登录强制改密**）② **你已经改过密**：填**你改后的密码**——也就是你在桌面端能登录成功的那一份。 |
+| **为什么必须是 admin** | 写凭据要 `is_platform_operator`＝**平台身份**（`org_id IS NULL`）**且** `system_operator` AI 档。`admin` 角色**恒满足**这两条（`control/access.py:102` ＋ `orgs/isolation.py:36`）。别的角色即使被授予 system_operator 档，若有 `org_id`（企业身份）也会被 403 挡下。 |
+
+⚠️ **登录连续失败 5 次会锁定约 15 分钟**（README）——密码拿不准时**别反复试**，
+先在桌面端确认自己能登录成功，再来跑本脚本。
 
 `--credential` 省略时写一个**占位串**——这是**当前唯一可用执行路径
 （宿主通道）下的正确做法**：宿主通道对平台凭据**零注入**
@@ -44,9 +69,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8010"
@@ -54,6 +81,42 @@ DEFAULT_CREDENTIAL_NAME = "default"
 DEFAULT_DEVICE_LABEL = "蔡工FDE智能交付系统 运维脚本"
 # 宿主通道下平台凭据零注入 ⇒ 占位串即可过闸（与既有 bootstrap 脚本同款）。
 PLACEHOLDER_CREDENTIAL = "host-channel-slot-unused-by-real-adapter"
+
+
+def _bootstrap_path() -> Path:
+    """脚本自身路径（`scripts/agents/set-credential.py`）。"""
+    return Path(__file__).resolve()
+
+
+def _server_dir() -> Path:
+    """仓库里的 `server/` 目录（本脚本的父父目录）。"""
+    return _bootstrap_path().parents[2] / "server"
+
+
+def _ensure_server_on_path() -> None:
+    """把 `server/src` 挂进 `sys.path` —— 免去用户手工设 `PYTHONPATH`。
+
+    本脚本**不需要** import 服务端包（它只调 HTTP API），但服务端在
+    import 时需要 `src` 可寻址（例如 pydantic-settings 的 Settings）。
+    这里主动补上，任何终端（PowerShell / bash）都直接可用。
+    """
+    src = _server_dir() / "src"
+    if src.is_dir() and str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+
+
+def _venv_python() -> Path | None:
+    """server venv 里的解释器（Windows / POSIX 两种布局）。"""
+    server = _server_dir()
+    for relative in (
+        Path(".venv") / "Scripts" / "python.exe",
+        Path(".venv") / "bin" / "python",
+        Path(".venv") / "bin" / "python3",
+    ):
+        candidate = server / relative
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _request(
@@ -65,20 +128,28 @@ def _request(
     token: str | None = None,
     timeout: int = 30,
 ) -> tuple[int, dict[str, Any]]:
-    """调 FDE API；返回 (状态码, 解析后的 JSON)。非 JSON 响应按原始文本塞进 `raw`。"""
+    """调 FDE API；返回 (状态码, 解析后的 JSON)。非 JSON 响应按原始文本塞进 `raw`。
+
+    **禁用代理**：本机访问 `127.0.0.1:8010` 是环回直连，若走系统代理会拿到
+    502「upstream connect failed」（本机装了代理软件时必现）。显式挂
+    `ProxyHandler({})` 让环回请求不经代理。
+    """
     url = f"{base_url.rstrip('/')}{path}"
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with opener.open(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8", errors="replace")
             status = int(response.status)
     except urllib.error.HTTPError as error:
         raw = error.read().decode("utf-8", errors="replace")
         status = int(error.code)
+    except urllib.error.URLError as error:
+        return 0, {"error": {"code": "connection_failed", "message": str(error.reason)}}
     try:
         payload = json.loads(raw) if raw.strip() else {}
     except ValueError:
@@ -100,11 +171,29 @@ def _login(*, base_url: str, username: str, password: str, device_label: str) ->
         path="/api/v1/auth/login",
         body={"username": username, "password": password, "device_label": device_label},
     )
+    if status == 0:
+        raise SystemExit(
+            f"连不上服务端（{base_url}）——服务没起？先启动：\n"
+            "  cd D:/test/fde-workbench && docker compose up -d\n"
+            f"详细原因：{(payload.get('error') or {}).get('message')}"
+        )
     if status != 200:
         error = payload.get("error") or {}
-        raise SystemExit(
-            f"登录失败（HTTP {status}）：{error.get('code') or '-'} {error.get('message') or payload}"
-        )
+        code = error.get("code") or "-"
+        message = error.get("message") or str(payload)
+        hint = ""
+        if status == 401:
+            hint = (
+                "\n提示：账号或密码不对。用户名填 `admin`（不是「蔡工FDE智能交付系统」——"
+                "那是产品名）。全新库密码是 `ChangeMe123!`；改过密就填你改后的那份"
+                "（能在桌面端登录成功的那份）。"
+            )
+        elif status == 400:
+            hint = (
+                "\n提示：请求被拒（多半是 device_label 缺失——本脚本已自动带上，"
+                "若仍报 400 说明服务端版本较旧，请告诉 Agent）。"
+            )
+        raise SystemExit(f"登录失败（HTTP {status}）：{code} {message}{hint}")
     token = (payload.get("data") or {}).get("access_token")
     if not isinstance(token, str) or not token:
         raise SystemExit("登录响应里没有 access_token（字段名核对：auth/routes.py `_serialize_token_pair`）。")
@@ -154,6 +243,36 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    _ensure_server_on_path()
+
+    # ── 自举：若当前解释器不是 server venv 的那个，自动用它重跑自己 ────────
+    # 目的：用户在任何终端（PowerShell / bash / cmd）敲
+    #   python <脚本路径> --username ... --password ...
+    # 都能跑通——不需要他手工设 PYTHONPATH，也不需要先 cd 进 server/。
+    if os.environ.get("FDE_SET_CREDENTIAL_BOOTSTRAPPED") != "1":
+        venv_python = _venv_python()
+        if venv_python is not None and Path(sys.executable).resolve() != venv_python.resolve():
+            env = dict(os.environ)
+            env["FDE_SET_CREDENTIAL_BOOTSTRAPPED"] = "1"
+            env["PYTHONPATH"] = os.pathsep.join(
+                [str(_server_dir() / "src"), env.get("PYTHONPATH", "")]
+            ).strip(os.pathsep)
+            print(
+                f"换用 server venv 解释器重跑：{venv_python}\n"
+                "（这样你不需要自己设置 PYTHONPATH）\n",
+                flush=True,
+            )
+            # 用子进程而非 os.execve：Windows 的 execve 不保留 stdout 重定向，
+            # 会把后续输出吞掉（用户看不到任何结果，以为脚本坏了）。
+            import subprocess
+
+            completed = subprocess.run(
+                [str(venv_python), str(_bootstrap_path()), *sys.argv[1:]],
+                env=env,
+                check=False,
+            )
+            raise SystemExit(completed.returncode)
+
     password = args.password
     if password is None:
         if sys.stdin.isatty():
@@ -201,9 +320,11 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("下一步（步骤三）：改 server/.env 的三个宿主通道变量，然后重建服务：")
     print("  FDE_AGENT_HOST_CHANNEL_ENABLED=1")
-    print("  FDE_AGENT_HOST_ZCODE_BIN=<ZCode.exe 全路径>")
-    print("  FDE_AGENT_HOST_ZCODE_CJS=<zcode.cjs 全路径>")
-    print("  cd server && docker compose build && docker compose up -d && alembic upgrade head")
+    print("  FDE_AGENT_HOST_ZCODE_BIN=D:/software/zcode/ZCode.exe")
+    print("  FDE_AGENT_HOST_ZCODE_CJS=D:/software/zcode/resources/glm/zcode.cjs")
+    print("  然后在仓库根目录跑：")
+    print("    docker compose build && docker compose up -d")
+    print("    cd server && docker compose exec -T api alembic upgrade head")
     return 0
 
 
