@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "b7e82002-0c32-423c-a547-5ed6b611d493",
+  "deliveryReceiptId": "8a536a6a-f04f-4816-8876-5b0d64af5e32",
   "artifact": {
-    "path": "D:\\test\\fde-wt-n3cimpl\\docs\\architecture\\archify-diagrams\\architecture\\review-1\\system-architecture.html",
-    "sha256": "efb1bb34ace74d0f37f34657a6d3a563da5451d4c677c42e69823118822fae3d",
-    "bytes": 845314
+    "path": "D:\\test\\fde-workbench\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "4b5b0dad8febc95dbfb56222d953afe2bf4ca9c632bc3bb9567a2dafea21674a",
+    "bytes": 845952
   },
   "state": {
     "detail": "read",
@@ -715,6 +715,7 @@
     "contactSheet": null
   },
   "sidecars": {
+    "directory": "D:\\test\\fde-workbench\\docs\\architecture\\archify-diagrams\\architecture\\receipts",
     "receipt": "system-architecture.browser-check.json",
     "files": []
   }
