@@ -39,8 +39,8 @@
 
 ### r1 待办（收口条件）
 
-- [ ] 蔡工发起首个 run（窗口 11-19 止）→ 证据 sha256 登记 → 打勾「窗口内闭环」
-- [ ] 或窗口关闭未跑成 → 如实登记「部分完成」转 r2（不阻塞 r2 开工）
+- [x] 蔡工发起首个 run（窗口 11-19 止）→ 2026-11-13 活库核实 `FDE-20261112-5CFF4FA2`（`pilot-001` 承载项目）已完跑 2 条生产 `host_poll` `agent_runs`（`b647945e…` 3 件产物 3/3 已人工复核＋#435 逐字节 sha256 自证 200；`347fb585…` 5 件待复核）→ **窗口内闭环已兑现**（详记 r4 复审报告 §3.3）
+- [ ] ~~或窗口关闭未跑成 → 如实登记「部分完成」转 r2~~（不适用：已在窗口内跑成）
 
 ### r1 变更面
 
@@ -143,3 +143,35 @@ P2′① 咬合半**已于 #204/#215（2026-11-08）落地**（迁移 `f6d3a9c1e
 - **⑦闸留授权**：活体容器 env **无** `FDE_AGENT_HOST_EGRESS_GATE_ENABLED`／`FDE_AGENT_HOST_EGRESS_ALLOWLIST`（主树与冲刺树 `.env` 均无此二键）⇒ 本轮**不代拍重开**（闸不代拍），缺口记此留授权；r3 真机验收的闸腿走的是**部署态同款六域白名单的进程内闸**（工程级，非活体容器 env）。
 - **r3 收口条件全部达成**：台账 §12 `adapter_missing` 解除回执＋§4 P2-b 行收口＋§3 **E10 解锁判定成立**（条件触发、不排期）＋backlog T-Z1 全收口＋CHANGELOG r3 节＋AGENTS bullet。
 - **下一轮**：r4 D7 复审报告（D7 阈值归蔡工不预支）；N1 首个生产 run 仍待**蔡工亲手**发起（窗口 2026-11-19 止）。
+
+---
+
+## r4 · D7 四口径运行证据复审报告（2026-11-13，只读取证 + 报告与机械钉轮）
+
+### 开工前检查单（吸收条款执行记录）
+
+- `git fetch fork` 对齐 `fork/main` `4b79f5b4`（r3 收口 `e337ee70` 后并发线合入 PR **#435**「产物采纳流闭环＋宿主产物可读」，证实首个真实 `host_poll` 生产 run 已完跑并走通下游复核）；在途 open PR 仅 `#436`（`goal-crv-fix-b`）／`#424`（脚本兼容），与本轮文档及 D7 静态钉零交集。
+- `goal-crv` 相邻项扫描：本轮不改生产源码，无新增吸收项。
+
+### 活库只读实测与源码裁决（2026-11-13 09:42:27Z，`BEGIN READ ONLY … ROLLBACK`）
+
+1. **`verify-run-evidence.sql` 实跑结果**：
+   - `[0/4]` 数据闸：`approval_rows = 2`、`reviewed_rows = 2`、`evidence_gate = HAS_RUN_EVIDENCE: 交评估复审轮出运行证据报告`。
+   - `[1/4] A` 审批时效：`(risk_level=4, capability=workbench.write)` `samples=2`、**`p50_s = 85.5`**、**`p90_s = 104.3`**（单行 `108.957s` / `62.100s`）。
+   - `[2/4] B` 人工否决率：`(workbench.write, workflow.human_approval, 4)` `ok=2, rej=0, exp=0, executed_excluded=0`、**`reject_rate = 0.0000`**（`_REAL_RUNS` 演练排除后仍为 2）。
+   - `[3/4] C` 执行落空：原始 SQL 命中 2 行（`df31cb16…`、`b789a318…`）⇒ **经源码状态机核实（`control/service.py:776, 791-796, 850-854, 873, 888-889`）正式裁决为跨轨假阳性**：只有 A 轨 DSH（`run_id IS NOT NULL AND workflow_node_run_id IS NULL`）存在 `execute_approved_dsh_tool` 执行后腿并写 `executed_at`；C 轨 `workflow.human_approval` 在 `decide_automation_approval` 同事务内调 `settle_approval_node` 置节点 `succeeded`（调执行入口显式抛 409 `approval_not_executable`），反链节点与 `workflow_run` `21fc3fa9…` 均已 `succeeded`。**分轨修正后真实执行落空 = 0 行**。B 口径 `executed` 词表同源裁决：A 轨规范分母须为 `approved + executed + rejected`（当前 `executed=0` 新旧公式数值恒同）。
+   - `[4/4] D` 确认失败锁：**`0 rows`**（`operation_events` 572 行零命中，`ai.api.*` 事件 0 行＝零行使下的零事件）。
+2. **`v3-p3` §3.2 三条责任主体断言实跑**：未双侧人签审批 = **0** ／ 孤儿或失活发起人 `workflow_run` = **0** ／ 空 actor `operation_events` = **0**（3/3 PASS）。
+3. **N1 试点窗口闭环核实**：代号项目 `FDE-20261112-5CFF4FA2`（`pilot-001` 承载项目）在 2026-11-13 已有 **2 条蔡工亲手发起的生产 `host_poll` `agent_runs` `completed`**（`b647945e…` 3 件产物 **3/3 已人工复核**；`347fb585…` 5 件产物待复核），任务书 §9 硬指标 2 已兑现；宿主编码 run 走产物终审链不写 `automation_approvals`，且训练场 `SIM-V32-LAB` 9 行须排除出生产分母。
+4. **支撑度与拍板位结论**：候选开放档（G4 / S / 比对）同类审批样本均为 **0** ⇒ 支撑度判定 **`insufficient_for_unfreeze`**；**D7 阈值拍板位明确落档为「待蔡工拍板」（零预支任何数值，闸态变更数 = 0）**，兑现任务书 §9 硬指标 3。
+
+### r4 变更面
+
+- **报告与台账**：NEW `docs/audit/D7-四口径运行证据复审报告-2026-11-13.md`（§0–§7 完整复审报告＋双层证据＋阈值拍板承接表）＋`docs/audit/D4-D7人工项推进包-2026-11-07.md` §4/§6 回填＋`docs/audit/下一步实施台账-2026-11-07.md` §2/§4/§11.4/§12 同步＋`docs/implementation/v3-backlog.md` P3/22:25 段同步＋本文件＋`CHANGELOG.md` r4 节＋`AGENTS.md` 当前状态 bullet。
+- **机械钉**：NEW `server/tests/test_d7_evidence_report_nail.py`（静态防作弊钉：锁死报告七项必填节在场、拍板位必须保持「待蔡工拍板」且若出现未签字数值预支即判红、`v3-p3` §5 解冻判定表全 `PROPOSED` 未被偷改）。**零生产代码改动・零迁移・零新路由**（490/52/153/74 全不变）。
+
+### r4 待办（收口条件）
+
+- [x] 按推进包 §4 骨架出具真实四口径复审报告（含 C/B 口径源码级裁决与 N1 窗口实况）
+- [x] 阈值拍板位状态明确落档为「待蔡工拍板」（零预支数值，闸态变更数 = 0）
+- [x] 静态防预支机械钉 + 台账同步钉本地实跑全绿（PR 与 CI 四绿见收口回执，回填式）
