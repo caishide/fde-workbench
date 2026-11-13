@@ -252,6 +252,7 @@ def draft_improvements(*, actor: Any, finding_ids: list[str]) -> dict[str, Any]:
         return execute_ai_prompt(
             user_id=actor.id,
             prompt=effective_prompt,
+            system_prompt=IMPROVEMENT_DRAFT_SYSTEM_PROMPT,
             purpose="simulation_improvement_draft",
             prompt_version=IMPROVEMENT_DRAFT_PROMPT_VERSION,
             max_tokens=DRAFT_MAX_TOKENS,

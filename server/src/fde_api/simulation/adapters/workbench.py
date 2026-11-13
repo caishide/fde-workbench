@@ -198,7 +198,6 @@ class WorkbenchAdapter:
     def _call(self, *, ctx: AdapterContext, prompt: str, max_tokens: int) -> str:
         from fde_api.control.ai_server_client import execute_ai_prompt
 
-        system_content = _system_content(ctx)
         if self._actor_user_id is None:
             raise AdapterUnavailable("workbench_actor_missing")
         injected = self._executor or self._injected_executor()
@@ -207,7 +206,7 @@ class WorkbenchAdapter:
                 result = injected(
                     user_id=self._actor_user_id,
                     prompt=prompt,
-                    system_prompt=system_content,
+                    system_prompt=_simulation_workbench_system_prompt(ctx),
                     purpose="simulation_workbench",
                     prompt_version=WORKBENCH_PROMPT_VERSION,
                     max_tokens=max_tokens,
@@ -215,11 +214,12 @@ class WorkbenchAdapter:
                     return_metadata=True,
                 )
             else:
-                # 直呼单一入口（purpose 字面量＝G-16 归因钉可见形态）
+                # 直呼单一入口（purpose 字面量＝G-16 归因钉可见形态；
+                # system_prompt 走已登记组装器 _simulation_workbench_system_prompt）
                 result = execute_ai_prompt(
                     user_id=self._actor_user_id,
                     prompt=prompt,
-                    system_prompt=system_content,
+                    system_prompt=_simulation_workbench_system_prompt(ctx),
                     purpose="simulation_workbench",
                     prompt_version=WORKBENCH_PROMPT_VERSION,
                     max_tokens=max_tokens,
@@ -342,8 +342,9 @@ def _candidate_overlay_fragment(ctx: AdapterContext) -> str:
     return text[:200]
 
 
-def _system_content(ctx: AdapterContext) -> str:
-    """system 消息＝注册表常量＋候选 overlay 追加条款（J-1 登记例外）。"""
+def _simulation_workbench_system_prompt(ctx: AdapterContext) -> str:
+    """system 消息＝注册表常量 WORKBENCH_SYSTEM_PROMPT ＋ 候选 overlay 追加条款
+    （≤200 字受控投影；登记于 test_prompt_entrypoint_gate._ALLOWED_CALL_NAMES）。"""
     overlay = _candidate_overlay_fragment(ctx)
     if not overlay:
         return WORKBENCH_SYSTEM_PROMPT
