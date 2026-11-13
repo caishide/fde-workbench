@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest"
 
 import React from "react"
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock("../../src/renderer/src/auth/AuthProvider", () => ({ useAuth: () => mocks }))
 
-import { ScenarioLibrary } from "../../src/renderer/src/SimulationLab/ScenarioLibrary"
+import { parseScenarioImportText, ScenarioLibrary } from "../../src/renderer/src/SimulationLab/ScenarioLibrary"
 import { SimulationDashboard } from "../../src/renderer/src/SimulationLab/SimulationDashboard"
 
 const BASE = "/api/v1/simulation"
@@ -170,4 +170,138 @@ it("场景编辑弹层：分区标题 + × 关闭钮可关 + 可滚弹层类", a
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
+})
+
+// ---------------------------------------------------------------------------
+// 批量导入（L 线 round2：案例库界面直导，替代裸 curl 底单）
+// ---------------------------------------------------------------------------
+
+function importFile(content: unknown): File {
+  return new File([JSON.stringify(content)], "batch.json", { type: "application/json" })
+}
+
+async function pickImportFile(user: ReturnType<typeof userEvent.setup>, file: File): Promise<void> {
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement
+  expect(input).not.toBeNull()
+  fireEvent.change(input, { target: { files: [file] } })
+}
+
+it("导入解析纯函数：裸数组与 scenarios 包裹两形态都收，非法形状拒", () => {
+  expect(parseScenarioImportText('[{"a":1}]')).toEqual([{ a: 1 }])
+  expect(parseScenarioImportText('{"scenarios":[{"a":1}]}')).toEqual([{ a: 1 }])
+  expect(() => parseScenarioImportText('{"a":1}')).toThrow(/scenarios/)
+  expect(() => parseScenarioImportText("not-json")).toThrow(/JSON/)
+})
+
+it("导入 JSON：裸列表文件走 POST {scenarios} 并刷新列表", async () => {
+  const batch = [
+    scenario({
+      id: "scn-imp-1",
+      scenario_key: "IMP-HC-001",
+      name: "民营医院病历数字化",
+      status: "draft",
+      source_kind: "import",
+    }),
+  ]
+  mocks.apiRequest.mockImplementation((path: string, options: { method: string }) => {
+    if (options.method === "POST" && String(path).endsWith("/scenarios/import")) {
+      return Promise.resolve({ created: batch, created_count: 1, failures: [] })
+    }
+    return Promise.resolve(listDto(batch))
+  })
+  const user = userEvent.setup()
+
+  render(<ScenarioLibrary />)
+  await screen.findByRole("table")
+  await pickImportFile(user, importFile(batch))
+
+  await screen.findByText("已导入 1 个场景。")
+  const post = mocks.apiRequest.mock.calls.find(
+    ([path, options]) =>
+      String(path).endsWith("/scenarios/import") && options.method === "POST",
+  )
+  expect(post).toBeTruthy()
+  const [, options] = post as [string, { method: string; body?: unknown }]
+  expect(options.body).toEqual({ scenarios: batch })
+  // 刷新后草稿场景在列表可见
+  expect(screen.getByText("民营医院病历数字化")).toBeInTheDocument()
+})
+
+it("空数组文件不发请求就地提示", async () => {
+  mocks.apiRequest.mockResolvedValue(listDto([]))
+  const user = userEvent.setup()
+
+  render(<ScenarioLibrary />)
+  await screen.findByText("案例库为空")
+  await pickImportFile(user, importFile([]))
+
+
+  expect(await screen.findByText(/没有场景/)).toBeInTheDocument()
+  expect(mocks.apiRequest.mock.calls.some(([, options]) => options.method === "POST")).toBe(false)
+})
+
+it("导入部分失败时逐条回显失败详情", async () => {
+  mocks.apiRequest.mockImplementation((_path: string, options: { method: string }) => {
+    if (options.method === "POST") {
+      return Promise.resolve({
+        created: [],
+        created_count: 0,
+        failures: [
+          { index: 1, code: "invalid_scenario", message: "场景内容校验未通过。" },
+        ],
+      })
+    }
+    return Promise.resolve(listDto([]))
+  })
+  const user = userEvent.setup()
+
+  render(<ScenarioLibrary />)
+  await screen.findByText("案例库为空")
+  await pickImportFile(user, importFile([scenario(), { broken: true }]))
+
+  const notice = await screen.findByRole("status")
+  expect(notice).toHaveTextContent("已导入 0 个场景；失败 1 条")
+  expect(notice).toHaveTextContent("#1 invalid_scenario：场景内容校验未通过。")
+})
+
+// ---------------------------------------------------------------------------
+// 行内启用/停用（激活的界面化：PATCH status 追加不可变新版本）
+// ---------------------------------------------------------------------------
+
+it("草稿行显示「启用」，点击走 PATCH status=active", async () => {
+  mocks.apiRequest.mockImplementation((_path: string, options: { method: string }) => {
+    if (options.method === "PATCH") {
+      return Promise.resolve(scenario({ status: "active", version: 2 }))
+    }
+    return Promise.resolve(listDto([scenario({ status: "draft" })]))
+  })
+  const user = userEvent.setup()
+
+  render(<ScenarioLibrary />)
+  const table = await screen.findByRole("table")
+  const row = within(table).getByText("汽车零部件质量追溯").closest("tr") as HTMLElement
+  await user.click(within(row).getByRole("button", { name: "启用" }))
+
+  expect(await screen.findByRole("status")).toHaveTextContent("已启用「汽车零部件质量追溯」")
+  const patch = mocks.apiRequest.mock.calls.find(([, options]) => options.method === "PATCH")
+  expect(patch).toBeTruthy()
+  const [, options] = patch as [string, { method: string; body?: unknown }]
+  expect(options.body).toEqual({ status: "active" })
+})
+
+it("启用行显示「停用」；已归档行无状态钮", async () => {
+  mocks.apiRequest.mockResolvedValue(
+    listDto([
+      scenario({ status: "active" }),
+      scenario({ id: "scn-arc", scenario_key: "CASE-ARC", name: "归档案例", status: "archived" }),
+    ]),
+  )
+
+  render(<ScenarioLibrary />)
+  const table = await screen.findByRole("table")
+  const activeRow = within(table).getByText("汽车零部件质量追溯").closest("tr") as HTMLElement
+  expect(within(activeRow).getByRole("button", { name: "停用" })).toBeInTheDocument()
+  const archivedRow = within(table).getByText("归档案例").closest("tr") as HTMLElement
+  expect(within(archivedRow).queryByRole("button", { name: "启用" })).not.toBeInTheDocument()
+  expect(within(archivedRow).queryByRole("button", { name: "停用" })).not.toBeInTheDocument()
 })
