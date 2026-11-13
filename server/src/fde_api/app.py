@@ -83,6 +83,7 @@ _BLUEPRINT_SPECS: tuple[tuple[str, str], ...] = (
     # ontology_enabled=False ⇒ integrations.service.ensure_enabled() 全部路由
     # 404 not_found——对齐 diagnostics_enabled「不确认面存在」先例。
     ("fde_api.integrations.routes", "ontology_bindings_blueprint"),
+    ("fde_api.integrations.ingest_routes", "ontology_ingest_blueprint"),
 )
 
 

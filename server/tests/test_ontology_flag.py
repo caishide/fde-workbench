@@ -149,3 +149,33 @@ def test_flag_on_mounts_bindings_api(tmp_path: Path) -> None:
     assert any(r.endswith("/ontology-bindings") for r in routes)
     assert any("upgrade-proposal" in r for r in routes)
     assert any("approve-upgrade" in r for r in routes)
+
+
+_INGEST_ENDPOINTS: set[tuple[str, str]] = {
+    ("POST", "/api/v1/projects/<project_id>/ontology-candidates"),
+    ("GET", "/api/v1/projects/<project_id>/change-sets/<change_set_id>/review-package"),
+}
+
+
+def test_flag_off_ingest_and_review_package_indistinguishable_from_absent_path(
+    tmp_path: Path,
+) -> None:
+    """D12 + D13 + D17：开关关闭时候选直提与评审包导出同样在 url_map 注册，但先于鉴权返回逐字节同形 404。"""
+    app = create_app(_settings(tmp_path, enabled=False))
+    present: set[tuple[str, str]] = set()
+    for rule in app.url_map.iter_rules():
+        methods: set[str] = set(rule.methods or ())
+        for method in sorted(methods - {"HEAD", "OPTIONS"}):
+            present.add((method, str(rule)))
+    assert _INGEST_ENDPOINTS.issubset(present)
+
+    client = app.test_client()
+    absent = client.get("/api/v1/projects/proj-1/there-is-no-such-surface")
+    assert absent.status_code == 404
+    absent_body = absent.get_json()
+
+    for headers in ({}, {"Authorization": "Bearer forged-token"}):
+        r_post = client.post("/api/v1/projects/proj-1/ontology-candidates", json={}, headers=headers)
+        r_get = client.get("/api/v1/projects/proj-1/change-sets/cs-1/review-package", headers=headers)
+        assert r_post.status_code == 404 and r_post.get_json() == absent_body
+        assert r_get.status_code == 404 and r_get.get_json() == absent_body
