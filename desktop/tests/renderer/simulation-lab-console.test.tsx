@@ -576,3 +576,361 @@ it("终裁提交失败时在表单旁就地报错而非静默", async () => {
   // 失败后按钮恢复可再提交
   expect(screen.getByRole("button", { name: "提交人工终裁" })).toBeEnabled()
 })
+
+it("Trace 行对非空 payload.artifact 提供展开/收起面板，区分自由文本与结构化产物", async () => {
+  const textArtifactTrace = {
+    seq: 2,
+    parent_seq: 1,
+    actor_id: "agent:fde",
+    phase: "design",
+    event_type: "artifact",
+    payload: {
+      kind: "design",
+      artifact: {
+        structured: false,
+        integration_status: "verified",
+        artifacts: [
+          {
+            name: "solution-draft.md",
+            kind: "doc",
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            text: "# 交付方案\n第一阶段先盘点车间台账与设备接口。",
+          },
+        ],
+      },
+    },
+    tool_call: null,
+    evidence: null,
+    cost: null,
+    created_at: "2026-11-08T02:02:00",
+  }
+  const structuredArtifactTrace = {
+    seq: 3,
+    parent_seq: 2,
+    actor_id: "agent:fde",
+    phase: "validate",
+    event_type: "artifact",
+    payload: {
+      kind: "validation",
+      artifact: {
+        verdict: "pass",
+        checks: [{ key: "G3", passed: true }],
+      },
+    },
+    tool_call: null,
+    evidence: null,
+    cost: null,
+    created_at: "2026-11-08T02:05:00",
+  }
+
+  mocks.apiRequest.mockImplementation((path: string, options: { method?: string } = {}) => {
+    if (path.includes("/runs/run-1/trace")) {
+      return Promise.resolve({
+        items: [trace, textArtifactTrace, structuredArtifactTrace],
+        total: 3,
+        truncated: false,
+        next_seq: 3,
+      })
+    }
+    if (path.includes("/runs/run-1/evaluation")) {
+      return Promise.resolve(reportNeedingReview)
+    }
+    if (path.includes("/findings")) {
+      return Promise.resolve({ items: [], total: 0 })
+    }
+    if (path.includes("/simulation/runs") && options.method === "GET") {
+      return Promise.resolve({ items: [run], total: 1, truncated: false })
+    }
+    if (path.includes("/simulation/scenarios")) {
+      return Promise.resolve({ items: [], total: 0, truncated: false })
+    }
+    return Promise.resolve({})
+  })
+  const user = userEvent.setup()
+
+  render(<SimulationRunDetail />)
+
+  const expandButtons = await screen.findAllByRole("button", { name: "展开交付原文" })
+  expect(expandButtons).toHaveLength(2)
+  expect(screen.queryByText("solution-draft.md")).not.toBeInTheDocument()
+
+  // 展开自由文本产物：展示 name / kind / sha256 / 只读 text
+  await user.click(expandButtons[0])
+  const detailPanels = screen.getAllByRole("region", { name: "阶段交付产物原文" })
+  expect(detailPanels).toHaveLength(1)
+  expect(within(detailPanels[0]).getByText("solution-draft.md")).toBeInTheDocument()
+  expect(within(detailPanels[0]).getByText("doc")).toBeInTheDocument()
+  expect(
+    within(detailPanels[0]).getByText(
+      /sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08/,
+    ),
+  ).toBeInTheDocument()
+  expect(
+    within(detailPanels[0]).getByText(/第一阶段先盘点车间台账与设备接口/),
+  ).toBeInTheDocument()
+
+  // 展开结构化产物：展示键值与 JSON
+  await user.click(expandButtons[1])
+  const bothPanels = screen.getAllByRole("region", { name: "阶段交付产物原文" })
+  expect(bothPanels).toHaveLength(2)
+  expect(within(bothPanels[1]).getByText("verdict")).toBeInTheDocument()
+  expect(within(bothPanels[1]).getByText("checks")).toBeInTheDocument()
+  expect(within(bothPanels[1]).getByText(/"G3"/)).toBeInTheDocument()
+
+  // 收起自由文本产物
+  await user.click(screen.getAllByRole("button", { name: "收起交付原文" })[0])
+  expect(screen.queryByText("solution-draft.md")).not.toBeInTheDocument()
+})
+
+it("提案页正确渲染已发布状态与发布/回滚记录，非管理员不展示发布或回滚按钮", async () => {
+  mocks.user.role = "fde_engineer"
+  mocks.apiRequest.mockImplementation((path: string) => {
+    if (path.includes("/findings")) {
+      return Promise.resolve({ items: [], total: 0 })
+    }
+    if (path.includes("/proposals")) {
+      return Promise.resolve({
+        items: [
+          {
+            id: "prop-pub",
+            proposal_key: "PROP-PUB-1",
+            title: "改进：补齐交付门禁探针",
+            problem: "验证阶段遗漏指针",
+            finding_ids: ["f-1"],
+            finding_codes: ["FA-02"],
+            target: { kind: "prompt", ref: "delivery.gate.prompt" },
+            current_version: "v1",
+            proposed_version: "v2",
+            change_summary: "新增门禁探针提示",
+            expected_effect: {},
+            impact_scope: ["validate"],
+            regression_plan: { suite: "smoke-18" },
+            status: "published",
+            decided_by_user_id: "admin-1",
+            decided_at: "2026-11-12T08:00:00Z",
+            note: "评审通过",
+            release: {
+              released_at: "2026-11-12T10:00:00Z",
+              released_by_user_id: "admin-1",
+              released_version: "v2",
+              release_note: "首轮受控灰度发布",
+              rollback: null,
+            },
+          },
+          {
+            id: "prop-rb",
+            proposal_key: "PROP-RB-2",
+            title: "改进：历史已回滚提案",
+            problem: "回归波动",
+            finding_ids: ["f-1"],
+            finding_codes: ["FA-03"],
+            target: { kind: "prompt", ref: "presurvey.interview.prompt" },
+            current_version: "v3",
+            proposed_version: "v4",
+            change_summary: "调整追问顺序",
+            expected_effect: {},
+            impact_scope: ["interview"],
+            regression_plan: { suite: "smoke-18" },
+            status: "approved",
+            decided_by_user_id: "admin-1",
+            decided_at: "2026-11-12T08:00:00Z",
+            note: "批准试验",
+            release: {
+              released_at: "2026-11-12T09:00:00Z",
+              released_by_user_id: "admin-1",
+              released_version: "v4",
+              release_note: "初次发布",
+              rollback: {
+                rolled_back_at: "2026-11-12T11:30:00Z",
+                rolled_back_by_user_id: "admin-1",
+                rollback_note: "噪声超限回退",
+              },
+            },
+          },
+        ],
+        total: 2,
+      })
+    }
+    return Promise.resolve({})
+  })
+
+  render(<ImprovementProposals />)
+
+  expect(await screen.findByText("PROP-PUB-1")).toBeInTheDocument()
+  expect(screen.getByText("已发布")).toBeInTheDocument()
+  expect(screen.queryByText("undefined")).not.toBeInTheDocument()
+  expect(screen.getByText(/首轮受控灰度发布/)).toBeInTheDocument()
+  expect(screen.getByText(/噪声超限回退/)).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "发布记账" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "回滚" })).not.toBeInTheDocument()
+})
+
+it("管理员可对 approved 提案发起发布记账、对 published 提案发起回滚，回归计划为空时禁用并清密码 state", async () => {
+  mocks.user.role = "admin"
+  const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+  let failNextRelease = true
+
+  mocks.apiRequest.mockImplementation(
+    (path: string, options: { method?: string; body?: unknown } = {}) => {
+      calls.push({ path, method: options.method, body: options.body })
+      if (path.includes("/findings")) {
+        return Promise.resolve({ items: [], total: 0 })
+      }
+      if (path === "/api/v1/simulation/proposals/prop-ok/release" && options.method === "POST") {
+        if (failNextRelease) {
+          failNextRelease = false
+          return Promise.reject(new Error("管理员密码校验失败"))
+        }
+        return Promise.resolve({ id: "prop-ok", status: "published" })
+      }
+      if (path === "/api/v1/simulation/proposals/prop-pub/rollback" && options.method === "POST") {
+        return Promise.resolve({ id: "prop-pub", status: "approved" })
+      }
+      if (path.includes("/proposals")) {
+        return Promise.resolve({
+          items: [
+            {
+              id: "prop-empty-plan",
+              proposal_key: "PROP-NOPLAN",
+              title: "无回归计划提案",
+              problem: "缺少计划",
+              finding_ids: [],
+              finding_codes: [],
+              target: { kind: "prompt", ref: "p.a" },
+              current_version: "v1",
+              proposed_version: "v2",
+              change_summary: "微调",
+              expected_effect: {},
+              impact_scope: [],
+              regression_plan: {},
+              status: "approved",
+              decided_by_user_id: "admin-1",
+              decided_at: "2026-11-12T08:00:00Z",
+              note: "已批",
+              release: null,
+            },
+            {
+              id: "prop-ok",
+              proposal_key: "PROP-READY",
+              title: "可发布提案",
+              problem: "有完整回归计划",
+              finding_ids: [],
+              finding_codes: [],
+              target: { kind: "prompt", ref: "p.b" },
+              current_version: "v2",
+              proposed_version: "v3",
+              change_summary: "补齐字段",
+              expected_effect: {},
+              impact_scope: [],
+              regression_plan: { scenarios: ["CASE-A"] },
+              status: "approved",
+              decided_by_user_id: "admin-1",
+              decided_at: "2026-11-12T08:10:00Z",
+              note: "已批可发",
+              release: null,
+            },
+            {
+              id: "prop-pub",
+              proposal_key: "PROP-LIVE",
+              title: "在线提案",
+              problem: "已发布待观察",
+              finding_ids: [],
+              finding_codes: [],
+              target: { kind: "prompt", ref: "p.c" },
+              current_version: "v3",
+              proposed_version: "v4",
+              change_summary: "上线版",
+              expected_effect: {},
+              impact_scope: [],
+              regression_plan: { scenarios: ["CASE-B"] },
+              status: "published",
+              decided_by_user_id: "admin-1",
+              decided_at: "2026-11-12T08:20:00Z",
+              note: "已批",
+              release: {
+                released_at: "2026-11-12T09:00:00Z",
+                released_by_user_id: "admin-1",
+                released_version: "v4",
+                release_note: "正式记账",
+                rollback: null,
+              },
+            },
+          ],
+          total: 3,
+        })
+      }
+      return Promise.resolve({})
+    },
+  )
+  const user = userEvent.setup()
+
+  render(<ImprovementProposals />)
+
+  expect(await screen.findByText("PROP-NOPLAN")).toBeInTheDocument()
+  expect(screen.getByText("回归计划为空，无法发起发布记账。")).toBeInTheDocument()
+
+  const releaseButtons = screen.getAllByRole("button", { name: "发布记账" })
+  expect(releaseButtons[0]).toBeDisabled()
+  expect(releaseButtons[1]).toBeEnabled()
+
+  // 打开内联框 -> 输入密码 -> 取消应立即清空密码并收起
+  await user.click(releaseButtons[1])
+  const releaseRegion = screen.getByRole("region", { name: "发布记账确认" })
+  await user.type(within(releaseRegion).getByLabelText("管理员密码（发布记账必填）"), "temp-secret")
+  await user.click(within(releaseRegion).getByRole("button", { name: "取消" }))
+  expect(screen.queryByRole("region", { name: "发布记账确认" })).not.toBeInTheDocument()
+
+  // 重新打开：密码框为空；首次提交触发失败时显错且密码立即清空
+  await user.click(screen.getAllByRole("button", { name: "发布记账" })[1])
+  const releaseRegion2 = screen.getByRole("region", { name: "发布记账确认" })
+  const pwdInput = within(releaseRegion2).getByLabelText(
+    "管理员密码（发布记账必填）",
+  ) as HTMLInputElement
+  expect(pwdInput.value).toBe("")
+  await user.type(pwdInput, "wrong-pass")
+  await user.type(within(releaseRegion2).getByLabelText("发布备注（必填）"), "灰度发布 v3")
+  await user.click(within(releaseRegion2).getByRole("button", { name: "确认发布记账" }))
+
+  await waitFor(() => {
+    expect(within(releaseRegion2).getByRole("alert")).toHaveTextContent("管理员密码校验失败")
+  })
+  expect(pwdInput.value).toBe("")
+
+  // 重新输入正确密码提交成功 -> 关闭内联框
+  await user.type(pwdInput, "admin-correct-pass")
+  await user.click(within(releaseRegion2).getByRole("button", { name: "确认发布记账" }))
+
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: "发布记账确认" })).not.toBeInTheDocument()
+  })
+  const releaseCall = calls.filter(
+    (item) => item.path === "/api/v1/simulation/proposals/prop-ok/release",
+  )
+  expect(releaseCall).toHaveLength(2)
+  expect(releaseCall[1].body).toEqual({
+    password: "admin-correct-pass",
+    note: "灰度发布 v3",
+  })
+
+  // 对 published 提案执行回滚
+  await user.click(screen.getByRole("button", { name: "回滚" }))
+  const rollbackRegion = screen.getByRole("region", { name: "发布回滚确认" })
+  const rbPwdInput = within(rollbackRegion).getByLabelText(
+    "管理员密码（回滚必填）",
+  ) as HTMLInputElement
+  await user.type(rbPwdInput, "admin-rb-pass")
+  await user.type(within(rollbackRegion).getByLabelText("回滚备注（必填）"), "线上指标回退")
+  await user.click(within(rollbackRegion).getByRole("button", { name: "确认回滚" }))
+
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: "发布回滚确认" })).not.toBeInTheDocument()
+  })
+  const rollbackCall = calls.find(
+    (item) => item.path === "/api/v1/simulation/proposals/prop-pub/rollback",
+  )
+  expect(rollbackCall?.body).toEqual({
+    password: "admin-rb-pass",
+    note: "线上指标回退",
+  })
+})
+

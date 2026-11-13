@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 桌面端五处前后端断链与静默缺陷收口：图片预览 CSP `blob:`＋训练场交付原文展开＋提案五态与发布/回滚＋产物采纳方案与跳转＋派单 AI 撮合（桌面变更·零服务端改动·零迁移零路由，便携版 r45，2026-11-13）
+
+打通桌面端五处前后端契约断链与静默渲染缺陷，严守零后端改动与人工拍板红线：
+
+- **图片预览 CSP 白屏修复**：`desktop/src/renderer/index.html` 与 `desktop/src/renderer/web.html` 的 `Content-Security-Policy` 中 `img-src 'self' data:;` 扩为 `img-src 'self' data: blob:;`，消除 `desktop/src/renderer/src/files/FilePreview.tsx` 通过 `URL.createObjectURL(blob)` 渲染 `<img src="blob:...">` 时的 CSP 拦截白屏。
+- **训练场阶段交付原文展开（消解 L-C 盲评）**：`desktop/src/renderer/src/SimulationLab/SimulationRunDetail.tsx` 为 `trace.payload.artifact` 非空 Trace 行增加「展开交付原文 / 收起交付原文」折叠面板，逐件渲染自由文本 `artifacts[]`（`name`、`kind`、`sha256` 与只读 `text` 原文）及结构化阶段字段键值/JSON，不新增后端接口。
+- **训练场改进提案五态对齐与管理员发布记账 / 回滚**：`desktop/src/renderer/src/SimulationLab/types.ts`、`desktop/src/renderer/src/SimulationLab/api.ts` 与 `desktop/src/renderer/src/SimulationLab/ImprovementProposals.tsx` 补齐 `ProposalDto.status` 的 `"published"`（`STATUS_LABEL.published = "已发布"`，消除 `undefined` 徽标）与 `release` / `rollback` 留痕展示；`admin` 视角下对 `approved` 提案提供「发布记账」（`regression_plan` 为空时禁用并提示）、对 `published` 提案提供「回滚」，内联确认框必填管理员密码与备注调 `POST /api/v1/simulation/proposals/<id>/release` 与 `/rollback`，提交或取消即刻清空密码 state。
+- **智能体产物「采纳为方案」与关联方案跳转**：`desktop/src/renderer/src/agents/AgentsConsole.tsx` 对 `linked_solution_id` 非空产物展示「查看方案」，经 `allowNextHashNavigation()` 放行跳转 `#projects/<projectId>?tab=delivery&solution=<linked_solution_id>`；`linked_solution_id` 为空且 `canManage` 在 `completed` / `succeeded_but_receipt_invalid` 终态下提供「采纳为方案」，调用 `POST /api/v1/agents/runs/<run_id>/artifacts/<artifact_id>/adopt-solution`（body `{}`），刷新产物关联状态并呈现新建或幂等重复采纳提示（同时保留宿主通道溯源头与「方案」列展示）。
+- **派单控制台「AI 撮合建议」与采纳 / 驳回留痕**：`desktop/src/renderer/src/dispatch/ConsolePage.tsx` 在 `published` 工作包操作区接入「AI 撮合建议」（`POST /api/v1/dispatch/packages/<id>/match-ai`），展示场景、模型/`prompt_version` 与 `ai_suggestions`（`ai_called=false` 如实提示未调用模型）；「采纳建议 / 驳回建议」调用 `POST /api/v1/dispatch/packages/<id>/match-ai/decision` 并严格传 `{ decision, recommendation_sha256, adopted_candidate_ids }` 闭集三键——采纳自动勾选候选人复选框但不自动创建 `dispatch_offers`，正式指派仍走人工「指派 offer」按钮。
+- **验证与打包**：`vitest +9`（全量 96 文件 **1117 passed**）＋`npm run typecheck` 零错＋M1–M5 反向验证五连全红→`try/finally` sha256 逐字节还原→复绿＋`server/tests/test_diagnostic_sample_surface.py` 与 `server/tests/test_ledger_sync_nail.py` 全绿；合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r45` 并完成新旧 `app.asar` 特征串核验。
+
 ## [未发布] — 桌面端「采纳为方案」人工入口＋宿主通道溯源展示（1A，零新依赖零新样式类，2026-11-13）
 
 OWNER 拍板 1A 的落地（服务端 PR #435 已供契约，补桌面最后一公里）：

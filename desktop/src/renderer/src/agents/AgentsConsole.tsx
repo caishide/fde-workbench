@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useState } from "react"
 import { MemoMarkdown } from "../research/MemoMarkdown"
 import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
+import { allowNextHashNavigation } from "../routing/navigationGuard"
 
 // T-A8 智能体控制台（台账「售前主线登记」节）：run 列表 → 详情 → 工具调用 →
 // 项目成本汇总。页面仅呈现（拍板 6⑥：与 B#9 执行事实面板界面分离——本页是
@@ -72,6 +73,15 @@ interface ArtifactContentDto {
   content_base64: string
 }
 
+interface ArtifactAdoptionResultDto {
+  solution_id: string
+  run_id: string
+  artifact_id: string
+  adopted: boolean
+  duplicate: boolean
+  solution?: { id: string; name?: string } | null
+}
+
 interface RunListDto {
   items: AgentRunRowDto[]
   truncated: boolean
@@ -113,14 +123,11 @@ const RUN_STATUS_LABEL: Record<string, string> = {
   budget_exceeded: "预算超限",
 }
 
-// 采纳闸的终态集合（与服务端 adopt-solution 的 agent_run_not_terminal 闸同源：
-// 只有终态 run 的产物可采纳；queued/running/host_running 一律不可）。
-const RUN_TERMINAL_STATUSES = new Set([
+// 采纳闸的成功终态集合（仅 completed / succeeded_but_receipt_invalid 允许采纳为方案；
+// queued/running/host_running/failed/timeout/budget_exceeded 一律不可）。
+const RUN_ADOPTABLE_STATUSES = new Set([
   "completed",
   "succeeded_but_receipt_invalid",
-  "failed",
-  "timeout",
-  "budget_exceeded",
 ])
 
 const DECISION_LABEL: Record<string, string> = {
@@ -198,10 +205,8 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
   const [previews, setPreviews] = useState<Record<string, ArtifactPreviewState>>({})
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set())
   const [downloadBusyId, setDownloadBusyId] = useState<string | null>(null)
-  // —— 采纳为方案（PR #435 人工采纳入口；canManage + run 终态 + 未采纳才可点）——
+  // —— 采纳为方案（PR #435 人工采纳入口；canManage + completed/succeeded_but_receipt_invalid + 未采纳才可点）——
   const [adoptBusyId, setAdoptBusyId] = useState<string | null>(null)
-  const [adoptNamingId, setAdoptNamingId] = useState<string | null>(null)
-  const [adoptName, setAdoptName] = useState("")
 
   const load = useCallback(async (): Promise<void> => {
     setError("")
@@ -257,33 +262,6 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
       setError(actionMessage(caught))
     } finally {
       setArtifactBusyId(null)
-    }
-  }
-
-  // 采纳为方案（PR #435：POST adopt-solution；AI 只产候选、人工点确认才进台账）。
-  // 同 run 一方案（服务端闸 409 artifact_already_adopted）；成功后重拉详情回真。
-  async function adoptArtifactSolution(runId: string, artifactId: string, name: string): Promise<void> {
-    setAdoptBusyId(artifactId)
-    setArtifactNotice("")
-    setError("")
-    try {
-      const body: Record<string, string> = name.trim() ? { name: name.trim() } : {}
-      await apiRequest(
-        `/api/v1/agents/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/adopt-solution`,
-        { method: "POST", body },
-      )
-      setArtifactNotice("已采纳为方案。")
-      setAdoptNamingId(null)
-      setAdoptName("")
-      const refreshed = await apiRequest<AgentRunDetailDto>(
-        `/api/v1/agents/runs/${encodeURIComponent(runId)}`,
-        { method: "GET" },
-      )
-      setDetail(refreshed)
-    } catch (caught) {
-      setError(actionMessage(caught))
-    } finally {
-      setAdoptBusyId(null)
     }
   }
 
@@ -435,6 +413,38 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
       setError(actionMessage(caught))
     } finally {
       setDownloadBusyId(null)
+    }
+  }
+
+  function jumpToSolution(solutionId: string): void {
+    const nextHash = `#projects/${encodeURIComponent(projectId)}?tab=delivery&solution=${encodeURIComponent(solutionId)}`
+    allowNextHashNavigation(nextHash)
+    window.location.hash = nextHash
+  }
+
+  async function adoptArtifactAsSolution(runId: string, artifact: AgentArtifactDto): Promise<void> {
+    setAdoptBusyId(artifact.id)
+    setArtifactNotice("")
+    setDetailError("")
+    try {
+      const result = await apiRequest<ArtifactAdoptionResultDto>(
+        `/api/v1/agents/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifact.id)}/adopt-solution`,
+        { method: "POST", body: {} },
+      )
+      const runDetail = await apiRequest<AgentRunDetailDto>(
+        `/api/v1/agents/runs/${encodeURIComponent(runId)}`,
+        { method: "GET" },
+      )
+      setDetail(runDetail)
+      setArtifactNotice(
+        result.duplicate
+          ? "该产物已关联交付方案（幂等回执），点击「查看方案」即可前往。"
+          : "已将该产物采纳为交付方案，点击「查看方案」即可前往编辑。",
+      )
+    } catch (caught) {
+      setDetailError(actionMessage(caught))
+    } finally {
+      setAdoptBusyId(null)
     }
   }
 
@@ -666,6 +676,13 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
           {detailLoading ? <p className="empty-copy" role="status">正在加载详情…</p> : null}
           {detail && !detailLoading ? (
             <div className="page-stack">
+              {(() => {
+                const isTerminalAdoptable = RUN_ADOPTABLE_STATUSES.has(detail.status)
+                const showActionColumn = Boolean(
+                  canManage || detail.artifacts?.some((item) => Boolean(item.linked_solution_id)),
+                )
+                const colCount = showActionColumn ? 6 : 5
+                return (
               <table className="data-table">
                 <thead>
                   <tr>
@@ -674,7 +691,7 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                     <th scope="col">指纹 (sha256)</th>
                     <th scope="col">复核</th>
                     <th scope="col">方案</th>
-                  {canManage ? <th scope="col">操作</th> : null}
+                    {showActionColumn ? <th scope="col">操作</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -699,62 +716,48 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                               <small>—</small>
                             )}
                           </td>
-                          {canManage ? (
+                          {showActionColumn ? (
                             <td>
-                              <button
-                                className="secondary-button"
-                                disabled={artifactBusyId === artifact.id}
-                                onClick={() => { void toggleArtifactReview(expandedRunId ?? "", artifact.id, !artifact.reviewed) }}
-                              >
-                                {artifactBusyId === artifact.id ? "正在提交…" : artifact.reviewed ? "撤回复核" : "标记复核"}
-                              </button>{" "}
-                              {/* 采纳为方案：run 终态 + 该产物未被采纳 + 同 run 尚无任何产物被采纳（一 run 一方案，
-                                  服务端闸 409 artifact_already_adopted——按钮前置置灰只是省一次徒劳请求，闸仍在服务端）。 */}
-                              {RUN_TERMINAL_STATUSES.has(detail.status) && !artifact.linked_solution_id && !detail.artifacts?.some((a) => a.linked_solution_id) ? (
-                                adoptNamingId === artifact.id ? (
-                                  <span>
-                                    <input
-                                      value={adoptName}
-                                      placeholder="方案名（留空自动命名）"
-                                      onChange={(event) => setAdoptName(event.target.value)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter" && adoptBusyId !== artifact.id) {
-                                          void adoptArtifactSolution(expandedRunId ?? "", artifact.id, adoptName)
-                                        }
-                                      }}
-                                    />{" "}
-                                    <button
-                                      className="secondary-button"
-                                      disabled={adoptBusyId === artifact.id}
-                                      onClick={() => { void adoptArtifactSolution(expandedRunId ?? "", artifact.id, adoptName) }}
-                                    >
-                                      {adoptBusyId === artifact.id ? "正在采纳…" : "确认采纳"}
-                                    </button>{" "}
-                                    <button
-                                      className="secondary-button"
-                                      disabled={adoptBusyId === artifact.id}
-                                      onClick={() => { setAdoptNamingId(null); setAdoptName("") }}
-                                    >
-                                      取消
-                                    </button>
-                                  </span>
-                                ) : (
+                              {canManage ? (
+                                <>
                                   <button
                                     className="secondary-button"
-                                    disabled={adoptBusyId === artifact.id}
-                                    onClick={() => { setAdoptNamingId(artifact.id); setAdoptName("") }}
+                                    disabled={artifactBusyId === artifact.id}
+                                    onClick={() => { void toggleArtifactReview(expandedRunId ?? "", artifact.id, !artifact.reviewed) }}
                                   >
-                                    采纳为方案
+                                    {artifactBusyId === artifact.id ? "正在提交…" : artifact.reviewed ? "撤回复核" : "标记复核"}
+                                  </button>{" "}
+                                  {previewActions(expandedRunId ?? "", artifact)}
+                                </>
+                              ) : null}
+                              {artifact.linked_solution_id ? (
+                                <>
+                                  {canManage ? " " : null}
+                                  <button
+                                    className="secondary-button"
+                                    onClick={() => jumpToSolution(artifact.linked_solution_id ?? "")}
+                                  >
+                                    查看方案
                                   </button>
-                                )
-                              ) : null}{" "}
-                              {previewActions(expandedRunId ?? "", artifact)}
+                                </>
+                              ) : canManage && isTerminalAdoptable ? (
+                                <>
+                                  {" "}
+                                  <button
+                                    className="primary-button"
+                                    disabled={adoptBusyId === artifact.id}
+                                    onClick={() => { void adoptArtifactAsSolution(expandedRunId ?? "", artifact) }}
+                                  >
+                                    {adoptBusyId === artifact.id ? "正在采纳…" : "采纳为方案"}
+                                  </button>
+                                </>
+                              ) : null}
                             </td>
                           ) : null}
                         </tr>
                         {canManage && openPreviews.has(artifact.id) ? (
                           <tr>
-                            <td colSpan={canManage ? 6 : 5}>
+                            <td colSpan={colCount}>
                               <PreviewBlock state={previews[artifact.id] ?? { status: "loading" }} kind={artifact.kind} />
                             </td>
                           </tr>
@@ -762,10 +765,12 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
                       </Fragment>
                     ))
                   ) : (
-                    <tr><td colSpan={canManage ? 6 : 5}>该运行暂无产物。</td></tr>
+                    <tr><td colSpan={colCount}>该运行暂无产物。</td></tr>
                   )}
                 </tbody>
               </table>
+                )
+              })()}
               <table className="data-table">
                 <thead>
                   <tr>
