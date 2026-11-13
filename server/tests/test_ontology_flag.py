@@ -39,7 +39,6 @@ def _settings(tmp_path: Path, *, enabled: bool) -> Settings:
             ontology_enabled=True,
             ontology_api_key=SecretStr("k"),
             ontology_signing_key=SecretStr("s"),
-            ontology_org_id="org-1",
         )
     return Settings(**kwargs)  # type: ignore[arg-type]
 

@@ -103,8 +103,10 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # goal-sprint r2（QR-089 吸收）：agent_runs 加 frozen_tools 列（发起时刻
 #          白名单快照——「允许名单随 run 冻结」的结构化真身；additive 可空）
 # V3.3 M2 WP4 段 1：项目本体绑定与升级留痕两表（9d4f2b7e8c1a；挂
-#          c8e2a6f0b9d4 之后保单头；D7 段 2 回填 org_id NOT NULL 随 0044 后续）
-HEAD_REVISION = "9d4f2b7e8c1a"
+#          c8e2a6f0b9d4 之后保单头）
+# V3.3 M2 WP4 段 2 步 3+4：绑定 org_id 回填为项目归属并收紧 NOT NULL
+#          （c4a8f2e6b1d9；挂 9d4f2b7e8c1a 之后保单头；孤儿行响亮失败）
+HEAD_REVISION = "c4a8f2e6b1d9"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1169,8 +1171,9 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + AI 原生化 N4 发布通道 b5d9e2f4a7c1（挂 T-16 之后保单头）之后 = 73；
     # + goal-sprint r2 白名单快照列 c8e2a6f0b9d4（挂 N4 之后保单头）之后 = 74；
     # + V3.3 M2 WP4 段 1 项目本体绑定 9d4f2b7e8c1a（挂 c8e2a6f0b9d4 之后保单头）之后 = 75；
+    # + V3.3 M2 WP4 段 2 绑定 org_id 回填 c4a8f2e6b1d9（挂 9d4f2b7e8c1a 之后保单头）之后 = 76；
     # v3-workbench-inventory.json 的 revision_count 为审计快照（随清单重生成同步）
-    assert len(known) == 75
+    assert len(known) == 76
     # 链内任意已落戳都在集内（下探若干历史 revision 抽样）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8"):
         assert historical in known, historical
@@ -1324,3 +1327,108 @@ def test_p0_code_batch_columns_roundtrip_preserves_projects(alembic_config, engi
         )
         == "FDE-V3-P0-CODE-KEEP"
     )
+
+
+# --- V3.3 M2 WP4 段 2 步 3+4：c4a8f2e6b1d9 绑定 org_id 回填 + NOT NULL 收紧 ---
+
+
+def _seed_binding_project(engine, *, project_id, user_id, org_id):
+    """种一条项目（可指定 org 归属）+ 一条 org_id 为 NULL 的绑定行。"""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO projects (id, project_code, name, background, notes, status, "
+                "planned_start_date, leader_user_id, template_snapshot, research_snapshot, "
+                "enterprise_code, org_id) "
+                "VALUES (:id, :code, :name, '', '', 'active', '2026-01-01', :leader, "
+                "'{}'::json, '{}'::json, :ent, :org)"
+            ),
+            {
+                "id": project_id,
+                "code": f"MIG-ORG-{project_id}",
+                "name": f"迁移回填项目 {project_id}",
+                "leader": user_id,
+                "ent": "ENT-MIG",
+                "org": org_id,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO project_ontology_bindings (id, org_id, project_id, ontology_id, "
+                "pinned_version_id, pinned_version, binding_role, status, active_marker, "
+                "bound_by_user_id, version) "
+                "VALUES (:id, NULL, :project_id, 'ont-mig', 'ver-mig', '1.0.0', 'primary', "
+                "'active', 'active', :user_id, 1)"
+            ),
+            {
+                "id": f"bind-{project_id}",
+                "project_id": project_id,
+                "user_id": user_id,
+            },
+        )
+
+
+def _cleanup_binding_project(engine, *, project_id, ids):
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM project_ontology_bindings WHERE id = :id"),
+            {"id": f"bind-{project_id}"},
+        )
+        connection.execute(
+            text("DELETE FROM projects WHERE id = :id"), {"id": project_id}
+        )
+    cleanup_seeded_rows(engine, ids)
+
+
+def test_c4a8f2e6b1d9_backfills_binding_org_from_project(alembic_config, engine):
+    """绑定 org_id 回填为**项目归属**并收紧 NOT NULL（幂等可重放）。"""
+    from fde_api.orgs.models import INTERNAL_ORG_ID
+
+    command.downgrade(alembic_config, "9d4f2b7e8c1a")
+    ids = seed_user_and_template(engine, username="migration.org.backfill")
+    project_id = "mig-org-project"
+    _seed_binding_project(
+        engine, project_id=project_id, user_id=ids["user_id"], org_id=INTERNAL_ORG_ID
+    )
+
+    command.upgrade(alembic_config, "head")
+
+    assert (
+        scalar(
+            engine,
+            "SELECT org_id FROM project_ontology_bindings WHERE id = :id",
+            {"id": f"bind-{project_id}"},
+        )
+        == INTERNAL_ORG_ID
+    )
+    columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("project_ontology_bindings")
+    }
+    assert columns["org_id"]["nullable"] is False
+    # 幂等：重放 upgrade 不炸、不改值
+    command.upgrade(alembic_config, "head")
+    assert (
+        scalar(
+            engine,
+            "SELECT org_id FROM project_ontology_bindings WHERE id = :id",
+            {"id": f"bind-{project_id}"},
+        )
+        == INTERNAL_ORG_ID
+    )
+    _cleanup_binding_project(engine, project_id=project_id, ids=ids)
+
+
+def test_c4a8f2e6b1d9_fails_loudly_on_orphan_binding(alembic_config, engine):
+    """项目无 org 归属 ⇒ 回填不完整 ⇒ 迁移**响亮失败**（不得静默留空）。"""
+    command.downgrade(alembic_config, "9d4f2b7e8c1a")
+    ids = seed_user_and_template(engine, username="migration.org.orphan")
+    project_id = "mig-orphan-project"
+    _seed_binding_project(engine, project_id=project_id, user_id=ids["user_id"], org_id=None)
+    try:
+        with pytest.raises(RuntimeError, match="c4a8f2e6b1d9"):
+            command.upgrade(alembic_config, "head")
+    finally:
+        # 失败的迁移已回滚（schema 仍在 9d4f2b7e8c1a）：清掉孤儿行后回到 head
+        _cleanup_binding_project(engine, project_id=project_id, ids=ids)
+        command.upgrade(alembic_config, "head")

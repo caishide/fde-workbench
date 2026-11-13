@@ -8,7 +8,9 @@
 评审加固（Fde-Ontology docs/v3.3/m2/02-code-review-workbench-2026-11-13.md）：
 - W-C：全部端点项目访问控制（project_access.can_view；不存在/无权 → 404，
   S-01 不泄露存在性）；
-- W-B/D10：I5 调用发 FDE_ONTOLOGY_ORG_ID（配置）+ 真实 project_id；
+- W-B/D10：I5 调用发 org 上下文 + 真实 project_id（段 2 起 org = 项目归属
+  projects.org_id；段 1 的 FDE_ONTOLOGY_ORG_ID 配置已退役——租户身份不得
+  来自外部配置，§15 红线）；
   approve 时对目标版本**再次** I5 复核（propose→approve 间版本可能下架；
   兼修"审批不触 runtime"的写不降级违约）；
 - W-D：错误分型契约——runtime 404 → 409 version_not_published（spec：draft
@@ -86,20 +88,40 @@ def client_from_settings() -> OntologyClient:
     )
 
 
-def _runtime_org() -> str:
-    """D10：段 1 I5 调用的 org 上下文（validator 已保证 enabled 时非空）。"""
-    settings = current_app.config["SETTINGS"]
-    return settings.ontology_org_id
+def _project_org(project: Project) -> str:
+    """D10 段 2：I5 调用的 org 上下文 = **项目归属**（projects.org_id）。
+
+    段 1 曾用 FDE_ONTOLOGY_ORG_ID 配置（orgs 轨道未合流时的唯一可用来源）；
+    orgs 轨道合流后退役该配置——租户身份不得来自外部配置（§15 红线：不允许
+    仅凭客户端/配置传来的租户身份就信任租户身份）。
+
+    项目无 org 归属 ⇒ 409 project_org_missing（fail-closed）：判定发生在一切
+    业务校验与**任何出站调用**之前——绑定面绝不以空 org 去打扰 runtime。
+    """
+    org_id = project.org_id
+    if not org_id:
+        raise BindingError(
+            "project has no organization attribution (org_id is empty)",
+            status=409,
+            code="project_org_missing",
+        )
+    return org_id
 
 
 def _verified_snapshot(
-    client: OntologyClient, *, actor: User, ontology_id: str, version_id: str, project_id: str
+    client: OntologyClient,
+    *,
+    actor: User,
+    org_id: str,
+    ontology_id: str,
+    version_id: str,
+    project_id: str,
 ) -> dict[str, Any]:
     """I5：绑定仅指发布版本（draft 409；评审 W-D/W-B/D10）。"""
     try:
         body = client.get_version_snapshot(
             actor_id=str(actor.id),
-            org_id=_runtime_org(),
+            org_id=org_id,
             project_id=project_id,
             ontology_id=ontology_id,
             version_id=version_id,
@@ -183,11 +205,14 @@ def create_binding(*, actor: User, project_id: str, payload: dict[str, Any]) -> 
     session = db.session()
     try:
         with session.begin():
-            _load_accessible_project(session, actor, project_id)
+            project = _load_accessible_project(session, actor, project_id)
+            # D10 段 2：org 上下文取自项目归属（fail-closed：无 org 即拒写，
+            # 且发生在任何出站调用之前）
+            org_id = _project_org(project)
             client = client_from_settings()
             verified = _verified_snapshot(
-                client, actor=actor, ontology_id=ontology_id, version_id=version_id,
-                project_id=project_id,
+                client, actor=actor, org_id=org_id, ontology_id=ontology_id,
+                version_id=version_id, project_id=project_id,
             )
             # 重绑允许：仅 active/upgrade_pending 占位（retired 可重绑，评审 W-A）
             dup = session.scalars(
@@ -202,6 +227,7 @@ def create_binding(*, actor: User, project_id: str, payload: dict[str, Any]) -> 
                     "project already bound to this ontology", status=409, code="binding_exists"
                 )
             binding = ProjectOntologyBinding(
+                org_id=org_id,
                 project_id=project_id,
                 ontology_id=ontology_id,
                 pinned_version_id=version_id,
@@ -244,7 +270,8 @@ def propose_upgrade(
     session = db.session()
     try:
         with session.begin():
-            _load_accessible_project(session, actor, project_id)
+            project = _load_accessible_project(session, actor, project_id)
+            org_id = _project_org(project)
             binding = session.get(ProjectOntologyBinding, binding_id)
             if (
                 binding is None
@@ -252,6 +279,12 @@ def propose_upgrade(
                 or binding.status not in ("active",)
             ):
                 raise BindingError("binding not found", status=404, code="not_found")
+            if binding.org_id != org_id:
+                raise BindingError(
+                    "binding organization attribution mismatch (project re-attributed)",
+                    status=409,
+                    code="binding_org_mismatch",
+                )
             # 行锁串行化并发提案（评审 W-A：双提案竞态）
             binding = session.scalars(
                 select(ProjectOntologyBinding)
@@ -263,7 +296,7 @@ def propose_upgrade(
                 raise BindingError("upgrade target equals current pin", code="invalid_request")
             client = client_from_settings()
             verified = _verified_snapshot(
-                client, actor=actor, ontology_id=binding.ontology_id,
+                client, actor=actor, org_id=org_id, ontology_id=binding.ontology_id,
                 version_id=to_version_id, project_id=project_id,
             )
             pending = session.scalars(
@@ -311,7 +344,8 @@ def approve_upgrade(
     session = db.session()
     try:
         with session.begin():
-            _load_accessible_project(session, actor, project_id)
+            project = _load_accessible_project(session, actor, project_id)
+            org_id = _project_org(project)
             # 行锁串行化：propose/approve/approve 竞态统一收敛（评审 W-A/E）
             binding = session.scalars(
                 select(ProjectOntologyBinding)
@@ -324,6 +358,12 @@ def approve_upgrade(
                 or binding.status != "upgrade_pending"
             ):
                 raise BindingError("binding not found", status=404, code="not_found")
+            if binding.org_id != org_id:
+                raise BindingError(
+                    "binding organization attribution mismatch (project re-attributed)",
+                    status=409,
+                    code="binding_org_mismatch",
+                )
             upgrade = session.scalars(
                 select(OntologyBindingUpgrade)
                 .where(OntologyBindingUpgrade.id == upgrade_id)
@@ -343,7 +383,7 @@ def approve_upgrade(
                 # approve 时点二次 I5（写不降级 + propose→approve 间版本可能下架）
                 client = client_from_settings()
                 verified = _verified_snapshot(
-                    client, actor=actor, ontology_id=binding.ontology_id,
+                    client, actor=actor, org_id=org_id, ontology_id=binding.ontology_id,
                     version_id=upgrade.to_version_id, project_id=project_id,
                 )
                 # retire 旧行不删行（§5.2 保留历史绑定），新 pin 落 active 行
@@ -351,6 +391,7 @@ def approve_upgrade(
                 binding.active_marker = None
                 binding.version += 1
                 successor = ProjectOntologyBinding(
+                    org_id=org_id,
                     project_id=project_id,
                     ontology_id=binding.ontology_id,
                     pinned_version_id=upgrade.to_version_id,

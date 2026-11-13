@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 from flask import Flask
 from pydantic import SecretStr
-from sqlalchemy import DefaultClause, event
+from sqlalchemy import DefaultClause, event, select
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
@@ -117,7 +117,6 @@ def wb_app(tmp_path: Path) -> Iterator[Flask]:
         ontology_enabled=True,
         ontology_api_key=SecretStr("k"),
         ontology_signing_key=SecretStr("s"),
-        ontology_org_id="org-1",
         **base,  # type: ignore[arg-type]
     )
     app = create_app(settings)
@@ -175,6 +174,31 @@ def _seed(app: Flask) -> None:
                     planned_start_date=date(2026, 1, 1),
                     planned_end_date=date(2026, 12, 31),
                     template_snapshot={},  # NOT NULL 无默认（评审 sqlite 适配发现）
+                    org_id="org-1",  # D10 段 2：租户归属（org 上下文唯一来源）
+                ),
+                Project(
+                    id="p-2",
+                    project_code="PRJ-2",
+                    name="项目二",
+                    enterprise_code="ENT-2",
+                    leader_user_id="u-leader",
+                    status="active",
+                    planned_start_date=date(2026, 1, 1),
+                    planned_end_date=date(2026, 12, 31),
+                    template_snapshot={},
+                    org_id="org-2",  # 另一租户：org 上下文随项目走
+                ),
+                Project(
+                    id="p-3",
+                    project_code="PRJ-3",
+                    name="项目三",
+                    enterprise_code="ENT-3",
+                    leader_user_id="u-leader",
+                    status="active",
+                    planned_start_date=date(2026, 1, 1),
+                    planned_end_date=date(2026, 12, 31),
+                    template_snapshot={},
+                    org_id=None,  # 归属戳会补 internal org；fail-closed 用例显式清空
                 ),
                 ProjectMember(project_id="p-1", user_id="u-bo", role="member"),
             ]
@@ -221,7 +245,8 @@ def test_create_binding_happy_path_and_d10_context(
     # pinned_version 以 runtime 核实响应回填（不信任客户端自报）
     assert binding["pinned_version"] == "1.0.0"
     assert binding["bound_by_user_id"] == "u-leader"
-    # D10：I5 调用必须带配置 org + 真实 project_id（评审 W-B 阻断缺陷的回归钉）
+    # D10：I5 调用必须带 org 上下文 + 真实 project_id（评审 W-B 阻断缺陷的回归钉）；
+    # 段 2 起 org 上下文来自**项目归属**（不再是配置值）
     assert fake.calls[0]["org_id"] == "org-1"
     assert fake.calls[0]["project_id"] == "p-1"
     assert fake.calls[0]["actor_id"] == "u-leader"
@@ -482,3 +507,121 @@ def test_flag_off_all_binding_entries_404_not_found(wb_app_off: Flask) -> None:
                 upgrade_id="u-1", decision="approved",
             )
         assert (excinfo.value.status, excinfo.value.code) == (404, "not_found")
+
+
+# --- 段 2 步 3+4（D10 段 2：org 上下文 = 项目归属；绑定行落 org 归属） ---
+
+
+def test_create_binding_stamps_project_org(
+    wb_app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """绑定行落项目归属 org（段 1 的可空预留列语义已终结）。"""
+    fake = FakeClient()
+    _patch_client(monkeypatch, fake)
+    with wb_app.app_context():
+        created = service.create_binding(
+            actor=_leader(), project_id="p-1",
+            payload={"ontology_id": "ont-1", "pinned_version_id": "ver-1"},
+        )
+        session = db.session()
+        row = session.get(ProjectOntologyBinding, created["id"])
+        assert row is not None
+        assert row.org_id == "org-1"
+        assert row.project_id == "p-1"
+
+
+def test_create_binding_project_without_org_fails_closed(
+    wb_app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """项目无 org 归属 ⇒ 409 project_org_missing；零出站、零写入（fail-closed）。
+
+    归属戳（orgs/org_scope.py 的 before_flush）只覆盖**新增**对象——存量行
+    （回填前遗留 / 非 ORM 写入）可能仍无归属；此时绑定面必须 fail-closed，
+    绝不以空 org 去打扰 runtime。
+    """
+    fake = FakeClient()
+    _patch_client(monkeypatch, fake)
+    with wb_app.app_context():
+        session = db.session()
+        project = session.get(Project, "p-3")
+        assert project is not None
+        project.org_id = None
+        session.commit()
+        with pytest.raises(service.BindingError) as excinfo:
+            service.create_binding(
+                actor=_leader(), project_id="p-3",
+                payload={"ontology_id": "ont-1", "pinned_version_id": "ver-1"},
+            )
+    assert excinfo.value.status == 409
+    assert excinfo.value.code == "project_org_missing"
+    assert fake.calls == []  # fail-closed：绝不以空 org 出站
+    with wb_app.app_context():
+        session = db.session()
+        rows = session.scalars(
+            select(ProjectOntologyBinding).where(ProjectOntologyBinding.project_id == "p-3")
+        ).all()
+        assert rows == []
+
+
+def test_i5_org_context_follows_project_org(
+    wb_app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """org 上下文按项目解析：不同租户的项目各发各的（不共用配置值）。"""
+    fake = FakeClient()
+    _patch_client(monkeypatch, fake)
+    with wb_app.app_context():
+        service.create_binding(
+            actor=_leader(), project_id="p-2",
+            payload={"ontology_id": "ont-2", "pinned_version_id": "ver-9"},
+        )
+    assert fake.calls[0]["org_id"] == "org-2"
+    assert fake.calls[0]["project_id"] == "p-2"
+
+
+def test_upgrade_successor_inherits_project_org(
+    wb_app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """升级 successor 行继承同一项目归属 org（归属不得在升级过程中漂移）。"""
+    binding = _create(wb_app, monkeypatch, FakeClient())
+    propose = _propose(wb_app, monkeypatch, binding["id"])
+    with wb_app.app_context():
+        _patch_client(monkeypatch, FakeClient(behavior="ok", version="1.1.0"))
+        result = service.approve_upgrade(
+            actor=_approver(), project_id="p-1", binding_id=binding["id"],
+            upgrade_id=propose["id"], decision="approved",
+        )
+        session = db.session()
+        session.expire_all()
+        old = session.get(ProjectOntologyBinding, binding["id"])
+        new = session.get(ProjectOntologyBinding, result["id"])
+        assert old is not None and new is not None
+        assert old.org_id == "org-1"
+        assert new.org_id == "org-1"
+
+
+def test_binding_org_mismatch_blocks_upgrade(
+    wb_app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """项目改属（org 变更）⇒ 旧绑定的归属不再一致 ⇒ 409 且零出站（fail-closed）。"""
+    binding = _create(wb_app, monkeypatch, FakeClient())
+    with wb_app.app_context():
+        session = db.session()
+        project = session.get(Project, "p-1")
+        assert project is not None
+        project.org_id = "org-moved"
+        session.commit()
+    fake = FakeClient(behavior="ok", version="1.1.0")
+    _patch_client(monkeypatch, fake)
+    with wb_app.app_context():
+        with pytest.raises(service.BindingError) as excinfo:
+            service.propose_upgrade(
+                actor=_leader(), project_id="p-1", binding_id=binding["id"],
+                payload={
+                    "to_version_id": "ver-2",
+                    "diff_summary": "新增两个字段",
+                    "source_change_set_id": "cs-9",
+                },
+            )
+    assert excinfo.value.status == 409
+    assert excinfo.value.code == "binding_org_mismatch"
+    assert fake.calls == []  # fail-closed：归属不一致时绝不打扰 runtime

@@ -1,8 +1,9 @@
 """项目本体绑定与升级留痕（V3.3 任务书 §5.2；规格 = Fde-Ontology docs/v3.3/m1/ontology-data-model.md §3）。
 
-**两段交付（D7 决策单，m2/00-m2-work-order.md）**：org_id 列预留（可空+索引），
-orgs 多租户轨道合流后回填 NOT NULL；I5 运行时调用的 org 上下文段 1 来自
-FDE_ONTOLOGY_ORG_ID 配置（D10 决策单，m2/02-code-review-workbench-2026-11-13.md）。
+**两段交付（D7 决策单，m2/00-m2-work-order.md）**：段 1 建表时 org_id 为可空
+预留列；段 2（orgs 多租户轨道合流后）由迁移 c4a8f2e6b1d9 回填为**项目归属**
+（projects.org_id）并收紧 NOT NULL；I5 运行时调用的 org 上下文段 2 起同样取
+项目归属（D10 段 2；段 1 的 FDE_ONTOLOGY_ORG_ID 配置已退役）。
 
 硬规则（§5.2 + I5）：
 - 绑定必须指向已发布版本（draft 拒绝=409——由 service 层经 runtime 核实，I5/D10）；
@@ -57,8 +58,9 @@ class ProjectOntologyBinding(Base, TimestampMixin, VersionedMixin):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    # D7 段 1：预留列；orgs 轨道合流后回填 NOT NULL（append-only 演进）
-    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # D10 段 2：org 归属 = 项目归属（projects.org_id）；9d4f2b7e8c1a 建表时的
+    # 可空预留列由 c4a8f2e6b1d9 回填并收紧为 NOT NULL（孤儿行响亮失败）
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False)
     project_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
