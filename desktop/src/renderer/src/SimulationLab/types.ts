@@ -30,6 +30,48 @@ export const STATUS_LABEL: Record<ScenarioStatus, string> = {
   archived: "已归档",
 }
 
+export type ScenarioIndustry =
+  | "energy"
+  | "finance"
+  | "general"
+  | "government"
+  | "healthcare"
+  | "logistics"
+  | "manufacturing"
+  | "media"
+  | "professional_services"
+  | "retail"
+  | "software"
+
+/** 行业分类清单：与 `交付场景导入包/round2/industry-batches-20261113` 下 11 个行业 JSON 同名。 */
+export const SCENARIO_INDUSTRIES: ScenarioIndustry[] = [
+  "energy",
+  "finance",
+  "general",
+  "government",
+  "healthcare",
+  "logistics",
+  "manufacturing",
+  "media",
+  "professional_services",
+  "retail",
+  "software",
+]
+
+export const INDUSTRY_LABEL: Record<ScenarioIndustry, string> = {
+  energy: "能源",
+  finance: "金融",
+  general: "通用",
+  government: "政务",
+  healthcare: "医疗健康",
+  logistics: "物流",
+  manufacturing: "制造业",
+  media: "媒体",
+  professional_services: "专业服务",
+  retail: "零售",
+  software: "软件/互联网",
+}
+
 export interface HiddenFactDto {
   fact_id: string
   text: string
