@@ -10,6 +10,8 @@
 - **判据**：合并后手动 `workflow_dispatch` 出**首份非 insufficient 报告**（读数与四特征④上行复评随回填 PR 落台账 v1.22）；周一 03:00 UTC 定时 cadence 照常（首跑不再等周一）。
 - 零迁移零路由零蓝图零桌面零生产代码改动；结构口径**不变**（引用前现测 **490 路由／52 蓝图／153 表／74 rev 单头 `c8e2a6f0b9d4`**，inventory 逐位吻合）；无 server 变更 ⇒ 无需 rebuild／alembic／重打包。
 - 文档同步：台账 **v1.21**（G-10 凭据接线注记）＋任务书 §13 **#25**。
+- **合并与首跑证据（回填）**：PR #441 rebase 解 CHANGELOG 插队一次（#440「试点度量口径」节两侧全留、后合并者在上，force-with-lease）→ squash **`d1126d3c`**；PR CI 四绿×2（首推＋rebase 后：server-tests 13m38s/10m42s → 13m9s/15m19s）。4 secret 于 12:41:40–45 UTC 经 stdin 管道灌入；dispatch run **43427382735**（34s）出**首份非 insufficient 报告**：verdict=**pass**／kpi=**1.0**（live 9/9：citation 6＋pseudonym 3 全过——kept≥1＋引文逐字独立复核＋零 PII 事件）／offline 14 例 oracle 重放全 ok／incidents=0／uplift 1.0≥PASS 0.8（未校准观察线，非必需门禁语义不变）／prompt_fingerprint `ae12fd11c092cb7c` 与首轮 insufficient 报告逐位一致（提示词零漂移）／fixture sha256 `7871b7dd4f766fcf…`（全文在 artifact）／model=**MiniMax-M3.1-Flash**（生产同款——四槽接线生效）。
+- **四特征④上行复评（DoD③，回填结论）**：**2-1-2-1 → 2-1-2-2**（④持续进化 1/3→2/3）——任务书 §1.2 翻分判据三件复测证据全在案（第一批真模型评估数据＝模拟场 3 例在库＋CI golden set 首份真报告 kpi=1.0／G-13 版本注册＝N6／受控发布通道＝G-11 N4 落地），台账 v1.19 预告触发点「首个非 insufficient 报告产出」兑现；**留痕**：发布/回滚**动作面**仍零行使（首提案/首工单出现后走通道——§1.2 判据只要求通道落地；3/3 属 L4 段不预支）。台账 v1.22＋任务书 §13 #26。周一 03:00 UTC cadence 照常（凭据已在位）。
 
 ## [未发布] — 试点度量口径两项收口（产物人工接受率分母定义＋`agent_pilot_max_runs` 默认对齐文档拍板值，2026-11-13）
 
