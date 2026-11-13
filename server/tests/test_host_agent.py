@@ -99,9 +99,24 @@ class FakeTransport:
         return (self._receipt_code, {"run_id": run_id, "status": payload.get("status"), "duplicate": False})
 
 
+def _write_cli_config(tmp_path) -> Path:
+    """在 tmp 内造一份合法的 zcode CLI 配置（含 defaultModelSelection）。"""
+    path = tmp_path / "zcode-cli-config.json"
+    path.write_text(
+        json.dumps({"defaultModelSelection": {"providerId": "prov", "modelId": "model-x"}}),
+        encoding="utf-8",
+    )
+    return path
+
+
 def _config(tmp_path, **overrides) -> HostAgentConfig:
     payload = dict(_BASE_ENV)
     payload["FDE_AGENT_WORKSPACE_ROOT"] = str(tmp_path / "host-ws")
+    # N2 前置校验隔离（与 test_host_channel.py 同款纪律）：preflight 真读
+    # 默认模型配置文件，缺省路径落在 HOME 下——CI runner 无此文件 ⇒ 六例
+    # 假红（r3 首个 CI 红即此因），开发机真机态又让「缺键」负例不可达。
+    # 单测一律注入 tmp 内造的合法配置；负例用 overrides 显式覆盖路径。
+    payload["FDE_AGENT_HOST_ZCODE_CLI_CONFIG"] = str(_write_cli_config(tmp_path))
     payload.update(overrides)
     return HostAgentConfig.from_env(payload)
 
@@ -144,6 +159,23 @@ def test_preflight_reuses_same_validators(tmp_path, monkeypatch) -> None:
     good = tmp_path / "config.json"
     good.write_text(json.dumps({"defaultModelSelection": {"providerId": "prov", "modelId": "m"}}), encoding="utf-8")
     preflight(_config(tmp_path, FDE_AGENT_HOST_ZCODE_CLI_CONFIG=str(good)))
+
+
+def test_preflight_falls_back_to_default_cli_config_path(tmp_path, monkeypatch) -> None:
+    """未注入 CLI 配置路径 ⇒ 走缺省路径（HOME 下）——打桩钉住该语义。
+
+    不读真实 HOME 内容（真机态与 CI runner 态都必须是绿的）：缺省路径被
+    替换成 tmp 内不存在的文件，缺键失败信息必须点名该路径。
+    """
+    missing = tmp_path / "no-such-zcode-cli-config.json"
+    monkeypatch.setattr("fde_api.agents.host_agent.default_cli_config_path", lambda: missing)
+    payload = dict(_BASE_ENV)
+    payload["FDE_AGENT_WORKSPACE_ROOT"] = str(tmp_path / "host-ws")
+    config = HostAgentConfig.from_env(payload)
+    assert config.cli_config_path == ""
+    with pytest.raises(HostChannelError, match="defaultModelSelection") as ei:
+        preflight(config)
+    assert str(missing) in str(ei.value)
 
 
 # ---------------------------------------------------------------------------
