@@ -8,7 +8,7 @@
 
 - **发现①（P1 跨端契约断裂→复核死锁）**：`#463` 服务端复核投影换代（指纹条目 `name` 可空＋疑似聚合哨兵 `{suspect_count}`）后，桌面守卫 `isRedactionReviewEntries` 仍要求每项 `name` 非空 string ⇒ 新形状整组丢弃 → 复核框消失 → confirm 永远 409 `redaction_review_required` 死锁。修法：`guidance/types.ts` 守卫换代为三形状联合（指纹条目/疑似哨兵/旧形状宽容），`GuidanceReview.tsx` 渲染分派（词典反解缺失显示指纹前 8 位占位＋疑似聚合行），ack 语义不变。
 - **发现②（意图↔实现同族漏网）**：`#463`「复核账零真名」只接线 guidance/translator 四锚，同族四面仍落真名原文。扩线：`redaction.py` 新增 `fingerprint_review_payload` 单一真身（指纹条目＋疑似哨兵单数组，与 guidance 读面投影同形状）；`discovery/jobs.py`（行内账＋事件账）、`transcripts/service.py`（草稿行内账）、`quality/draft.py` 与 `plans/draft_ai.py`（事件账）四写入点全接线；`discovery/service.py` 与 `transcripts/service.py` 两读面接 `resolve_redaction_display` 词典反解（软失败 name=None）。桌面 `DiscoveryPanel.tsx` tooltip 与 `TranscriptDraftsPanel.tsx` 复核清单同步适配双形状。
-- **测试与验证**：服务端 9 套件 101 passed（discovery/transcript/quality/plans 断言换代为指纹＋零真名）；桌面 guidance-redaction-review 新增 2 例（新形状渲染＋ack／畸形整组丢弃 409 回读路径）全绿；变异两连真红（M1 桌面哨兵分支删除／M2 discovery 写入回退真名）→`try/finally` 字节还原→复绿；mypy 277 基线零新增；ruff F401/F841 零告警。零迁移零新路由零新表。
+- **测试与验证**：服务端 9 套件 101 passed（discovery/transcript/quality/plans 断言换代为指纹＋零真名）；桌面 guidance-redaction-review 新增 2 例（新形状渲染＋ack／畸形整组丢弃 409 回读路径）全绿；变异两连真红（M1 桌面哨兵分支删除／M2 discovery 写入回退真名）→`try/finally` 字节还原→复绿；mypy 277 基线零新增；ruff F401/F841 零告警。零迁移零新路由零新表；便携版 **r51**（`0.3.0-r51`，asar `52c0d542221ddee8ac5bf8ffaf2a81774a7f0305c03a7784a3a25ce3b19625aa`，正向 marker 命中 3／反向 0／asar 字节 6/6 全过），同时补齐 `scripts/release-version.mjs` 三源同步（`RELEASE-COUNTER`＋`desktop/package.json`＋`fde-web-bridge.ts`，根治 CR-058 web 桥版本字面量每次 bump 漂移必红问题）。
 
 
 ## [未发布] — N1 试点落地证据收口＋6 张架构图刷新＋Top-12 技能工作流嵌闸＋打包契约修复（2026-11-14）
