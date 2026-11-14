@@ -21,6 +21,17 @@
 - **NEW `docs/goal-sprint-BLOCKED.md`**：待授权 3 项（D7 阈值拍板／G-B、G-C 闸签署与账号发放／N1 窗口 11-19 到期处置）＋共享活体现测风险 2 项（跨栈 Redis 服务别名 `redis` DNS 轮询致心跳键跨栈串写、healthcheck 探针 FAIL 不置非零退出码致「healthy」对心跳缺失无判别力——均非本线改动面，处置待拍板后单独立项）。
 - **台账三同步**：`docs/goal-sprint-PROGRESS.md` 至终态（r1–r6＋收口全 ✅ 冲刺线收官）；`AGENTS.md` 本线收口行；实施台账 §12 收口行。冲刺线八轮（r1–r6＋收口）至此全收官。
 
+## [未发布] — goal-crv 修复批 R7：桌面五项安全与体验收口（主进程守卫成对＋LCSC 闸全覆盖＋点击前复验＋双桥响应面恒同＋控制台错误条，零服务端改动·便携版 r49，2026-11-14）
+
+依据 `docs/goal-crv-fix2-剩余批次总循环-任务书.md` r6 批 R7 完成 `QR-109`~`QR-113` 五项 P2 修复（零迁移零新表零路由）：
+
+- **QR-109 主窗口 will-redirect 守卫**：`hardenWebContents` 主窗口分支补 30x 重定向同尺拦截（此前特权更高的主窗口只有 will-navigate 半边，lcsc 分支反而成对注册）。
+- **QR-110 desktop-execute 入闸**：`lcscIpcEnabled`「默认关」闸覆盖第 4 个 LCSC 面——API 桥 `desktop-execute` 拦截分支在拉起自动化执行前调 `requireLcscEnabled()`（flag=false 桥层即拒，不再依赖服务端 403 兜底）；声明上移 TDZ 安全，4 面共用单点。
+- **QR-111 点击前语义复验**：denied 名单提单一真身 `DENIED_ACTION_SOURCE`（观察面与点击面共用），runner 点击分支执行前对目标当前文案/aria-label/title 复验同尺正则＋form 归属拦截（TOCTOU 窗口敏感控件误点即停）。
+- **QR-112 双桥响应面恒同**：`shared/api-safety.ts` 新增 `parseApiEnvelope`（ok∧error 拒／!ok∧¬error 拒／!ok data 置空／错误体形态四不变量单一判定）与脱敏纯函数族（实现逐字迁移）；桌面桥与 web 桥各自消费同一 verdict——web 桥四处不等价缺口全封；等价性静态钉扩响应面 17 信封样本＋5 脱敏样本双侧钉死；旧钉换代 1 处（错误信封 stub 200→409，换代注记留痕）。
+- **QR-113 控制台错误条**：`AgentsConsole` 去顶层 error 整页早返回（单件复核 409/下载失败不再全页坍缩），改页内错误条＋重试按钮，与 detailError/queueError 就地呈现一致。
+- **验证与打包**：`npm run typecheck` 零错＋vitest 全量 104 文件 **1217 passed**（+26：信封/脱敏样本双侧＋源码锚钉 8 例）＋变异三连（`M1_QR110_gate_bypass`/`M2_QR111_recheck_bypass`/`M3_QR112_ok_with_error`）全红→字节还原核 sha256→54 passed 复绿；RELEASE-COUNTER 对齐实际轮次（45→48）后 bump 打包**便携版 r49**（`0.3.0-r49`），asar 正反向字节双证 ALL PASS（六特征新命中/旧 0 命中＋版本 marker），归档主树 `release/蔡工FDE-0.3.0-便携版-r49`（asar `275313739f5dc4eb…`）。
+
 ## [未发布] — goal-crv 修复批 G：复核清单指纹化零真名＋update_analysis 编辑复扫（零迁移零新路由，2026-11-14）
 
 依据 `docs/goal-crv-fix2-剩余批次总循环-任务书.md` r5 批 G 完成 `QR-133`/`QR-134` 两项拍板修复（零迁移零新表零新路由）：

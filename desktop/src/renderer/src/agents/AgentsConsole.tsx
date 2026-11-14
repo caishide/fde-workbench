@@ -482,8 +482,9 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
   }
 
   if (loading) return <p className="empty-copy" role="status">正在加载智能体运行…</p>
-  if (error) return <p className="empty-copy" role="alert">{error}</p>
-
+  // QR-113（goal-crv r7）：顶层 error 不再整页早返回——单件复核 PATCH 409/
+  // 下载失败此前把整个控制台坍缩为一行且无恢复路径。改为页内错误条＋重试
+  //（load 可重入），与 detailError/queueError 就地呈现语义一致。
   const previewActions = (runId: string, artifact: AgentArtifactDto) => (
     <>
       <button
@@ -504,6 +505,14 @@ export function AgentsConsole({ projectId, canManage = false }: AgentsConsolePro
 
   return (
     <div className="page-stack">
+      {error && (
+        <p className="empty-copy" role="alert">
+          {error}{" "}
+          <button className="secondary-button" onClick={() => { void load() }}>
+            重试
+          </button>
+        </p>
+      )}
       <section className="panel">
         <div className="panel-heading">
           <div>
