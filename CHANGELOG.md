@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 盲审追批修复轮：桌面复核投影双形状守卫消解死锁＋同族复核账零真名扩线（quality/plans/discovery/transcripts，2026-11-14）
+
+`fix3` 盲审（重装真身 code-review＋intended-vs-implemented）两项发现的当轮修复：
+
+- **发现①（P1 跨端契约断裂→复核死锁）**：`#463` 服务端复核投影换代（指纹条目 `name` 可空＋疑似聚合哨兵 `{suspect_count}`）后，桌面守卫 `isRedactionReviewEntries` 仍要求每项 `name` 非空 string ⇒ 新形状整组丢弃 → 复核框消失 → confirm 永远 409 `redaction_review_required` 死锁。修法：`guidance/types.ts` 守卫换代为三形状联合（指纹条目/疑似哨兵/旧形状宽容），`GuidanceReview.tsx` 渲染分派（词典反解缺失显示指纹前 8 位占位＋疑似聚合行），ack 语义不变。
+- **发现②（意图↔实现同族漏网）**：`#463`「复核账零真名」只接线 guidance/translator 四锚，同族四面仍落真名原文。扩线：`redaction.py` 新增 `fingerprint_review_payload` 单一真身（指纹条目＋疑似哨兵单数组，与 guidance 读面投影同形状）；`discovery/jobs.py`（行内账＋事件账）、`transcripts/service.py`（草稿行内账）、`quality/draft.py` 与 `plans/draft_ai.py`（事件账）四写入点全接线；`discovery/service.py` 与 `transcripts/service.py` 两读面接 `resolve_redaction_display` 词典反解（软失败 name=None）。桌面 `DiscoveryPanel.tsx` tooltip 与 `TranscriptDraftsPanel.tsx` 复核清单同步适配双形状。
+- **测试与验证**：服务端 9 套件 101 passed（discovery/transcript/quality/plans 断言换代为指纹＋零真名）；桌面 guidance-redaction-review 新增 2 例（新形状渲染＋ack／畸形整组丢弃 409 回读路径）全绿；变异两连真红（M1 桌面哨兵分支删除／M2 discovery 写入回退真名）→`try/finally` 字节还原→复绿；mypy 277 基线零新增；ruff F401/F841 零告警。零迁移零新路由零新表。
+
+
 ## [未发布] — N1 试点落地证据收口＋6 张架构图刷新＋Top-12 技能工作流嵌闸＋打包契约修复（2026-11-14）
 
 **N1 窗口内闭环全量证据归档（窗口 2026-11-12~11-19，提前达成）**：pilot-001 两条正式 run 经宿主代理裸跑通道完成（completed/exit 0/无降级/claim+receipt 齐；185s/256s；宿主单次代理与产物读取/采纳服务端实现已于 #433/#435 合并），**8 份产物全部完成人工复核**（run-001 3/3＋run-002 5/5，`reviewed_by=admin`），磁盘原件 sha256 与库内指纹双侧现测逐字一致——r1 全量 sha256 清单补登 `docs/goal-sprint-PROGRESS.md`「r1 证据登记」节并消解 r1 遗留。证据闸 `HAS_RUN_EVIDENCE`（审批 p50=85.5s/p90=104.3s、否决率 0）。

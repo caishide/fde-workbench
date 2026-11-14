@@ -190,6 +190,22 @@ def fingerprint_review_entries(entries: list[dict[str, Any]]) -> tuple[list[dict
     return fingerprinted, suspect_count
 
 
+def fingerprint_review_payload(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """复核账存储形状（盲审追批，拍板 #6A 同族扩线）：单数组含两类项——
+
+    - 指纹条目 ``{"name_hash", "occurrences", "matched_dict": True}``（确证命中）；
+    - 哨兵聚合项 ``{"suspect_count": N}``（疑似名不逐条入账，殿后一条）。
+
+    与 guidance 读面投影（``_review_projection``）完全同形状：桌面一处守卫
+    复用三面（guidance / transcripts / discovery）。零真名红线不变。
+    """
+    fingerprinted, suspect_count = fingerprint_review_entries(entries)
+    payload = list(fingerprinted)
+    if suspect_count:
+        payload.append({"suspect_count": suspect_count})
+    return payload
+
+
 def resolve_redaction_display(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """读面反解：指纹 → 词典词目原文（仅显示，不落库）。
 
