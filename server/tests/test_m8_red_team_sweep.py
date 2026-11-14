@@ -461,6 +461,34 @@ _EXCLUSION_RECORDS = {
         "b_owner_status": 404,
         "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
+    ("GET", "/api/v1/projects/<project_id>/ontology/review-queue"): {
+        "reason": (
+            "V3.3 M5-WP3④ <0.8/冲突候选复核分流视图（D31/M5-OPT-3）：FDE_ONTOLOGY_ENABLED 默认关闭"
+            "（D12/D13 门控先于鉴权——GovernanceError 404 与「路径不存在」逐字节同形），"
+            "默认夹具下 A/同角色A/B属主实测均为 404，无法构造 200 正向对照；"
+            "启用态的项目归属（S-01 统一 404）与无绑定 409 语义由 "
+            "tests/test_m5_wp3_review_queue_telemetry.py 专测钉死"
+        ),
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology/upgrade-blast-radius"): {
+        "reason": (
+            "V3.3 M5-WP3② 升级爆炸半径聚合报告（D29 两段式第②段）：FDE_ONTOLOGY_ENABLED 默认关闭"
+            "（D12/D13 门控先于鉴权——GovernanceError 404 与「路径不存在」逐字节同形），"
+            "默认夹具下 A/同角色A/B属主实测均为 404，无法构造 200 正向对照；"
+            "启用态的项目归属（S-01 统一 404）与无绑定 409 语义由 "
+            "tests/test_m5_wp3_governance_blast_radius.py 专测钉死"
+        ),
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
     ("GET", "/api/v1/projects/<project_id>/ontology-bindings/<binding_id>/lineage"): {
         "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 M3-WP4 绑定血缘面默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；启用态跨租户 404 隔离由 test_ontology_m3_grounding 专测钉死",
         "exclusion_kind": "positive_control_infeasible",
@@ -484,22 +512,6 @@ _EXCLUSION_RECORDS = {
         "sweep_required": False,
         "b_owner_status": 404,
         "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
-    },
-    ("GET", "/api/v1/projects/<project_id>/ontology/review-queue"): {
-        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 M5-WP3 D31 复核分流视图默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；启用态跨租户 404 隔离由 test_m5_wp3_review_queue_telemetry 专测钉死",
-        "exclusion_kind": "positive_control_infeasible",
-        "verified_positive_control": False,
-        "sweep_required": False,
-        "b_owner_status": 404,
-        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
-    },
-    ("GET", "/api/v1/projects/<project_id>/ontology/upgrade-blast-radius"): {
-        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 M5-WP3 D29 升级爆炸半径面默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；启用态跨租户 404 隔离由 test_m5_wp3_governance_blast_radius 专测钉死",
-        "exclusion_kind": "positive_control_infeasible",
-        "verified_positive_control": False,
-        "sweep_required": False,
-        "b_owner_status": 404,
-        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
     ("GET", "/api/v1/projects/<project_id>/ontology/terms/<term_id>/impact"): {
         "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",

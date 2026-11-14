@@ -332,36 +332,39 @@ def build_metrics_report(session: Session) -> dict[str, Any]:
         definition="有执行的用例中首条执行为 passed 的占比（每用例只计首条——重试不重复计数；同 created_at 的批量执行按 result 字典序再按 id 取首条——CR-065 口径钉）",
     )
 
-    # ---- M5-WP3 D31：AI 编译免改率遥测（平台内部 SLO，古德哈特护栏）----
-    # 数据源 = 本地不可变 GateEvaluationReceipt 快照（D29 口径）：
-    # summary_json.compiler_telemetry.unmodified_accept_rate——历史回执重放，
-    # 零 runtime 依赖（免疫熔断震荡）。每 (project, gate) 只取最新一条回执
-    # （按 evaluated_at,id 升序扫描、后者覆盖——防重评重复计数）后取均值。
-    # **绝不进项目 Gate 准入**（Gate 只查候选 100% 处置闭环，WP2 已钉）：
-    # target 0.80 仅作平台内部 SLO 观测基线。
-    telemetry_rows = session.scalars(
-        select(GateEvaluationReceipt).order_by(
-            GateEvaluationReceipt.evaluated_at.asc(), GateEvaluationReceipt.id.asc()
-        )
+    # ---- M5-WP3 D31：AI 编译免改可用率（后台内部 SLO，target=0.80）----
+    # 古德哈特护栏（D31）：本指标**绝不进项目 Gate 准入**——Gate 只查
+    # 低置信度/冲突候选 100% 处置闭环（WP2 enforce_dependency_before_decision）。
+    # 数据源 = GateEvaluationReceipt.summary_json 本地不可变快照（D29 口径）：
+    # 每 (project, gate) 取最新回执，零 runtime 依赖、免疫熔断震荡；summary_json
+    # 缺 compiler_telemetry 键（降级回执）的样本不计入分母。
+    receipt_rows = session.execute(
+        select(
+            GateEvaluationReceipt.project_id,
+            GateEvaluationReceipt.gate_key,
+            GateEvaluationReceipt.summary_json,
+            GateEvaluationReceipt.evaluated_at,
+            GateEvaluationReceipt.id,
+        ).order_by(GateEvaluationReceipt.evaluated_at, GateEvaluationReceipt.id)
     ).all()
-    latest_rate: dict[tuple[str, str], float] = {}
-    for row in telemetry_rows:
-        telemetry = (row.summary_json or {}).get("compiler_telemetry") or {}
-        rate = telemetry.get("unmodified_accept_rate")
+    latest_rates: dict[tuple[str, str], float] = {}
+    for project_id, gate_key, summary_json, _evaluated_at, _rid in receipt_rows:
+        telemetry = (summary_json or {}).get("compiler_telemetry")
+        rate = telemetry.get("unmodified_accept_rate") if isinstance(telemetry, dict) else None
         if isinstance(rate, (int, float)):
-            latest_rate[(row.project_id, row.gate_key)] = float(rate)
-    compiler_values = list(latest_rate.values())
+            latest_rates[(str(project_id), str(gate_key))] = float(rate)
+    rate_values = list(latest_rates.values())
     compiler_rate = _metric(
         "ontology_compiler_unmodified_accept_rate",
         "AI 编译免改可用率（平台内部 SLO）",
-        value=round(sum(compiler_values) / len(compiler_values), 4)
-        if compiler_values
-        else 0.0,
-        sample_size=len(compiler_values),
-        definition="每 (project, gate) 最新 Gate 评估回执快照中 compiler_telemetry."
-        "unmodified_accept_rate 的均值（本地不可变回执重放，零 runtime 依赖）。"
-        "古德哈特护栏：仅平台内部 SLO（target 0.80），绝不进项目 Gate 准入——"
-        "Gate 只查候选 100% 处置闭环",
+        value=round(sum(rate_values) / len(rate_values), 4) if rate_values else None,
+        sample_size=len(rate_values),
+        definition=(
+            "各项目各门禁最新 GateEvaluationReceipt 快照的"
+            " compiler_telemetry.unmodified_accept_rate 均值（每 (project, gate) 只计"
+            "最新一条；降级回执无该键不计入）。后台编译器迭代内部 SLO，"
+            "与项目 Gate 准入完全解耦（D31 古德哈特护栏——绝不惩罚精修模型的工程师）"
+        ),
         target=0.80,
     )
 
