@@ -38,3 +38,13 @@ compose healthcheck 命令 `python -m fde_api.health.heartbeat <name>` 在心跳
 ## 5. 排期
 
 **立项即排期待定**（不与并发线抢窗口）；实施授权＝本任务书在库＋蔡工对实施时点的显式令（排期≠实施授权惯例）。
+
+## 6. 终态（goal-liveinfra R1 清退轮，2026-11-14）
+
+**蔡工交互拍板**：①R1 修法＝**清退 diag 孤儿栈**（非本栈 compose 改名/分网）；②时点＝**立即开工**（`#472` 已收尾、无 recreate 窗口冲突）。
+
+**R1 实修（已消解，主栈零 recreate）**：r5 部署源树 `D:/test/fde-wt-deploy-diag` 已删、diag 栈 4 容器成孤儿（api 卡 `created` 因外部端口 8010 被主栈占用），实修＝`docker stop`＋`docker rm` 全 4 个 diag 容器（`fde-wt-deploy-diag-{worker,scheduler,redis,api}-1`），零 diag 残留；diag redis volume `fde-wt-deploy-diag_fde_redis` 保留 dangling 不越界。主机侧 `fde-redis-forward`/`fde-pg-forward` 为独立常驻 forwarder（非 diag compose 服务），保留，现随 alias `redis` 唯一解析回归主栈 `.4`。活体验证全绿：`redis` alias 唯一持主 `fde-workbench-redis-1`(172.18.0.4)、`getent hosts redis`×8 全 `.4`；`fde:health:{worker,scheduler}` 键回归主栈 redis；worker `fail` 1→0 恢复 healthy；主栈 4 容器全 healthy、ID 不变。**主栈 `compose.yaml` 与 `.env` 零改动**——R1「择 A 本栈改名」方案因 diag 已清退而不再需要，`FDE_REDIS_URL` 维持原值。
+
+**R2 判定反转（缺陷不成立，零代码改动）**：重测活体真身（`D:/test/fde-wt-crv2` 构建产物，crv2 源码与镜像逐字一致）`server/src/fde_api/health/heartbeat.py:97 return 0 if healthy else 1`＋`:102 raise SystemExit(main())`——absent-key **exit=1**、present-key **exit=0**，`docker exec fde-workbench-worker-1 python -m fde_api.health.heartbeat worker` 现测 **exit=0**（键新鲜）。本任务书 §1/§2 早期记「FAIL 却 exit=0」的观测经复核判定为 **shell 引号/`set -e` 捕获伪影**，非真实探针缺陷；现镜像探针 FAIL 语义已正确置非零 exit code，healthcheck「healthy」对心跳缺失具判别力 ⇒ R2 撤销，`heartbeat.py` 零改动、无需新增/改造探针测试用例。
+
+**遗留**：diag redis volume `fde-wt-deploy-diag_fde_redis` 保留 dangling（越界不删，待后续运维窗口评估）；diag 栈 4 容器本体已清退，若 diag（D-3 独立轻部署）日后重建须以唯一网络别名重新立项，不回归本缺陷。

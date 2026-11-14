@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-liveinfra R1 清退轮：diag 孤儿栈清退消解跨栈 Redis 别名轮询＋R2 探针缺陷判定不成立（纯运维清退零代码零迁移零路由，2026-11-14）
+
+承接 `docs/goal-sprint-BLOCKED.md` #4/#5 与 `docs/goal-liveinfra-活体基础设施修复-任务书-v1.md` 立项，经蔡工交互拍板（R1 修法＝清退 diag 孤儿栈；时点＝立即开工）实修收口：
+
+- **R1 已消解**：因 r5 部署源树 `D:/test/fde-wt-deploy-diag` 已删、diag 栈 4 容器成孤儿（api 卡 `created` 因外部端口 8010 被主栈占用），实修＝`docker stop`＋`docker rm` 全 4 个 diag 容器（零 diag 残留；diag redis volume 保留 dangling 不越界；主机侧 `fde-redis-forward`/`fde-pg-forward` 独立常驻 forwarder 保留，现随 alias `redis` 唯一解析回归主栈）。活体验证全绿：`redis` alias 唯一解析 `172.18.0.4`（`getent hosts redis`×8 全 `.4`，不再 .4/.14 轮询）；`fde:health:{worker,scheduler}` 键回归主栈 redis；worker `fail` 1→0 恢复 healthy；主栈 4 容器全 healthy、ID 不变（**主栈零 recreate**，`compose.yaml`/`.env`/`FDE_REDIS_URL` 零改动）。
+- **R2 判定反转，缺陷不成立**：现测活体镜像 `server/src/fde_api/health/heartbeat.py:97 return 0 if healthy else 1`＋`:102 raise SystemExit(main())`，absent-key exit=1、present-key exit=0（crv2 源码与镜像逐字一致）；早期收口终扫「FAIL 却 exit=0」观测经复核判定为 shell 引号/`set -e` 捕获伪影，非真实探针缺陷，`heartbeat.py` 零改动、无需新增探针测试用例。
+- 台账同步：`docs/goal-sprint-BLOCKED.md` #4/#5 实修回执回写；`docs/goal-liveinfra-活体基础设施修复-任务书-v1.md` 补 §终态；`docs/audit/下一步实施台账-2026-11-07.md` §12 追加 goal-liveinfra R1 清退更新块。本线零代码零迁移零路由零桌面改动。
+
 ## [未发布] — 盲审追批修复轮：桌面复核投影双形状守卫消解死锁＋同族复核账零真名扩线（quality/plans/discovery/transcripts，2026-11-14）
 
 `fix3` 盲审（重装真身 code-review＋intended-vs-implemented）两项发现的当轮修复：
