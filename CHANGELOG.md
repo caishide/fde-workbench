@@ -2,12 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
-## [未发布] — N1 试点落地证据收口＋售前五件套参考资产＋asar 字节验证偏移修复＋任务书归档（2026-11-14）
+## [未发布] — N1 试点落地证据收口＋6 张架构图刷新＋Top-12 技能工作流嵌闸＋打包契约修复（2026-11-14）
 
 **N1 窗口内闭环全量证据归档（窗口 2026-11-12~11-19，提前达成）**：pilot-001 两条正式 run 经宿主代理裸跑通道完成（completed/exit 0/无降级/claim+receipt 齐；185s/256s；宿主单次代理与产物读取/采纳服务端实现已于 #433/#435 合并），**8 份产物全部完成人工复核**（run-001 3/3＋run-002 5/5，`reviewed_by=admin`），磁盘原件 sha256 与库内指纹双侧现测逐字一致——r1 全量 sha256 清单补登 `docs/goal-sprint-PROGRESS.md`「r1 证据登记」节并消解 r1 遗留。证据闸 `HAS_RUN_EVIDENCE`（审批 p50=85.5s/p90=104.3s、否决率 0）。
 
 - **售前五件套资产**：run-002 产物存为参考样板 `docs/售前产物参考/run-002-20261113/`（README 含全量 sha256 对照）；手册新增「§15 智能体产物（run 产出）与售前五件套参考」（`docs/工作台操作使用手册.md` 与 `server/src/fde_api/control/bundled/help_manual.md` 两副本逐字一致）；`desktop/src/renderer/src/help/HelpPage.tsx` 新增同名章节（桌面端「使用帮助」）。
-- **修复**：`scripts/verify-asar-bytes.mjs` 数据区起点按 asar 规范改 `8 + u32(4)`——旧公式漏算 header pickle 对齐填充（1–3 字节），header 长度一变即全量同字节数假失败（r46 打包实测 62 项假失败 → 修复后全过）。
+- **修复**：`scripts/verify-asar-bytes.mjs` 数据区起点按 asar 规范改 `8 + u32(4)`——旧公式漏算 header pickle 对齐填充（1–3 字节），header 长度一变即全量同字节数假失败（r46 打包实测 62 项假失败 → 修复后全过）；`tests/operations/packaging-contract.test.mjs` 对齐 `desktop/src/shared/brand.ts` 单点 `PRODUCT_NAME` 与 `0.3.0-rN` 列车轮次版本后缀（`npm run test:operations` 14/14 全绿）。
+- **架构图与技能工作流**：全套 6 张 `docs/architecture/archify-diagrams/` 刷新对齐最新口径（52 蓝图 / 491 路由 / 153 表 / 76 迁移，四道 archify 门禁与整页 `preview.png` 全过）；新增 `docs/audit/项目12大高价值技能评估与使用指南-2026-11-14.md` 并在 `.agents/skills/fde-delivery-flow/SKILL.md` 嵌入审查/证伪/实证/洁癖四道关卡。
 - **归档**：`docs/goal-crv-全面代码审查-任务书.md`、`docs/goal-crv-评审会纪要-2026-11-13.md`、`docs/goal-ks1-知识库技能首批入库-任务书.md` 落库。
 
 ## [未发布] — goal-crv 修复收官：fix2 总循环七轮一 PR 全合并＋统一活体部署三验绿（收口轮·纯文档零代码零迁移，2026-11-14）
