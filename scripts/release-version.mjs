@@ -7,18 +7,21 @@
  * 全都看不到轮次。本脚本把轮次变成版本后缀：0.3.0 + r46 → "0.3.0-r46"。
  *
  * 用法：
- *   node scripts/release-version.mjs bump            # 打包轮次 +1，注入 desktop/package.json（打包前调）
+ *   node scripts/release-version.mjs bump            # 打包轮次 +1，三源同步注入（RELEASE-COUNTER +
+ *                                                    # desktop/package.json + fde-web-bridge.ts，打包前调）
  *   node scripts/release-version.mjs show            # 只读打印当前轮次与注入后版本
- *   node scripts/release-version.mjs train <part>    # 发布列车升版：part ∈ major|minor|patch，双文件同步
- *                                                    # （desktop/package.json + server/pyproject.toml），
+ *   node scripts/release-version.mjs train <part>    # 发布列车升版：part ∈ major|minor|patch，三源同步
+ *                                                    # （desktop/package.json + fde-web-bridge.ts + server/pyproject.toml），
  *                                                    # 轮次续接不清零；升完自行走 PR + tag v<新版>
  *
- * 规则（2026-11-13 蔡工拍板）：
+ * 规则（2026-11-13 蔡工拍板，2026-11-14 补齐 CR-058 web 桥第三源同步）：
  *   - 版本格式 = 列车版本 + "-rN"；列车版本取注入前 package.json 的 version（剥掉旧 -rN 后缀）。
  *   - 轮次跨列车**续接**不清零（r1~r45 历史连续，好追溯）。
  *   - RELEASE-COUNTER 不存在时从 1 起算（首次使用自举；不静默猜历史值）。
- *   - train 模式同步改双文件（AGENTS.md「版本号按发布列车同步 desktop/package.json 与
- *     server/pyproject.toml」的脚本化）；README 徽章与 AGENTS 口径行属文档口径，升版轮人工顺带改。
+ *   - bump / train 均同步更新 desktop/src/renderer/src/fde-web-bridge.ts 的 `${version}-web` 字面量
+ *     （对齐 CR-058 web-bridge-version-parity.test.ts 静态闸，防止每次 bump CI desktop 必红）。
+ *   - train 模式同步改三文件（desktop/package.json + fde-web-bridge.ts + server/pyproject.toml）；
+ *     README 徽章与 AGENTS 口径行属文档口径，升版轮人工顺带改。
  *
  * 打包流程（Windows 便携版示例）：
  *   node scripts/release-version.mjs bump
@@ -33,6 +36,14 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const counterPath = resolve(repoRoot, "RELEASE-COUNTER");
 const pkgPath = resolve(repoRoot, "desktop", "package.json");
+const webBridgePath = resolve(
+  repoRoot,
+  "desktop",
+  "src",
+  "renderer",
+  "src",
+  "fde-web-bridge.ts",
+);
 const pyprojectPath = resolve(repoRoot, "server", "pyproject.toml");
 
 function readCounter() {
@@ -49,6 +60,22 @@ function writeCounter(value) {
   writeFileSync(counterPath, `${value}\n`, "utf8");
 }
 
+function syncWebBridgeVersion(version) {
+  const raw = readFileSync(webBridgePath, "utf8");
+  const pattern = /version:\s*async\s*\(\)\s*=>\s*"[^"]+-web"/;
+  if (!pattern.test(raw)) {
+    throw new Error(
+      "desktop/src/renderer/src/fde-web-bridge.ts 未找到 version 字面量锚点，中止。",
+    );
+  }
+  const nextRaw = raw.replace(pattern, `version: async () => "${version}-web"`);
+  const changed = nextRaw !== raw;
+  if (changed) {
+    writeFileSync(webBridgePath, nextRaw, "utf8");
+  }
+  return changed;
+}
+
 function injectVersion(trainVersion, release) {
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
   const base = trainVersion ?? String(pkg.version).replace(/-r\d+$/, "");
@@ -56,11 +83,14 @@ function injectVersion(trainVersion, release) {
     throw new Error(`desktop/package.json 版本不是 semver 三段式：${JSON.stringify(base)}`);
   }
   const next = `${base}-r${release}`;
-  if (pkg.version === next) return { pkg, next, changed: false };
-  pkg.version = next;
-  // 2 缩进 + 结尾换行，与仓库现有 package.json 风格一致
-  writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-  return { pkg, next, changed: true };
+  const pkgChanged = pkg.version !== next;
+  if (pkgChanged) {
+    pkg.version = next;
+    // 2 缩进 + 结尾换行，与仓库现有 package.json 风格一致
+    writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+  }
+  const webBridgeChanged = syncWebBridgeVersion(next);
+  return { pkg, next, changed: pkgChanged || webBridgeChanged };
 }
 
 const mode = process.argv[2] ?? "show";
@@ -80,7 +110,7 @@ if (mode === "show") {
   const { next, changed } = injectVersion(null, release);
   writeCounter(release);
   console.log(
-    `已注入 ${next} 到 desktop/package.json${changed ? "" : "（值未变化）"}；RELEASE-COUNTER=${release}`,
+    `已注入 ${next} 到 desktop/package.json 与 fde-web-bridge.ts${changed ? "" : "（值未变化）"}；RELEASE-COUNTER=${release}`,
   );
 } else if (mode === "train") {
   const part = process.argv[3];
@@ -97,8 +127,8 @@ if (mode === "show") {
       : part === "minor"
         ? `${maj}.${min + 1}.0`
         : `${maj}.${min}.${pat + 1}`;
-  // 双文件同步：desktop/package.json（剥旧 -rN 后缀落纯净列车版，下一次 bump 再注入）+
-  // server/pyproject.toml（列车口径，永不带 -rN 后缀）。
+  // 三文件同步：desktop/package.json（剥旧 -rN 后缀落纯净列车版，下一次 bump 再注入）+
+  // desktop/src/renderer/src/fde-web-bridge.ts + server/pyproject.toml（列车口径，永不带 -rN 后缀）。
   const pkgRaw = readFileSync(pkgPath, "utf8");
   const pkgNext = pkgRaw.replace(
     new RegExp(`("version"\\s*:\\s*")${base.replace(/\./g, "\\.")}(-r\\d+)?"`),
@@ -106,6 +136,7 @@ if (mode === "show") {
   );
   if (pkgNext === pkgRaw) throw new Error("desktop/package.json version 替换未命中，中止。");
   writeFileSync(pkgPath, pkgNext, "utf8");
+  syncWebBridgeVersion(bumped);
   const pyRaw = readFileSync(pyprojectPath, "utf8");
   const pyNext = pyRaw.replace(
     new RegExp(`^(version\\s*=\\s*")${base.replace(/\./g, "\\.")}"`, "m"),
@@ -115,7 +146,7 @@ if (mode === "show") {
   writeFileSync(pyprojectPath, pyNext, "utf8");
   const current = readCounter();
   console.log(
-    `发布列车 ${base} → ${bumped}：desktop/package.json 与 server/pyproject.toml 已同步；` +
+    `发布列车 ${base} → ${bumped}：desktop/package.json、fde-web-bridge.ts 与 server/pyproject.toml 已同步；` +
       `轮次续接（${current === null ? "未初始化" : `r${current}`}），下次打包注入 ${bumped}-r${(current ?? 0) + 1}。` +
       `README 徽章与 AGENTS 口径行请随升版 PR 人工顺带改；tag v${bumped} 打在 fork。`,
   );
