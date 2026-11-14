@@ -2,6 +2,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { webBridgeSessionState } from "../../src/renderer/src/fde-web-bridge"
+// QR-112 换代注记：version 断言与 CR-058 对账钉同源——动态读 package.json version
+//（打包轮次 bump 后两侧恒同步，不再硬编码字面量）。
+import pkg from "../../package.json"
+const pkgVersion = pkg.version as string
 
 const authPayload = {
   data: {
@@ -44,7 +48,8 @@ describe("浏览器版 window.fde 桥", () => {
     expect(typeof window.fde.api.request).toBe("function")
     expect(typeof window.fde.bridge.capture).toBe("function")
     expect(typeof window.fde.app.version).toBe("function")
-    expect(await window.fde.app.version()).toBe("0.3.0-web")
+    expect(await window.fde.app.version()).toBe(`${pkgVersion}-web`)
+    
 
     stubFetch(authPayload)
     await window.fde.auth.login({ username: "guest-a", password: "x", deviceLabel: "test" })
