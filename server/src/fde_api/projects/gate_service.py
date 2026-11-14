@@ -32,6 +32,8 @@ from typing import Any, Mapping, Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from flask import current_app, has_app_context
+
 from fde_api.auth.models import User
 from fde_api.evidence.models import ProjectEvidence
 from fde_api.extensions import db
@@ -446,6 +448,23 @@ def decide_gate(
                     "gate_template_unavailable",
                     f"门禁 {gate.gate_key} 的模板定义缺失，请检查服务端 seeds/gates.json。",
                     500,
+                )
+            # M5-WP2（S-16/S-12/D31）：放行向拍板前的本体依赖闸——独立模块
+            # gate_ontology_check 只做只读辅助校验 + 不可变回执固化（D29），
+            # Gate 结论仍由本函数唯一写入（S-16 唯一结论入口）。阻断语义：
+            # required + 本体不可达 → 409 挂起；D31 处置未闭环 → 409 阻断。
+            if result in ("pass", "conditional_pass") and has_app_context():
+                from fde_api.ontology.gate_ontology_check import (
+                    enforce_dependency_before_decision,
+                )
+
+                enforce_dependency_before_decision(
+                    session,
+                    project=project,
+                    gate=gate,
+                    template=template,
+                    settings=current_app.config["SETTINGS"],
+                    actor=actor,
                 )
             # conditional_pass 仅限 G9 的校验必须对 G8 同样生效（A1）：
             # 此前该检查关在非 G8 分支内，G8 + conditional_pass 可绕过

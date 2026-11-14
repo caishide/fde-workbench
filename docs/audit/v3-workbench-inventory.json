@@ -1,10 +1,10 @@
 {
  "route_count": 503,
  "blueprint_count": 54,
- "table_count": 155,
- "revision_count": 78,
+ "table_count": 157,
+ "revision_count": 79,
  "heads": [
-  "e1a9d4c7b2f8"
+  "b2e8d4c6a9f1"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -114,6 +114,19 @@
    ],
    "add_column_tables": [
     "quotes"
+   ]
+  },
+  "b2e8d4c6a9f1": {
+   "file": "b2e8d4c6a9f1_m5_wp2_gate_receipt_contracts.py",
+   "down_revision": "e1a9d4c7b2f8",
+   "create_tables": [
+    "gate_evaluation_receipts",
+    "acceptance_contracts"
+   ],
+   "add_column_tables": [
+    "gates",
+    "ontology_terms",
+    "project_evidence"
    ]
   },
   "b2e8f4a6c9d3": {

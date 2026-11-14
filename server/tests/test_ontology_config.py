@@ -52,4 +52,14 @@ def test_ontology_enabled_with_material_ok() -> None:
     assert not hasattr(settings, "ontology_org_id")
     # 契约 §1 预留字段（M3 起）已声明
     assert settings.ontology_model_endpoint == ""
-    assert settings.ontology_gate_dependency == ""
+    # M5-WP2 S-16：全局降级闸缺省 per_gate（集成契约 §0；空串 env 显式值归一）
+    assert settings.ontology_gate_dependency == "per_gate"
+
+
+def test_ontology_gate_dependency_validator_rejects_unknown_tier() -> None:
+    """M5-WP2 S-16：全局降级闸启动即闭集校验（strong|weak|per_gate），非法 fail-fast。"""
+    with pytest.raises(ValidationError, match="FDE_ONTOLOGY_GATE_DEPENDENCY"):
+        _make(ontology_gate_dependency="bogus")
+    assert _make(ontology_gate_dependency="strong").ontology_gate_dependency == "strong"
+    # 空串视为未配置，归一契约缺省 per_gate（兼容 M4 占位 "" 的存量 env 显式值）
+    assert _make(ontology_gate_dependency="").ontology_gate_dependency == "per_gate"

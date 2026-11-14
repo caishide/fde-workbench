@@ -37,7 +37,14 @@ class ProjectEvidence(Base, TimestampMixin):
             name="ck_project_evidence_kind",
         ),
         CheckConstraint("char_length(content_sha256) = 64", name="ck_project_evidence_sha256_len"),
+        # M5 S-13：logic_eval_digest 为可选逻辑求值摘要（64-hex 或 NULL）
+        CheckConstraint(
+            "logic_eval_digest IS NULL OR char_length(logic_eval_digest) = 64",
+            name="ck_project_evidence_logic_digest_len",
+        ),
         Index("ix_project_evidence_project_kind", "project_id", "kind"),
+        # M5 D29：按钉版查询证据（版本升级影响分析走此索引）
+        Index("ix_project_evidence_pinned_version", "pinned_version_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
@@ -50,6 +57,13 @@ class ProjectEvidence(Base, TimestampMixin):
     origin: Mapped[str | None] = mapped_column(Text)
     # D16：放宽到 128——captured_from=ontology_review:<64-hex 内容寻址包 ID> = 80 字符
     captured_from: Mapped[str | None] = mapped_column(String(128))
+    # M5-WP2 S-13 五引用列（可空语义锚点；跨库无外键，归属强验在服务层）：
+    # 本体引用只作语义增强锚点，严禁替代原始文件 uri/sha256/来源（§13 M5 条 2）
+    ontology_id: Mapped[str | None] = mapped_column(String(36))
+    pinned_version_id: Mapped[str | None] = mapped_column(String(36))
+    object_ref_id: Mapped[str | None] = mapped_column(String(36))
+    action_request_id: Mapped[str | None] = mapped_column(String(36))
+    logic_eval_digest: Mapped[str | None] = mapped_column(String(64))
     created_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

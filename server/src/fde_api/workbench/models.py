@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -585,6 +586,12 @@ class Gate(Base, TimestampMixin, VersionedMixin):
             "decision IS NULL OR decision IN ('proceed', 'pivot', 'stop')",
             name="ck_gates_decision",
         ),
+        # M5-WP2（S-16）：内层依赖等级闭集；NULL=回退模板默认
+        CheckConstraint(
+            "ontology_dependency IS NULL OR ontology_dependency IN "
+            "('required', 'optional', 'none')",
+            name="ck_gates_ontology_dependency",
+        ),
         Index("ix_gates_project_id", "project_id"),
     )
 
@@ -633,8 +640,160 @@ class Gate(Base, TimestampMixin, VersionedMixin):
     lifecycle_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default=text("1")
     )
+    # M5-WP2（S-16 内层等级 per-project 持久锚点）：NULL=用 gates.json 模板
+    # 默认；下调变更须走 S-12 Owner 异人审批锁（dependency_gate 模块强制）
+    # 后由服务层落值——直接 UPDATE 路径不开放（防降级旁路）。
+    ontology_dependency: Mapped[str | None] = mapped_column(String(12))
 
     project: Mapped[Project] = relationship(back_populates="gates")
+
+
+class GateEvaluationReceipt(Base, TimestampMixin):
+    """M5-WP2（D29）Gate 求值瞬间固化的不可变评估回执。
+
+    历史重放只验回执与钉死快照（免疫熔断震荡导致的重放不一致）；输入快照
+    哈希 + 当时熔断降级态（``breaker_state``，取自 OntologyClient.breaker_state
+    只读视图）+ D31 处置闭环判定一并冻结。S-16：Agent 与 ontology-service
+    无权改写 Gate 状态——本表无 UPDATE 路径（服务层只 INSERT）；
+    不可变性不止靠纪律：下方 ORM 事件守卫在 flush 前对任何改写/删除响亮
+    失败（吸收并行评审亮点；项目级 CASCADE 删除除外——库级外键语义）。
+    """
+
+    __tablename__ = "gate_evaluation_receipts"
+    __table_args__ = (
+        CheckConstraint(
+            "breaker_state IN ('closed', 'open', 'half_open')",
+            name="ck_gate_evaluation_receipts_breaker_state",
+        ),
+        Index(
+            "ix_gate_evaluation_receipts_project_gate",
+            "project_id",
+            "gate_key",
+        ),
+        Index(
+            "ix_gate_evaluation_receipts_pinned_version",
+            "pinned_version_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    gate_key: Mapped[str] = mapped_column(String(10), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pinned_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    # 求值输入快照哈希（治理摘要 canonical JSON 的 sha256）——回执验真锚点
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # D32 双指纹分离视图（可空：mock/降级路径可能无现场绑定层）
+    domain_schema_sha256: Mapped[str | None] = mapped_column(String(64))
+    site_binding_sha256: Mapped[str | None] = mapped_column(String(64))
+    # 当时熔断降级态（closed|open|half_open）——降级评估在回执中透明留痕
+    breaker_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="closed", server_default=text("'closed'")
+    )
+    # D31：低置信度(<0.8)/冲突候选 100% 人工处置闭环判定（免改/精修/驳回均绿灯）
+    disposition_closed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    # 治理摘要不可变快照（get_version_governance_summary 响应体 JSON）；
+    # 降级/跳过路径由服务层注入 receipt_annotation（透明标注在线/降级态）
+    summary_json: Mapped[dict[Any, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    gate_ready: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+# D29 全行不可变的 ORM 强制层（内容列任一改写/整行删除均在 flush 前失败；
+# 项目删除走库级 CASCADE 不经 ORM 事件，审计随项目消亡属预期语义）。
+_GATE_RECEIPT_IMMUTABLE_COLUMNS = (
+    "gate_key",
+    "ontology_id",
+    "pinned_version_id",
+    "snapshot_sha256",
+    "domain_schema_sha256",
+    "site_binding_sha256",
+    "breaker_state",
+    "disposition_closed",
+    "summary_json",
+    "gate_ready",
+    "evaluated_at",
+    "created_by_user_id",
+)
+
+
+@event.listens_for(GateEvaluationReceipt, "before_update")
+def _gate_receipt_no_update(
+    mapper: Any, connection: Any, target: GateEvaluationReceipt
+) -> None:
+    from sqlalchemy import inspect as sa_inspect
+
+    state = sa_inspect(target)
+    for attr in _GATE_RECEIPT_IMMUTABLE_COLUMNS:
+        history = state.attrs[attr].history
+        if history.has_changes() and history.deleted:
+            raise RuntimeError(
+                "gate_evaluation_receipts is immutable after insert "
+                f"(D29; column={attr})"
+            )
+
+
+@event.listens_for(GateEvaluationReceipt, "before_delete")
+def _gate_receipt_no_delete(
+    mapper: Any, connection: Any, target: GateEvaluationReceipt
+) -> None:
+    raise RuntimeError("gate_evaluation_receipts is immutable, delete forbidden (D29)")
+
+
+class AcceptanceContract(Base, TimestampMixin):
+    """M5-WP2（D29）结构化验收契约项（Gate 证据的结构化绑定面）。
+
+    输入清单与量化规则引用（items_json）、异人判定角色 acceptor、争议响应
+    SLA（默认 72h；账龄结算统一锚定 ontology-service UTC submitted_at 单一
+    权威时钟，本表 sla_hours 只是契约条款）。``superseded`` 为终态：修订走
+    新契约行取代旧行，不在原行上编辑（与 ontology_terms 同款不可变纪律）。
+    """
+
+    __tablename__ = "acceptance_contracts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'active', 'superseded')",
+            name="ck_acceptance_contracts_status",
+        ),
+        CheckConstraint("sla_hours > 0", name="ck_acceptance_contracts_sla_positive"),
+        Index("ix_acceptance_contracts_project_status", "project_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    # 可空：契约可先于具体门禁建档（gate_key 仅作绑定锚点，不作外键——
+    # gates 行由 ensure_project_gates 懒初始化，建档顺序不保证先于契约）
+    gate_key: Mapped[str | None] = mapped_column(String(10))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 输入清单 + 量化规则引用：[{ref_kind, ref_key, note}] 结构由服务层校验
+    items_json: Mapped[list[Any]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    acceptor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    sla_hours: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=72, server_default=text("72")
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default=text("'active'")
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
 
 class Quote(Base, TimestampMixin, VersionedMixin):
