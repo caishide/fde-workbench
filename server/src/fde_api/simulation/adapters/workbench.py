@@ -351,10 +351,10 @@ def _candidate_overlay_fragment(ctx: AdapterContext) -> str:
     purpose_key = str(fragment.get("purpose_key") or "simulation_workbench").strip()
     if purpose_key and not purpose_allowed(purpose_key):
         return ""
-    text = str(fragment.get("fragment") or "").strip()
+    text = str(fragment.get("fragment") or "").strip()[:200]
     if not text or validate_overlay_fragment(text) is not None:
         return ""
-    return text[:200]
+    return text
 
 
 def _simulation_workbench_system_prompt(ctx: AdapterContext) -> str:

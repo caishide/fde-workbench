@@ -179,7 +179,8 @@ def apply_overlays_to_messages(
         else:
             result.append(message)
     if not injected:
-        result.insert(0, {"role": "system", "content": suffix.strip()})
+        overlay_system_content = suffix.strip()
+        result.insert(0, {"role": "system", "content": overlay_system_content})
     return result
 
 
