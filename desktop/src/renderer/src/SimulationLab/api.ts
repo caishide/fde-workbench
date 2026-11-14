@@ -284,14 +284,28 @@ export async function createProposal(
     finding_ids: string[]
     target: { kind: string; ref: string }
     change_summary: string
+    title?: string
     current_version?: string
     proposed_version?: string
     override_json?: Record<string, unknown>
+    candidate_payload?: Record<string, unknown>
   },
 ): Promise<import("./types").ProposalDto> {
   const data = await apiRequest(`${BASE}/proposals`, { method: "POST", body: payload })
   if (!data || typeof data !== "object") throw new Error("改进提案数据格式异常")
   return data as import("./types").ProposalDto
+}
+
+export async function draftImprovementsAi(
+  apiRequest: SimulationApiRequest,
+  payload: { finding_ids: string[] },
+): Promise<import("./types").DraftAiResponseDto> {
+  const data = await apiRequest(`${BASE}/findings/draft-ai`, {
+    method: "POST",
+    body: payload,
+  })
+  if (!data || typeof data !== "object") throw new Error("AI 蒸馏草稿数据格式异常")
+  return data as import("./types").DraftAiResponseDto
 }
 
 export async function decideProposal(

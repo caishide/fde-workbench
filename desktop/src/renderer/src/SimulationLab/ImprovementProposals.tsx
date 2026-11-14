@@ -225,6 +225,15 @@ export function ImprovementProposals(): ReactElement {
                 <dd>{proposal.finding_codes.join("、") || "—"}</dd>
                 <dt>变更摘要</dt>
                 <dd>{proposal.change_summary}</dd>
+                {proposal.candidate_payload &&
+                Object.keys(proposal.candidate_payload).length > 0 ? (
+                  <>
+                    <dt>候选载荷</dt>
+                    <dd>
+                      <code>{JSON.stringify(proposal.candidate_payload)}</code>
+                    </dd>
+                  </>
+                ) : null}
                 <dt>回归计划</dt>
                 <dd>{JSON.stringify(proposal.regression_plan)}</dd>
                 {proposal.note ? (

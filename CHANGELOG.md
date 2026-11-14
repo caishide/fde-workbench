@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — AI 原生化学习闭环 2.0 L4 桌面收口＋workbench 直连四元组修复（桌面「失败→AI 起草→建案」＋场景选择器＋workbench 执行面选项，零迁移零新路由＝491/52/153/76 rev 单头 `d4b7e2f9a6c1` 不变，2026-11-14）
+
+承接 L4 服务端（PR #455 → `7e99b658`），补齐训练场桌面端 L4-⑦ 全套操作面并闭合活体真机冒烟检出的直连四元组缺口：
+
+- **L4-⑦ 桌面「失败→AI 起草→建案」闭环（`FailureAnalysis.tsx`＋`ImprovementProposals.tsx`＋`api.ts`＋`types.ts`）**：失败发现列表支持多选与 L-B `likely` 标记文案（「L-B 模型建议 · 根因未确认——完成 L-C 人工复核确认后方可建正式提案」，按 §6-4 拍板仅列表提示不建审批流）；点击「AI 起草改进候选」调 `POST /api/v1/simulation/findings/draft-ai`（返件式零落库），就地展开三载体候选编辑器（`lesson_entry` 经验卡／`skill_version_draft` 技能草稿／`prompt_overlay_fragment` 提示词追加片段），人工审阅修订后对含 `confirmed` 发现点击「创建改进提案」调 `POST /api/v1/simulation/proposals` 落 `candidate_payload_json`；提案列表同步展示结构化候选载荷。
+- **场景选择器＋`workbench` 执行面选项（`SimulationRunDetail.tsx`）**：新增「目标场景」`<select>` 选择器取代硬编码 `scenarios[0]`；「执行面」选择器与运行徽标新增 `workbench`（工作台内嵌模型）并对 `queued`/`running` 态每 3 秒自动轮询刷新详情。
+- **服务端 `WorkbenchAdapter` 直连四元组修复（`simulation/adapters/workbench.py`）**：活体真机冒烟检出 DSH 未启用时降级直连腿 `direct_provider_completion` 要求 `model_override` 完整携带 `{provider, model, base_url, api_key}` 四元组（仅传 `{model}` 报 `ai_model_not_configured`）；`_resolve_model_override` 补齐四元组并对缺 `base_url` 同样 fail-closed 抛 `AdapterUnavailable("workbench_model_slot_incomplete")`。
+- **验证**：桌面 `npm run typecheck` 零错＋`simulation-lab-console.test.tsx` 新增 2 例（17 passed，全量 vitest 102 文件全过）；服务端 `test_simulation_workbench_adapter` 12 passed＋污染/单向阀/纯净度/预算 17 passed＋mypy 277 基线不变＋ruff 零错；变异三连全红→字节级 sha256 还原→复绿（M1 删 `base_url`／M2 退回 `scenarios[0]`／M3 删 `candidate_payload`）。便携版在 L5/L6 全链完成后对齐主树 `release/` 最新序号统一交付。
 
 ## [未发布] — goal-sprint 收口拍板回写轮：四项交互拍板落档＋G-C 签署材料包＋活体基础设施修复立项（纯文档零代码零迁移零路由，2026-11-14）
 
@@ -12,6 +20,7 @@
 - **N1 试点窗口**：2026-11-19 按期关闭（到期后如实登记；8/8 产物复核已清零，宿主通道转回待授权态）。
 - **两项共享活体风险**（跨栈 Redis 服务别名 DNS 轮询＋healthcheck 探针 FAIL exit=0）：单独立项一次修两项——NEW `docs/goal-liveinfra-活体基础设施修复-任务书-v1.md`（R1 别名唯一化＋R2 探针 exit code，单 PR 交付，验收含双栈心跳归位观测与探针变异验证）；实施排期待显式令。
 - 台账同步：`docs/goal-sprint-PROGRESS.md` 追加收口拍板回写节；`AGENTS.md` 收口行补拍板结论。
+
 ## [未发布] — 桌面第三批业务与治理闭环：本体写面与候选＋方案 AI 生成＋智能体凭据＋到期与队列监控（桌面变更·零服务端改动·零迁移零路由，便携版 r48，2026-11-14）
 
 补齐桌面 4 处「后端完备、前端零入口」的业务与治理面（本体/solutions/agents/jobs 契约早已上线，本轮接最后一公里），严守闭集键、明文零驻留与禁自审纪律：

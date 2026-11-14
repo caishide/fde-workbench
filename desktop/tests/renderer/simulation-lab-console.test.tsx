@@ -934,3 +934,272 @@ it("管理员可对 approved 提案发起发布记账、对 published 提案发�
   })
 })
 
+const sampleScenario = {
+  id: "scen-1",
+  scenario_key: "CASE-A-QUALITY-TRACE",
+  name: "质量追溯试点场景",
+  variant: "normal",
+  version: 1,
+  industry: "manufacturing",
+  scale: "medium",
+  difficulty: "normal" as const,
+  split: "train" as const,
+  source_kind: "seed",
+  status: "active" as const,
+  tags: [],
+  content_sha256: "abc123",
+  created_at: "2026-11-08T01:00:00Z",
+}
+
+const sampleProposal = {
+  id: "prop-base",
+  proposal_key: "PROP-BASE",
+  title: "改进提案示例",
+  problem: "范围蔓延",
+  finding_ids: ["f-confirmed-1"],
+  finding_codes: ["FA-02"],
+  target: { kind: "prompt", ref: "simulation_workbench" },
+  current_version: "v1",
+  proposed_version: "v2",
+  change_summary: "补充边界清单",
+  expected_effect: {},
+  impact_scope: ["design"],
+  regression_plan: { suite: "smoke" },
+  status: "in_review" as const,
+  decided_by_user_id: null,
+  decided_at: null,
+  note: null,
+  release: null,
+}
+
+it("运行台支持目标场景选择器与 workbench 内嵌模型执行面（不再写死 scenarios[0]）", async () => {
+  const secondScenario = {
+    ...sampleScenario,
+    id: "scen-2",
+    scenario_key: "CASE-B-TRADE-DOCS",
+    name: "外贸单证自动化场景",
+    version: 3,
+  }
+  const workbenchRun = {
+    ...run,
+    id: "wb-77889900-1111-2222-3333-444455556666",
+    run_key: "CASE-B-TRADE-DOCS:normal:v3:seed0:a1:cfgwb",
+    adapter_mode: "workbench" as const,
+    status: "completed" as const,
+  }
+  const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+
+  mocks.apiRequest.mockImplementation(
+    (path: string, options: { method?: string; body?: unknown } = {}) => {
+      calls.push({ path, method: options.method, body: options.body })
+      if (path.includes("/runs/") && path.includes("/trace")) {
+        return Promise.resolve({ items: [trace], total: 1, truncated: false, next_seq: 1 })
+      }
+      if (path.includes("/simulation/scenarios")) {
+        return Promise.resolve({
+          items: [sampleScenario, secondScenario],
+          total: 2,
+          truncated: false,
+        })
+      }
+      if (path === "/api/v1/simulation/runs" && options.method === "POST") {
+        return Promise.resolve({ ...workbenchRun, status: "queued" })
+      }
+      if (path.includes("/simulation/runs") && options.method === "GET") {
+        return Promise.resolve({ items: [run, workbenchRun], total: 2, truncated: false })
+      }
+      if (path.includes("/evaluation")) {
+        return Promise.resolve(report)
+      }
+      if (path.includes("/findings")) {
+        return Promise.resolve({ items: [], total: 0 })
+      }
+      return Promise.resolve({})
+    },
+  )
+  const user = userEvent.setup()
+
+  render(<SimulationRunDetail />)
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("目标场景")).toHaveValue("scen-1")
+  })
+  expect(screen.getByText("工作台内嵌模型")).toBeInTheDocument()
+
+  await user.selectOptions(screen.getByLabelText("目标场景"), "scen-2")
+  await user.selectOptions(screen.getByLabelText("执行面"), "workbench")
+  expect(screen.getByText("#wb-77889")).toBeInTheDocument()
+  expect(screen.queryByText("#run-1")).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole("button", { name: "发起模拟运行" }))
+
+  await waitFor(() => {
+    const post = calls.find(
+      (item) => item.path === "/api/v1/simulation/runs" && item.method === "POST",
+    )
+    expect(post?.body).toEqual({
+      scenario_id: "scen-2",
+      adapter_mode: "workbench",
+      execute: true,
+      config: { max_rounds: 6, probe_quality: 1.0 },
+    })
+  })
+  expect(
+    await screen.findByText(/已基于「外贸单证自动化场景」发起内嵌工作台模型运行/),
+  ).toBeInTheDocument()
+})
+
+it("失败分析支持 L-B likely 标记提示与「失败 → AI 起草改进候选 → 创建改进提案」闭环", async () => {
+  const confirmedFinding = {
+    id: "f-confirmed-1",
+    code: "FA-02",
+    title: "范围蔓延或目标发散",
+    severity: "high" as const,
+    dimension: "D2",
+    description: "边界条款缺失。",
+    evidence_refs: [{ seq: 2 }],
+    root_causes: [
+      {
+        code: "RC-SCOPE",
+        category: "prompt",
+        confidence: "confirmed" as const,
+        analysis: "缺少明确 In-Scope / Out-of-Scope 表述。",
+      },
+    ],
+    created_at: "2026-11-14T00:00:00Z",
+  }
+  const likelyFinding = {
+    id: "f-likely-2",
+    code: "FA-03",
+    title: "方案缺乏架构依据（L-B 模型层建议）",
+    severity: "medium" as const,
+    dimension: "D3",
+    description: "模型层评分偏低（待 L-C 复核）。",
+    evidence_refs: [],
+    root_causes: [
+      {
+        code: "RC-L-B",
+        category: "model_evaluation",
+        confidence: "likely" as const,
+        analysis: "来源 L-B model:server。",
+      },
+    ],
+    created_at: "2026-11-14T00:01:00Z",
+  }
+  const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+
+  mocks.apiRequest.mockImplementation(
+    (path: string, options: { method?: string; body?: unknown } = {}) => {
+      calls.push({ path, method: options.method, body: options.body })
+      if (path.includes("/runs/") && path.includes("/trace")) {
+        return Promise.resolve({ items: [trace], total: 1, truncated: false, next_seq: 1 })
+      }
+      if (path.includes("/simulation/scenarios")) {
+        return Promise.resolve({ items: [sampleScenario], total: 1, truncated: false })
+      }
+      if (path.includes("/simulation/runs") && options.method === "GET") {
+        return Promise.resolve({ items: [run], total: 1, truncated: false })
+      }
+      if (path.includes("/evaluation")) {
+        return Promise.resolve(report)
+      }
+      if (path === "/api/v1/simulation/findings/draft-ai" && options.method === "POST") {
+        return Promise.resolve({
+          draft: {
+            groups: [
+              {
+                code: "FA-02",
+                lesson_entry: {
+                  text: "方案定稿前必须显式列出 In-Scope 与 Out-of-Scope 清单。",
+                  tier: "agent.module.discovery",
+                  industries: ["manufacturing"],
+                  rationale: "防止范围蔓延。",
+                },
+                skill_version_draft: {
+                  skill_ref: "fde-scope-guard",
+                  summary: "补充范围边界核对清单",
+                  instructions_delta: "输出方案时附带边界对照表。",
+                },
+                prompt_overlay_fragment: {
+                  purpose_key: "simulation_workbench",
+                  fragment: "方案阶段须输出明确的交付范围边界与排外事项。",
+                  rationale: "约束方案输出完整性。",
+                },
+              },
+            ],
+          },
+          payload_sha256: "ab12cd34ef567890",
+          finding_ids: ["f-confirmed-1"],
+          prompt_version: "simulation-improvement-draft-prompt-v1",
+          prompt_fingerprint: "8cec4edef64a2b2f50c6edb644406716ffdd85ce85f061919b2ec87b1296e831",
+        })
+      }
+      if (path === "/api/v1/simulation/proposals" && options.method === "POST") {
+        return Promise.resolve({
+          ...sampleProposal,
+          proposal_key: "PROP-L4-NEW",
+          candidate_payload: (options.body as { candidate_payload?: Record<string, unknown> })
+            ?.candidate_payload,
+        })
+      }
+      if (path.includes("/findings")) {
+        return Promise.resolve({ items: [confirmedFinding, likelyFinding], total: 2 })
+      }
+      return Promise.resolve({})
+    },
+  )
+  const user = userEvent.setup()
+
+  render(<SimulationRunDetail />)
+
+  expect(
+    await screen.findByText(/L-B 模型建议 · 根因未确认——完成 L-C 人工复核确认后方可建正式提案/),
+  ).toBeInTheDocument()
+
+  // 仅勾选 likely 行尝试手工建案 -> 前端拦截要求至少含一条 confirmed 根因
+  await user.click(screen.getByLabelText("选择发现 FA-03"))
+  await user.click(screen.getByRole("button", { name: "手工/编辑建案" }))
+  await user.type(screen.getByLabelText("变更摘要（必填）"), "尝试用 likely 建案")
+  await user.click(screen.getByRole("button", { name: "创建改进提案" }))
+  expect(
+    await screen.findByText(/创建正式提案要求所勾选发现至少包含一条「已确认（confirmed）」根因/),
+  ).toBeInTheDocument()
+
+  // 勾选 confirmed 行 -> AI 起草改进候选 -> 切换为 prompt_overlay_fragment -> 创建提案带 candidate_payload
+  await user.click(screen.getByLabelText("选择发现 FA-03"))
+  await user.click(screen.getByLabelText("选择发现 FA-02"))
+  await user.click(screen.getByRole("button", { name: "AI 起草改进候选" }))
+
+  expect(await screen.findByText(/AI 已起草 1 组候选载荷/)).toBeInTheDocument()
+  expect(screen.getByLabelText("经验卡正文（≤300字）")).toHaveValue(
+    "方案定稿前必须显式列出 In-Scope 与 Out-of-Scope 清单。",
+  )
+
+  await user.selectOptions(screen.getByLabelText("进化载体类型"), "prompt_overlay_fragment")
+  expect(screen.getByLabelText("追加陈述片段（≤200字）")).toHaveValue(
+    "方案阶段须输出明确的交付范围边界与排外事项。",
+  )
+
+  await user.click(screen.getByRole("button", { name: "创建改进提案" }))
+
+  await waitFor(() => {
+    const createCall = calls.find(
+      (item) => item.path === "/api/v1/simulation/proposals" && item.method === "POST",
+    )
+    expect(createCall?.body).toEqual({
+      finding_ids: ["f-confirmed-1"],
+      target: { kind: "prompt", ref: "simulation_workbench" },
+      change_summary: "方案阶段须输出明确的交付范围边界与排外事项。",
+      candidate_payload: {
+        prompt_overlay_fragment: {
+          purpose_key: "simulation_workbench",
+          fragment: "方案阶段须输出明确的交付范围边界与排外事项。",
+          rationale: "约束方案输出完整性。",
+        },
+      },
+    })
+  })
+  expect(await screen.findByText(/已创建改进提案 PROP-L4-NEW/)).toBeInTheDocument()
+})
+
+

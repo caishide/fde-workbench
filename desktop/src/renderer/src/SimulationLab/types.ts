@@ -231,7 +231,7 @@ export interface SimulationRunDto {
   scenario_version: number
   split: "train" | "regression" | "blind"
   status: RunStatus
-  adapter_mode: "real" | "mock"
+  adapter_mode: "real" | "mock" | "workbench"
   seed: number
   attempt: number
   actor_set: Record<string, { actor_id: string; display_name: string }>
@@ -349,12 +349,49 @@ export interface ProposalDto {
   impact_scope: string[]
   regression_plan: Record<string, unknown>
   override_json: Record<string, unknown>
+  candidate_payload?: Record<string, unknown>
   status: "draft" | "in_review" | "approved" | "rejected" | "published"
   release?: ProposalReleaseDto | null
   decided_by_user_id: string | null
   decided_at: string | null
   note: string | null
   created_at: string | null
+}
+
+export interface DraftLessonEntryDto {
+  text: string
+  tier: string
+  industries: string[]
+  rationale: string
+}
+
+export interface DraftSkillVersionDto {
+  skill_ref: string
+  summary: string
+  instructions_delta: string
+}
+
+export interface DraftPromptOverlayDto {
+  purpose_key: string
+  fragment: string
+  rationale: string
+}
+
+export interface DraftAiGroupDto {
+  code: string
+  lesson_entry: DraftLessonEntryDto
+  skill_version_draft: DraftSkillVersionDto
+  prompt_overlay_fragment: DraftPromptOverlayDto
+}
+
+export interface DraftAiResponseDto {
+  draft: {
+    groups: DraftAiGroupDto[]
+  }
+  finding_ids: string[]
+  payload_sha256: string
+  zero_persistence: boolean
+  adoption: string
 }
 
 export interface RegressionSuiteDto {
