@@ -283,24 +283,31 @@ def test_model_slot_fallback_and_fail_closed(app):
             with_key = no_key.model_copy(
                 update={
                     "deepseek_api_key": SecretStr("test-key"),
+                    "deepseek_base_url": "https://api.minimaxi.com/v1",
                     "deepseek_simulation_workbench_model": "",
                 }
             )
             app.config["SETTINGS"] = with_key
-            # 缺省回落评估槽位（§6 拍板②）
+            # 缺省回落评估槽位（§6 拍板②）＋直连腿四元组完整
             override = adapter._resolve_model_override()
             assert override == {
-                "provider": "deepseek",
+                "provider": "openai-compatible",
                 "model": original.deepseek_simulation_evaluation_model,
+                "base_url": "https://api.minimaxi.com/v1",
+                "api_key": "test-key",
             }
+            # 直连腿结构校验：无 DSH 时 direct_provider_completion 三必需键在位
+            assert override["base_url"] and override["model"] and override["api_key"]
 
             explicit = with_key.model_copy(
                 update={"deepseek_simulation_workbench_model": "MiniMax-M3.1-Flash"}
             )
             app.config["SETTINGS"] = explicit
             assert adapter._resolve_model_override() == {
-                "provider": "deepseek",
+                "provider": "openai-compatible",
                 "model": "MiniMax-M3.1-Flash",
+                "base_url": "https://api.minimaxi.com/v1",
+                "api_key": "test-key",
             }
         finally:
             app.config["SETTINGS"] = original

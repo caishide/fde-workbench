@@ -171,11 +171,12 @@ export function SimulationRunDetail(): ReactElement {
   const canAdjudicate = user?.role === "admin" || user?.role === "project_lead"
   const [runs, setRuns] = useState<SimulationRunDto[]>([])
   const [scenarios, setScenarios] = useState<ScenarioDto[]>([])
+  const [selectedScenarioId, setSelectedScenarioId] = useState("")
   const [selectedId, setSelectedId] = useState("")
   const [splitFilter, setSplitFilter] = useState("")
   // 「执行面」下拉双重职责：过滤下方运行列表 + 作为新运行的默认执行面。
   // 空串 = 全部执行面（列表不按执行面收窄；发起新运行时回落 mock）。
-  const [adapterMode, setAdapterMode] = useState<"" | "mock" | "real">("")
+  const [adapterMode, setAdapterMode] = useState<"" | "mock" | "workbench" | "real">("")
   const [statusFilter, setStatusFilter] = useState("")
   const [traces, setTraces] = useState<TraceItemDto[]>([])
   const [phase, setPhase] = useState("")
@@ -241,25 +242,50 @@ export function SimulationRunDetail(): ReactElement {
 
   useEffect(() => {
     void listScenarios(apiRequest)
-      .then((payload) => setScenarios(payload.items))
+      .then((payload) => {
+        setScenarios(payload.items)
+        if (payload.items.length > 0) {
+          setSelectedScenarioId((prev) => prev || payload.items[0].id)
+        }
+      })
       .catch(() => setScenarios([]))
   }, [apiRequest])
 
+  const hasNonTerminalRun = runs.some(
+    (run) => run.status === "queued" || run.status === "running",
+  )
+
+  useEffect(() => {
+    if (!hasNonTerminalRun) return
+    const timer = setInterval(() => {
+      void loadRuns()
+      if (selectedId) void loadRunDetail(selectedId)
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [hasNonTerminalRun, loadRunDetail, loadRuns, selectedId])
+
   async function handleCreate(): Promise<void> {
-    const scenario = scenarios[0]
+    const scenario =
+      scenarios.find((item) => item.id === selectedScenarioId) ?? scenarios[0]
     if (!scenario) {
       setNotice("案例库为空——先在「案例库」创建或导入案例。")
       return
     }
     setBusy(true)
     try {
-      await createSimulationRun(apiRequest, {
+      const mode = adapterMode || "mock"
+      const created = await createSimulationRun(apiRequest, {
         scenario_id: scenario.id,
-        adapter_mode: adapterMode || "mock",
+        adapter_mode: mode,
         execute: true,
         config: { max_rounds: 6, probe_quality: 1.0 },
       })
-      setNotice(`已基于「${scenario.name}」发起一次模拟运行。`)
+      setSelectedId(created.id)
+      setNotice(
+        mode === "workbench" && created.status === "queued"
+          ? `已基于「${scenario.name}」发起内嵌工作台模型运行（后台排队执行中，自动刷新状态）。`
+          : `已基于「${scenario.name}」发起一次模拟运行。`,
+      )
       await loadRuns()
     } catch (caught) {
       setNotice(errorText(caught))
@@ -355,14 +381,36 @@ export function SimulationRunDetail(): ReactElement {
         </header>
         <div className="simulation-filters" role="group" aria-label="运行筛选">
           <label>
+            <span>目标场景（发起运行时选用）</span>
+            <select
+              value={selectedScenarioId}
+              onChange={(event) => setSelectedScenarioId(event.target.value)}
+              aria-label="目标场景"
+              disabled={scenarios.length === 0}
+            >
+              {scenarios.length === 0 ? (
+                <option value="">暂无可用案例</option>
+              ) : (
+                scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}（{item.scenario_key} · v{item.version}）
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <label>
             <span>执行面（过滤列表；发起新运行也用它）</span>
             <select
               value={adapterMode}
-              onChange={(event) => setAdapterMode(event.target.value as "" | "mock" | "real")}
+              onChange={(event) =>
+                setAdapterMode(event.target.value as "" | "mock" | "workbench" | "real")
+              }
               aria-label="执行面"
             >
               <option value="">全部执行面</option>
               <option value="mock">脚本化替身（mock）</option>
+              <option value="workbench">工作台内嵌模型（workbench）</option>
               <option value="real">真实执行面（real）</option>
             </select>
           </label>
@@ -433,7 +481,11 @@ export function SimulationRunDetail(): ReactElement {
                 </span>
                 <span className="simulation-run-split">{SPLIT_LABEL[run.split]}</span>
                 <span className="simulation-run-adapter">
-                  {run.adapter_mode === "real" ? "真实执行面" : "脚本化替身"}
+                  {run.adapter_mode === "real"
+                    ? "真实执行面"
+                    : run.adapter_mode === "workbench"
+                      ? "工作台内嵌模型"
+                      : "脚本化替身"}
                 </span>
                 <span className="simulation-run-key">{run.run_key}</span>
               </button>
@@ -487,7 +539,7 @@ export function SimulationRunDetail(): ReactElement {
                           <span className="simulation-trace-phase">{trace.phase}</span>
                           <span className="simulation-trace-event">{trace.event_type}</span>
                           <span className="simulation-trace-payload">
-                            {Object.entries(trace.payload)
+                            {Object.entries(trace.payload ?? {})
                               .filter(([key]) => key !== "artifact")
                               .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`)
                               .join("；")}

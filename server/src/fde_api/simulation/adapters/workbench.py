@@ -304,15 +304,22 @@ class WorkbenchAdapter:
             str(getattr(settings, "deepseek_simulation_workbench_model", "") or "").strip()
             or str(getattr(settings, "deepseek_simulation_evaluation_model", "") or "").strip()
         )
+        base_url = str(getattr(settings, "deepseek_base_url", "") or "").strip().rstrip("/")
         api_key = getattr(settings, "deepseek_api_key", None)
         if isinstance(api_key, SecretStr):
-            key_value: object = api_key.get_secret_value()
+            key_value = api_key.get_secret_value().strip()
         else:
-            key_value = api_key
-        if not model_name or not key_value:
-            # 缺端点/密钥 fail-closed（diagnostics report_model_slot_incomplete 同款）
+            key_value = str(api_key or "").strip()
+        if not model_name or not base_url or not key_value:
+            # 缺端点/密钥/模型 fail-closed（diagnostics report_model_slot_incomplete 同款）
             raise AdapterUnavailable("workbench_model_slot_incomplete")
-        return {"provider": "deepseek", "model": model_name}
+        provider = "deepseek" if "deepseek.com" in base_url else "openai-compatible"
+        return {
+            "provider": provider,
+            "model": model_name,
+            "base_url": base_url,
+            "api_key": key_value,
+        }
 
 
 def _parse_json_payload(raw: str) -> Any:
