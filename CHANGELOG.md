@@ -21,7 +21,7 @@
 - **两项共享活体风险**（跨栈 Redis 服务别名 DNS 轮询＋healthcheck 探针 FAIL exit=0）：单独立项一次修两项——NEW `docs/goal-liveinfra-活体基础设施修复-任务书-v1.md`（R1 别名唯一化＋R2 探针 exit code，单 PR 交付，验收含双栈心跳归位观测与探针变异验证）；实施排期待显式令。
 - 台账同步：`docs/goal-sprint-PROGRESS.md` 追加收口拍板回写节；`AGENTS.md` 收口行补拍板结论。
 
-## [未发布] — 桌面第三批业务与治理闭环：本体写面与候选＋方案 AI 生成＋智能体凭据＋到期与队列监控（桌面变更·零服务端改动·零迁移零路由，便携版 r48，2026-11-14）
+## [未发布] — 桌面第三批业务与治理闭环：本体写面与候选＋方案 AI 生成＋智能体凭据＋到期与队列监控（桌面变更·零服务端改动·零迁移零路由，便携版 r50（r48 编号被并发线顺延——r49 已被 30b433f6 态打包消耗），2026-11-14）
 
 补齐桌面 4 处「后端完备、前端零入口」的业务与治理面（本体/solutions/agents/jobs 契约早已上线，本轮接最后一公里），严守闭集键、明文零驻留与禁自审纪律：
 
@@ -29,7 +29,7 @@
 - **方案 AI 生成（`SolutionDetailPage.tsx`）**：头部新增 `SolutionAgentGenerator`（仅 `canManage && status!=="archived"` 渲染，与服务端 409 `solution_archived` 同口径）：`GET /api/v1/agents` 清单默认选中可用且 `capability_tier==="agent.module.solution"` 的智能体，不可用项禁选并展示 `unavailable_reason`；`POST /projects/<id>/solutions/<sid>/generate-agent` body 闭集 `{agent_id, idempotency_key?}`（键留空不传、幂等键 ≤160 字客户端拦截）；`wired===true` 经 onWired 回写 solution（溯源徽标「智能体生成」就地联动刷新）；`wired===false` 呈现 `run.status` 并以 `allowNextHashNavigation()` 放行锚点跳转 `#projects/<projectId>?tab=agents`；清单拉取失败静默降级（辅助入口不阻断方案详情主内容）。
 - **智能体凭据（`ExtensionsPage.tsx`＋NEW `AgentCredentialsPanel.tsx`）**：「AI 与扩展」新增「智能体凭据」Tab（仅 canManage 显）：`GET /api/v1/agents/credentials` 直接返数组（403 呈现「仅平台操作者可管理智能体凭据」）；保存 `POST` body 闭集 `{name, credential}`——凭据名与服务端同尺 `^[A-Za-z0-9_]{1,120}$`（提示 default 槽），明文非空 ≤8000；**明文零驻留：提交入口 await 前即清空明文 state、清空按钮与取消同步清空**（明文只在本次请求的内存 body 出现一次）；删除走两步确认 `DELETE /api/v1/agents/credentials/<name>`（404 原样呈现）；清单只出名字与 `credential_configured` 布尔、绝不回显。
 - **运行治理卡（`SystemConfigurationPage.tsx`＋NEW `PlatformGovernancePanel.tsx`）**：`<form>` 外下方渲染（结构约定有 DOM 断言钉住），失败不阻保存——两路数据独立加载各自呈现错误：①到期事项 `GET /api/v1/expirations?due=true`，域按服务端 `EXPIRY_ACTIONS` 四键闭集（automation_approval/api_confirmation/dispatch_offer/upload_session）防御性过滤，中文域标签＋对象/截止时间/状态/到期动作表格；②队列计量 `GET /api/v1/admin/jobs/metering`，`queue_depth`（null 呈「—」）＋`groups`（`org_id??"平台级"`/active/terminal）；③取消任务两步确认 `POST /api/v1/admin/jobs/<job_id>/cancel`（无 body），幂等 `cancelled=false` 如实呈现、409 already_terminal/job_running 与 404 原样透传，成功后刷新计量。
-- **验证与打包**：vitest 新增 28 例（`ontology-write` 9＋`solution-agent-generate` 5＋`agent-credentials` 8＋`platform-governance` 6，覆盖闭环/闭集键/明文清空/禁自审/403/409/404 与 `<form>` 外结构断言），全量 **102 文件 1170 passed**＋`npm run typecheck` 零错＋变异三连全红→字节级 sha256 还原→复绿（M1 手工变更集塞 `captured_from`／M2 generate-agent 多塞 `solution_id`／M3 注释凭据 await 前明文清空）；★M1 变异当场暴露一处**真空断言缺陷**（mock 的 GET 清单分支排在 POST 分支前且不区分 method，body 断言成死代码）——修分支顺序后变异才真红，变异机制自身被反向验证；`git diff fork/main -- server/` 为空（零服务端改动）。合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r48` 并完成新旧 `app.asar` 四特征串（`ontology/candidates/generate`、`generate-agent`、`agents/credentials`、`admin/jobs/metering`）旧=0 新≥1 正反向核验。
+- **验证与打包**：vitest 新增 28 例（`ontology-write` 9＋`solution-agent-generate` 5＋`agent-credentials` 8＋`platform-governance` 6，覆盖闭环/闭集键/明文清空/禁自审/403/409/404 与 `<form>` 外结构断言），全量 **102 文件 1170 passed**＋`npm run typecheck` 零错＋变异三连全红→字节级 sha256 还原→复绿（M1 手工变更集塞 `captured_from`／M2 generate-agent 多塞 `solution_id`／M3 注释凭据 await 前明文清空）；★M1 变异当场暴露一处**真空断言缺陷**（mock 的 GET 清单分支排在 POST 分支前且不区分 method，body 断言成死代码）——修分支顺序后变异才真红，变异机制自身被反向验证；`git diff fork/main -- server/` 为空（零服务端改动）。合并后在主树 `release/` 产出 `蔡工FDE-0.3.0-便携版-r50`（r48 编号被并发线顺延）并完成新旧 `app.asar` 四特征串（`ontology/candidates/generate`、`generate-agent`、`agents/credentials`、`admin/jobs/metering`）旧=0 新≥1 正反向核验。
 
 ## [未发布] — goal-sprint 收口轮：上线就绪终扫＋BLOCKED 登记＋冲刺线收官（纯文档零代码零迁移零路由＝490/52/153/75 rev 单头 `d4b8e1f6a9c3`/98 ENTRIES 全不变，2026-11-14）
 
