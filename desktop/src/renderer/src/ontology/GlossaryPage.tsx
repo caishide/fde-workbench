@@ -413,8 +413,10 @@ export function GlossaryPage({ projectId, canManage }: GlossaryPageProps) {
     setCandResult(null)
     setCandBusyId(extraction.id)
     try {
+      // 全字面量路径（不经 base 拼接）：打包产物特征串核验需要连续的
+      // "ontology/candidates/generate" 字节序列（r48 asar 四特征串闸）。
       const data = await apiRequest<CandidateGenerateResult>(
-        `${base}/candidates/generate`,
+        `/api/v1/projects/${encodeURIComponent(projectId)}/ontology/candidates/generate`,
         { method: "POST", body: { extraction_id: extraction.id } },
       )
       setCandResult(data)
