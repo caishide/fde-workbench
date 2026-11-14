@@ -165,6 +165,24 @@ def test_promotion_transition_false_to_true_passes(
     assert term.promoted_readonly is True
 
 
+# ---------------------------------------------------------------- 锁装配点
+
+
+def test_promotion_lock_armed_by_models_module() -> None:
+    """⑦ party 评审钉：晋升锁随 ``ontology/models`` 武装，不依赖路由 import 链。
+
+    数据完整性锁的注册点必须贴模型定义（WP2 回执守卫/研究客体守卫同款
+    先例）——绕 create_app 的 CLI/维护进程 import 模型即有锁（Winston P2-1）。
+    """
+    from sqlalchemy import event as sa_event
+
+    from fde_api.ontology import models as ontology_models
+
+    assert sa_event.contains(
+        OntologyTerm, "before_update", ontology_models._promotion_no_content_change
+    )
+
+
 # ---------------------------------------------------------------- 真实编辑路径拦截
 
 

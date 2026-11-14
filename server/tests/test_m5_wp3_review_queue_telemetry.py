@@ -137,6 +137,44 @@ def test_review_queue_disabled_is_404_and_no_binding_409(
     assert excinfo.value.code == "no_active_binding"
 
 
+def test_review_queue_cross_tenant_is_404(
+    gate_project, db_session, settings, monkeypatch
+):
+    """② party 评审钉：启用态跨租户隔离——外企业用户 → 404（S-01 同形）。
+
+    m8 排除登记的理由句承诺「启用态跨租户 404 隔离由本文件专测钉死」，
+    本用例兑现该引用（party 六席评审 P1-B：登记不得开空头支票）。
+    """
+    from fde_api.auth.models import User
+    from fde_api.ontology.governance import GovernanceError, build_review_queue
+    from fde_api.orgs.models import ORG_TYPE_ENTERPRISE
+    from fde_api.orgs.models import Org
+
+    env = _queue_env(gate_project, db_session, settings, monkeypatch)
+    db_session.add(Org(id="org-outsider", org_type=ORG_TYPE_ENTERPRISE, name="外企业-分流队列隔离"))
+    db_session.flush()
+    outsider = User(
+        username="wp3-queue-outsider",
+        role="project_lead",
+        org_id="org-outsider",
+        password_hash="x",
+        must_change_password=False,
+        is_active=True,
+    )
+    db_session.add(outsider)
+    db_session.commit()
+    with pytest.raises(GovernanceError) as excinfo:
+        build_review_queue(
+            db_session,
+            actor=outsider,
+            project_id=env["project"]["id"],
+            settings=settings,
+            client=_adapter_with_pending_candidate(str(env["binding"].org_id)),
+        )
+    assert excinfo.value.status == 404
+    db_session.rollback()
+
+
 # ---------------------------------------------------------------- 遥测指标
 
 

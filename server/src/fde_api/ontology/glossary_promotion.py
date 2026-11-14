@@ -23,22 +23,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Sequence
 
-from sqlalchemy import event, inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from fde_api.ontology.models import OntologyTerm
 from fde_api.workbench.models import Project
 
-# 已晋升行的内容锁定列（term_type/canonical_term_id/status 一并入锁——
-# 降级/合并绕道编辑与改写定义同罪）
-_PROMOTION_LOCKED_COLUMNS = (
-    "term",
-    "definition",
-    "term_type",
-    "canonical_term_id",
-    "status",
-)
+# M5-WP3⑦（party 评审）：单向晋升只读锁的 ORM 注册点在 ``ontology/models``
+# （贴 OntologyTerm 定义，WP2 回执守卫同款先例——绕 create_app 的上下文
+# 也武装）；本模块只承载晋升流与只读投影。
 
 # 晋升只读投影清单白名单（对模板包消费方的稳定输出形状）
 PROMOTED_TERM_FIELDS = (
@@ -57,47 +50,6 @@ class GlossaryPromotionError(ValueError):
         super().__init__(message)
         self.status = status
         self.code = code
-
-
-# ---------------------------------------------------------------- ORM 晋升锁
-
-
-@event.listens_for(OntologyTerm, "before_update")
-def _promotion_no_content_change(
-    mapper: Any, connection: Any, target: OntologyTerm
-) -> None:
-    """已晋升行内容列改写 → flush 前失败（单向只读投影锁，WP2 守卫同款）。
-
-    判定以 **history.deleted 的旧库值** 为权威：
-    - 旧值 False（本次即晋升转换）：放行窗口只允许 ``promoted_readonly`` /
-      ``promoted_at`` 本身——内容列同批混写仍拒绝（转换不捎带改写）；
-    - 旧值 True 或无变化且当前值 True（库中已晋升）：锁定列任何改写拒绝
-      （含 ``promoted_readonly`` True→False 降级绕道）；
-    - 未晋升行（旧值 False/None 且当前 False）：零影响，普通编辑照常。
-    """
-    state = sa_inspect(target)
-    history = state.attrs["promoted_readonly"].history
-    old_value = (history.deleted or [None])[-1]
-    if old_value is False:
-        # 晋升转换窗口：内容列同批混写仍禁（转换不捎带改写）
-        for attr in _PROMOTION_LOCKED_COLUMNS:
-            column_history = state.attrs[attr].history
-            if column_history.has_changes() and column_history.deleted:
-                raise RuntimeError(
-                    "promotion transition must not carry content-column writes "
-                    f"(M5-WP3 单向晋升；column={attr})"
-                )
-        return
-    already_promoted = bool(old_value) or bool(target.promoted_readonly)
-    if not already_promoted:
-        return  # 未晋升行零影响
-    for attr in ("promoted_readonly", *_PROMOTION_LOCKED_COLUMNS):
-        column_history = state.attrs[attr].history
-        if column_history.has_changes() and column_history.deleted:
-            raise RuntimeError(
-                "promoted_readonly ontology_terms is immutable after promotion "
-                f"(M5-WP3 单向晋升；column={attr})"
-            )
 
 
 # ---------------------------------------------------------------- 晋升流

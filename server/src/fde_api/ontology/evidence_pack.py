@@ -66,7 +66,8 @@ _PACK_GATE_FIELDS = (
     "decided_at",
 )
 # 治理摘要对客白名单（D32 双指纹 + D31 处置闭环；undisposed 条目仅含
-# change_set_id/status，与 runtime 键同形）
+# change_set_id/status，与 runtime 键同形；degraded 进白名单——工作令 §1
+# 条 4「对客透明标注本体校验在线/降级态」，party 评审 P2-C 修复）
 _PACK_GOVERNANCE_FIELDS = (
     "ontology_id",
     "version",
@@ -77,6 +78,7 @@ _PACK_GOVERNANCE_FIELDS = (
     "compiler_telemetry",
     "sla_aging",
     "gate_ready",
+    "degraded",
 )
 
 # 零脚本静态 CSP（D30 原文口径；零 <script> 是渲染器硬纪律）
@@ -211,12 +213,21 @@ def render_pack_html(payload: Mapping[str, Any], *, package_id: str, signature: 
     governance_rows = "".join(
         _row(k, v) for k, v in ontology.items() if k in _PACK_GOVERNANCE_FIELDS
     )
+    # M5-WP3⑥（party 评审 P2-C）：降级态显式标注——客户离线打开包即可见
+    # 导出那一刻本体校验不在线（透明标注，不静默半空治理段）。
+    degraded_banner = (
+        "<p><strong>⚠ 本体校验降级态：导出时本体运行时不在线，治理摘要"
+        "不完整（以本地证据清单为准）。</strong></p>"
+        if ontology.get("degraded") is True
+        else ""
+    )
     watermark = f"项目代号 {escape(str(payload.get('project_code', '')))}｜仅限授权评审人内部使用"
     return (
         "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
         f"<meta http-equiv=\"Content-Security-Policy\" content=\"{_PACK_CSP}\">"
         "<title>冻结证据评审包</title></head><body>"
         "<h1>冻结证据评审包</h1>"
+        f"{degraded_banner}"
         f"<p>水印：{watermark}</p>"
         f"<p>pack_version：{escape(str(payload.get('pack_version', '')))}</p>"
         f"<h2>本体钉版</h2><ul>{governance_rows or '<li>（未启用本体面）</li>'}</ul>"
@@ -245,12 +256,23 @@ def _load_hmac_key(settings: Any) -> str:
     return key.get_secret_value()
 
 
-def _load_pack_project(session: Session, actor: Any, project_id: str) -> Project:
-    """S-01：项目不存在或无 view 权 → 统一 404（不泄露存在性）。"""
+def _load_pack_project(
+    session: Session, actor: Any, project_id: str, *, require_manage: bool = False
+) -> Project:
+    """S-01：项目不存在或无权 → 统一 404（不泄露存在性）。
+
+    M5-WP3⑤（party 评审 P1）：签收是写路径（落证据行 + 事件）——
+    ``require_manage=True`` 时校验 can_manage；导出保持 can_view 只读投影。
+    """
     from fde_api.projects.permissions import project_access
 
     project = session.get(Project, project_id)
-    if project is None or not project_access(actor, project).can_view:
+    if project is not None:
+        access = project_access(actor, project)
+        allowed = access.can_manage if require_manage else access.can_view
+    else:
+        allowed = False
+    if project is None or not allowed:
         raise EvidencePackError("project not found", status=404, code="not_found")
     return project
 
@@ -400,8 +422,12 @@ def export_evidence_pack(
 
 
 def _validate_annotations(annotations: Any) -> list[dict[str, Any]]:
+    # M5-WP3③（party 评审 P2-1）：容量硬限——条目数与 origin 长度封顶，
+    # 拒绝灌库/巨文本经签名包对客投递（annotation 上限对齐常规批处理量级）。
     if not isinstance(annotations, list) or not annotations:
         raise EvidencePackError("annotations 必须为非空数组。")
+    if len(annotations) > 200:
+        raise EvidencePackError("annotations 条目数超限（≤200）。")
     checked: list[dict[str, Any]] = []
     for item in annotations:
         if not isinstance(item, Mapping):
@@ -413,6 +439,8 @@ def _validate_annotations(annotations: Any) -> list[dict[str, Any]]:
         if len(content_sha256) != 64 or any(c not in "0123456789abcdef" for c in content_sha256):
             raise EvidencePackError("annotation.content_sha256 必须为 64 位十六进制。")
         origin = item.get("origin")
+        if origin is not None and len(str(origin)) > 200:
+            raise EvidencePackError("annotation.origin 超长（≤200）。")
         checked.append(
             {
                 "source_uri": source_uri,
@@ -476,7 +504,7 @@ def import_annotation_receipt(
     annotations = _validate_annotations(payload.get("annotations"))
 
     hmac_key = _load_hmac_key(settings)
-    project = _load_pack_project(session, actor, project_id)
+    project = _load_pack_project(session, actor, project_id, require_manage=True)
     if not verify_pack_signature(
         org_id=project.org_id or "",
         package_id=package_id,

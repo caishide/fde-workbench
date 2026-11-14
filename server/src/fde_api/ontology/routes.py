@@ -303,7 +303,7 @@ def export_project_evidence_pack(project_id: str):
 @ontology_blueprint.post("/evidence-packs/receipt")
 @require_auth
 def import_project_annotation_receipt(project_id: str):
-    """I7 批注回执签收（can_view）：HMAC 复核 + 异人 SoD 硬拦 + 证据落行。"""
+    """I7 批注回执签收（can_manage，写路径落证据行）：HMAC 复核 + 异人 SoD 硬拦。"""
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         raise EvidencePackError("请求内容必须为 JSON 对象。")

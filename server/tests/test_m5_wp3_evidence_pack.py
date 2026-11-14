@@ -534,6 +534,177 @@ def test_receipt_validates_annotation_shape(
     db_session.commit()
 
 
+# ------------------------------------------------- party 六席评审缺陷修复钉
+# （P1 2026-11-15 批准入线前批：①三闸顺序 ③annotations 无界 ⑤acceptor 资格闸
+#   ⑥降级态进对客包——party 评审纪要见工作令 §6.1）
+
+
+def test_receipt_gate_order_signature_before_export_record(
+    gate_project, client, db_session, settings, monkeypatch
+):
+    """① 三闸「顺序即防线」：无效签名 + 无导出留痕 → 必须先落签名闸 400。
+
+    签名闸在前挡的是包 ID 存在性 oracle——若留痕闸先行，攻击者可用
+    409-vs-400 逐包探测导出记录存在性（Amelia 席 P2-1）。
+    """
+    env = _pack_env(gate_project, client, db_session, settings, monkeypatch)
+    from fde_api.ontology.evidence_pack import import_annotation_receipt
+
+    org_id = env["project_row"].org_id
+    payload = {
+        "review_package_id": "d" * 64,  # 幽灵包：无导出留痕
+        "pack_sha256": "c" * 64,
+        "pinned_version_id": M5_SEED_VERSION_ID,
+        "signature": "0" * 64,  # 且签名无效
+        "annotations": [
+            {"source_uri": "fdeops://m5/ghost-bad-sig", "content_sha256": "6" * 64}
+        ],
+    }
+    assert payload["signature"] != _export_payload(org_id=org_id)  # 确为坏签名
+    with pytest.raises(EvidencePackError) as excinfo:
+        import_annotation_receipt(
+            db_session, actor=env["lead_user"], project_id=env["project"]["id"],
+            payload=payload, settings=settings,
+        )
+    assert excinfo.value.code == "pack_signature_invalid"  # 不得是 export_record_missing
+    assert excinfo.value.status == 400
+    db_session.commit()
+
+
+def test_receipt_rejects_viewer_acceptor(
+    gate_project, client, db_session, settings, monkeypatch
+):
+    """⑤ acceptor 资格闸：签收是写路径（落证据行+事件），viewer 不可为 → 404。
+
+    S-01 统一不泄露存在性（Vex 席 P1：view-only 成员不得经签收写入证据）。
+    """
+    from fde_api.auth.models import User
+    from fde_api.workbench.models import ProjectMember
+
+    env = _pack_env(gate_project, client, db_session, settings, monkeypatch)
+    from fde_api.ontology.evidence_pack import export_evidence_pack, import_annotation_receipt
+
+    viewer = User(
+        username="wp3-pack-viewer",
+        role="viewer",
+        org_id=env["project_row"].org_id,
+        password_hash="x",
+        must_change_password=False,
+        is_active=True,
+    )
+    db_session.add(viewer)
+    db_session.flush()
+    db_session.add(
+        ProjectMember(project_id=env["project"]["id"], user_id=viewer.id, role="viewer")
+    )
+    exported = export_evidence_pack(
+        db_session,
+        actor=env["admin_user"],
+        project_id=env["project"]["id"],
+        settings=settings,
+        client=MockOntologyAdapter(),
+    )
+    payload = {
+        "review_package_id": exported["package_id"],
+        "pack_sha256": exported["pack_sha256"],
+        "pinned_version_id": exported["pinned_version_id"],
+        "signature": exported["signature"],
+        "annotations": [
+            {"source_uri": "fdeops://m5/viewer-sig", "content_sha256": "7" * 64}
+        ],
+    }
+    with pytest.raises(EvidencePackError) as excinfo:
+        import_annotation_receipt(
+            db_session, actor=viewer, project_id=env["project"]["id"],
+            payload=payload, settings=settings,
+        )
+    assert excinfo.value.status == 404  # S-01：与不可见同形
+    db_session.rollback()
+    db_session.commit()
+
+
+def test_receipt_rejects_annotation_flood(
+    gate_project, client, db_session, settings, monkeypatch
+):
+    """③ 回执容量硬限：annotations ≤200 条、origin ≤200 字符（Vex 席 P2-1）。"""
+    env = _pack_env(gate_project, client, db_session, settings, monkeypatch)
+    from fde_api.ontology.evidence_pack import export_evidence_pack, import_annotation_receipt
+
+    exported = export_evidence_pack(
+        db_session,
+        actor=env["admin_user"],
+        project_id=env["project"]["id"],
+        settings=settings,
+        client=MockOntologyAdapter(),
+    )
+    base = {
+        "review_package_id": exported["package_id"],
+        "pack_sha256": exported["pack_sha256"],
+        "pinned_version_id": exported["pinned_version_id"],
+        "signature": exported["signature"],
+    }
+    flood = [
+        {"source_uri": f"fdeops://m5/flood-{i}", "content_sha256": "8" * 64}
+        for i in range(201)
+    ]
+    with pytest.raises(EvidencePackError) as excinfo:
+        import_annotation_receipt(
+            db_session, actor=env["lead_user"], project_id=env["project"]["id"],
+            payload={**base, "annotations": flood}, settings=settings,
+        )
+    assert "200" in str(excinfo.value)
+    long_origin = [
+        {
+            "source_uri": "fdeops://m5/long-origin",
+            "content_sha256": "9" * 64,
+            "origin": "x" * 201,
+        }
+    ]
+    with pytest.raises(EvidencePackError):
+        import_annotation_receipt(
+            db_session, actor=env["lead_user"], project_id=env["project"]["id"],
+            payload={**base, "annotations": long_origin}, settings=settings,
+        )
+    db_session.rollback()
+    db_session.commit()
+
+
+def test_export_degraded_pack_carries_visible_annotation(
+    gate_project, client, db_session, settings, monkeypatch
+):
+    """⑥ 降级态透明标注出对客包：degraded 进白名单投影 + HTML 显式标注。
+
+    工作令 §1 条 4「对客证据包透明标注本体校验在线/降级态」（Grumbal 席
+    P2-C：投影丢键 = HTML 零标注 = 承诺落空）。
+    """
+    env = _pack_env(gate_project, client, db_session, settings, monkeypatch)
+    from fde_api.ontology.evidence_pack import export_evidence_pack
+
+    adapter = MockOntologyAdapter()
+    adapter.inject_fault("unavailable")
+    result = export_evidence_pack(
+        db_session,
+        actor=env["admin_user"],
+        project_id=env["project"]["id"],
+        settings=settings,
+        client=adapter,
+    )
+    # 投影面：degraded 键进白名单（出得了闸）
+    projected = build_pack_payload(
+        project_code="P",
+        ontology_id=SEED_ONTOLOGY_ID,
+        pinned_version="1.1.0",
+        pinned_version_id=M5_SEED_VERSION_ID,
+        governance=result["governance"],
+        gates_view=[],
+        evidence_rows=[_sample_row()],
+    )
+    assert projected["ontology"]["degraded"] is True
+    # 渲染面：HTML 显式降级标注（客户离线打开即可见）
+    assert "本体校验降级" in result["html"]
+    db_session.commit()
+
+
 # ---------------------------------------------------------------- 路由烟测
 
 

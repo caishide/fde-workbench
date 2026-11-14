@@ -235,6 +235,45 @@ def test_blast_radius_runtime_unavailable_is_503(
     assert excinfo.value.status == 503
 
 
+def test_blast_radius_cross_tenant_is_404(
+    gate_project, db_session, settings, monkeypatch
+):
+    """② party 评审钉：启用态跨租户隔离——外企业用户 → 404（S-01 同形）。
+
+    m8 排除登记的理由句承诺「启用态跨租户 404 隔离由本文件专测钉死」，
+    本用例兑现该引用（party 六席评审 P1-B：登记不得开空头支票）。
+    """
+    from fde_api.auth.models import User
+    from fde_api.ontology.governance import GovernanceError, build_upgrade_blast_radius
+    from fde_api.orgs.models import ORG_TYPE_ENTERPRISE
+    from fde_api.orgs.models import Org
+
+    env = _blast_env(gate_project, db_session, settings, monkeypatch)
+    db_session.add(Org(id="org-outsider", org_type=ORG_TYPE_ENTERPRISE, name="外企业-爆炸半径隔离"))
+    db_session.flush()
+    outsider = User(
+        username="wp3-blast-outsider",
+        role="project_lead",
+        org_id="org-outsider",  # 非本项目 org → org_scope_allows 拒绝
+        password_hash="x",
+        must_change_password=False,
+        is_active=True,
+    )
+    db_session.add(outsider)
+    db_session.commit()
+    with pytest.raises(GovernanceError) as excinfo:
+        build_upgrade_blast_radius(
+            db_session,
+            actor=outsider,
+            project_id=env["project"]["id"],
+            to_version="1.1.0",
+            settings=settings,
+            client=MockOntologyAdapter(),
+        )
+    assert excinfo.value.status == 404
+    db_session.rollback()
+
+
 # ---------------------------------------------------------------- 路由烟测
 
 
