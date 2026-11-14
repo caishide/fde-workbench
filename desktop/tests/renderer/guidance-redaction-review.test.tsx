@@ -228,7 +228,7 @@ it("新形状投影但守卫拒收畸形项时整组丢弃：confirm 409 后走�
     if (method === "PATCH") return patched
     if (method === "POST") {
       if ((options?.body as Record<string, unknown>)?.redaction_reviewed !== true) {
-        throw new ApiClientError({ code: "redaction_review_required", message: "存在企业名替换待复核", status: 409 })
+        throw new ApiClientError({ code: "redaction_review_required", message: "存在企业名替换待复核" })
       }
       return confirmed
     }
