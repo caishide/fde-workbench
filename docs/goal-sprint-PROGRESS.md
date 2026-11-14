@@ -39,8 +39,30 @@
 
 ### r1 待办（收口条件）
 
-- [x] 蔡工发起首个 run（窗口 11-19 止）→ 2026-11-13 活库核实 `FDE-20261112-5CFF4FA2`（`pilot-001` 承载项目）已完跑 2 条生产 `host_poll` `agent_runs`（`b647945e…` 3 件产物 3/3 已人工复核＋#435 逐字节 sha256 自证 200；`347fb585…` 5 件待复核）→ **窗口内闭环已兑现**（详记 r4 复审报告 §3.3）
+- [x] 蔡工发起首个 run（窗口 11-19 止）→ 2026-11-13/14 活库核实 `FDE-20261112-5CFF4FA2`（`pilot-001` 承载项目）已完跑 2 条生产 `host_poll` `agent_runs`（run-001 `b647945e…` 3/3＋run-002 `347fb585…` 5/5 **共 8/8 产物全部人工复核**＋#435 逐字节 sha256 自证 200）→ **窗口内闭环已兑现**（详记下方「r1 证据登记」与 r4 复审报告 §3.3）
 - [ ] ~~或窗口关闭未跑成 → 如实登记「部分完成」转 r2~~（不适用：已在窗口内跑成）
+
+### r1 证据登记（2026-11-14，AI 双侧现测后落账）
+
+**run 面（项目 pilot-001 `7e931c55-42e7-4320-be7a-4a35f8ab3bb9` · 发起人 admin＝H4 亲手执行成立 · 售前智能体 `4410538c-17a1-499d-817e-cb8060a90795`／能力 `agent.module.presales`）**：
+
+**run-001** `b647945e-4b6e-4010-a8da-e4913fe7430b`（idempotency `pilot-001-hostpoll-run-001` · 北京时 11-13 11:46 · completed/exit 0/无降级 · host_poll claim+receipt 齐 · 185s）：
+- `output/manifest.json` sha256 `337df4624229273e1ea0abf4a4730e5f7ef052150275fba0cfc16801beb338ad`
+- `output/presales-proposal-draft.md` sha256 `27019a85905f292d8e3f7bd364be2732689ef319db373aba2ecdf390f98eaedc`
+- `output/requirement-clarification.md` sha256 `77d82fda1fcd7d936f2bc8257a23b3adf810a1930077186bffc2bc04437f5c30`
+- 产物复核 **3/3**（reviewed_by=admin，2026-11-13 13:59）
+
+**run-002** `347fb585-29d6-4bf8-a6e5-789bf80cfc9a`（idempotency `pilot-001-hostpoll-run-002` · 北京时 11-13 16:40 · completed/exit 0/无降级 · host_poll claim+receipt 齐 · 256s）：
+- `output/presales-brief.md` sha256 `9fba8b489085bfa7898b12331fd2c2eb6523279f6b9c317f0af829f742efc118`
+- `output/assumptions-and-gaps.md` sha256 `dc3f01ac83dc9c390d233ca947cd8ca159284d96858fd033f2d4453588347071`
+- `output/solution-directions.md` sha256 `5cb5b17b2e3cc7d4725a6eea33dfe7d34d2aeb0f222e155f500bf731dfe54bc3`
+- `output/delivery-plan.md` sha256 `38e6ae86428c6a96f1610d793ddb75fd781eda588f14aad66643d8833504f1b9`
+- `output/discovery-questionnaire.md` sha256 `8f97c60a3b1361665a9f157992581a462e91852aa85a368fe07303e958cc8492`
+- 产物复核 **5/5**（reviewed_by=admin，2026-11-14 00:14）
+
+**核验方式**：磁盘原件（`D:/test/agent-workspaces/platform/<RUN_ID>/output/`）逐文件 `sha256sum` 与 `agent_artifacts.sha256` 库内指纹逐字一致（2026-11-13/14 两次现测）；原件已存仓库参考样板 `docs/售前产物参考/run-002-20261113/`（README 含 run-002 全量指纹）。
+
+**证据闸快照**（verify-run-evidence.sql，2026-11-13 现测）：approval_rows=2 / reviewed=2 → **HAS_RUN_EVIDENCE**；审批时效 p50=85.5s / p90=104.3s、人工否决率 0.0000；C 口径 2 条 11-08 落空行待 r4 裁决；D 口径确认失败锁 0 行。→ r4 D7 复审轮数据前提达成。
 
 ### r1 变更面
 
@@ -58,6 +80,7 @@
 - PR **#411** squash 合并 `5a3f276`；CI 四 job 全绿（权威 run **43291551524**：server-tests 12m20s／desktop 2m26s／pseudonymization 58s／secrets-scan 9s）。
 - main 追平 fork/main＝`5a3f276`（主树被并发线检出 feat 分支 ⇒ 用 `git fetch fork main:main` 只推 ref 不动检出——共享树 HEAD 争用面新配方）；`goal-sprint-r1` 分支本地（树 diff 空＝squash 零漂移证明）＋远端均已删；sprint worktree 现 detached @ `5a3f276` 待 r2。
 - r1 遗留：蔡工发起首个 run（窗口 11-19 止）后补证据 sha256 登记；未发起则窗口关闭如实登记转 r2。
+  - ✅ **遗留清偿（2026-11-14）**：run ×2 窗口内完成 + 8/8 产物人工复核 + sha256 双侧现测一致 → 见「r1 证据登记」。**r1 全部收口，无遗留。**
 
 ## r2 · P2′ 服务端咬合面收口（2026-11-13，生产代码轮）
 
