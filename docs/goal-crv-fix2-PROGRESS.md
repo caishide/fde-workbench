@@ -11,8 +11,8 @@
 | r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 `d4b8e1f6a9c3` | 已合并 | `#456` / `b11b8b3f` | 5 组全红→字节级还原核 sha256→4 passed + 300 邻域绿 |
 | r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 已验待合并 | `#462` / `1df421bd`（rebase `d8a98ed0`） | 3 组全红→字节级还原核 sha256→5 passed + 213 邻域绿 |
 | r5 | 批 G | `QR-133` / `QR-134` | 已合并 | `#463` / `3fc7ddb6` | 3 组全红→字节级还原核 sha256→10 passed + 97 邻域绿 |
-| r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 r49 | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→54 passed（3 文件）+1217 全量绿 |
-| r7 | 收口与部署 | 总报告销号节 + `BLOCKED`/`PROGRESS` + `AGENTS` bullet + 活体部署三验 | 待开工 | - | - |
+| r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 r49 | 已合并 | `#466` / `b65f9167` | 3 组全红→字节级还原核 sha256→54 passed（3 文件）+1217 全量绿 |
+| r7 | 收口与部署 | 总报告销号节 + `BLOCKED`/`PROGRESS` + `AGENTS` bullet + 活体部署三验 | 已验待合并 | 待填 | 活体三验见 r7 节 |
 
 ---
 
@@ -112,3 +112,11 @@
     - `M2_QR111_recheck_bypass`：red=True → 还原 `sha256=d1e61b85fbcc5e19…` MATCH
     - `M3_QR112_ok_with_error`：red=True → 还原 `sha256=6f07a8382a88d0cd…` MATCH
     - 还原终验：3 文件 54 passed。
+
+---
+
+## r7 收口与部署（总报告销号节＋台账终态＋AGENTS bullet＋统一活体部署三验）
+
+- **文档四件**：总报告 §修复销号节（v1.0 正文零改动）＋`goal-crv-BLOCKED.md` §6 拍板销号终态＋`goal-crv-PROGRESS.md` 终态行＋`AGENTS.md` 独立 bullet（轮次逆序区，未触碰超长链行）。
+- **统一活体部署（2026-11-14，`takeover_check --tree fde-wt-crv2 --live` PASS 后执行）**：`compose -p fde-workbench build api worker scheduler`＋`up -d --force-recreate`＋容器内 `alembic upgrade head`（幂等 no-op——#455 部署时已升 76）。**三验实测**：①活体 `url_map` non-static **491** ≡ `v3-workbench-inventory.json` `route_count=491`；②容器内 `alembic current`＝`d4b7e2f9a6c1 (head)` ≡ inventory 单头（76 rev；批 D `d4b8e1f6a9c3` 被 #455 续接）；③三镜像 ID ≡ 本树构建（api `4e3daf1f9f09`／worker `6b5f05014f7a`／scheduler `b8013143bfea` 全 MATCH，含批 D/E/G 四处源码标记容器内实测在位）＋四容器 healthy＋`:8010/api/v1/health/{live,ready}` 200。migrations 挂载源回归本树（`/mnt/d/test/fde-wt-crv2/server/migrations`，接管前 uilib 僵尸挂载经 takeover_check 拦截后原样携带部署态 `server/.env` 修复）。
+- **CHANGELOG**：delivery 节随本 PR（收口轮自身零代码零迁移）。

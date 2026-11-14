@@ -2,6 +2,10 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — goal-crv 修复收官：fix2 总循环七轮一 PR 全合并＋统一活体部署三验绿（收口轮·纯文档零代码零迁移，2026-11-14）
+
+`docs/goal-crv-fix2-剩余批次总循环-任务书.md` 七轮全部收官：批 A/C/D/E/G/R7（`#444`/`#451`/`#456`/`#462`/`#463`/`#466`）＋本收口轮。147 条 QR 台账 P1×18 与拍板 8 项全部清零；总报告 v1.0 正文零改动、末加 `§修复销号节`；`docs/goal-crv-BLOCKED.md` / `docs/goal-crv-PROGRESS.md` 终态回写；`AGENTS.md` 独立 bullet 登记。统一活体部署三验实测全绿（`url_map` non-static `491`≡`v3-workbench-inventory.json`／`alembic current` `d4b7e2f9a6c1 (head)` 76 rev≡单头／三镜像 ID≡本树构建 `api:4e3daf1f9f09`·`worker:6b5f05014f7a`·`scheduler:b8013143bfea` MATCH，四容器 healthy＋`:8010/api/v1/health/{live,ready}` 200；`migrations` 挂载源回归收口树 `/mnt/d/test/fde-wt-crv2/server/migrations`）。本节为收口轮自身记录：零代码零迁移零路由。
+
 ## [未发布] — AI 原生化学习闭环 2.0 L4 桌面收口＋workbench 直连四元组修复（桌面「失败→AI 起草→建案」＋场景选择器＋workbench 执行面选项，零迁移零新路由＝491/52/153/76 rev 单头 `d4b7e2f9a6c1` 不变，2026-11-14）
 
 承接 L4 服务端（PR #455 → `7e99b658`），补齐训练场桌面端 L4-⑦ 全套操作面并闭合活体真机冒烟检出的直连四元组缺口：
