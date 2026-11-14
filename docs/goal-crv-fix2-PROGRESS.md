@@ -10,8 +10,8 @@
 | r2 | 批 C | `QR-041` / `QR-042` / `QR-043` / `QR-044` | 已合并 | `#451` / `f4cb5e9f` | 7 组全红→字节级还原核 sha256→4 passed + 168 邻域绿 |
 | r3 | 批 D | `QR-055` / `QR-056`+`059` / `QR-057` / `QR-067` + 单步迁移 `d4b8e1f6a9c3` | 已合并 | `#456` / `b11b8b3f` | 5 组全红→字节级还原核 sha256→4 passed + 300 邻域绿 |
 | r4 | 批 E | `QR-071` / `QR-072` + `QR-073`/宿主通道核销 | 已验待合并 | `#462` / `1df421bd`（rebase `d8a98ed0`） | 3 组全红→字节级还原核 sha256→5 passed + 213 邻域绿 |
-| r5 | 批 G | `QR-133` / `QR-134` | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→10 passed + 97 邻域绿 |
-| r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 | 待开工 | - | - |
+| r5 | 批 G | `QR-133` / `QR-134` | 已合并 | `#463` / `3fc7ddb6` | 3 组全红→字节级还原核 sha256→10 passed + 97 邻域绿 |
+| r6 | 批 R7 | `QR-109` / `QR-110` / `QR-111` / `QR-112` / `QR-113` + 便携版 r49 | 已验待合并 | 待填 | 3 组全红→字节级还原核 sha256→54 passed（3 文件）+1217 全量绿 |
 | r7 | 收口与部署 | 总报告销号节 + `BLOCKED`/`PROGRESS` + `AGENTS` bullet + 活体部署三验 | 待开工 | - | - |
 
 ---
@@ -92,3 +92,23 @@
     - `M2_QR134_dict_hit_reject`：red=True → 还原 `sha256=e7e6dbb4431d42a2…` MATCH
     - `M3_QR133_suspect_count`：red=True → 还原 `sha256=0989639f4b32d5d7…` MATCH
     - 还原终验：`10 passed`；`ruff` 0 告警；`check-python-types.py` `277 occurrences / 102 distinct` 零新增。
+
+---
+
+## r6 批 R7（桌面五项＋便携版 r49，零服务端改动零迁移零路由）
+
+- **修复明细**：
+  1. `QR-109`（`desktop/src/main/index.ts`）：主窗口 `hardenWebContents` 补 `will-redirect` 同尺守卫（30x 重定向不走 will-navigate；此前特权更高的主窗口只有半边，lcsc 分支成对注册）。
+  2. `QR-110`（同文件）：`desktop-execute` 桥拦截分支在 `executeDesktopLcsc` 前调 `requireLcscEnabled()`——`lcscIpcEnabled`「默认关」闸此前只护 3/4 个 LCSC 面（flag=false 经 API 桥仍拉起自动化执行＝意图↔实现缺口）；声明提升至 `registerApiIpc` 之前（TDZ 安全），4 处 LCSC 面共用同一单点。
+  3. `QR-111`（`lcsc-browser-ui.ts` + `lcsc-runner.ts`）：denied 名单提单一真身 `DENIED_ACTION_SOURCE`（观察面 `OBSERVE_BROWSER` 与点击前复验共用同一字面内插）；runner 点击分支执行前对目标元素当前 innerText/aria-label/title 复验同尺正则＋`closest('form')` 拦截（TOCTOU 窗口 DOM 变化或 AI 误点敏感控件即停；执行窗与手动内置浏览器共享 partition，登录态共享放大误点后果）。
+  4. `QR-112`（`shared/api-safety.ts` + `main/api-ipc.ts` + `renderer/src/fde-web-bridge.ts`）：响应面四条不变量（ok∧error 拒／!ok∧¬error 拒／!ok data 置空／错误体形态校验）提双桥共用纯函数 `parseApiEnvelope`；脱敏族（`redactSensitiveString`/`sanitizeEnvelopeDetails`/`collectEnvelopeSensitiveValues`/`isSensitiveKey`）同点提升（实现逐字迁移、调用点 import 别名零改动）；web 桥四处不等价缺口全封；等价性静态钉扩响应面——NEW `tests/shared/api-envelope-samples.ts`（17 信封样本＋5 脱敏样本）双侧消费（`api-envelope-equivalence.test.ts` 桌面侧真 handler 逐样本＋`fde-web-bridge-equivalence.test.ts` web 侧镜像）。
+  5. `QR-113`（`AgentsConsole.tsx`）：去顶层 `if (error) return` 整页坍缩（单件复核 PATCH 409/下载失败此前全页阻断无恢复路径），改页内错误条＋「重试」按钮（load 可重入），与 detailError/queueError 就地呈现语义一致。
+  6. **便携版 r49**：RELEASE-COUNTER 对齐已声明最大轮次（45→48，r46-r48 在各自打包树 bump 未回写 fork/main）后 bump→**r49** 注入 `0.3.0-r49`；`electron-builder --win dir --x64` 产出归档主树 `release/蔡工FDE-0.3.0-便携版-r49`；**asar 正反向字节双证 ALL PASS**（六特征串——`DENIED_ACTION_SOURCE`／点击复验文案／`parseApiEnvelope`／主窗口 will-redirect 分支／desktop-execute 闸逗号表达式／`not_ok_without_error`——新 asar 全命中＋旧 r47 asar（`0ab9b017…`）全 0 命中＋版本 marker 在场）；新 asar sha256 `275313739f5dc4eb2269dfc2490df7a3f49c01e3690ac115124187a7186b76a7`。
+- **测试与变异证据**：
+  - NEW `tests/main/api-envelope-equivalence.test.ts`（17+6）＋`tests/main/crv-batch-r7-nails.test.ts`（8 源码锚钉：will-redirect 成对／闸调用先于 execute／TDZ 顺序／requireLcscEnabled 4 处单点／DENIED 真身双处内插／runner 复验锚／无顶层早返回／错误条+重试）＋`tests/shared/api-envelope-samples.ts`；`fde-web-bridge-equivalence.test.ts` 扩 web 镜像 17 例；旧钉换代 1 处（`fde-web-bridge.test.ts` 错误信封 stub 200→409——旧断言恰钉住缺口①旧行为「200+error 放行」，换代注记留痕）。
+  - `npm run typecheck` 零错＋vitest 全量 **104 文件 1217 passed**。
+  - 变异三连（`try/finally` 字节还原核对 `sha256`）：
+    - `M1_QR110_gate_bypass`：red=True → 还原 `sha256=c1c455f2fdfbbf3f…` MATCH
+    - `M2_QR111_recheck_bypass`：red=True → 还原 `sha256=d1e61b85fbcc5e19…` MATCH
+    - `M3_QR112_ok_with_error`：red=True → 还原 `sha256=6f07a8382a88d0cd…` MATCH
+    - 还原终验：3 文件 54 passed。
