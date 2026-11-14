@@ -8,7 +8,7 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
 
 设计要点（对齐 team-lead 实施规格）：
 
-- ``ROUTES`` 38 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
+- ``ROUTES`` 39 条 GET 读面，从 ``multi_tenant_harness`` 4 工厂造的 B 企业
   资源 ID 逐条拼出具体路径；企业 A token 打过去须 ``403/404``。
 - **双阳性对照**：B 属主 token 同路径须 ``200``（防「全 404」假绿）；
   A 企业内与 B 属主**同角色**的账号仍须 ``403/404``（排除「403 其实由
@@ -22,7 +22,7 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
   ``sweep_required``／``b_owner_status``／``measured``（三套 token 实测码）。
 - **降级即红（反逃逸闸，本轮新增）**：并集恒等对「把爬扫面降级成排除登记」
   是不变量，故另配四道闸：
-  ① 条数基线 ``len(ROUTES) == 38``／``len(_EXCLUSION_RECORDS) == 67``；
+  ① 条数基线 ``len(ROUTES) == 39``／``len(_EXCLUSION_RECORDS) == 71``；
   ② **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
      均被拒」的路由若停留在排除登记里即转红；
   ③ 排除登记的 ``measured`` 与**现测重测**逐条一致（登记不可伪造、不可陈旧）；
@@ -111,6 +111,7 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/members"): lambda w: f"/api/v1/projects/{w['project_b'].id}/members",
     ("GET", "/api/v1/projects/<project_id>/ontology/candidates"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/candidates",
     ("GET", "/api/v1/projects/<project_id>/ontology/change-sets"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/change-sets",
+    ("GET", "/api/v1/projects/<project_id>/ontology/glossary/promoted"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/glossary/promoted",
     ("GET", "/api/v1/projects/<project_id>/ontology/relation-types"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/relation-types",
     ("GET", "/api/v1/projects/<project_id>/ontology/terms"): lambda w: f"/api/v1/projects/{w['project_b'].id}/ontology/terms",
     ("GET", "/api/v1/projects/<project_id>/payments"): lambda w: f"/api/v1/projects/{w['project_b'].id}/payments",
@@ -483,6 +484,22 @@ _EXCLUSION_RECORDS = {
         "sweep_required": False,
         "b_owner_status": 404,
         "measured": {"a": 403, "same_role_a": 403, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology/review-queue"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 M5-WP3 D31 复核分流视图默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；启用态跨租户 404 隔离由 test_m5_wp3_review_queue_telemetry 专测钉死",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
+    ("GET", "/api/v1/projects/<project_id>/ontology/upgrade-blast-radius"): {
+        "reason": "阳性对照不可行：A 实测 404、同角色 A 实测 404、B 属主同路径实测 404（V3.3 M5-WP3 D29 升级爆炸半径面默认关闭——D12/D13 契约：关闭态一律 404 not_found，与「路径不存在」逐字节同形，禁用面不可区分 ⇒ B 属主非 200，阳性对照不可构造，同码假绿风险）；启用态跨租户 404 隔离由 test_m5_wp3_governance_blast_radius 专测钉死",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
     ("GET", "/api/v1/projects/<project_id>/ontology/terms/<term_id>/impact"): {
         "reason": "阳性对照不可行：A 实测 403、同角色 A 实测 403、B 属主同路径实测 404（B 属主非 200 ⇒ 阳性对照不可构造，同码假绿风险），本轮夹具无该资源前置状态",
@@ -1005,8 +1022,8 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 38, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 69, (
+    assert len(ROUTES) == 39, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(_EXCLUSION_RECORDS) == 71, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

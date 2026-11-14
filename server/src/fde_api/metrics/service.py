@@ -31,7 +31,7 @@ from fde_api.meetings.models import ReviewMeeting
 from fde_api.ontology.models import OntologyChangeSet
 from fde_api.plans.models import DeliveryPlan, DeliveryPlanItem, DeliveryPlanTaskLink
 from fde_api.quality.models import TestExecution
-from fde_api.workbench.models import OperationEvent
+from fde_api.workbench.models import GateEvaluationReceipt, OperationEvent
 from fde_api.workflows.models import WorkflowRun
 
 _TERMINAL_FAILED = ("failed", "timeout", "budget_exceeded")
@@ -332,6 +332,39 @@ def build_metrics_report(session: Session) -> dict[str, Any]:
         definition="有执行的用例中首条执行为 passed 的占比（每用例只计首条——重试不重复计数；同 created_at 的批量执行按 result 字典序再按 id 取首条——CR-065 口径钉）",
     )
 
+    # ---- M5-WP3 D31：AI 编译免改率遥测（平台内部 SLO，古德哈特护栏）----
+    # 数据源 = 本地不可变 GateEvaluationReceipt 快照（D29 口径）：
+    # summary_json.compiler_telemetry.unmodified_accept_rate——历史回执重放，
+    # 零 runtime 依赖（免疫熔断震荡）。每 (project, gate) 只取最新一条回执
+    # （按 evaluated_at,id 升序扫描、后者覆盖——防重评重复计数）后取均值。
+    # **绝不进项目 Gate 准入**（Gate 只查候选 100% 处置闭环，WP2 已钉）：
+    # target 0.80 仅作平台内部 SLO 观测基线。
+    telemetry_rows = session.scalars(
+        select(GateEvaluationReceipt).order_by(
+            GateEvaluationReceipt.evaluated_at.asc(), GateEvaluationReceipt.id.asc()
+        )
+    ).all()
+    latest_rate: dict[tuple[str, str], float] = {}
+    for row in telemetry_rows:
+        telemetry = (row.summary_json or {}).get("compiler_telemetry") or {}
+        rate = telemetry.get("unmodified_accept_rate")
+        if isinstance(rate, (int, float)):
+            latest_rate[(row.project_id, row.gate_key)] = float(rate)
+    compiler_values = list(latest_rate.values())
+    compiler_rate = _metric(
+        "ontology_compiler_unmodified_accept_rate",
+        "AI 编译免改可用率（平台内部 SLO）",
+        value=round(sum(compiler_values) / len(compiler_values), 4)
+        if compiler_values
+        else 0.0,
+        sample_size=len(compiler_values),
+        definition="每 (project, gate) 最新 Gate 评估回执快照中 compiler_telemetry."
+        "unmodified_accept_rate 的均值（本地不可变回执重放，零 runtime 依赖）。"
+        "古德哈特护栏：仅平台内部 SLO（target 0.80），绝不进项目 Gate 准入——"
+        "Gate 只查候选 100% 处置闭环",
+        target=0.80,
+    )
+
     return {
         "generated_at": now.isoformat(),
         "sections": {
@@ -339,5 +372,6 @@ def build_metrics_report(session: Session) -> dict[str, Any]:
             "p1_pilot": [p1_lite, p1_first_pass, p1_degraded],
             "ongoing": [ongoing_cost, ongoing_intercept, ongoing_quota],
             "v31": [wf_done, wf_approval, wf_hops, req_rate, cand_rate, plan_rate, test_rate],
+            "m5_governance": [compiler_rate],
         },
     }

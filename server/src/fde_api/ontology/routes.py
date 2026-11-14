@@ -29,11 +29,27 @@
 """
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from fde_api.auth.decorators import require_auth
 from fde_api.errors import error_response
+from fde_api.extensions import db
 from fde_api.ontology import service
+from fde_api.ontology.evidence_pack import (
+    EvidencePackError,
+    export_evidence_pack,
+    import_annotation_receipt,
+)
+from fde_api.ontology.glossary_promotion import (
+    GlossaryPromotionError,
+    list_promoted_terms,
+    promote_glossary_terms,
+)
+from fde_api.ontology.governance import (
+    GovernanceError,
+    build_review_queue,
+    build_upgrade_blast_radius,
+)
 
 ontology_blueprint = Blueprint(
     "project_ontology", __name__, url_prefix="/api/v1/projects/<project_id>/ontology"
@@ -43,6 +59,21 @@ ontology_blueprint = Blueprint(
 @ontology_blueprint.errorhandler(service.OntologyServiceError)
 def service_error(error):
     return error_response(error.code, error.message, error.status)
+
+
+@ontology_blueprint.errorhandler(EvidencePackError)
+def evidence_pack_error(error):
+    return error_response(error.code, str(error), error.status)
+
+
+@ontology_blueprint.errorhandler(GovernanceError)
+def governance_error(error):
+    return error_response(error.code, str(error), error.status)
+
+
+@ontology_blueprint.errorhandler(GlossaryPromotionError)
+def glossary_promotion_error(error):
+    return error_response(error.code, str(error), error.status)
 
 
 global_ontology_blueprint = Blueprint(
@@ -246,4 +277,115 @@ def reject_change_set(project_id: str, change_set_id: str):
         change_set_id=change_set_id,
         payload=payload,
     )
+    return jsonify({"data": data, "error": None})
+
+
+# ---------------------------------------------------------------- M5-WP3
+# 四组治理面（D29/D30/D31/改进单 4）：全部人工路径——**有意不进 api_catalog**
+# （沿本体治理面纪律：AI 不可直达）；GET 读面登记进 M8 红队清单（见
+# tests/test_m8_red_team_sweep.py）。
+
+
+def _current_settings():
+    """请求上下文内的 Settings（与 integrations/service 同款取法）。"""
+    return current_app.config["SETTINGS"]
+
+
+@ontology_blueprint.post("/evidence-packs/export")
+@require_auth
+def export_evidence_pack_route(project_id: str):
+    """D30 冻结证据评审包导出（can_manage）：白名单物理投影 + 服务端 HMAC。
+
+    缺 HMAC 密钥 ⇒ fail-closed 503 ``evidence_pack_not_configured``；
+    导出事件 ``ontology_evidence_pack_exported`` 是 I7 异人签收验真的导出人锚。
+    """
+    with db.session() as session:
+        data = export_evidence_pack(
+            session,
+            actor=g.current_user,
+            project_id=project_id,
+            settings=_current_settings(),
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@ontology_blueprint.post("/evidence-packs/receipt")
+@require_auth
+def import_annotation_receipt_route(project_id: str):
+    """I7 批注回执签收（can_manage）：验签 → 导出留痕 → 异人 SoD 三闸。"""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise EvidencePackError("请求内容必须为 JSON 对象。")
+    with db.session() as session:
+        data = import_annotation_receipt(
+            session,
+            actor=g.current_user,
+            project_id=project_id,
+            payload=payload,
+            settings=_current_settings(),
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@ontology_blueprint.get("/upgrade-blast-radius")
+@require_auth
+def upgrade_blast_radius_route(project_id: str):
+    """升级爆炸半径报告（can_view）：WP1 diff × 本地四面聚合（D29 第②段）。
+
+    ``to_version`` 原值传服务层——门控/绑定校验先行（M8 红队钉：无参请求
+    必须落在 404/409 而非 400）。
+    """
+    with db.session() as session:
+        data = build_upgrade_blast_radius(
+            session,
+            actor=g.current_user,
+            project_id=project_id,
+            to_version=request.args.get("to_version") or "",
+            settings=_current_settings(),
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@ontology_blueprint.get("/review-queue")
+@require_auth
+def review_queue_route(project_id: str):
+    """``<0.8``/冲突候选复核分流视图（can_view；D31，绝不产出 Gate 阻断）。"""
+    with db.session() as session:
+        data = build_review_queue(
+            session,
+            actor=g.current_user,
+            project_id=project_id,
+            settings=_current_settings(),
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@ontology_blueprint.post("/glossary/promote")
+@require_auth
+def promote_glossary_route(project_id: str):
+    """Glossary 单向晋升（can_manage）：confirmed 术语 → 模板包只读投影。"""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise GlossaryPromotionError("请求内容必须为 JSON 对象。")
+    term_ids = payload.get("term_ids")
+    if not isinstance(term_ids, list) or not term_ids:
+        raise GlossaryPromotionError("term_ids 必须为非空数组。")
+    with db.session() as session:
+        data = promote_glossary_terms(
+            session,
+            actor=g.current_user,
+            project_id=project_id,
+            term_ids=term_ids,
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@ontology_blueprint.get("/glossary/promoted")
+@require_auth
+def list_promoted_glossary_route(project_id: str):
+    """晋升只读投影清单（can_view）：promoted_readonly=True 的稳定白名单形状。"""
+    with db.session() as session:
+        data = list_promoted_terms(
+            session, actor=g.current_user, project_id=project_id
+        )
     return jsonify({"data": data, "error": None})
