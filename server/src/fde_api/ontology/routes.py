@@ -254,11 +254,20 @@ def submit_change_set(project_id: str, change_set_id: str):
 @require_auth
 def confirm_change_set(project_id: str, change_set_id: str):
     """拍板确认（can_manage 且 ≠ 提交人）：指纹复核 + 单事务逐项物化。"""
-    data = service.confirm_project_change_set(
-        actor=g.current_user,
-        project_id=project_id,
-        change_set_id=change_set_id,
-    )
+    try:
+        data = service.confirm_project_change_set(
+            actor=g.current_user,
+            project_id=project_id,
+            change_set_id=change_set_id,
+        )
+    except RuntimeError as exc:
+        # M5-WP3：Glossary 晋升锁 RuntimeError（before_update 事件触发）
+        # ——把裸 500 包成 409（基线指纹对晋升全盲无预警的缺陷⑩修复）。
+        raise service.OntologyServiceError(
+            "glossary_promotion_conflict",
+            "该 change-set 物化与 Glossary 单向晋升锁冲突，请先晋升或回退关联术语。",
+            409,
+        ) from exc
     return jsonify({"data": data, "error": None})
 
 

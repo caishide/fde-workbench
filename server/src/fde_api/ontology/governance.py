@@ -72,14 +72,15 @@ def summarize_blast_radius(
     breaking = breaking if isinstance(breaking, list) else []
     additive = impact.get("additive_changes")
     additive = additive if isinstance(additive, list) else []
-    total = len(bindings) + len(evidence_refs) + len(gate_receipts) + len(
+    active = [b for b in bindings if b.get("status") == "active"]
+    total = len(active) + len(evidence_refs) + len(gate_receipts) + len(
         [run for run in workflow_runs if run.get("snapshot_pinned_version_id") == pinned_version_id]
     )
     return {
         "breaking_changes": breaking,
         "additive_changes": additive,
         "blast_radius": {
-            "active_binding_count": len(bindings),
+            "active_binding_count": len(active),
             "evidence_pinned_count": len(evidence_refs),
             "gate_receipt_count": len(gate_receipts),
             "workflow_run_pinned_count": len(
@@ -339,16 +340,23 @@ def build_review_queue(
     sla = sla if isinstance(sla, Mapping) else {}
     unmapped = summary.get("unmapped_required_properties")
     unbound = summary.get("unbound_object_types")
+
+    def _safe_int(val: Any) -> int:
+        try:
+            return int(val or 0)
+        except (ValueError, TypeError):
+            return 0
+
     return {
         "ontology_id": binding.ontology_id,
         "pinned_version": binding.pinned_version,
         "pinned_version_id": binding.pinned_version_id,
         "queue": {
             "undisposed": list(disposition.get("undisposed") or []),
-            "undisposed_count": int(disposition.get("undisposed_count") or 0),
+            "undisposed_count": _safe_int(disposition.get("undisposed_count")),
             "all_disposed": disposition.get("all_disposed"),
             "overdue": list(sla.get("overdue") or []),
-            "overdue_count": int(sla.get("overdue_count") or 0),
+            "overdue_count": _safe_int(sla.get("overdue_count")),
             "oldest_pending_age_hours": sla.get("oldest_pending_age_hours"),
             "sla_threshold_hours": sla.get("threshold_hours"),
             "unmapped_required_properties": list(unmapped or []),
