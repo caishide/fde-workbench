@@ -432,10 +432,67 @@ def seed_reference_data(database_url: str) -> None:
         engine.dispose()
 
 
+class _FakeRedis:
+    """M5-WP4④⑤（P1 批准）：进程内最小 incr/expire/ttl/delete 语义。
+
+    测试默认隔离 Redis——共享 Redis 16379 的 ``auth:register:{ip}`` 日限
+    计数跨进程跨轮累加（PerTestIPClient 每进程从头编号 → 低序 IP 撞日限
+    → fail-closed 429 污染全量，commercial 域三连挂实证）。app fixture
+    显式覆盖 extensions；真 Redis 行为的集成钉在各自专测自装配（同款
+    test_auth_rate_limit/test_research_imports 先例），不受默认覆盖影响。
+    """
+
+    def __init__(self) -> None:
+        self.counters: dict[str, int] = {}
+        self.ttls: dict[str, int] = {}
+        self.strings: dict[str, str] = {}
+
+    def incr(self, key: str) -> int:
+        self.counters[key] = self.counters.get(key, 0) + 1
+        return self.counters[key]
+
+    def expire(self, key: str, seconds: int) -> bool:
+        self.ttls[key] = seconds
+        return True
+
+    def ttl(self, key: str) -> int:
+        return self.ttls.get(key, 86400)
+
+    def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if self.counters.pop(key, None) is not None:
+                removed += 1
+        return removed
+
+    def scan_iter(self, match: str | None = None):
+        import fnmatch
+
+        pattern = match or "*"
+        for key in list(self.counters) + list(self.strings):
+            if fnmatch.fnmatchcase(key, pattern):
+                yield key
+
+    def get(self, key: str) -> str | None:
+        return self.strings.get(key)
+
+    def set(self, key: str, value: str, ex: int | None = None,
+            nx: bool = False) -> bool | None:
+        # NX 语义（research 预览锁）：键已存在 → 不覆盖，返回 None（真 Redis 同款）
+        if nx and key in self.strings:
+            return None
+        self.strings[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
+        return True
+
+
 @pytest.fixture
 def app(settings):
     app = create_app(settings)
     app.config.update(TESTING=True)
+    # M5-WP4④⑤：测试默认进程内隔离 Redis（见 _FakeRedis docstring）。
+    app.extensions["fde_api_redis"] = _FakeRedis()
     # 限流键含来源 IP——每个用例一个独立来源 IP（计数落在共享 Redis 上，
     # 共用回环地址会让用例互相牵连）。见 PerTestIPClient。
     app.test_client_class = PerTestIPClient
