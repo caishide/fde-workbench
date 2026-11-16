@@ -93,12 +93,14 @@ echo | openssl s_client -connect app.fde18.com:443 -servername app.fde18.com 2>/
 - [ ] 执行（11-19 到期当日）：备料① 命令序列执行＋容器 env 复验输出＋执行日测试钉复跑＋窗口关闭登记回执（PROGRESS＋台账登记行）。
 - 结果：备料完成，执行待 11-19。
 
-## R5 随轮死线批次（并入收口 PR）
+## R5 随轮死线批次（✅ 全链收口）
 
-- [ ] CHANGELOG 补 2026-11-16 轮次七节（只增不改）。
-- [ ] 台账补登记＋AGENTS 当前状态行刷新＋口径三件套/archify 复核（路由 515 入清单核对）。
-- [ ] 便携版 r53：三源 bump → typecheck+test:desktop → 打包 → asar 正反向字节验证。
-- 结果：待回执。
+- [x] **CHANGELOG 补 2026-11-16 轮次七节＋本线节**：七节＝AF1-WP1 三批合节（#487 `2ef9ad18`/ #491 `4ae9b34f`/#493 `ddb2064b`）＋W1（#488 `ec317b39`）＋W2-2（#490 `3ec9a572`）＋W3（#492 `a9a2743d`）＋TrustBoard（#489 `b9b67e18`）＋AF1-WP3（#494 `694c647e`）＋V3.3 docs（`f638d236`）＝8 个 PR 号对号入座；只增不改；中途一次节标题被 Edit 吃掉的事故当场补回并结构终扫（节序 grep 全对）；`test_ledger_sync_nail.py` **2 passed**（占比钉绿）。
+- [x] **台账补登记**：`docs/audit/下一步实施台账-2026-11-07.md` 追加 §13（八 PR 对号表＋结构口径＋登记人留痕）。
+- [x] **AGENTS「当前状态」行刷新**：本线轮次头插（R1–R5 全回执摘要）；括号配平与原行历史常态一致（code-review 审过非本线引入）。
+- [x] **口径三件套/archify 复核**：`v3-workbench-inventory.json`＝blueprint 54／route **515**／table 159／revision 86 单头 `d8b4f6a2c9e7`——**515 已入清单**，与本线重建后活体 url_map 515 逐位互证；`check_archify_diagram_freshness.py`＝**OK 架构图口径与 inventory 逐项一致**（无需重生成）。
+- [x] **便携版 r53**：`node scripts/release-version.mjs bump` 三源同步（RELEASE-COUNTER 52→53＋package.json `0.3.0-r53`＋fde-web-bridge.ts `0.3.0-r53-web`）→ `npm run typecheck` 零错 → `npm run test:desktop` **104 文件 1223 passed** → GUI 回归 **11/11 PASS**（fde-gui-regression 关卡）→ `electron-vite build` ✓ → `electron-builder --win dir --x64` ✓（worktree 独立输出目录 `release/`，无句柄锁）→ **asar 双证**：sha256 `5697cdeb898df6f9b3ef4ec11b273d5ad9f7d0452ea86b7c530703c09b63fdc4`；正向 marker「正式对外导出」（#490 新增）＝1 命中＋版本串「0.3.0-r53」＝1 命中；**r52 反向对照**（asar `bd309b15…`）＝0 命中——marker 区分新旧包成立；交付目录 `release/蔡工FDE-0.3.0-便携版-r53`。
+- 结果：**R5 全链收口**。
 
 ## BLOCKED
 
