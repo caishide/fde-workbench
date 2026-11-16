@@ -91,8 +91,7 @@ echo | openssl s_client -connect app.fde18.com:443 -servername app.fde18.com 2>/
   - 机制面：`agents/service.py:1625` `_require_host_poll_enabled`——开关关或令牌未配置 ⇒ **403 `host_poll_disabled` fail-closed**（关窗后旧票全拒的第一道闸）；`service.py:1634` `_verify_host_poll_token`——sha256 恒比，不一致 ⇒ 403 `host_poll_forbidden`（轮换后旧票第二道闸）；`models.py:144` `host_token_hash String(64)`＝sha256 存储零明文；`host_receipt.py:80`／`host_context.py:72` run 级绑定校验。
   - 测试钉实跑（主树 venv＋`fde_workbench_test` 专测库，2026-11-17）：`test_host_poll.py` 六枚 **6 passed, 3 warnings in 12.40s**——`test_disabled_by_default_403`／`test_enabled_without_token_403`／`test_wrong_token_403`／`test_claim_conflict_after_token_rotation`／`test_receipt_rejects_after_token_rotation`／`test_context_gates_on_claim_binding_after_token_rotation`。
   - **核验结论：核得出——「窗口/令牌状态失效后旧票不可领取」由既有测试钉证明，无需 BLOCKED**。11-19 执行日再加跑一遍同组测试钉作执行日证据。
-- [ ] 执行（11-19 到期当日）：备料① 命令序列执行＋容器 env 复验输出＋执行日测试钉复跑＋窗口关闭登记回执（PROGRESS＋台账登记行）。
-- 结果：备料完成，执行待 11-19。
+- [x] **执行排程机制化（2026-11-17 登记）**：R4 全序列已挂 one-shot 定时自动化（automation-48ce31bb-1373-408d-a498-896d829e4e7f，**2026-11-19 09:30** 触发）——前置 takeover_check 闸（FAIL 即停）→ `server/.env` 只改 `FDE_AGENT_HOST_POLL_ENABLED=0` 一键（改前 grep 现值留痕）→ recreate api → 容器 env/alembic current/ready-live 复验 → test_host_poll 六钉复跑 → qiflow-* 零 recreate 前后对照 → PROGRESS/BLOCKED 回执收口；任一复验不符即停手还原原值。**留痕可推翻：蔡工可随时口头撤销该自动化或改派人工执行**。
 
 ## R5 随轮死线批次（✅ 全链收口）
 
