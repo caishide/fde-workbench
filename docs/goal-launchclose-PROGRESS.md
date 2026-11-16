@@ -66,18 +66,19 @@ echo | openssl s_client -connect app.fde18.com:443 -servername app.fde18.com 2>/
 
 ### 一致性对照表（6 项 × 远端现状 / G-C 快照 / 一致?）——OPS 回执到达后回填
 
-| # | 项 | G-C 快照（文档可考值＋出处） | 远端现状（OPS 回执） | 一致? |
+| # | 项 | G-C 快照（文档可考值＋出处） | 远端现状（实测回执） | 一致? |
 |---|---|---|---|---|
-| 1 | 镜像版本 | 无考（远端部署执行记录不在仓；OPS 回执即为基线） | 待回执 | 待定 |
-| 2 | 镜像创建时间 | 无考（同上） | 待回执 | 待定 |
-| 3 | 容器内 `alembic current` | 无考（部署代码版本未记录；OPS 回执即为基线） | 待回执 | 待定 |
-| 4a | `FDE_DIAGNOSTICS_ENABLED` | 关闭（判据：`app.fde18.com` 诊断面 404，goal-sprint r5 冒烟⑦ 2026-11-13） | 待回执 | 待定 |
-| 4b | `FDE_REGISTRATION_ENABLED` | 关闭（判据：SES 生产批复前注册面整体 404，M2 纪律；diag 冒烟⑦同测） | 待回执 | 待定 |
-| 4c | `FDE_AGENT_HOST_EGRESS_GATE_ENABLED` | 无考（somwyn 收口轮两键落「部署态 server/.env」未细分本机/远端；OPS 回执即为基线） | 待回执 | 待定 |
-| 4d | `FDE_AGENT_HOST_EGRESS_ALLOWLIST` | 无考（同上；若有值应=zcode.z.ai,api.z.ai,z.ai,api.minimaxi.com,bigmodel.cn,open.bigmodel.cn 族） | 待回执 | 待定 |
-| 4e | `FDE_AGENT_HOST_POLL_ENABLED` | 关闭（判据：v2 任务书 T3-6「桥 503、运行态 false」；N1 试点 pilot-001 承载于本机主栈） | 待回执 | 待定 |
-| 5 | `ready` 探活 | 200（G-C 材料包 §2 T5-6 行，goal-sprint 收口终扫 2026-11-14） | 待回执 | 待定 |
-| 6 | `live` 探活 | 200（同上） | 待回执 | 待定 |
+| 1 | 镜像版本 | 无考（远端部署执行记录不在仓；OPS 回执即为基线） | **待 OPS/HOST SSH 回执** | 待定 |
+| 2 | 镜像创建时间 | 无考（同上） | **待 OPS/HOST SSH 回执** | 待定 |
+| 3 | 容器内 `alembic current` | 无考（部署代码版本未记录；OPS 回执即为基线） | **待 OPS/HOST SSH 回执** | 待定 |
+| 4a | `FDE_DIAGNOSTICS_ENABLED` | 关闭（判据：`app.fde18.com` 诊断面 404，goal-sprint r5 冒烟⑦ 2026-11-13） | **行为面现测一致**：公网 GET `/api/v1/diagnostics/questionnaire`＝**404**（2026-11-17 AI 零凭据只读探活；与 G-C 快照判据「诊断面 404」直接吻合，与本机同版本闸关行为一致）；env 键值终证待 OPS/HOST SSH 回执 | **✅ 行为面一致／env 待回执** |
+| 4b | `FDE_REGISTRATION_ENABLED` | 关闭（判据：SES 生产批复前注册面整体 404，M2 纪律；diag 冒烟⑦同测） | **GET 行为面＝405**（公网 GET `/api/v1/auth/register/enterprise`；与本机同版本闸关态 GET 405 逐字一致——405＝POST-only 动态规则 `<entry>` 在位的方法语义，非闸开证据；本机对照 POST＝404 才是闸关真语义，**远端 POST 因写面禁试**）；闸态终证待 OPS/HOST env 回执 | **⏳ 待 env 回执（GET 印证规则在位与版本 ≥M2）** |
+| 4c | `FDE_AGENT_HOST_EGRESS_GATE_ENABLED` | 无考（somwyn 收口轮两键落「部署态 server/.env」未细分本机/远端；OPS 回执即为基线） | **待 OPS/HOST SSH 回执** | 待定 |
+| 4d | `FDE_AGENT_HOST_EGRESS_ALLOWLIST` | 无考（同上；若有值应=zcode.z.ai,api.z.ai,z.ai,api.minimaxi.com,bigmodel.cn,open.bigmodel.cn 族） | **待 OPS/HOST SSH 回执** | 待定 |
+| 4e | `FDE_AGENT_HOST_POLL_ENABLED` | 关闭（判据：v2 任务书 T3-6「桥 503、运行态 false」；N1 试点 pilot-001 承载于本机主栈） | **待 OPS/HOST SSH 回执** | 待定 |
+| 5 | `ready` 探活 | 200（G-C 材料包 §2 T5-6 行，goal-sprint 收口终扫 2026-11-14） | **200**（AI 公网只读现测 2026-11-17：`curl -s -o /dev/null -w '%{http_code}' https://app.fde18.com/api/v1/health/ready` ⇒ `ready=200`） | **✅ 一致** |
+| 6 | `live` 探活 | 200（同上） | **200**（同刻现测：`live=200`） | **✅ 一致** |
+| ⑦ | 证书余量（补强项） | app 至 2027-02-07（G-C 材料包 §2 T5-6 行） | **notAfter=Feb 7 02:08:17 2027 GMT，CN=app.fde18.com**（本机 openssl s_client 现测 2026-11-17） | **✅ 逐位一致** |
 
 **漂移判定**：4a/4b/4e 出现「启用」即为漂移 ⇒ BLOCKED.md 重开升版拍板；1/2/3/4c/4d 无考项以本次回执为基线登记（口径诚实：没测过就说没测过）。
 
