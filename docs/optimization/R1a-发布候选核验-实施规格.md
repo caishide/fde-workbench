@@ -1,6 +1,6 @@
 # R1a：发布候选核验实施规格
 
-状态：本地实现及CI接线就绪；WSL 43例全部通过、零skip（12.144s），独立复审阻断项全部关闭；提交/远端CI待完成。依据 [leader任务书](goal-optimize-leader.md)；本规格只细化R1a，不授权Docker部署。
+状态：本地实现及CI接线就绪；WSL 44例全部通过、零skip（11.158s）；首提交2642f64三钩子通过，worktree兼容补丁待复审/提交；远端CI待完成。依据 [leader任务书](goal-optimize-leader.md)；本规格只细化R1a，不授权Docker部署。
 
 ## 1. 要解决的问题
 
@@ -65,3 +65,5 @@ python -m unittest discover -s tests/deploy -p test_*.py -v
 工具无副作用，回退为停止调用并回退本PR；不得删除已发布迁移或重置数据库。交付记录明确工具完成、CI状态、是否合并；活体检查保持未做。只有本规格正反例全过并经审查，R1a才验收；不能据此把R1b/R1c标DONE。
 
 最新补强：Git配置先逐行去缩进，避免ConfigParser把合法Git深缩进节吞进前值；无值布尔项解析异常固定分类。新反例先红后修，最终43例/12.144s/exit0/零skip。详细历史见PROGRESS，远端CI尚待执行。
+
+实际工作树兼容补强：只有extensions.worktreeConfig启用时才读config.worktree；关闭态遗留配置不参与核验，开启态危险路径仍拒绝。44例WSL全绿，真实干净提交自核待兼容补丁提交后执行。

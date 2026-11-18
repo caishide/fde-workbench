@@ -363,6 +363,21 @@ class ReleasePreflightTests(unittest.TestCase):
                 finally:
                     self.git("rm", f"server/migrations/versions/{filename}.py")
 
+    def test_inactive_worktree_config_is_not_loaded(self):
+        with tempfile.TemporaryDirectory(prefix="fde-linked-config-") as directory:
+            linked = Path(directory) / "candidate"
+            self.git("worktree", "add", "--detach", str(linked), self.head)
+            admin = Path((linked / ".git").read_text().strip().removeprefix("gitdir: "))
+            (admin / "config.worktree").write_text("[core]\nworktree = /obsolete/path\n")
+            try:
+                code, data = self.check(tree=linked)
+                self.assertEqual(code, 0, data)
+                self.git("config", "extensions.worktreeConfig", "true")
+                self.rejected("unsafe_git_paths", exit_code=2, tree=linked)
+            finally:
+                (admin / "config.worktree").unlink()
+                self.git("worktree", "remove", str(linked))
+
 
 if __name__ == "__main__":
     unittest.main()

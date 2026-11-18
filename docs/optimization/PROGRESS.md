@@ -20,20 +20,20 @@
 
 | 轮次 | 实现/材料 | 验证 | 交付 |
 |---|---|---|---|
-| R0 | 建议、leader、进度、待决、观察模板已落盘 | 文档独立审查P2已关闭；leader 2770字符/6节；本地链接核验通过 | 随R1a提交 |
-| R1a | 只读CLI与43例测试；CI/README/AGENTS/CHANGELOG已接线 | WSL 43通过、零skip；独立复审阻断项全部关闭 | 未提交/未跑远端CI/未合并 |
+| R0 | 建议、leader、进度、待决、观察模板已落盘 | 文档独立审查P2已关闭；leader 2823字符/6节；本地链接核验通过 | 随R1a提交 |
+| R1a | 只读CLI与44例测试；CI/README/AGENTS/CHANGELOG已接线 | WSL 44通过、零skip；兼容补丁独立复审通过 | 首提交2642f64；兼容补丁待提交；远端CI/合并待完成 |
 | R1b–R1c | 路线已登记，待小规格 | 未验证竞争/恢复 | 未实施/未部署 |
-| R2 | 观察模板已备，配置清单待对照源码 | 真实用户与真发信未验 | OWNER前提见BLOCKED |
+| R2 | 观察模板已备；R2a清单示例已校正并独立审查通过 | 真实用户与真发信未验 | OWNER前提见BLOCKED |
 | R3–R4 | 基线/容量路线已登记 | 未测量净收益与容量 | 未实施 |
 | R5 | 本轮入口与进度同步 | 两份手册逐字节相同 | 随轮交付 |
 
 ## R1a验证证据
 
-- CLI全套：WSL `python3 -m unittest discover -s tests/deploy -p "test_*.py" -v`，**43 passed / 12.144s / exit0 / 零skip**。真实临时Git仓与子进程，不mock被测核心、不触碰活体。
-- 早期Windows版本38例：37通过、1因本机符号链接创建权限不足skip（173.879s）；随后WSL38例全通过（11.958s），补齐循环路径。最新代码以43例WSL结果为准，不能把早期Windows结果冒称最新全套。
+- CLI全套：WSL `python3 -m unittest discover -s tests/deploy -p "test_*.py" -v`，**44 passed / 11.158s / exit0 / 零skip**。真实临时Git仓与子进程，不mock被测核心、不触碰活体。
+- 早期Windows版本38例：37通过、1因本机符号链接创建权限不足skip（173.879s）；随后WSL38例全通过（11.958s），补齐循环路径。最新代码以44例WSL结果为准，不能把早期Windows结果冒称最新全套。
 - 原有文档闸：`D:/test/fde-workbench/server/.venv/Scripts/python.exe -m pytest --noconftest -p no:cacheprovider server/tests/test_ledger_sync_nail.py server/tests/test_diagnostic_eval_contamination.py -q`，**9 passed / 9.10s / exit0**。两测试是独立纯文件检查，未载入服务端conftest或连库；不替代服务端全量CI。
 - 本仓兼容性：只解析89份迁移AST，静态单头`b7f2d9e4c6a8`；现有alembic.ini受支持；未导入/执行迁移，不是数据库升级证据。
-- 文档：15个本地链接逐项在场；leader 2770/4000字符；双份操作手册字节一致；git diff --check通过。
+- 文档：13个本地链接逐项在场；leader 2823/4000字符；双份操作手册字节一致；git diff --check通过。
 
 ## 先红后绿与审查处置
 
@@ -48,3 +48,17 @@
 ## 技能关卡
 
 已应用leader、fde-delivery-flow、strategy-red-team、tdd、code-review、requesting-code-review、verification-before-completion、neat-freak；桌面/服务端业务未改，不触发打包或生产部署。本轮不得把R1a本地通过等同总Goal完成。
+
+## 实际提交与工作树自核
+
+- 首提交`2642f64`已生成，原pre-commit ruff/mypy/完整server pytest三项均Passed。钩子只报告通过，不虚构用例数；此前缺venv失败已通过依赖junction和仅进程环境测试库URL解决，未跳过钩子、未复制凭据。
+- 对真实managed worktree自核发现未启用的config.worktree遗留旧路径被误拒；Git未启用extensions.worktreeConfig时不读取它。新增关闭态/开启态反例先红后修，工具只检查实际启用的配置文件；44例WSL全绿。真实树修改后返回dirty_tree，证明已越过误拒且保留脏态闸。
+- 该兼容补丁仍需独立复核与原提交钩子；首次全绿不是后续改动自动通过的凭证。干净提交自核、push和四CI继续推进。
+
+## 合流与全量复核（进行中）
+
+- 兼容补丁独立复审通过，工具9638702cb5f5416f…、测试cfc35fed7b26db7d…；44例WSL实测已通过。
+- 第二次提交钩子ruff/mypy通过，但服务端全量为4113 passed/1 failed/3 errors/7 skipped，1038.93s，exit1；提交未生成。失败四例单进程复跑4 passed（16.47s），尚不足以证明全量通过，不修改原断言。
+- 期间在同一工作树编辑文档导致pre-commit另报文件变化；此后冻结被测树直到测试结束，独立备料放主树.artifacts。不得把该提示与真实失败混为一谈。
+- 已保留stash `c6ace0d2ce82be83c6744a8663d8d633363101ae`，合入固定MERGE_HEAD `649a2609647c784f52d68f2f280c0635a9cb9f16`（含其他线#524–#528）；CHANGELOG按“本线完整节＋上游完整正文”解冲突，AGENTS保留上游现役口径与本线入口。合流后的完整测试待执行。
+- R2a：docs/goal-regtrial-BLOCKED.md审核清单与发信子域示例已修正；小规格与独立审查回执齐。仅文档，不改变部署、DNS、真实发信或三项OWNER待办。

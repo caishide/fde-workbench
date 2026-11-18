@@ -6,10 +6,50 @@
 
 新增发布前机械闸 `scripts/deploy/release_preflight.py`：外部指定提交、干净工作树、发布输入指纹与迁移单头图检查；JSON固定标记活体未检查。拒绝Git对象替换掩盖的修改、配置间接读取、部分克隆、动态迁移元数据和子目录伪合并等绕过路径；不执行应用或迁移、不改部署配置。
 
-- NEW `tests/deploy/test_release_preflight.py`：43例真实临时Git仓和CLI正反例，WSL全通过、零skip（12.144s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过，远端四CI待执行。
+- NEW `tests/deploy/test_release_preflight.py`：44例真实临时Git仓和CLI正反例，WSL全通过、零skip（11.158s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过，远端四CI待执行。
 - CI在server-tests追加标准库工具测试步骤，既有四job和门槛不变。README新增使用入口；`docs/optimization/`保存六项建议、leader任务书、观察模板、规格及进度/待决项。
+- R2a配置清单同步校正：REVIEW_ENTRIES明确deliverer,partner，FROM/允许域根改用专用发信子域示例；对照源码与既有规则并经独立文本审查，三项OWNER待办继续保留。
 - 本轮不改业务代码、迁移、桌面及活体部署。R1a合并/CI状态见进度；R1b发布协调、R1c固定产物/恢复、R2真实试用、R3净收益、R4容量仍未验收，SMTP凭据/公网开闸和业务裁定仍由OWNER负责。
 
+
+## [未发布] — 训练场 r2 真机制修复轮（B 面）：追问方向契约化——已披露方向撤下＋关键词留存兜底（2026-11-18）
+
+承 r2 制造行业 25 场景批跑与三缺陷修复轮（#523）的**追根**结论：批跑的 80 条失败发现（FA-01/02/03/04/06）不是措辞问题，而是**访谈解锁机制的系统性缺口**——本轮把「候选追问方向」从「给模型的参考建议」改回「契约」。零迁移零路由零表＝口径 524/55/160/89 不变。
+
+- **真机取证（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）**：43 个 completed workbench run × 258 轮追问——**重复方向白问轮 104（40.3%）**（模型反复追问已披露事实的方向）与**零命中轮 84（32.6%）**（提问与任何事实方向无关）；每 run 披露事实均值 1.91 条／每场景 4.21 条隐藏事实，轮次预算仅 6 轮。另有审计侧铁证：`ai_call_audits` 全量 1085 条里 `simulation_diagnostic_judge`／`plans_delivery_plan_draft` 调用数 **0**、`discovery_extract` 的 44 条全在发布前 ⇒ **#523 轮已发布的三份覆层从未被 workbench 腿消费**（workbench 三腿 purpose 恒为 `simulation_workbench`）⇒ FA-06 三条「验收标准不明确」假设被证据反驳（两条验收标准 100% 可度量），真实机制是上游访谈零解锁 ⇒ `analysis.requirements` 空 ⇒ D6-01 无从配对（已由蔡工拍板三条一律 reject，根因归属 FA-01 域）。
+- **改动①已披露方向本轮撤下**（`server/src/fde_api/simulation/runner.py`）：NEW `_pending_probe_questions()`——访谈循环内按 `customer.state.disclosed_fact_ids` 撤下已披露事实的定向问法（通用泛问项恒保留），未披露方向顺位补位；根除「候选方向列表每轮不变」导致的白问轮浪费。
+- **改动②关键词留存兜底**（`server/src/fde_api/simulation/adapters/workbench.py`）：`probe()` 提示词追加「【提问约束】提问正文必须逐字包含你所选追问方向中的关键词（不得改写、替换或省略）」；NEW `_probe_keywords()`／`_probe_keyword_guard()`——模型改写后与**任何**候选方向关键词都无关时，退回该方向的确定性候选问法（可解锁），模型问法已含关键词则原样保留（不夺表达自由）；兜底发生时写 trace 事件 `probe_keyword_guard`（reason=`probe_keywords_missing`，模型问法与最终问法并列，可审计）。
+- **测试（5 钉）**：适配器三钉（提示词含关键词留存约束行／模型丢关键词⇒退回候选问法／模型含关键词⇒原样保留）＋runner 单钉（`_pending_probe_questions` 撤下与泛问项保留）＋**确定性端到端判别钉**（workbench 档＋假执行器恒回只含首条事实关键词的问法：旧码只披露 1 条事实，新码 2 轮内披露 2 条）。定向 **40 passed**；变异三连全数红→还原复绿（M1 守卫失效 2 红／M2 方向撤下失效 1 红／M3 提示词约束行缺失 1 红，还原后 sha256 逐位一致）；ruff F401/F841 清；mypy 基线 **277/277** 零新增；两个改面文件均不在行数预算名单内。
+- **边界**：mock／real 适配器行为不变（mock 本就取候选问法原文）；客户模拟器解锁闸（字面子串）未改——本轮只保证「问题一定带着关键词去问」；已发布覆层与本轮改动互不干扰（覆层热生效于 system 提示词，本轮约束在 user 提示词面）。
+## [未发布] — 便携版 r58 打包与 P0 写入安全收尾（2026-11-18）
+
+从合并后的 main（`e24fb441`＝#522 条件写保护＋#525 回退暂停单点）打 Windows x64 便携版 r58。
+
+- **版本注入**：`node scripts/release-version.mjs bump` → `0.3.0-r58`（三源同步：`desktop/package.json`＋`desktop/src/renderer/src/fde-web-bridge.ts`＋根 `RELEASE-COUNTER`＝58）。
+- **构建**：`cd desktop && npm run build`（electron-vite，26.53s）→ `npx electron-builder --win dir --x64`（electron 43.4.1／x64）→ 产物 `release/win-unpacked/`，归档 `release/蔡工FDE-0.3.0-便携版-r58/`（旧目录 r56／r57 未覆盖）。
+- **sha256 指纹**：`app.asar`＝`8a57bfc6b8984ebeb5f9298b8eaa85fc64a814ab9b19e3f253c93e35c0b4d686`（归档件与构建件逐字节一致）。
+- **中文 marker 字节验证**：正向「判定未提交并解除占用」命中 1（本次桌面新增文案）；版本字面量 `0.3.0-r58` 命中 1、`0.3.0-r57` 命中 0；旧包 `蔡工FDE-0.3.0-便携版-r57` 反向零命中（0）——新包与旧包可区分。
+- 打包源为已合并代码（main tip `e24fb441`），未打包任何未合并分支；桌面改动＝#522 的任务草稿三方比较、交付登记待核对出口、字段级 403 与任务说明只读。
+
+## [未发布] — 写入安全 P0 收尾：回退暂停单点开关（2026-11-18）
+
+补上实施任务书 G4 里最后一项工程缺口：回退到无保护版本之前，三条「确认快照」写入必须先停住，否则回退窗口内的写入不受保护却会以正常成功事件落库。
+
+- NEW `server/src/fde_api/ux_write_gate.py`：`writes_paused()` 单点判定，配置键 `FDE_UX_WRITE_PAUSED`（默认 0）。
+- 三条写入在**授权通过之后、任何写入之前**判暂停：`submit_gate_evidence`、`decide_gate`、`deliver_package`。命中返 503 `write_preconditions_paused`，不落业务成功事件、不改状态、不推进版本。
+- **为什么是服务端开关而不是反向代理**：桌面直连与仓内脚本打的是同一个 API，`compose.yaml` 把 8010 暴露在回环上，代理只能挡网页那条路径。服务端一处收口才真正覆盖全部入口。
+- 授权先于暂停判定：未授权请求仍是原来的 403/404，不因暂停改变口径、不泄漏资源存在性。
+- 测试四例：两条门禁写暂停态被拒且零成功事件／门禁版本未变；无权者仍 403；交付登记暂停态包仍 `sealed`、零事件、无兼容放行留痕；非管理员仍 403。
+- 独立 PostgreSQL 库演练两段：暂停态三写全 503 且 `operation_events` 为空；解除后同一路径依次 200，各留一条成功事件且无放行留痕。
+- `docs/design/ux-p0/隔离验收记录-2026-11-18.md` 补暂停断言、演练结果与回退四步操作顺序；`server/.env.example` 补该键注释块。
+## [未发布] — 洁癖清理轮：已合并分支与遗留 worktree 清扫＋AGENTS 陈旧挂载源句修正（2026-11-18）
+
+纯事务清理：**零代码零迁移零路由零桌面**＝口径 524/55/160/89 不变（main tip 现测路由装饰器 524、迁移文件 89；#521/#522 均零新增路由零迁移）。
+
+- **分支清理 6 条**（squash 家族纪律：全部内容级验证已合并后才删）——`feat/lcw-w1-server`（#517）、`feat/llclose-r1-regjudge`（收尾轮五 PR 窗口，PHASE 32768＋excluded_runs 已在 main）、`feat/e2e-order-delivery-20261117`（#504/#508）、`goal-sprint-r3-receipt`（回执内容已在 main）、`docs/goal-ux-p0`（#521）、`feat/loop2-l6`（#476 squash `55ff1187` 为 main 祖先，且活体挂载源已回归主树）。
+- **worktree 清理 3 棵**——`fde-wt-uilib`（「勿删树」前提＝曾为活体 migrations 挂载源，已消失）、`fde-wt-ux-p0-docs`（#521 合并后遗留，树净无未跟踪）、`C:/Users/P1/.zcode/worktrees/a6c5` detached 树（其 3 份未跟踪草稿与 main 逐字节一致＝纯冗余；git 注册已摘除，目录本体被活进程占用留自然释放，仓外零影响）。
+- **AGENTS.md 陈旧句修正**：L5/L6 节「活体 `/app/migrations` 挂载源现指 `fde-wt-uilib` feat/loop2-l6 本地分支（勿删树）」→「挂载源已回归主树；树与分支已于 2026-11-18 洁癖清理删除」——防未来会话按陈旧图纸误判活体拓扑。
+- **在途面保留不动**：主树检出分支（并发线施工中）、`docs/optimization/` 未跟踪工作文档（并发线在写）、AF2 现役树（PR #13 open）与 AF1/V33 家族分支（保护项邻近不触碰）。
 ## [未发布] — 训练场 r2 制造行业批跑三缺陷修复轮：评估腿超时预算＋usage 取值键 DSH 规范化＋蒸馏面 purpose 闭集闸（2026-11-18）
 
 制造行业 25 场景真机批跑（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，25/25 completed、80 条失败发现）实弹撞出三条缺陷，本轮逐条修复＋钉死；零迁移零路由零表＝口径 524/55/160/89 不变。

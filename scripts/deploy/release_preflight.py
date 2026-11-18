@@ -181,7 +181,8 @@ def check_git_configuration(tree: Path) -> None:
             raise Rejected("unsupported_git_layout", 2)
     else:
         raise Rejected("not_repository_root", 2)
-    for directory, filename in ((common, "config"), (admin, "config.worktree")):
+    config_files = [(common, "config")]
+    for directory, filename in config_files:
         if not (directory / filename).exists():
             continue
         raw = safe_file(directory, filename).read_text(encoding="utf-8")
@@ -215,6 +216,14 @@ def check_git_configuration(tree: Path) -> None:
                 raise Rejected("unsupported_git_configuration", 2)
             if base == "extensions" and options - {"worktreeconfig", "objectformat"}:
                 raise Rejected("unsupported_git_configuration", 2)
+            if base == "extensions" and "worktreeconfig" in options:
+                if filename != "config":
+                    raise Rejected("unsupported_git_configuration", 2)
+                flag = parser[section]["worktreeconfig"]
+                if flag is None or flag.lower() in {"true", "yes", "on", "1"}:
+                    config_files.append((admin, "config.worktree"))
+                elif flag.lower() not in {"false", "no", "off", "0", ""}:
+                    raise Rejected("unsupported_git_configuration", 2)
 
 
 def check_alembic_configuration(content: bytes) -> None:

@@ -974,6 +974,13 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **修复**：Dockerfile `--timeout` 120→660＋NEW `test_deploy_timeout_budget.py` 4 例（现测 pydantic `le` 上界的机械闸）；`workbench.py` NEW `_usage_token_count()`（规范键优先＋旧名兜底＋皆无⇒0，`cost_json` 键集零回归）＋CI seam 假执行器改规范形状＋2 钉；`improvement_draft.py` 用户提示词动态注入 purpose 闭集（系统提示词零动 ⇒ 指纹零影响）＋`purpose_allowed()` fail-closed 闸（409）＋AST 白名单扩 `ai.overlays`＋2 钉。
 - **验证**：定向 315 passed+1 skipped；变异四连（M-A 旧读法 3 红／M-D timeout 120 两红／M-B 摘闸 1 红／M-C 摘闭集注入 1 红）全红→还原复绿；ruff/mypy/行数预算闸清。零迁移零路由零表。
 
+#### ✅ T-L0 r2 真机制修复轮（B 面，2026-11-18，状态：**已实施**——追问方向契约化：已披露方向撤下＋关键词留存兜底）
+
+- **真机取证**（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）：43 个 completed workbench run × 258 轮追问——重复方向白问轮 **104（40.3%）**、零命中轮 **84（32.6%）**；每 run 披露事实均值 1.91 条 vs 每场景 4.21 条隐藏事实，轮次预算仅 6 轮。审计侧铁证：三份已发布覆层的 purpose（`discovery_extract`／`simulation_diagnostic_judge`／`plans_delivery_plan_draft`）与 workbench 三腿实际 purpose（`simulation_workbench`）**不咬合** ⇒ 从未被消费 ⇒ FA-06 三条「验收标准不明确」假设被证据反驳（两条 D6-02＝1.0），真实机制＝上游访谈零解锁 ⇒ `analysis.requirements` 空（蔡工已拍板三条一律 reject，根因归 FA-01 域）。
+- **修复**：`runner.py` NEW `_pending_probe_questions()`（已披露事实的定向方向本轮撤下，泛问项恒保留）；`adapters/workbench.py` `probe()` 提示词追加「【提问约束】提问正文必须逐字包含你所选追问方向中的关键词」＋NEW `_probe_keywords()`／`_probe_keyword_guard()`（模型改写后与任何方向零命中 ⇒ 退回确定性候选问法；含关键词 ⇒ 原样保留）＋兜底写 trace 事件 `probe_keyword_guard`。
+- **验证**：5 钉（适配器 3＋runner 1＋确定性端到端判别钉：旧码披露 1 条事实、新码 2 条）；定向 40 passed；变异三连全红→还原复绿（还原后 sha256 逐位一致）；ruff 清；mypy 277/277 零新增。零迁移零路由零表＝口径 524/55/160/89 不变。
+- **未做（授权边界）**：活体部署（须待在跑的 r2-mfg-25-replay 复跑跑完，避免中途重建污染读数）；A 面覆层 `simulation_workbench` 提案 PROP-577E85F8 的 decide/release（须蔡工密码过四闸）。
+
 ### T-M7 商机数据归属权与区域服务商（M7-1 轮）— **结构就绪·待授权**（2026-11-12）
 
 - **登记说明**：本行**不新增 B# 编号**（`AGENTS.md:45` B# 已 FREEZE 封顶 B#40）——用 `T-M7` 任务号，与既有 `T-L0` 同族编号法。
@@ -1023,3 +1030,20 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **零结构变化自证**：**零迁移零新表零新列零新路由**、**零生产代码 diff**；**不重跑** `scripts/audit/extract_workbench_inventory.py`、**不重生成** `docs/audit/v3-*` 与 archify `candidate.json`；路由・蓝图・表・迁移 rev 与 pytest 收集数一律不写死，**以本轮 CI 实测为准**。
 - **本轮未做（授权边界内）**：2–3 家真实试点与试点企业书面确认／MT-C 签核与放行／生产机容量复测与试点部署拓扑（只读草案，不执行、不落任何数值）／W0 与新平台并存期主备与数据隔离方案／演示服务器零改动／试点反馈回写 M5／对外 SLA 与 NPS 口径——各节自有条数、计数不合并，逐条见 `docs/commercialization/multi-tenant/M8-验收对照-v1.md` §5。
 - **待 OWNER 裁决**：①测试门槛类数（9 类／6+1=7 类／G 线 §12 十条三处原文并列登记，见验收对照表 §1）；②试点企业完成率与 NPS 口径（`leader:212`）；③放行签核与 MT-C（`leader:212`／`:278`）；④生产机容量复测时机与试点部署形态（GM 草案 §4 v1 已签核，本轮不追加 v2 块）。
+
+### T-UX0 交付工作台 P0 写入安全（条件写保护＋回退暂停单点）— **✅ 已实施并合并（2026-11-18 PR #522 `afbb9cb5`／#525 `e24fb441`；便携版 r58；活体部署待授权）**
+
+- **登记说明**：本行**不新增 B# 编号**（B# 借鉴线已 FREEZE，封顶 B#40）——用 `T-UX0` 任务号，与既有 `T-L0`／`T-M6`／`T-M7`／`T-M8` 同族编号法。
+- **来源**：`docs/design/ux-p0/`（#521 归档：设计／体验方案／两轮评审／实施任务书）。
+- **状态**：**实现与隔离验收已完成并合并；活体部署与全实例严格切换待单独授权**。
+- **落地实现**：
+  - **G2 门禁条件写**：证据提交与人工裁定共用门禁 `revision`（缺条件 428 `gate_revision_required`／非正整数 400／陈旧 409 `gate_revision_conflict`），证据成功同事务推进版本；取锁顺序固定项目行→门禁行，锁内重新鉴权（项目行锁内 `populate_existing` 刷新项目与成员后再判权限）。
+  - **G3 交付登记绑定封存批次**：`expected_manifest_sha256`＋`expected_unsealed_count` 在同包行锁与同事务内复核（缺条件 428／不全非法 422／批次不符 409 `handover_snapshot_conflict`）；同清单解封重封也作废旧确认。
+  - **G3a 读取面**：封包列表与各类候选分「加载／真实空／失败／已有数据未更新」四态＋分区原地重试＋跨类型勾选保留。
+  - **G1 任务草稿**：`DRAFT_GROUPS` 五组三方比较、只发变更组、同组双改要求人工选择、刷新失败与权限撤回继续拦截。
+  - **G1 事实批审**：`expected_review_status` 行锁内校验（离开 pending 409／非法 400）＋界面冻结明确勾选与`loadGeneration` 丢弃迟到列表响应。
+  - **兼容开关**：`FDE_UX_WRITE_PRECONDITIONS_REQUIRED` 默认严格，兼容期只对完全省略条件的旧请求放行，放行写 `gate_write_precondition_skipped`／`handover_precondition_skipped` 留痕。
+  - **回退暂停单点**：`FDE_UX_WRITE_PAUSED`（默认 0）＋`server/src/fde_api/ux_write_gate.py`——三条确认快照写入在授权之后、任何写入之前判暂停，命中 503 `write_preconditions_paused` 且零业务成功事件；服务端一处收口覆盖桌面直连／仓内脚本／网页代理。
+- **验收证据**：隔离 PostgreSQL＋Redis 环境；严格／兼容双矩阵实测（缺条件 428、陈旧 409、当前 200；兼容放行有留痕、严格模式零留痕）；定向 47 passed（含暂停四例）；PostgreSQL 双连接 `pg_blocking_pids` 证真实事务重叠；接单→交付贯通脚本首单 34 项；真实网页门禁证据带 `expected_revision` 返 200、登记取消零 POST／确认带摘要返 200；独立库暂停演练两段（暂停态三写全 503 且 `operation_events` 空、封包仍 `sealed`、门禁 revision 不变；解除后同路径 200 各留一条成功事件）；便携版 r58 `app.asar` sha256 `8a57bfc6b8984ebeb5f9298b8eaa85fc64a814ab9b19e3f253c93e35c0b4d686`（中文 marker 正向命中 1／旧包 r57 反向零命中 0）。证据文档：`docs/design/ux-p0/隔离验收记录-2026-11-18.md`。
+- **零结构变化自证**：零迁移零新路由零新表＝口径 524 路由／55 蓝图／160 表／89 迁移单头 `b7f2d9e4c6a8` 不变。
+- **本轮未做（授权边界内）**：活体部署与全实例严格切换、门禁人工裁定与事实批审真机走查、实际安装与仓外调用方盘点、生产审批（含兼容窗口期限与应急暂停负责人指定）。
