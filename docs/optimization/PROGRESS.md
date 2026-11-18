@@ -21,7 +21,7 @@
 | 轮次 | 实现/材料 | 验证 | 交付 |
 |---|---|---|---|
 | R0 | 建议、leader、进度、待决、观察模板已落盘 | 文档独立审查P2已关闭；leader 2823字符/6节；本地链接核验通过 | 随R1a提交 |
-| R1a | 只读CLI与44例测试；CI/README/AGENTS/CHANGELOG已接线 | WSL 44通过、零skip；兼容补丁独立复审通过 | 首提交2642f64；兼容补丁待提交；远端CI/合并待完成 |
+| R1a | 只读CLI与44例测试；CI/README/AGENTS/CHANGELOG已接线 | WSL 44通过、零skip；兼容补丁及合流独立复审通过 | 提交2642f64＋108c28d；本地三钩子绿；远端CI/合并待完成 |
 | R1b–R1c | 路线已登记，待小规格 | 未验证竞争/恢复 | 未实施/未部署 |
 | R2 | 观察模板已备；R2a清单示例已校正并独立审查通过 | 真实用户与真发信未验 | OWNER前提见BLOCKED |
 | R3–R4 | 基线/容量路线已登记 | 未测量净收益与容量 | 未实施 |
@@ -57,8 +57,15 @@
 
 ## 合流与全量复核（进行中）
 
-- 兼容补丁独立复审通过，工具9638702cb5f5416f…、测试cfc35fed7b26db7d…；44例WSL实测已通过。
+- 兼容补丁及合流独立复审通过，工具9638702cb5f5416f…、测试cfc35fed7b26db7d…；44例WSL实测已通过。
 - 第二次提交钩子ruff/mypy通过，但服务端全量为4113 passed/1 failed/3 errors/7 skipped，1038.93s，exit1；提交未生成。失败四例单进程复跑4 passed（16.47s），尚不足以证明全量通过，不修改原断言。
 - 期间在同一工作树编辑文档导致pre-commit另报文件变化；此后冻结被测树直到测试结束，独立备料放主树.artifacts。不得把该提示与真实失败混为一谈。
 - 已保留stash `c6ace0d2ce82be83c6744a8663d8d633363101ae`，合入固定MERGE_HEAD `649a2609647c784f52d68f2f280c0635a9cb9f16`（含其他线#524–#528）；CHANGELOG按“本线完整节＋上游完整正文”解冲突，AGENTS保留上游现役口径与本线入口。合流后的完整测试待执行。
 - R2a：docs/goal-regtrial-BLOCKED.md审核清单与发信子域示例已修正；小规格与独立审查回执齐。仅文档，不改变部署、DNS、真实发信或三项OWNER待办。
+
+## 最终本地交付回执
+
+- 合流提交`108c28d349a3fd3eeddd7604307a4189f215f1e3`已生成，ruff/mypy/完整服务端pytest三钩子全部Passed（完整日志在主树.artifacts/goal-optimize/final-commit-hooks.log）。未跳过钩子、未改原测试；此前一次失败记录保留，不推断已定位其根因。
+- 干净真实managed worktree自核：exit0、candidate_consistent、单头b7f2d9e4c6a8、live_status=not_checked。测试后template_manifest仅Git stat缓存陈旧，规范化内容与HEAD一致；刷新索引后无暂存内容差异，未提交产物变更。
+- 独立最终合流审查通过：CHANGELOG无串节，AGENTS仅新增入口，CI仅追加3行，R2a三项OWNER待办保留。
+- 当前待交付：push fork、PR与四CI、合并及主树同步。R1a/R2a本地完成不能代替远端交付；R1b协议草案另在主树docs/optimization，尚未纳入本PR。

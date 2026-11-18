@@ -6,7 +6,7 @@
 
 新增发布前机械闸 `scripts/deploy/release_preflight.py`：外部指定提交、干净工作树、发布输入指纹与迁移单头图检查；JSON固定标记活体未检查。拒绝Git对象替换掩盖的修改、配置间接读取、部分克隆、动态迁移元数据和子目录伪合并等绕过路径；不执行应用或迁移、不改部署配置。
 
-- NEW `tests/deploy/test_release_preflight.py`：44例真实临时Git仓和CLI正反例，WSL全通过、零skip（11.158s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过，远端四CI待执行。
+- NEW `tests/deploy/test_release_preflight.py`：44例真实临时Git仓和CLI正反例，WSL全通过、零skip（11.158s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过；合流后原ruff/mypy/完整服务端pytest钩子全绿，真实干净候选自核通过；远端四CI待执行。
 - CI在server-tests追加标准库工具测试步骤，既有四job和门槛不变。README新增使用入口；`docs/optimization/`保存六项建议、leader任务书、观察模板、规格及进度/待决项。
 - R2a配置清单同步校正：REVIEW_ENTRIES明确deliverer,partner，FROM/允许域根改用专用发信子域示例；对照源码与既有规则并经独立文本审查，三项OWNER待办继续保留。
 - 本轮不改业务代码、迁移、桌面及活体部署。R1a合并/CI状态见进度；R1b发布协调、R1c固定产物/恢复、R2真实试用、R3净收益、R4容量仍未验收，SMTP凭据/公网开闸和业务裁定仍由OWNER负责。

@@ -1,6 +1,6 @@
 # R1a：发布候选核验实施规格
 
-状态：本地实现及CI接线就绪；WSL 44例全部通过、零skip（11.158s）；首提交2642f64三钩子通过，worktree兼容补丁待复审/提交；远端CI待完成。依据 [leader任务书](goal-optimize-leader.md)；本规格只细化R1a，不授权Docker部署。
+状态：本地实现及CI接线就绪；WSL 44例全部通过、零skip（11.158s）；最终合流提交108c28d三钩子通过且真实干净候选自核exit0；独立复审通过，远端CI待完成。依据 [leader任务书](goal-optimize-leader.md)；本规格只细化R1a，不授权Docker部署。
 
 ## 1. 要解决的问题
 
