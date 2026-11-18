@@ -404,7 +404,7 @@ describe("project detail workspace", () => {
     expect(screen.queryByLabelText("计划开始日期")).not.toBeInTheDocument()
   })
 
-  it("preserves unsaved task input on stale version and refreshes only the version token", async () => {
+  it("requires an explicit choice when both editors change task progress", async () => {
     let taskReads = 0
     const apiRequest = renderProjectDetail({
       role: "fde_engineer",
@@ -427,8 +427,118 @@ describe("project detail workspace", () => {
     expect(taskReads).toBe(0)
 
     await user.click(screen.getByRole("button", { name: "刷新任务" }))
-    await waitFor(() => expect(taskReads).toBe(1))
+    expect(await screen.findByRole("group", { name: "状态、进度与阻塞原因" })).toBeVisible()
+    expect(taskReads).toBe(1)
     expect(screen.getByLabelText("进度")).toHaveValue(40)
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
+    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
+
+    await user.click(screen.getByRole("button", { name: "使用最新值" }))
+    expect(screen.getByLabelText("进度")).toHaveValue(25)
+    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
+  })
+
+  it("rebases independent schedule changes and blocks saving after another conflict", async () => {
+    const apiRequest = renderProjectDetail({
+      role: "project_lead",
+      tab: "tasks",
+      taskPatch: apiError("stale_version", 409),
+      taskDetail: () => apiOk({ ...task, planned_end_date: "2026-08-25", duration_days: 3, version: 4 }),
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.clear(screen.getByLabelText("进度"))
+    await user.type(screen.getByLabelText("进度"), "40")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await user.click(await screen.findByRole("button", { name: "刷新任务" }))
+    expect(await screen.findByText("已合并最新任务与未保存的修改。")).toBeVisible()
+    expect(screen.getByLabelText("进度")).toHaveValue(40)
+    expect(screen.getByLabelText("计划结束日期")).toHaveValue("2026-08-25")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    expect(await screen.findByText("内容已被其他人更新，请刷新后重试")).toBeVisible()
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
+    expect(mutationBodies(apiRequest, "PATCH")).toEqual([
+      { version: 3, status: "in_progress", progress: 40 },
+      { version: 4, status: "in_progress", progress: 40 },
+    ])
+  })
+
+  it("requires a choice before a progress edit can replace another editor's blocked state", async () => {
+    const apiRequest = renderProjectDetail({
+      role: "fde_engineer",
+      tab: "tasks",
+      taskPatch: apiError("stale_version", 409),
+      taskDetail: () => apiOk({ ...task, status: "blocked", blocked_reason: "等待验收数据", version: 4 }),
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.clear(screen.getByLabelText("进度"))
+    await user.type(screen.getByLabelText("进度"), "40")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await user.click(await screen.findByRole("button", { name: "刷新任务" }))
+
+    expect(await screen.findByRole("group", { name: "状态、进度与阻塞原因" })).toHaveTextContent("等待验收数据")
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "使用最新值" }))
+    expect(screen.getByLabelText("状态")).toHaveValue("blocked")
+    expect(screen.getByLabelText("阻塞原因")).toHaveValue("等待验收数据")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
+  })
+
+  it("requires a choice between a local duration and a concurrently shifted schedule", async () => {
+    const apiRequest = renderProjectDetail({
+      role: "project_lead",
+      tab: "tasks",
+      taskPatch: apiError("stale_version", 409),
+      taskDetail: () => apiOk({ ...task, planned_start_date: "2026-08-24", planned_end_date: "2026-08-25", version: 4 }),
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.clear(screen.getByLabelText("工期（工作日）"))
+    await user.type(screen.getByLabelText("工期（工作日）"), "3")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await user.click(await screen.findByRole("button", { name: "刷新任务" }))
+
+    expect(await screen.findByRole("group", { name: "计划开始、结束日期与工期" })).toHaveTextContent("2026-08-24")
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "保留我的草稿" }))
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    expect(mutationBodies(apiRequest, "PATCH")).toEqual([3, 4].map((version) => ({
+      version, planned_start_date: "2026-08-21", planned_end_date: "2026-08-25", duration_days: 3,
+    })))
+  })
+
+  it("retains the draft and keeps saving blocked when the stale refresh fails", async () => {
+    const apiRequest = renderProjectDetail({
+      role: "fde_engineer",
+      tab: "tasks",
+      taskPatch: apiError("stale_version", 409),
+      taskDetail: () => apiError("service_unavailable", 503),
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.clear(screen.getByLabelText("进度"))
+    await user.type(screen.getByLabelText("进度"), "40")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await user.click(await screen.findByRole("button", { name: "刷新任务" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("任务更新失败")
+    expect(screen.getByText("v3")).toBeVisible()
+    expect(screen.getByLabelText("进度")).toHaveValue(40)
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
+    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
+  })
+
+  it("blocks another save after the server rejects revoked edit permission", async () => {
+    const apiRequest = renderProjectDetail({ role: "fde_engineer", tab: "tasks", taskPatch: apiError("forbidden", 403) })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.selectOptions(screen.getByLabelText("状态"), "completed")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("任务已不可编辑，未保存。")
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
     expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
   })
 
@@ -564,13 +674,9 @@ describe("project detail workspace", () => {
     await waitFor(() => expect(taskListReads).toBe(2))
     await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
     expect(screen.getByText("v9")).toBeVisible()
-    expect(mutationBodies(apiRequest, "PATCH")).toContainEqual(expect.objectContaining({
-      planned_start_date: "2026-08-21",
-      planned_end_date: "2026-08-24",
-      duration_days: 2,
-      collaborator_user_ids: [engineerId],
-      version: 3,
-    }))
+    expect(mutationBodies(apiRequest, "PATCH")).toEqual([
+      { status: "in_progress", progress: 40, version: 3 },
+    ])
   })
 
   it("refreshes the active filtered task query after an engineer mutation", async () => {
@@ -590,6 +696,7 @@ describe("project detail workspace", () => {
 
     await user.selectOptions(await screen.findByLabelText("按状态筛选"), "in_progress")
     await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.selectOptions(screen.getByLabelText("状态"), "completed")
     await user.click(screen.getByRole("button", { name: "保存任务" }))
 
     expect(await screen.findByText("暂无符合条件的任务。")).toBeVisible()
@@ -616,6 +723,7 @@ describe("project detail workspace", () => {
 
     await user.selectOptions(await screen.findByLabelText("按状态筛选"), "in_progress")
     await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.selectOptions(screen.getByLabelText("状态"), "completed")
     await user.click(screen.getByRole("button", { name: "保存任务" }))
 
     await waitFor(() => expect(unfilteredReads).toBe(2))
@@ -1113,10 +1221,12 @@ describe("project detail workspace", () => {
       role: "project_lead",
       tab: "tasks",
       taskPatch: apiError("cyclic_dependency", 400),
+      tasks: [task, { ...task, id: "task-predecessor", name: "复核数据" }],
     })
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.click(screen.getByRole("checkbox", { name: "前置任务：复核数据" }))
     await user.click(screen.getByRole("button", { name: "保存任务" }))
 
     expect(await screen.findByRole("alert")).toHaveTextContent("依赖关系存在循环，无法保存。")
