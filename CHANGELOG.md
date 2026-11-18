@@ -6,21 +6,57 @@
 
 新增发布前机械闸 `scripts/deploy/release_preflight.py`：外部指定提交、干净工作树、发布输入指纹与迁移单头图检查；JSON固定标记活体未检查。拒绝Git对象替换掩盖的修改、配置间接读取、部分克隆、动态迁移元数据和子目录伪合并等绕过路径；不执行应用或迁移、不改部署配置。
 
-- NEW `tests/deploy/test_release_preflight.py`：44例真实临时Git仓和CLI正反例，WSL全通过、零skip（11.158s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过；合流后原ruff/mypy/完整服务端pytest钩子全绿，真实干净候选自核通过；远端四CI待执行。
+- NEW `tests/deploy/test_release_preflight.py`：44例真实临时Git仓和CLI正反例，WSL全通过、零skip（11.158s，exit0）。已复现动态元数据、忽略迁移、Git深缩进配置与伪合并误放行后修复；独立审查只读文本。原有台账/污染隔离文件检查9例通过；合流后原ruff/mypy/完整服务端pytest钩子全绿，真实干净候选自核通过；合流前四项CI通过，新基线须重验。
 - CI在server-tests追加标准库工具测试步骤，既有四job和门槛不变。README新增使用入口；`docs/optimization/`保存六项建议、leader任务书、观察模板、规格及进度/待决项。
 - R2a配置清单同步校正：REVIEW_ENTRIES明确deliverer,partner，FROM/允许域根改用专用发信子域示例；对照源码与既有规则并经独立文本审查，三项OWNER待办继续保留。
 - 本轮不改业务代码、迁移、桌面及活体部署。R1a合并/CI状态见进度；R1b发布协调、R1c固定产物/恢复、R2真实试用、R3净收益、R4容量仍未验收，SMTP凭据/公网开闸和业务裁定仍由OWNER负责。
 
 
+## [未发布] — 训练场 r2 真机制修复轮（C 面）：probe 腿截断降级——同消息抬预算重试＋确定性问法退路（2026-11-18）
+
+承 B 面（#527）之后的真机取证：复跑批次的 12 个失败 run **全部**倒在访谈提问腿。本轮把「模型截断」从「整场访谈失败」降级为「这一轮退回确定性问法」。零迁移零路由零表＝口径 531/56/162/92 不变（单头 `e8f9a0b1c2d3`，2026-11-18 现测）。
+
+- **真机取证（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）**：①**12/12 失败 run 全在 `phase=interview`**（错误 `workbench_model_failed:ai_output_truncated`，10 例）＋1 例 `ai_unavailable`，失败集中在第 2–5 轮追问 ⇒ analyze/design 腿**不是**问题面；②**全量 workbench run 152**（基线段 40 completed）失败面＝截断 23／认证 54／不可用 18／限流 15，复跑段 35 run 截断 11 ⇒ 截断是**长期高频缺陷**而非复跑特有；③最近 500 条 workbench 审计里 35 条失败调用的 `output_tokens` **全为 0**（正文零产出），同期成功调用中 `output_tokens==512` 者 11 条 ⇒ **推理模型把 512 预算整段烧在 reasoning 上**，供应商 `finish_reason=length` ⇒ 抛 `ai_output_truncated`（`ai_server_client` 判据：finish_reason==length 或输出触达预算且正文缺失）；④66 个 analysis trace 的结构化回落计数为 **0** ⇒ analyze/design 腿零回落；⑤`output_tokens_max`=15158（< MiniMax 硬顶 16384）⇒ 未触顶。
+- **改动①截断重试并抬预算**（`server/src/fde_api/simulation/adapters/workbench.py`）：NEW `PROBE_RETRY_MAX_TOKENS = 4096`——**只在截断这条失败路径**同消息重试一次并抬请求预算（抬的是 max_tokens，不是同输入重放：DSH 层 `retryable=False` 指的是「同输入重放同败」）；**成功路径预算不变** ⇒ 成本与时延零影响。
+- **改动②退确定性问法（三级降级，绝不毁整场访谈）**：NEW `_probe_fallback_question()`——①优先**尚未披露**的事实方向（已披露方向问不出新事实 ⇒ 白问轮）；②已披露方向的候选问法；③**通用问法**（定向方向已全部用尽 ⇒ 访谈已无新事实可挖，此时因模型截断而让整场访谈失败＝拿模型故障惩罚一场已完成的访谈）。三级皆无 ⇒ 照旧诚实冒泡。
+- **改动③只降级截断，其余照旧诚实失败**：NEW `_is_truncated_failure()`——限流（`ai_rate_limited`）／认证（`ai_authentication_failed`）／服务不可用（`ai_unavailable`）都是**环境面**故障，降级会把它们藏起来（run 显示「完成」却没有任何模型调用过）⇒ 照旧冒泡。
+- **留痕**：退路发生时写 trace 事件 `probe_model_failed_fallback`（reason=`ai_output_truncated`，含轮次／模型错误原文／最终问法），可审计可复核。
+- **测试（7 钉）**：重试抬预算（2 次调用、第 2 次 max_tokens>512、两次 prompt 相同）／成功路径预算不变（只 1 次且 max_tokens==512）／重试仍截断⇒退回候选问法并留痕／退路优先未披露方向／**定向用尽⇒通用问法**（真机复现形态：第 3 轮两条方向都已披露）／**非截断失败不重试不降级**（限流只 1 次调用）／**端到端判别钉**（probe 全截断⇒run 仍 completed＋两条事实都披露＋留痕在案）。定向 **68 passed**（适配器 26＋runner＋评估腿＋台账钉＋行数预算）；变异四连全数红→还原复绿（还原后 sha256 逐位一致）：M-C1 截断判定恒 False（2 红）／M-C2 重试不抬预算（1 红）／M-C3 通用退路缺失（2 红）／M-C4 非截断也降级（1 红）；ruff F401/F841 清；mypy 基线 **277/277** 零新增；改面文件不在行数预算名单内。
+- **边界**：本轮**不改**成功路径预算、不改 analyze/design 腿预算（32768 不动）、不改客户模拟器解锁闸、不把环境面故障藏起来；模型侧 reasoning 烧穿仍可能发生，但**不再毁掉整场访谈**（run 以留痕形式记录退路次数）。
+
 ## [未发布] — 训练场 r2 真机制修复轮（B 面）：追问方向契约化——已披露方向撤下＋关键词留存兜底（2026-11-18）
 
-承 r2 制造行业 25 场景批跑与三缺陷修复轮（#523）的**追根**结论：批跑的 80 条失败发现（FA-01/02/03/04/06）不是措辞问题，而是**访谈解锁机制的系统性缺口**——本轮把「候选追问方向」从「给模型的参考建议」改回「契约」。零迁移零路由零表＝口径 524/55/160/89 不变。
+承 r2 制造行业 25 场景批跑与三缺陷修复轮（#523）的**追根**结论：批跑的 80 条失败发现（FA-01/02/03/04/06）不是措辞问题，而是**访谈解锁机制的系统性缺口**——本轮把「候选追问方向」从「给模型的参考建议」改回「契约」。零迁移零路由零表＝口径不变（**当轮基线 524/55/160/89**；现行口径以 AGENTS「当前状态」速览段现测值为准）。
 
 - **真机取证（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）**：43 个 completed workbench run × 258 轮追问——**重复方向白问轮 104（40.3%）**（模型反复追问已披露事实的方向）与**零命中轮 84（32.6%）**（提问与任何事实方向无关）；每 run 披露事实均值 1.91 条／每场景 4.21 条隐藏事实，轮次预算仅 6 轮。另有审计侧铁证：`ai_call_audits` 全量 1085 条里 `simulation_diagnostic_judge`／`plans_delivery_plan_draft` 调用数 **0**、`discovery_extract` 的 44 条全在发布前 ⇒ **#523 轮已发布的三份覆层从未被 workbench 腿消费**（workbench 三腿 purpose 恒为 `simulation_workbench`）⇒ FA-06 三条「验收标准不明确」假设被证据反驳（两条验收标准 100% 可度量），真实机制是上游访谈零解锁 ⇒ `analysis.requirements` 空 ⇒ D6-01 无从配对（已由蔡工拍板三条一律 reject，根因归属 FA-01 域）。
 - **改动①已披露方向本轮撤下**（`server/src/fde_api/simulation/runner.py`）：NEW `_pending_probe_questions()`——访谈循环内按 `customer.state.disclosed_fact_ids` 撤下已披露事实的定向问法（通用泛问项恒保留），未披露方向顺位补位；根除「候选方向列表每轮不变」导致的白问轮浪费。
 - **改动②关键词留存兜底**（`server/src/fde_api/simulation/adapters/workbench.py`）：`probe()` 提示词追加「【提问约束】提问正文必须逐字包含你所选追问方向中的关键词（不得改写、替换或省略）」；NEW `_probe_keywords()`／`_probe_keyword_guard()`——模型改写后与**任何**候选方向关键词都无关时，退回该方向的确定性候选问法（可解锁），模型问法已含关键词则原样保留（不夺表达自由）；兜底发生时写 trace 事件 `probe_keyword_guard`（reason=`probe_keywords_missing`，模型问法与最终问法并列，可审计）。
 - **测试（5 钉）**：适配器三钉（提示词含关键词留存约束行／模型丢关键词⇒退回候选问法／模型含关键词⇒原样保留）＋runner 单钉（`_pending_probe_questions` 撤下与泛问项保留）＋**确定性端到端判别钉**（workbench 档＋假执行器恒回只含首条事实关键词的问法：旧码只披露 1 条事实，新码 2 轮内披露 2 条）。定向 **40 passed**；变异三连全数红→还原复绿（M1 守卫失效 2 红／M2 方向撤下失效 1 红／M3 提示词约束行缺失 1 红，还原后 sha256 逐位一致）；ruff F401/F841 清；mypy 基线 **277/277** 零新增；两个改面文件均不在行数预算名单内。
 - **边界**：mock／real 适配器行为不变（mock 本就取候选问法原文）；客户模拟器解锁闸（字面子串）未改——本轮只保证「问题一定带着关键词去问」；已发布覆层与本轮改动互不干扰（覆层热生效于 system 提示词，本轮约束在 user 提示词面）。
+## [未发布] — P0 写入安全 G4 第三轮补证：活体部署与严格实探＋回退四步演练（2026-11-18）
+
+蔡工授权后，在活体执行「部署 ＋ 严格实探」「活体合成项目走查」「在用安装只有本机旧包」。工程侧证据闭环，生产审批签署仍归发布侧。
+
+- **活体部署与三验**：部署前 `takeover_check --tree <主树> --live` 通过；旧镜像先打回退锚点标签 `fde-workbench-*:pre-ux-pause`；从 main `6a76cabf` 构建并 `--force-recreate` 部署三服务。三验：`url_map` 525 条不变、容器内 `alembic current`＝`b7f2d9e4c6a8 (head)`、**三容器镜像 ID 与本地构建逐位一致**（api `542dd386`／worker `228733074`／scheduler `7c60b7bd`）；新容器含 `ux_write_gate.py`，env `FDE_UX_WRITE_PRECONDITIONS_REQUIRED=1`＋`FDE_UX_WRITE_PAUSED=0` 在位，ready/live 200。`server/.env` 补两键显式声明（原先缺省）。
+- **活体严格实探**：仓内取证器 `scripts/verify/verify_ux_write_matrix.py --mode strict-probe` 指向活体，六腿全过（缺条件门禁证据 428、缺条件门禁裁定 428、缺摘要交付登记 428、无效令牌 401、读能力 200；陈旧腿如实标「未覆盖：门禁版本为 1，无更旧合法版本」），`operation_events` 五类增量**全 0**。
+- **活体合成项目真机走查**（正式入口，非接口直调）：合成项目／封包／待审事实 ＋ 两个合成账号（执行人／裁定人分离）。网页端（Chromium 走 `desktop/web-dist`＋反代活体）：门禁证据带 `expected_revision=1` → 200、人工核验拍板带 `expected_revision=2` → 200、事实批审 PATCH → 200。桌面端（r58 便携版 Electron 直连活体）：登录 → 项目详情 → 门禁页 → 提交证据全链路通。旧端形态：无条件门禁证据 → 428、带旧式 revision 裁定 → 200、第三人提交 → 409 `gate_decider_conflict`。结果未知：首次登记 200 → 回读 `delivered` → 二次登记 409 `already_delivered`。旧端读能力 GET 全 200。
+- **回退四步演练（活体，含镜像级回退）**：①置 `FDE_UX_WRITE_PAUSED=1` 重建 api；②条件齐备的三写探针**均 503 `write_preconditions_paused`**、事件增量全 0，网页端 UI 提交同样 503，桌面端把 5xx 按「结果未知、不自动重发」处理；③镜像级回退到 `pre-ux-pause`：**无条件写仍 428**（严格保护随旧镜像仍在），**条件齐备的写返 200**；④换回含 #525 的镜像＋暂停位回 0：三写复探**均 200**、事件增量各 +1、放行留痕 0。
+- **演练暴露的残余风险（已写进发布前置条件）**：暂停开关只存在于**含 #525 的构建**里——回退到不含 #525 的镜像时，严格条件写保护仍在，但「冻结全部写入」的能力随之消失。发布回退预案须由发布负责人声明回退目标镜像的 #525 归属。
+- **在用安装盘点**：蔡工确认「只有本机旧包」⇒ 旧端受影响面＝门禁证据提交与交付登记两条（严格期必 428），门禁裁定与事实批审不受影响。
+- 零迁移零新路由零新表＝口径 524/55/160/89 不变；本轮**未新增代码**（沿用既有取证器），仅证据档、CHANGELOG、AGENTS 与台账同步。
+
+## [未发布] — P0 写入安全 G4 第二轮补证：活体只读体检＋新旧端组合矩阵＋真机走查（2026-11-18）
+
+补 G4 的证据面：把「严格口径是否真的生效」从一次性手测变成**可复跑的仓内取证器**，并把新旧端组合、旧端受影响面与界面走查逐项钉成可查证据。活体本轮**只做只读体检**（未部署、未改配置、无写入）。
+
+- **活体栈只读体检**：活体 api 容器已含 #522 的条件写保护（`ux_write_preconditions_required` 默认 True、`_require_gate_revision`、`expected_manifest_sha256`），容器 env 无任何 `FDE_UX_*` 覆盖 ⇒ **严格口径事实上已在生效**；api／worker／scheduler 三容器一致，不存在宽松实例混跑；`url_map` 525 条、容器内 `alembic current`＝`b7f2d9e4c6a8 (head)`。**活体缺 #525 的 `server/src/fde_api/ux_write_gate.py`** ⇒ 回退暂停开关尚未部署（发布前必补）。
+- **仓内调用方盘点**：桌面新端三写全带条件（门禁 `expected_revision`、交付 `expected_manifest_sha256`＋`expected_unsealed_count`＋能力标识 `write_preconditions === "v1"`、批量批审 `expected_review_status`）；仓内脚本 `verify_order_to_delivery_e2e.py`、`gate-engine-smoke.py`、`commercial-smoke.py` 均带条件。
+- **旧端受影响面（已交付便携版 asar 字节级测绘）**：`expected_revision` 自 #151 起即在客户端，故 r56／r57 的**门禁裁定不受严格期影响**；但 r56／r57 的**门禁证据提交与交付登记不带条件**，严格期必被拒（428）——这两条即旧端受影响面，须给升级指引；事实批审服务端仅在字段存在时校验，旧端仍可写。
+- **新旧端组合矩阵**（隔离 PostgreSQL＋Redis，严格口径）：新端三写全 200；旧端门禁证据 428、门禁裁定 200、交付登记 428、事实批审 200；无条件旁路 428；陈旧版本 409；无权 403；旧端读能力三读全 200；拒绝腿零新增业务成功事件，被拒批次封包仍 `sealed`。
+- **真机走查**（Chromium 走正式 Web 入口，renderer 与 Electron 同构）：门禁证据 UI 提交带 `expected_revision=1` → 200；人工核验拍板带 `expected_revision=2` → 200（执行人／裁定人分离，由第二账号办理）；事实批审 `PATCH` → 200。
+- NEW `scripts/verify/verify_ux_write_matrix.py`：`--mode strict-probe` 只发**必须被拒**的请求（缺条件 428、陈旧 409、缺摘要 428、无效令牌 401 ＋ 读能力 200），可给 `--database-url` 核对成功事件零新增，**对活体安全**；`--mode full` 跑新端形态真实写入（需授权，且需第二账号裁定）。两模式在隔离严格服务端均 `all_ok: true`、退出 0。
+- 本轮**仍未做**（需单独授权）：受控迁移与运维授权下的活体严格切换实探、#525 暂停开关部署、生产审批、实际安装与仓外调用方盘点、活体上的门禁裁定与事实批审走查。
+
 ## [未发布] — 便携版 r58 打包与 P0 写入安全收尾（2026-11-18）
 
 从合并后的 main（`e24fb441`＝#522 条件写保护＋#525 回退暂停单点）打 Windows x64 便携版 r58。
@@ -52,7 +88,7 @@
 - **在途面保留不动**：主树检出分支（并发线施工中）、`docs/optimization/` 未跟踪工作文档（并发线在写）、AF2 现役树（PR #13 open）与 AF1/V33 家族分支（保护项邻近不触碰）。
 ## [未发布] — 训练场 r2 制造行业批跑三缺陷修复轮：评估腿超时预算＋usage 取值键 DSH 规范化＋蒸馏面 purpose 闭集闸（2026-11-18）
 
-制造行业 25 场景真机批跑（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，25/25 completed、80 条失败发现）实弹撞出三条缺陷，本轮逐条修复＋钉死；零迁移零路由零表＝口径 524/55/160/89 不变。
+制造行业 25 场景真机批跑（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，25/25 completed、80 条失败发现）实弹撞出三条缺陷，本轮逐条修复＋钉死；零迁移零路由零表＝口径不变（**当轮基线 524/55/160/89**；现行口径以 AGENTS「当前状态」速览段现测值为准）。
 
 - **缺陷①评估腿 500（部署面）**：`POST /simulation/runs/<id>/evaluate?model_mode=server` 在活体必 500——api 容器日志 `[CRITICAL] WORKER TIMEOUT` → worker SIGKILL；根因＝`server/Dockerfile` gunicorn `--timeout 120`，而真模型评估层单次调用上界 `deepseek_timeout_seconds`（配置面 ≤300s）且瞬时失败同消息重试一次 ⇒ 最坏 600s。修＝`--timeout` **120→660**（2×上界＋60s 余量）；NEW `tests/test_deploy_timeout_budget.py` 4 例机械闸（现测 pydantic `le` 上界，timeout 必须 > 2×上界＋留余量；Dockerfile 必须留预算说明防无据漂移）——配置面上界抬高时 CI 即红。
 - **缺陷②usage 取值键不匹配（成本轴失真）**：25 个 run 的 `cost_json` prompt/completion tokens **全 0**，而 `ai_call_audits` 实测 45 万 token。根因＝生产产出方 `ai_server_client._provider_usage_from_response` 写 DSH 规范键 `input_tokens`/`output_tokens`，适配器 `_record_usage` 读旧名 `prompt_tokens`/`completion_tokens` ⇒ 恒取空值（回归判定 `cost_delta.tokens` 恒 0）。修＝`workbench.py` NEW `_usage_token_count()`（规范键优先＋旧别名兜底＋皆无⇒0 不发明数字）；`usage_summary()`/`cost_json` 键集逐字节不变（零回归）；CI seam 假执行器同步改用规范形状（此前假件沿用旧名把缺陷遮住）；NEW 2 钉（helper 七断言＋整链 usage_summary 非 0）。

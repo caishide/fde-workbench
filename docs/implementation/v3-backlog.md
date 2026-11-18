@@ -978,8 +978,15 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 
 - **真机取证**（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）：43 个 completed workbench run × 258 轮追问——重复方向白问轮 **104（40.3%）**、零命中轮 **84（32.6%）**；每 run 披露事实均值 1.91 条 vs 每场景 4.21 条隐藏事实，轮次预算仅 6 轮。审计侧铁证：三份已发布覆层的 purpose（`discovery_extract`／`simulation_diagnostic_judge`／`plans_delivery_plan_draft`）与 workbench 三腿实际 purpose（`simulation_workbench`）**不咬合** ⇒ 从未被消费 ⇒ FA-06 三条「验收标准不明确」假设被证据反驳（两条 D6-02＝1.0），真实机制＝上游访谈零解锁 ⇒ `analysis.requirements` 空（蔡工已拍板三条一律 reject，根因归 FA-01 域）。
 - **修复**：`runner.py` NEW `_pending_probe_questions()`（已披露事实的定向方向本轮撤下，泛问项恒保留）；`adapters/workbench.py` `probe()` 提示词追加「【提问约束】提问正文必须逐字包含你所选追问方向中的关键词」＋NEW `_probe_keywords()`／`_probe_keyword_guard()`（模型改写后与任何方向零命中 ⇒ 退回确定性候选问法；含关键词 ⇒ 原样保留）＋兜底写 trace 事件 `probe_keyword_guard`。
-- **验证**：5 钉（适配器 3＋runner 1＋确定性端到端判别钉：旧码披露 1 条事实、新码 2 条）；定向 40 passed；变异三连全红→还原复绿（还原后 sha256 逐位一致）；ruff 清；mypy 277/277 零新增。零迁移零路由零表＝口径 524/55/160/89 不变。
+- **验证**：5 钉（适配器 3＋runner 1＋确定性端到端判别钉：旧码披露 1 条事实、新码 2 条）；定向 40 passed；变异三连全红→还原复绿（还原后 sha256 逐位一致）；ruff 清；mypy 277/277 零新增。零迁移零路由零表＝口径不变（**当轮基线 524/55/160/89**；现行口径以 AGENTS「当前状态」速览段现测值为准）。
 - **未做（授权边界）**：活体部署（须待在跑的 r2-mfg-25-replay 复跑跑完，避免中途重建污染读数）；A 面覆层 `simulation_workbench` 提案 PROP-577E85F8 的 decide/release（须蔡工密码过四闸）。
+
+#### ✅ T-L0 r2 真机制修复轮（C 面，2026-11-18，状态：**已实施**——probe 腿截断降级：抬预算重试＋确定性问法退路）
+
+- **真机取证**（真相层 `训练场分布读数/r2-mfg-batch-20261118/`，仓内零落）：12/12 失败 run 全在 `phase=interview`（`workbench_model_failed:ai_output_truncated`）；全量 workbench run 152 的失败面＝截断 23／认证 54／不可用 18／限流 15（长期高频，非复跑特有）；最近 500 条审计里 35 条失败调用 `output_tokens` 全为 0、成功调用中 `output_tokens==512` 者 11 条 ⇒ 推理模型把 `PROBE_MAX_TOKENS=512` 整段烧在 reasoning 上、正文零产出 ⇒ `finish_reason=length` ⇒ 抛 `ai_output_truncated`；66 个 analysis trace 结构化回落计数 0 ⇒ analyze/design 腿（`PHASE_MAX_TOKENS=32768`）非问题面。
+- **修复**：`adapters/workbench.py` NEW `PROBE_RETRY_MAX_TOKENS = 4096`（**仅截断失败路径**同消息重试并抬预算，成功路径不变）＋ NEW `_is_truncated_failure()`（只降级截断；限流／认证／不可用照旧诚实冒泡）＋ NEW `_probe_fallback_question()`（三级确定性退路：未披露方向 → 已披露方向 → **通用问法**；三级皆无才冒泡）；退路写 trace 事件 `probe_model_failed_fallback`。
+- **验证**：7 钉（重试抬预算／成功路径预算不变／双截断退候选问法并留痕／退路优先未披露方向／定向用尽退通用问法／非截断不重试不降级／端到端「probe 全截断仍 completed 且两条事实都披露」）；定向 68 passed；变异四连全红→还原复绿（还原后 sha256 逐位一致）；ruff 清；mypy 277/277 零新增。零迁移零路由零表＝口径 531/56/162/92 不变（单头 `e8f9a0b1c2d3`，2026-11-18 现测）。
+- **未做（授权边界）**：活体部署（与覆层发布后的第三批复跑协调）；A 面覆层 `simulation_workbench` 提案 PROP-577E85F8 的 decide/release（须蔡工密码过四闸）；第三批（处置后新 seed 复跑）度量处置效果。
 
 ### T-M7 商机数据归属权与区域服务商（M7-1 轮）— **结构就绪·待授权**（2026-11-12）
 
@@ -1044,6 +1051,6 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
   - **G1 事实批审**：`expected_review_status` 行锁内校验（离开 pending 409／非法 400）＋界面冻结明确勾选与`loadGeneration` 丢弃迟到列表响应。
   - **兼容开关**：`FDE_UX_WRITE_PRECONDITIONS_REQUIRED` 默认严格，兼容期只对完全省略条件的旧请求放行，放行写 `gate_write_precondition_skipped`／`handover_precondition_skipped` 留痕。
   - **回退暂停单点**：`FDE_UX_WRITE_PAUSED`（默认 0）＋`server/src/fde_api/ux_write_gate.py`——三条确认快照写入在授权之后、任何写入之前判暂停，命中 503 `write_preconditions_paused` 且零业务成功事件；服务端一处收口覆盖桌面直连／仓内脚本／网页代理。
-- **验收证据**：隔离 PostgreSQL＋Redis 环境；严格／兼容双矩阵实测（缺条件 428、陈旧 409、当前 200；兼容放行有留痕、严格模式零留痕）；定向 47 passed（含暂停四例）；PostgreSQL 双连接 `pg_blocking_pids` 证真实事务重叠；接单→交付贯通脚本首单 34 项；真实网页门禁证据带 `expected_revision` 返 200、登记取消零 POST／确认带摘要返 200；独立库暂停演练两段（暂停态三写全 503 且 `operation_events` 空、封包仍 `sealed`、门禁 revision 不变；解除后同路径 200 各留一条成功事件）；便携版 r58 `app.asar` sha256 `8a57bfc6b8984ebeb5f9298b8eaa85fc64a814ab9b19e3f253c93e35c0b4d686`（中文 marker 正向命中 1／旧包 r57 反向零命中 0）。证据文档：`docs/design/ux-p0/隔离验收记录-2026-11-18.md`。
+- **验收证据**：隔离 PostgreSQL＋Redis 环境；严格／兼容双矩阵实测（缺条件 428、陈旧 409、当前 200；兼容放行有留痕、严格模式零留痕）；定向 47 passed（含暂停四例）；PostgreSQL 双连接 `pg_blocking_pids` 证真实事务重叠；接单→交付贯通脚本首单 34 项；真实网页门禁证据带 `expected_revision` 返 200、登记取消零 POST／确认带摘要返 200；独立库暂停演练两段（暂停态三写全 503 且 `operation_events` 空、封包仍 `sealed`、门禁 revision 不变；解除后同路径 200 各留一条成功事件）；便携版 r58 `app.asar` sha256 `8a57bfc6b8984ebeb5f9298b8eaa85fc64a814ab9b19e3f253c93e35c0b4d686`（中文 marker 正向命中 1／旧包 r57 反向零命中 0）；**G4 第二轮补证**：活体栈只读体检（活体已含条件写保护且无 `FDE_UX_*` 覆盖 ⇒ 严格口径事实上在生效；**缺 #525 暂停开关**）＋新旧端组合矩阵（隔离严格服务端：新端三写全 200；旧端门禁证据 428／门禁裁定 200／交付登记 428／事实批审 200；无条件旁路 428；陈旧 409；无权 403；旧端读能力全 200）＋旧端受影响面字节级测绘（r56／r57 缺交付与门禁证据条件＝严格期必拒）＋Chromium 真机走查（裁定与批审界面腿已通）＋NEW `scripts/verify/verify_ux_write_matrix.py`（`strict-probe` 对活体安全／`full` 需授权）＋**G4 第三轮补证（活体）**：活体部署三验通过、活体严格实探六腿全过（事件增量全 0）、活体合成项目真机走查（网页端＋桌面端，均 200）、**回退四步演练（含镜像级回退：暂停态三写全 503、无条件写仍 428、暂停开关随版本丢失）**、在用安装＝「只有本机旧包」（蔡工确认）。证据文档：`docs/design/ux-p0/隔离验收记录-2026-11-18.md`。
 - **零结构变化自证**：零迁移零新路由零新表＝口径 524 路由／55 蓝图／160 表／89 迁移单头 `b7f2d9e4c6a8` 不变。
-- **本轮未做（授权边界内）**：活体部署与全实例严格切换、门禁人工裁定与事实批审真机走查、实际安装与仓外调用方盘点、生产审批（含兼容窗口期限与应急暂停负责人指定）。
+- **本轮未做（需单独授权）**：生产审批签署（发布负责人、兼容窗口期限、应急暂停负责人指定、**回退目标镜像的 #525 归属声明**）——任务书 DoD 要求 G2／G3 凭严格切换证据销项，该证据已在活体取得，工程侧验收通过，**最后一道为发布侧签字，工程侧不代签**。
