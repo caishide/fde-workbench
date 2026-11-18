@@ -11,6 +11,15 @@
 - **改动②关键词留存兜底**（`server/src/fde_api/simulation/adapters/workbench.py`）：`probe()` 提示词追加「【提问约束】提问正文必须逐字包含你所选追问方向中的关键词（不得改写、替换或省略）」；NEW `_probe_keywords()`／`_probe_keyword_guard()`——模型改写后与**任何**候选方向关键词都无关时，退回该方向的确定性候选问法（可解锁），模型问法已含关键词则原样保留（不夺表达自由）；兜底发生时写 trace 事件 `probe_keyword_guard`（reason=`probe_keywords_missing`，模型问法与最终问法并列，可审计）。
 - **测试（5 钉）**：适配器三钉（提示词含关键词留存约束行／模型丢关键词⇒退回候选问法／模型含关键词⇒原样保留）＋runner 单钉（`_pending_probe_questions` 撤下与泛问项保留）＋**确定性端到端判别钉**（workbench 档＋假执行器恒回只含首条事实关键词的问法：旧码只披露 1 条事实，新码 2 轮内披露 2 条）。定向 **40 passed**；变异三连全数红→还原复绿（M1 守卫失效 2 红／M2 方向撤下失效 1 红／M3 提示词约束行缺失 1 红，还原后 sha256 逐位一致）；ruff F401/F841 清；mypy 基线 **277/277** 零新增；两个改面文件均不在行数预算名单内。
 - **边界**：mock／real 适配器行为不变（mock 本就取候选问法原文）；客户模拟器解锁闸（字面子串）未改——本轮只保证「问题一定带着关键词去问」；已发布覆层与本轮改动互不干扰（覆层热生效于 system 提示词，本轮约束在 user 提示词面）。
+## [未发布] — 便携版 r58 打包与 P0 写入安全收尾（2026-11-18）
+
+从合并后的 main（`e24fb441`＝#522 条件写保护＋#525 回退暂停单点）打 Windows x64 便携版 r58。
+
+- **版本注入**：`node scripts/release-version.mjs bump` → `0.3.0-r58`（三源同步：`desktop/package.json`＋`desktop/src/renderer/src/fde-web-bridge.ts`＋根 `RELEASE-COUNTER`＝58）。
+- **构建**：`cd desktop && npm run build`（electron-vite，26.53s）→ `npx electron-builder --win dir --x64`（electron 43.4.1／x64）→ 产物 `release/win-unpacked/`，归档 `release/蔡工FDE-0.3.0-便携版-r58/`（旧目录 r56／r57 未覆盖）。
+- **sha256 指纹**：`app.asar`＝`8a57bfc6b8984ebeb5f9298b8eaa85fc64a814ab9b19e3f253c93e35c0b4d686`（归档件与构建件逐字节一致）。
+- **中文 marker 字节验证**：正向「判定未提交并解除占用」命中 1（本次桌面新增文案）；版本字面量 `0.3.0-r58` 命中 1、`0.3.0-r57` 命中 0；旧包 `蔡工FDE-0.3.0-便携版-r57` 反向零命中（0）——新包与旧包可区分。
+- 打包源为已合并代码（main tip `e24fb441`），未打包任何未合并分支；桌面改动＝#522 的任务草稿三方比较、交付登记待核对出口、字段级 403 与任务说明只读。
 
 ## [未发布] — 写入安全 P0 收尾：回退暂停单点开关（2026-11-18）
 
