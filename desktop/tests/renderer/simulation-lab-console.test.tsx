@@ -359,6 +359,7 @@ it("fde_engineer 不见发现裁定入口（与 L-C 终裁同尺）", async () =
 it("被取代发现置灰呈现：取代提示＋复选框禁用＋无裁定按钮", async () => {
   routeApi()
   const base = mocks.apiRequest.getMockImplementation()
+  if (!base) throw new Error("routeApi 基础 mock 未就位")
   mocks.apiRequest.mockImplementation((path: string, options?: { method?: string }) => {
     if (path.includes("/findings") && !path.includes("/adjudicate")) {
       return Promise.resolve({
@@ -398,6 +399,7 @@ it("被取代发现置灰呈现：取代提示＋复选框禁用＋无裁定按�
 it("评估报告 L-C 终裁历史链：多轮终裁行带序标，最新行标现行，通知含现行结论摘要", async () => {
   routeApi()
   const base = mocks.apiRequest.getMockImplementation()
+  if (!base) throw new Error("routeApi 基础 mock 未就位")
   const secondHuman = {
     ...humanLayer,
     id: "ev-human-2",
