@@ -112,12 +112,20 @@ export function TaskEditor({ projectId, task, tasks, members, canManage, onSaved
       setError("阻塞状态必须填写阻塞原因。")
       return
     }
+    // 服务端四态分支会拒绝或强改进度；先在本地说明，避免提交后拿到无指向的失败。
+    if (executionChanged) {
+      const problem = progressConflict(draft.status, progress, Number(baseline.draft.progress))
+      if (problem) {
+        setError(problem)
+        return
+      }
+    }
     const body: Record<string, unknown> = { version }
     if (executionChanged) {
       Object.assign(body, { status: draft.status, progress })
       if (draft.status === "blocked") body.blocked_reason = draft.blockedReason.trim()
     }
-    if (draft.description.trim() !== baseline.draft.description.trim()) body.description = draft.description.trim()
+    if (canManage && draft.description.trim() !== baseline.draft.description.trim()) body.description = draft.description.trim()
     if (scheduleChanged) Object.assign(body, {
       planned_start_date: draft.plannedStartDate,
       planned_end_date: draft.plannedEndDate,
@@ -148,9 +156,13 @@ export function TaskEditor({ projectId, task, tasks, members, canManage, onSaved
       if (caught instanceof ApiClientError && caught.code === "stale_version") {
         setStale(true)
         setError("内容已被其他人更新，请刷新后重试")
-      } else if (caught instanceof ApiClientError && (caught.status === 403 || caught.status === 404)) {
+      } else if (caught instanceof ApiClientError && caught.status === 404) {
+        // 任务已不存在或已不可见：继续提交只会重复失败，锁住本窗口。
         setDenied(true)
         setError("任务已不可编辑，未保存。")
+      } else if (caught instanceof ApiClientError && caught.status === 403) {
+        // 字段级越权不应连坐同窗口内合法的进度/阻塞原因编辑。
+        setError("本次修改包含你无权变更的内容，未保存。请只改状态、进度或阻塞原因后重试。")
       } else setError(taskError(caught))
     } finally {
       if (generation === generationRef.current) setSaving(false)
@@ -216,7 +228,8 @@ export function TaskEditor({ projectId, task, tasks, members, canManage, onSaved
               {draft.status !== "blocked" ? <small className="field-hint">非阻塞状态不会提交阻塞原因。</small> : null}
             </Field>
             <Field label="任务说明" id="task-edit-description" wide>
-              <textarea id="task-edit-description" rows={2} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+              <textarea id="task-edit-description" rows={2} value={draft.description} disabled={!canManage} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+              {!canManage ? <small className="field-hint">任务说明由项目负责人维护。</small> : null}
             </Field>
             {canManage ? <>
               <Field label="计划开始日期" id="task-edit-start"><input id="task-edit-start" type="date" value={draft.plannedStartDate} onChange={(event) => setDraft(updatePlannedDate(draft, "start", event.target.value))} /></Field>
@@ -291,6 +304,16 @@ function taskDraft(task: ProjectTaskDto): TaskDraft {
 
 function taskPath(projectId: string, taskId: string): string {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`
+}
+
+function progressConflict(status: ProjectTaskStatus, progress: number, opened: number): string {
+  if (status === "not_started" && progress !== 0) return "未开始任务的进度必须是 0。"
+  if (status === "in_progress" && (progress < 1 || progress > 99)) {
+    return "进行中任务的进度必须在 1 到 99 之间；请改用其他状态。"
+  }
+  if (status === "blocked" && progress !== opened) return "阻塞状态不能同时改进度，请先解除阻塞再更新进度。"
+  if (status === "completed" && progress !== 100) return "已完成任务的进度将记为 100%。"
+  return ""
 }
 
 function progressForStatus(status: ProjectTaskStatus, current: string): string {
@@ -389,6 +412,8 @@ function taskError(error: unknown): string {
     if (error.code === "invalid_task_dependency") return "前置任务必须来自同一项目且有效。"
     if (error.code === "invalid_task_member") return "负责人和协作人必须是有效的项目成员。"
     if (error.code === "invalid_task_assignment") return "负责人不能同时作为协作人。"
+    if (error.code === "invalid_task_state") return "状态与进度的组合不被接受，请按提示调整后重试。"
+    if (error.code === "forbidden") return "本次修改包含你无权变更的内容，未保存。"
   }
   return "任务更新失败，请检查内容后重试。"
 }

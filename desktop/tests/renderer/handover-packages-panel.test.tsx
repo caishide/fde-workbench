@@ -391,6 +391,29 @@ it("登记超时后同批次仍封存则持续待核对，稍后读到已登记�
   expect(mocks.apiRequest.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1)
 })
 
+it("待核对状态提供显式解除占用，解除后可重新确认但不自动重发", async () => {
+  const read = vi.fn<() => unknown>()
+    .mockReturnValueOnce(sealedDetail)
+    .mockReturnValueOnce(sealedDetail)
+    .mockReturnValueOnce(sealedDetail)
+  const write = mockDelivery(read, vi.fn(() => {
+    throw new ApiClientError({ code: "request_timeout", message: "超时" })
+  }))
+  renderPanel(true, true)
+  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+
+  expect(await screen.findByRole("button", { name: "查询登记状态" })).toBeEnabled()
+  expect(screen.getByRole("button", { name: "交付登记" })).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "判定未提交并解除占用" }))
+
+  expect(await screen.findByText(/已解除待核对/)).toBeVisible()
+  expect(screen.queryByRole("button", { name: "查询登记状态" })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole("button", { name: "交付登记" })).toBeEnabled())
+  expect(screen.getByRole("button", { name: "解封" })).toBeEnabled()
+  expect(write).toHaveBeenCalledTimes(1)
+  expect(mocks.apiRequest.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1)
+})
+
 it("回读确认解封次数变化后解除待核对，重新登记须再次人工确认", async () => {
   const nextBatch = { ...sealedDetail, unsealed_count: sealedDetail.unsealed_count + 1 }
   const read = vi.fn<() => unknown>()

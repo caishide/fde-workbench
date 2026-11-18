@@ -489,6 +489,24 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
             <UiButton disabled={Boolean(busyId || delivery || deliveryBusy)} onClick={() => void retryReadback(snapshot)}>
               查询登记状态
             </UiButton>
+            {/*
+              回读仍显示同一封存批次时，说明 POST 大概率没落地；但「没落地」无法被
+              证明。给出显式退出：解除占用后允许重新确认，若原请求其实已生效，
+              重新登记会拿到 already_delivered，不会重复登记。
+            */}
+            <UiButton
+              disabled={Boolean(busyId || delivery || deliveryBusy)}
+              onClick={() => {
+                setPendingReadbacks((current) => {
+                  const next = new Map(current)
+                  next.delete(snapshot.id)
+                  return next
+                })
+                setNotice(`${snapshot.label}：已解除待核对（本次未确认登记结果）。如需登记请重新读取批次后确认。`)
+              }}
+            >
+              判定未提交并解除占用
+            </UiButton>
           </div>
         ))}
         {delivery && canManage && isAdmin ? (

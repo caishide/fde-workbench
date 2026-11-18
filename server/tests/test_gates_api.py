@@ -495,6 +495,52 @@ def test_gate_compatibility_still_validates_supplied_revision(admin_client, gate
     assert decided.status_code == 200
 
 
+def test_gate_compatibility_leaves_a_trace_for_every_skipped_precondition(
+    admin_client, gate_project, settings, monkeypatch, db_session
+):
+    """兼容期放行必须留痕：否则事后无法区分「确认过」与「未确认」。"""
+    monkeypatch.setattr(settings, "ux_write_preconditions_required", False)
+    _project, gates_url, leader_client = gate_project
+    gate = _gate_snapshot(admin_client, gates_url, "G6")
+    items = [{"label": item["label"], "source_uri": "fdeops://legacy", "content_hash": "a" * 64}
+             for item in gate["checklist"]]
+    assert admin_client.post(f"{gates_url}/G6/evidence", json={"items": items}).status_code == 200
+    assert leader_client.post(f"{gates_url}/G6/decision", json={"result": "pass"}).status_code == 200
+
+    skipped = db_session.scalars(
+        select(OperationEvent)
+        .where(OperationEvent.event_type == "gate_write_precondition_skipped")
+        .order_by(OperationEvent.occurred_at)
+    ).all()
+    assert [event.changes["action"] for event in skipped] == ["evidence", "decision"]
+    assert {event.changes["gate_key"] for event in skipped} == {"G6"}
+
+
+def test_gate_strict_mode_records_no_skipped_precondition(
+    admin_client, gate_project, db_session
+):
+    """严格模式（默认）下所有写都带条件，不得出现放行留痕。"""
+    _project, gates_url, leader_client = gate_project
+    gate = _gate_snapshot(admin_client, gates_url, "G6")
+    items = [{"label": item["label"], "source_uri": "fdeops://strict", "content_hash": "b" * 64}
+             for item in gate["checklist"]]
+    submitted = admin_client.post(
+        f"{gates_url}/G6/evidence",
+        json={"items": items, "expected_revision": gate["revision"]},
+    )
+    assert submitted.status_code == 200
+    revision = submitted.json["data"]["revision"]
+    assert leader_client.post(
+        f"{gates_url}/G6/decision",
+        json={"result": "pass", "expected_revision": revision},
+    ).status_code == 200
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(OperationEvent)
+        .where(OperationEvent.event_type == "gate_write_precondition_skipped")
+    ) == 0
+
+
 def test_gate_decision_rejects_non_integer_expected_revision(admin_client, gate_project):
     """B#28 形状闸：expected_revision 非正整数（bool/字符串/0）→ 400。"""
     _project, gates_url, leader_client = gate_project

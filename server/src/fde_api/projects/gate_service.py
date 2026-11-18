@@ -140,7 +140,7 @@ def _instantiate_project_gates(session: Session, project: Project) -> int:
 
 
 def _ensure_gates_logged(session: Session, actor: User, project: Project) -> None:
-    """在已持有的项目行锁内懒初始化并留痕。"""
+    """调用方已持有项目行锁。"""
     created = _instantiate_project_gates(session, project)
     if created:
         record_event(
@@ -156,8 +156,22 @@ def list_project_gates(*, actor: User, project_id: str) -> dict[str, Any]:
     session = db.session()
     try:
         with session.begin():
-            project = _load_project_for_gates(session, actor, project_id, manage=False)
-            _ensure_gates_logged(session, actor, project)
+            # 热路径（门禁行已存在）不加写锁，只做一次按 project_id 的计数读；
+            # 冷启动首访才取项目行锁后加载成员并实例化，既保住「并发首访只实例化
+            # 一份 9 行」的原子性，也不让页面刷新去等收款计划/成员变更/封存这类
+            # 项目级长写事务。计数先于项目加载，保证「锁→成员→鉴权」的既有顺序。
+            has_gates = bool(
+                session.scalar(
+                    select(func.count())
+                    .select_from(Gate)
+                    .where(Gate.project_id == project_id)
+                )
+            )
+            project = _load_project_for_gates(
+                session, actor, project_id, manage=False, lock=not has_gates
+            )
+            if not has_gates:
+                _ensure_gates_logged(session, actor, project)
             gates = list(
                 session.scalars(select(Gate).where(Gate.project_id == project.id))
             )
@@ -263,7 +277,7 @@ def submit_gate_evidence(
             project = _load_project_for_gates(session, actor, project_id, manage=True)
             _ensure_gates_logged(session, actor, project)
             gate = _load_gate(session, project.id, gate_key)
-            _require_gate_revision(gate, payload)
+            skipped = _require_gate_revision(gate, payload)
             if gate.status in ("passed", "conditional_pass"):
                 raise GateServiceError(
                     "gate_already_decided", "该门禁已过门，不能再提交证据。", 409
@@ -331,6 +345,8 @@ def submit_gate_evidence(
             gate.is_delivery_party = member is not None and member.role == "member"
             gate.submitted_by_user_id = actor.id
             gate.version += 1
+            if skipped:
+                _record_precondition_skipped(session, actor, gate, "evidence")
             record_event(
                 session,
                 actor,
@@ -441,7 +457,7 @@ def decide_gate(
                 )
             except GateOntologyError as error:
                 raise GateServiceError(error.code, error.message, error.status) from error
-            _require_gate_revision(gate, payload)
+            skipped = _require_gate_revision(gate, payload)
             if gate.status != "evidence":
                 raise GateServiceError(
                     "invalid_gate_state", "该门禁尚无待核验证据，先提交证据再核验。", 409
@@ -607,6 +623,8 @@ def decide_gate(
                         error.code, error.message, error.status
                     ) from error
                 changes["acceptance_marked"] = acceptance
+            if skipped:
+                _record_precondition_skipped(session, actor, gate, "decision")
             record_event(session, actor, "gate_decided", gate, changes)
             session.flush()
             sop_nodes = _sop_nodes_for_templates(session, templates)
@@ -635,16 +653,19 @@ def decide_gate(
 
 
 def _load_project_for_gates(
-    session: Session, actor: User, project_id: str, *, manage: bool
+    session: Session, actor: User, project_id: str, *, manage: bool, lock: bool = True
 ) -> Project:
-    # GET 也可能懒实例化门禁。先锁项目，再用独立查询刷新项目成员后鉴权。
-    # PostgreSQL FOR NO KEY UPDATE 与负责人变更互斥，兼容证据登记的外键键共享锁。
+    # 写路径先锁项目，再用独立查询刷新项目成员后鉴权（堵「等锁期间负责人被换」）。
+    # 读路径取 lock=False：门禁行已存在时不需要写意向锁，否则页刷新会与项目级
+    # 长写事务（收款计划、成员变更、封包封存）互等。
+    statement = select(Project).where(Project.id == project_id)
+    if lock:
+        # PostgreSQL FOR NO KEY UPDATE 与负责人变更互斥，兼容证据登记的外键键共享锁。
+        statement = statement.with_for_update(key_share=True)
     project = session.scalar(
-        select(Project)
-        .where(Project.id == project_id)
-        .with_for_update(key_share=True)
-        .options(selectinload(Project.members))
-        .execution_options(populate_existing=True)
+        statement.options(selectinload(Project.members)).execution_options(
+            populate_existing=True
+        )
     )
     if project is None:
         raise GateServiceError("project_not_found", "项目不存在或已被删除。", 404)
@@ -667,11 +688,15 @@ def _load_gate(session: Session, project_id: str, gate_key: str) -> Gate:
     return gate
 
 
-def _require_gate_revision(gate: Gate, payload: Mapping[str, Any]) -> None:
-    """两条门禁写路径在取得同一行锁后检查确认快照。"""
+def _require_gate_revision(gate: Gate, payload: Mapping[str, Any]) -> bool:
+    """两条门禁写路径在取得同一行锁后检查确认快照。
+
+    返回 True 表示兼容期放行了省略条件的旧请求——调用方必须留痕，否则事后
+    无法区分这次写入是否经过用户确认。
+    """
     if "expected_revision" not in payload:
         if has_app_context() and not current_app.config["SETTINGS"].ux_write_preconditions_required:
-            return
+            return True
         raise GateServiceError(
             "gate_revision_required", "缺少门禁确认版本，请升级客户端并重新确认。", 428
         )
@@ -682,6 +707,20 @@ def _require_gate_revision(gate: Gate, payload: Mapping[str, Any]) -> None:
         raise GateServiceError(
             "gate_revision_conflict", "证据或门禁状态已变，本次未提交。请核对最新清单后重新确认。", 409
         )
+    return False
+
+
+def _record_precondition_skipped(
+    session: Session, actor: User, gate: Gate, action: str
+) -> None:
+    """兼容期放行省略条件的写入时必须留痕（否则该写与「确认过」不可区分）。"""
+    record_event(
+        session,
+        actor,
+        "gate_write_precondition_skipped",
+        gate,
+        {"gate_key": gate.gate_key, "action": action, "revision": gate.version},
+    )
 
 
 def _sop_nodes_for_templates(
@@ -877,6 +916,8 @@ GATE_EVENT_TYPES = (
     "gates_instantiated",
     "gate_evidence_submitted",
     "gate_decided",
+    # 兼容期放行省略条件的写入时留痕——事后可区分「确认过」与「未确认」。
+    "gate_write_precondition_skipped",
     # V3 T-G1：候选挂接事件（挂 gate 行目标），随事件留痕入 feed
     "gate_evidence_candidate_attached",
     # V3 T-W7：workflow 产物坏标记跳过事件（挂 project 目标——gate 非法时无行可挂）
@@ -910,8 +951,11 @@ def attach_task_evidence_candidate(
     Returns: True = 新挂了一条候选；False = 去重跳过或门禁行不存在。
     """
     ensure_project_gates(session, project)
+    # 同 attach_workflow_evidence_candidate：与提交闸的剪除共用门禁行锁。
     gate = session.scalar(
-        select(Gate).where(Gate.project_id == project.id, Gate.gate_key == gate_key)
+        select(Gate)
+        .where(Gate.project_id == project.id, Gate.gate_key == gate_key)
+        .with_for_update()
     )
     if gate is None:
         return False
@@ -1014,8 +1058,12 @@ def attach_workflow_evidence_candidate(
         )
         return False
     ensure_project_gates(session, project)
+    # 与证据提交闸共用门禁行锁：提交闸会在锁内整列剪除命中候选，此处若只读后
+    # 整列赋值，可能把已剪除的候选写回（建议性数据，但会重复出现）。
     gate = session.scalar(
-        select(Gate).where(Gate.project_id == project.id, Gate.gate_key == gate_key)
+        select(Gate)
+        .where(Gate.project_id == project.id, Gate.gate_key == gate_key)
+        .with_for_update()
     )
     if gate is None:
         return False

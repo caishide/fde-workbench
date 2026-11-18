@@ -509,6 +509,43 @@ describe("project detail workspace", () => {
     })))
   })
 
+  it("keeps description read-only for engineers and blocks invalid progress/status pairs locally", async () => {
+    const apiRequest = renderProjectDetail({ role: "fde_engineer", tab: "tasks" })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+
+    expect(screen.getByLabelText("任务说明")).toBeDisabled()
+    expect(screen.getByText("任务说明由项目负责人维护。")).toBeVisible()
+
+    await user.clear(screen.getByLabelText("进度"))
+    await user.type(screen.getByLabelText("进度"), "100")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    expect(await screen.findByText(/进行中任务的进度必须在 1 到 99 之间/)).toBeVisible()
+    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(0)
+
+    await user.selectOptions(screen.getByLabelText("状态"), "completed")
+    expect(screen.getByLabelText("进度")).toHaveValue(100)
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    expect(mutationBodies(apiRequest, "PATCH")).toContainEqual({ version: 3, status: "completed", progress: 100 })
+  })
+
+  it("keeps the editor usable when only the submitted field set is forbidden", async () => {
+    const apiRequest = renderProjectDetail({ role: "fde_engineer", tab: "tasks", taskPatch: apiError("forbidden", 403) })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
+    await user.selectOptions(screen.getByLabelText("状态"), "completed")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("本次修改包含你无权变更的内容")
+    // 字段级 403 不得把整个对话框锁死：仍可改为合法组合再提交。
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText("状态"), "in_progress")
+    await user.clear(screen.getByLabelText("进度"))
+    await user.type(screen.getByLabelText("进度"), "50")
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await waitFor(() => expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(2))
+  })
+
   it("retains the draft and keeps saving blocked when the stale refresh fails", async () => {
     const apiRequest = renderProjectDetail({
       role: "fde_engineer",
@@ -530,16 +567,19 @@ describe("project detail workspace", () => {
     expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
   })
 
-  it("blocks another save after the server rejects revoked edit permission", async () => {
+  it("keeps a revoked-permission save rejected without locking the whole editor", async () => {
     const apiRequest = renderProjectDetail({ role: "fde_engineer", tab: "tasks", taskPatch: apiError("forbidden", 403) })
     const user = userEvent.setup()
     await user.click(await screen.findByRole("button", { name: "更新任务：准备数据" }))
     await user.selectOptions(screen.getByLabelText("状态"), "completed")
     await user.click(screen.getByRole("button", { name: "保存任务" }))
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("任务已不可编辑，未保存。")
-    expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled()
-    expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(1)
+    // 403 可能是字段越权，也可能是权限被撤；不锁死对话框，但每次重试仍会被拒。
+    expect(await screen.findByRole("alert")).toHaveTextContent("本次修改包含你无权变更的内容")
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeEnabled()
+    await user.click(screen.getByRole("button", { name: "保存任务" }))
+    await waitFor(() => expect(mutationBodies(apiRequest, "PATCH")).toHaveLength(2))
+    expect(screen.getByRole("button", { name: "保存任务" })).toBeEnabled()
   })
 
   it("shows enterprise completion and sends a manager status transition with project version", async () => {

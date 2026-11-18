@@ -603,10 +603,17 @@ def deliver_package(*, actor: User, package_id: str, payload: Any, preconditions
             raise _error("already_delivered", "该包已登记交付（终态不可逆）。", 409)
         if package.status != "sealed":
             raise _error("package_not_sealed", "只有已封存包可登记交付。请重新读取交付包。", 409)
-        _require_delivery_snapshot(package, payload, required=preconditions_required)
+        skipped = _require_delivery_snapshot(package, payload, required=preconditions_required)
         package.status = "delivered"
         package.delivered_by_user_id = actor.id
         package.delivered_at = datetime.now(UTC)
+        if skipped:
+            # 兼容期放行省略条件的登记必须留痕，否则该终态与「确认过」不可区分。
+            record_event(session, actor, "handover_precondition_skipped", project, {
+                "package_id": package.id,
+                "manifest_sha256": package.manifest_sha256,
+                "unsealed_count": package.unsealed_count,
+            })
         record_event(session, actor, "handover_package_delivered", project, {
             "package_id": package.id,
             "manifest_sha256": package.manifest_sha256,
@@ -615,7 +622,8 @@ def deliver_package(*, actor: User, package_id: str, payload: Any, preconditions
         return _serialize_package(package, detail=True, session=session)
 
 
-def _require_delivery_snapshot(package: HandoverPackage, payload: Any, *, required: bool) -> None:
+def _require_delivery_snapshot(package: HandoverPackage, payload: Any, *, required: bool) -> bool:
+    """True 表示兼容期放行了省略条件的登记（调用方须留痕）。"""
     if not isinstance(payload, dict):
         raise _error("invalid_request", "请求内容必须为 JSON 对象。", 400)
     digest_key = "expected_manifest_sha256"
@@ -623,13 +631,14 @@ def _require_delivery_snapshot(package: HandoverPackage, payload: Any, *, requir
     if digest_key not in payload and count_key not in payload:
         if required:
             raise _error("write_preconditions_required", "交付登记需要封存批次确认。请升级客户端并重新读取交付包。", 428)
-        return
+        return True
     digest = payload.get(digest_key)
     count = payload.get(count_key)
     if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) or type(count) is not int or count < 0:
         raise _error("invalid_write_preconditions", "交付登记需要完整的封存摘要和有效的解封次数。", 422)
     if digest != package.manifest_sha256 or count != package.unsealed_count:
         raise _error("handover_snapshot_conflict", "封存批次已变化，本次未登记。请重新读取并确认交付包。", 409)
+    return False
 
 
 def available_artifacts(*, actor: User, project_id: str, item_type: str = "artifact") -> dict[str, Any]:

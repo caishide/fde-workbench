@@ -255,6 +255,28 @@ def test_compatibility_only_allows_absent_conditions(delivery_case, d4_app, monk
     assert admin.post(f"{path}/deliver").status_code == 200
 
 
+def test_compatibility_records_a_trace_when_conditions_are_absent(
+    delivery_case, d4_app, db_session, monkeypatch
+) -> None:
+    """兼容期放行必须留痕：否则该终态与「确认过」在审计里不可区分。"""
+    leader, admin, path = delivery_case
+    monkeypatch.setattr(d4_app.config["SETTINGS"], "ux_write_preconditions_required", False)
+    package_id = path.rsplit("/", 1)[-1]
+    leader.post(f"{path}/seal")
+    assert admin.post(f"{path}/deliver").status_code == 200
+    skipped = db_session.query(OperationEvent).filter_by(event_type="handover_precondition_skipped").one()
+    assert skipped.changes["package_id"] == package_id
+    assert db_session.query(OperationEvent).filter_by(event_type="handover_package_delivered").count() == 1
+
+
+def test_strict_mode_records_no_skipped_precondition(delivery_case, db_session) -> None:
+    """严格模式（默认）登记带条件，不得出现放行留痕。"""
+    leader, admin, path = delivery_case
+    sealed = leader.post(f"{path}/seal").get_json()["data"]
+    assert admin.post(f"{path}/deliver", json=_delivery_conditions(sealed)).status_code == 200
+    assert db_session.query(OperationEvent).filter_by(event_type="handover_precondition_skipped").count() == 0
+
+
 @pytest.mark.parametrize(("first_action", "second_action", "error_code"), [
     ("seal", "edit", "package_not_draft"),
     ("unseal", "deliver", "package_not_sealed"),
