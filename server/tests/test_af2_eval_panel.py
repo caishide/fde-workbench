@@ -53,9 +53,9 @@ from test_af1_eval_panel import (
 from test_data_engineering_run_views import _seed_file_version
 from test_gates_api import admin_client, gate_project  # noqa: F401  (fixture 供给方)
 
-# FDE_AF1_OLLAMA_BASE 覆盖（同 test_af1_live_demo 注记）：桥基址与探针在本
-# 模块独立解析，保持与 AF1 面同一覆盖值。
-OLLAMA_BASE = os.environ.get("FDE_AF1_OLLAMA_BASE", _af1_panel.OLLAMA_BASE)
+# FDE_AF1_OLLAMA_BASE 覆盖经 test_af1_live_demo → test_af1_eval_panel 导入链
+# 传导到桥基址与探针（`_eval_serving_base`/`_require_ollama` 同源）——本模块
+# 不重复解析基址，覆盖值一处声明（原就地重解析的 OLLAMA_BASE 死变量已删）。
 
 RUNS_PER_TASK = 3
 
@@ -68,14 +68,16 @@ RUNS_PER_TASK = 3
 #   · 未收敛的运行（T3-02 两次）烧到 10 轮仍未收敛——加轮次不产生正确性，
 #     只放大墙钟（433s／727s）；
 #   · 故取 8＝能覆盖收敛运行的最小档，且不给「反复试错」留无限空间。
-MAX_TOOL_ROUNDS = int(os.environ.get("FDE_AF2_MAX_TOOL_ROUNDS", "8") or 8)
+# 解析容错：非数字/空串一律回落冻结档（导入期抛错会让整个测试会话收集失败）。
+_RAW_ROUNDS = (os.environ.get("FDE_AF2_MAX_TOOL_ROUNDS") or "").strip()
+MAX_TOOL_ROUNDS = int(_RAW_ROUNDS) if _RAW_ROUNDS.isdigit() else 8
 
-DEV_TASKS_T3: dict[str, str] = {
+# 18 号 §2.1：T3 十行**全部为验收集**（T3-01..03 兼集成轮）；contracts.py
+# 无 dev=True 的 T3 行——评测测试面与冻结登记一致，不再分 dev/accept 两集。
+ACCEPT_TASKS_T3: dict[str, str] = {
     "T3-01": "t3-01.md",
     "T3-02": "t3-02.md",
     "T3-03": "t3-03.md",
-}
-ACCEPT_TASKS_T3: dict[str, str] = {
     "T3-04": "t3-04.md",
     "T3-05": "t3-05.md",
     "T3-06": "t3-06.md",
@@ -88,6 +90,41 @@ HIDDEN_TASKS_T3: dict[str, str] = {
     "T3-H02": "T3-H02.md",
     "T3-H03": "T3-H03.md",
 }
+
+# 18 号 §9 附录 B 运行面锚（9 件＝材料＋场景卡＋数据；*.expect.md 为评分
+# 对照面，不入运行面故不在此 enforcement）。开箱纪律的代码落地：路径就位后
+# 逐件 sha256 复核，任一破缺即 fail——密封纪律不再依赖打印留痕（评审 G4）。
+# 锚变更必须先改 18 号 §9（决策单）再改此处，两处永远一致。
+_T3_HIDDEN_ANCHORS: dict[str, dict[str, str]] = {
+    "T3-H01": {
+        "T3-H01.md": "5a07b8b5b10658ad8e2ea06d8183f7e046b02af4857bcc525e4acee727d2e1f3",
+        "T3-H01.scene.json": "0e7b31126e4a74b4a4541a4d29cdbfd05e2f76b65f4243f10461b45d0e30bef8",
+        "data/t3-h01-inspections.csv": "296459929c62d1b7916c25ab8fde3abd0a9b378c72002af740fe0bccf503c447",
+    },
+    "T3-H02": {
+        "T3-H02.md": "f9cd60e55d2c5d359eecbbab31116493dab43b6dbee52f7adfbd289e8f062cbb",
+        "T3-H02.scene.json": "1c61caa1eacdfca8b625b3c8cdd4f5051634824e70b688f5b0003771c65bce60",
+        "data/waybills.csv": "438ac6563cd005bb4555b381d6de78c4472e381de36668d5b503be5ac0608bbe",
+    },
+    "T3-H03": {
+        "T3-H03.md": "ee32572b17d4a0088d85aaefec857641e7309153e3e237b71d37929b43e0b1a0",
+        "T3-H03.scene.json": "29ba333cd30630f4f3d557059fb5398ca7b8361d3a9d9d7ee40745a70a0b2e1c",
+        "data/t3-h03-store.xlsx": "f76489866f4012061ea0fd4988a2ef52350d1236884ec66762616e7d21b4b900",
+    },
+}
+
+
+def _verify_hidden_anchors(task_id: str) -> None:
+    """隐藏件密封锚复核（§6.2 第 5 条的代码落地）：不一致即 fail。"""
+    hidden = _hidden_dir()
+    if hidden is None:
+        pytest.fail("隐藏件运行需要 FDE_AF2_HIDDEN_DIR（P1 开箱目录）")
+    for rel, expected in _T3_HIDDEN_ANCHORS[task_id].items():
+        path = hidden / rel
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert digest == expected, (
+            f"密封锚破缺：{rel} 实得 {digest[:16]}… 预期 {expected[:16]}…（18 号 §9 附录 B）"
+        )
 
 T3_TOOL_NAMES = ("transform_plan_validate", "transform_plan_execute", "transform_run_views")
 
@@ -143,7 +180,9 @@ def _scene_spec(task_id: str) -> dict[str, Any]:
     else:
         path = _fixtures_root() / "scene" / f"{task_id}.json"
     if not path.is_file():
-        return {}
+        pytest.fail(
+            f"场景卡缺失：{path}（公开件应在仓内 fixtures/scene；隐藏件应在开箱目录）"
+        )
     spec = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(spec, dict), path
     return spec
@@ -151,7 +190,10 @@ def _scene_spec(task_id: str) -> dict[str, Any]:
 
 def _data_path(task_id: str, scene_spec: dict[str, Any]) -> Path:
     """合成数据文件路径：公开件＝仓内 fixtures/data；隐藏件＝开箱目录 data/。"""
-    rel = str(scene_spec["data_file"])
+    rel = scene_spec.get("data_file")
+    if not rel:
+        pytest.fail(f"场景卡缺 data_file：{scene_spec.get('data_file')!r}")
+    rel = str(rel)
     hidden = _hidden_dir()
     if hidden is not None and _is_hidden(task_id):
         return hidden / rel
@@ -168,15 +210,26 @@ def _seed_t3_scene(
     一致（17 号 §2.2 ``snapshot_mismatch`` 防线）。
     """
     data_path = _data_path(task_id, scene_spec)
+    if not data_path.is_file():
+        pytest.fail(f"合成数据文件缺失：{data_path}")
     data = data_path.read_bytes()
     filename = data_path.name
+    lowered = filename.lower()
     mime = (
-        "text/csv" if filename.endswith(".csv")
+        "text/csv" if lowered.endswith(".csv")
         else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        if lowered.endswith(".xlsx")
+        else pytest.fail(f"不支持的数据文件类型（仅 csv/xlsx）：{filename}")
     )
     version = _seed_file_version(db_session, project, actor, filename, data, mime)
     profile = data_eng_service.create_profile(
         actor=actor, project_id=project.id, filename=filename, data=data
+    )
+    # 同源预检（前置拦截）：画像 input_sha256 与文件版本 sha256 不一致＝种子
+    # 漂移——等到模型 run 执行腿 400 snapshot_mismatch 才暴露会白烧整轮墙钟。
+    assert profile["input_sha256"] == version.sha256, (
+        f"种子同源校验失败：version={version.sha256[:16]}… "
+        f"profile={profile['input_sha256'][:16]}…"
     )
     return {
         "version_id": version.id,
@@ -244,6 +297,8 @@ def _t3_handle(name: str, arguments: dict[str, Any], ctx: dict[str, Any]) -> tup
         return int(error.status), {
             "error": error.code, "message": error.message, "detail": error.detail or {},
         }
+    except Exception as error:  # 非 DEE 异常同样以数据形态回灌（记录腿不缺）
+        return 500, {"error": "tool_failed", "message": str(error)[:300]}
 
 
 def _t3_tool_calls_spy(monkeypatch: pytest.MonkeyPatch, ctx: dict[str, Any]) -> list[dict[str, Any]]:
@@ -251,8 +306,11 @@ def _t3_tool_calls_spy(monkeypatch: pytest.MonkeyPatch, ctx: dict[str, Any]) -> 
 
     - ``TOOLS``/``LOOP_TOOL_WHITELIST`` 增补三件（评测进程内 monkeypatch，
       生产注册表零变更）；
-    - ``ai_tool_loop.call_tool`` 包一层：T3 工具路由到本地处理器，其余工具
-      透传原实现。
+    - ``ai_tool_loop.call_tool`` 包一层：T3 工具路由到本地处理器（service
+      真身直调，服务端校验全在），其余工具透传原实现。**声明偏差**：T3 三件
+      不经 ``mcp_gateway.call_tool`` 的网关层参数键集/能力位预检——键集执法
+      由 service 层白名单承担（同判异形），能力位 ``project.read`` 在本地
+      路径为装饰位（评审 G22：诚实声明，非放水——拒绝面由 service 等价承担）。
     """
     calls: list[dict[str, Any]] = []
     original_call_tool = ai_tool_loop.call_tool
@@ -343,7 +401,8 @@ def _t3_prompt(profile_id: str, material: str, project_id: str) -> str:
 
 
 def _strip_comments(material: str) -> str:
-    return re.sub(r"<!--.*?-->", "", material, flags=re.DOTALL).strip()
+    # 未闭合注释体同样剥离（G1 泄题防护：`<!--` 无 `-->` 时吃到串尾）
+    return re.sub(r"<!--.*?-->|<!--.*$", "", material, flags=re.DOTALL).strip()
 
 
 # 终态分类（T3 面）：budget_exceeded 规则与 AF1 面一致；**目标终态由场景卡
@@ -405,7 +464,9 @@ def _classify_terminal_t3(
         status = "awaiting_human" if awaiting else "completed"
     else:
         status = "completed"
-    return {"status": status, "awaiting_human": status == "awaiting_human" or awaiting}
+    # awaiting_human 与 status 单源一致（rejected/awaiting 词表有交叠——
+    # rejected 件带「待人工」字样不得产生矛盾字段）。
+    return {"status": status, "awaiting_human": status == "awaiting_human"}
 
 
 def _t3_dry_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -414,8 +475,9 @@ def _t3_dry_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     AF1 的 ``engineering.real_tool_rounds``／``engineering.correction_loop``
     读 ``dry_calls[].response.verdict``（本体面 ``ontology_dry_validate``
     形态）；T3 面的同一事实是 validate 腿的 HTTP 状态与
-    ``invalid_transform_plan`` 明细。面板在**仪器层**按「200→pass /
-    400 invalid_transform_plan→violations」翻译记入 ``dry_calls``——同一
+    ``invalid_transform_plan`` 明细。面板在**仪器层**按「2xx→pass /
+    400 invalid_transform_plan→violations」翻译记入 ``dry_calls``（成功腿
+    实为 201——与生产路由一致；评审 G3 修正 200 单值不可达）——同一
     事实的形状适配，**不改动 AF1 冻结评分件、不放宽任何判定**；T3 的主
     契约面仍是 ``transform_calls``。
     """
@@ -430,7 +492,7 @@ def _t3_dry_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "proposed_json": [],
             "response": {
                 "status": status,
-                "verdict": "pass" if status == 200 else "violations",
+                "verdict": "pass" if 200 <= status < 300 else "violations",
                 "body": response.get("body"),
             },
         })
@@ -443,8 +505,9 @@ def _t3_server_asserts(
 ) -> dict[str, Any]:
     """T3 harness 端断言计算面（评分器汇总不重跑）。
 
-    - ``tenant_pinned``：工具处理器全程用种子时的 project_id（claims 钉定，
-      无第二项目可达面）；
+    - ``tenant_pinned``：架构面事实的诚实登记——工具处理器仅持有种子 ctx
+      的单项目 project_id（无第二项目可达面），服务端成员关系强制由 service
+      真身承担（data_engineering 服务测试群钉）；非逐调用重算的观测值。
     - ``source_zero_write``：源文件字节级零覆盖——原始数据字节重算 sha256
       与文件版本登记值一致（执行器对源只有读权，源数据零覆盖红线）；
     - ``expected_quality``／``expected_output_rows``／``expected_rejected_rows``：
@@ -472,6 +535,25 @@ def _t3_server_asserts(
     return asserts
 
 
+def _t3_server_asserts_safe(
+    task_id: str, scene: dict[str, Any], seeded: dict[str, Any],
+    trace: list[dict[str, Any]], calls: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """``_t3_server_asserts`` 的落盘安全面：infra 落盘路径上数据缺失不得把
+    断言计算炸成「RunRecord 也丢失」（评审：归因证据比断言本身更不可失）。"""
+    try:
+        return _t3_server_asserts(task_id, scene, seeded, trace, calls)
+    except Exception as error:
+        return {"source_zero_write": None, "asserts_error": str(error)[:200]}
+
+
+def _t3_out_dir() -> Path:
+    """T3 产物目录：与门闸/文档声明同一变量（FDE_AF2_EVAL_OUT_DIR）；
+    未设时回落 AF1 面变量（两面板共用一目录的既有用法）。"""
+    raw = os.environ.get("FDE_AF2_EVAL_OUT_DIR", "").strip()
+    return Path(raw) if raw else _out_dir()
+
+
 # ---- 单 run 执行体 ------------------------------------------------------------
 
 
@@ -494,9 +576,12 @@ def _run_one_t3_run(
     material = _strip_comments(material)
     scene = env["scene_spec"]
     seeded = env["seeded"]
-    target = str(scene.get("target_terminal") or "completed")
+    # target 归一＋闭集校验（拼写变体静默落 completed＝负向断言整组不产出）
+    target = str(scene.get("target_terminal") or "completed").strip().lower()
+    assert target in {"completed", "awaiting_human", "rejected"}, (
+        f"场景卡 target_terminal 非法：{scene.get('target_terminal')!r}"
+    )
     rounds = MAX_TOOL_ROUNDS if max_tool_rounds is None else max_tool_rounds
-    probe = _serving_probe(env.get("serving_base"))
     resolved: dict[str, Any] = {"base_url": None}
     transform_calls = _t3_tool_calls_spy(monkeypatch, {
         "actor": env["actor"], "project_id": env["project_id"],
@@ -518,7 +603,8 @@ def _run_one_t3_run(
             # 仪器层形状适配（见 _t3_dry_calls）：AF1 通用工程腿读 dry_calls。
             "dry_calls": _t3_dry_calls(transform_calls),
             "transform_calls": transform_calls,
-            "server_asserts": _t3_server_asserts(task_id, scene, seeded, trace, transform_calls),
+            "server_asserts": _t3_server_asserts_safe(
+                task_id, scene, seeded, trace, transform_calls),
             "serving_config": {
                 "serving_face": (
                     "openai→native bridge (think=false, num_ctx=16384, manual tool-calling)"
@@ -535,7 +621,7 @@ def _run_one_t3_run(
             "terminal": terminal,
         }
         record.update(extra)
-        out_path = _out_dir() / f"run-{task_id}-{run_index}.json"
+        out_path = _t3_out_dir() / f"run-{task_id}-{run_index}.json"
         out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         return record
 
@@ -545,7 +631,11 @@ def _run_one_t3_run(
     usage: dict[str, Any] = {"complete": False, "calls": []}
     trace: list[dict[str, Any]] = []
     duration_ms = 0
+    probe: dict[str, Any] = {"status": "not_run"}
     try:
+        # serving 探针也在守护内：探针故障＝基础设施失败，同样落盘归因
+        # （05 §3 分母纪律不留缺口——评审 G5）。
+        probe = _serving_probe(env.get("serving_base"))
         with env["app"].app_context():
             from fde_api.control.model_preferences import resolve_model_preference
 
@@ -566,6 +656,13 @@ def _run_one_t3_run(
         _record(
             {"status": "infra_failure", "awaiting_human": False},
             infra_error={"code": error.code, "message": error.public_message},
+        )
+        raise
+    except Exception as error:  # 其余基础设施故障同样落盘后上抛（不留分母缺口）
+        duration_ms = int((time.monotonic() - started) * 1000)
+        _record(
+            {"status": "infra_failure", "awaiting_human": False},
+            infra_error={"code": "unexpected_error", "message": str(error)[:300]},
         )
         raise
     duration_ms = int((time.monotonic() - started) * 1000)
@@ -676,14 +773,16 @@ def test_af2_t3_harness_seed_tools_end_to_end(t3_env, monkeypatch: pytest.Monkey
     validated = ai_tool_loop.call_tool(
         None, user=env["actor"], claims={}, allowed=[],
         name="transform_plan_validate", arguments={"plan": plan})
-    assert validated.get("ok") is True, validated
-    plan_id = validated["plan"]["id"]
+    # 信封契约＝生产路由逐字一致（评审 G1：{"data":…,"error":null}＋201，
+    # 顶层无 ok/plan 键——D6 之前的旧形状断言在此必挂）
+    assert validated.get("error") is None, validated
+    plan_id = str(validated["data"]["id"])
 
     executed = ai_tool_loop.call_tool(
         None, user=env["actor"], claims={}, allowed=[],
         name="transform_plan_execute", arguments={"plan_id": plan_id})
-    assert executed.get("ok") is True, executed
-    run = executed["run"]
+    assert executed.get("error") is None, executed
+    run = executed["data"]
     assert run["status"] == "succeeded", (
         f"status={run['status']} failure_reason={run.get('failure_reason')!r} "
         f"ledger={run.get('reject_ledger')!r} conservation={run.get('conservation')!r}"
@@ -692,7 +791,7 @@ def test_af2_t3_harness_seed_tools_end_to_end(t3_env, monkeypatch: pytest.Monkey
     assert run["conservation"]["output_rows"] == 5
     assert run["conservation"]["ok"] is True
 
-    assert [c["response"]["status"] for c in calls] == [200, 201]
+    assert [c["response"]["status"] for c in calls] == [201, 201]
     assert calls[0]["plan_json"]["source"]["profile_id"] == env["seeded"]["profile_id"]
 
 
@@ -750,26 +849,55 @@ def test_af2_t3_terminal_classification_and_instrument_adapters() -> None:
         "T3-01", "已执行完成。", usage_over, 6, "completed", [], [])
     assert terminal["status"] == "budget_exceeded"
 
-    # 仪器层形状适配：validate 腿 verdict 翻译
+    # 仪器层形状适配：validate 腿 verdict 翻译（成功腿实为 201——评审 G3）
     adapted = _t3_dry_calls([
         {"tool": "transform_plan_validate", "arguments": {"plan": {}},
          "response": {"status": 400, "body": {"error": "invalid_transform_plan"}}},
         {"tool": "transform_plan_validate", "arguments": {"plan": {}},
-         "response": {"status": 200, "body": {"ok": True}}},
+         "response": {"status": 201, "body": {"data": {"id": "p1"}, "error": None}}},
         {"tool": "transform_plan_execute", "arguments": {"plan_id": "p1"},
          "response": {"status": 201, "body": {}}},
     ])
     assert [call["response"]["verdict"] for call in adapted] == ["violations", "pass"]
-    assert all(call["response"]["status"] in (200, 400) for call in adapted)
+    assert all(call["response"]["status"] in (201, 400) for call in adapted)
 
 
-# ---- 评测运行测试（env 三闸收集期跳过，CI 恒跳过） ------------------------------
+# ---- 评测运行测试（FDE_AF2_EVAL 三闸收集期跳过，CI 恒跳过；上方 harness
+# ---- 自测不受此闸——有 ontology fixtures 树即实跑） ---------------------------
 
 _EVAL_GATE = pytest.mark.skipif(
     os.environ.get("FDE_AF2_EVAL", "").strip() != "1"
     or not os.environ.get("FDE_AF2_EVAL_OUT_DIR", "").strip(),
     reason="requires FDE_AF2_EVAL=1 + FDE_AF2_EVAL_OUT_DIR (real Ollama + bridge)",
 )
+
+
+def _t3_floor_pins(task_id: str, record: dict[str, Any], env: dict[str, Any]) -> None:
+    """下限钉（AF1 面板先例，评审 G24）：只拦「完全没发生」的假运行，
+    不判能力面。
+
+    - 零 provider 调用／模型不匹配＝运行面根本没发生（桥劣化为空答复时
+      评测照常「绿」——这正是 AF1 面板 ``_OllamaBridge`` 注记过的实测故障
+      形态，下限钉在此拦截）；
+    - completed 目标件零预检＝评测没真正发生；awaiting/rejected 目标件
+      **可以合法零工具**（停点纪律下直接形成决策单/拒绝是正确行为——
+      18 号 §3.2／D5 同口径），不挂此钉；
+    - 不钉 ``usage.complete``：budget_exceeded／timeout 是**真实运行**
+      （钉它会把非收敛真实运行误报成测试失败）。
+    """
+    usage = record.get("usage") or {}
+    assert usage.get("calls"), f"{task_id}#{record.get('run_index')} 零 provider 调用——假运行"
+    last_call = (usage.get("calls") or [{}])[-1]
+    assert last_call.get("model") == OLLAMA_MODEL, (
+        f"{task_id}#{record.get('run_index')} 模型不匹配：{last_call.get('model')!r}"
+    )
+    target = str(
+        (env.get("scene_spec") or {}).get("target_terminal") or "completed"
+    ).strip().lower()
+    if target == "completed":
+        assert record.get("dry_calls"), (
+            f"{task_id}#{record.get('run_index')} completed 目标件零预检——假运行"
+        )
 
 
 @pytest.mark.parametrize("task_id", sorted(ACCEPT_TASKS_T3))
@@ -781,25 +909,11 @@ def test_af2_eval_t3_acceptance_set(
     _require_ollama()
     material_path = _fixtures_root() / ACCEPT_TASKS_T3[task_id]
     material = material_path.read_text(encoding="utf-8")
-    _run_one_t3_run(
+    record = _run_one_t3_run(
         task_id, run_index, material, hashlib.sha256(material.encode("utf-8")).hexdigest(),
         t3_env, monkeypatch, material_name=ACCEPT_TASKS_T3[task_id],
     )
-
-
-@pytest.mark.parametrize("task_id", sorted(DEV_TASKS_T3))
-@pytest.mark.parametrize("run_index", range(1, RUNS_PER_TASK + 1))
-@_EVAL_GATE
-def test_af2_eval_t3_dev_set(
-    task_id: str, run_index: int, t3_env, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_ollama()
-    material_path = _fixtures_root() / DEV_TASKS_T3[task_id]
-    material = material_path.read_text(encoding="utf-8")
-    _run_one_t3_run(
-        task_id, run_index, material, hashlib.sha256(material.encode("utf-8")).hexdigest(),
-        t3_env, monkeypatch, material_name=DEV_TASKS_T3[task_id],
-    )
+    _t3_floor_pins(task_id, record, t3_env)
 
 
 @pytest.mark.skipif(
@@ -813,10 +927,12 @@ def test_af2_eval_t3_hidden_set(
     task_id: str, run_index: int, t3_env, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _require_ollama()
+    _verify_hidden_anchors(task_id)
     material_path = Path(os.environ["FDE_AF2_HIDDEN_DIR"]) / HIDDEN_TASKS_T3[task_id]
     material = material_path.read_text(encoding="utf-8")
     print(f"[af2-eval] {task_id} input sha256={hashlib.sha256(material.encode('utf-8')).hexdigest()}")
-    _run_one_t3_run(
+    record = _run_one_t3_run(
         task_id, run_index, material, hashlib.sha256(material.encode("utf-8")).hexdigest(),
         t3_env, monkeypatch, material_name="sealed",
     )
+    _t3_floor_pins(task_id, record, t3_env)
