@@ -59,6 +59,17 @@ OLLAMA_BASE = os.environ.get("FDE_AF1_OLLAMA_BASE", _af1_panel.OLLAMA_BASE)
 
 RUNS_PER_TASK = 3
 
+# 预算档（15 号 WP5：预算由 T3 集成轮实测后冻结；冻结值写在此处，集成轮
+# 可用环境变量临时放宽以量出收敛曲线拐点——探测量面，不影响冻结档默认）。
+#
+# 冻结依据（2026-11-20 集成轮实测 21 runs，真 Ollama qwen3:14b）：
+#   · 收敛成功的运行最多用到 7 次 provider 调用（T3-05：预检 1 次＋执行 1 次
+#     ＋读 4 个视图）；8 档可覆盖全部观测到的收敛运行；
+#   · 未收敛的运行（T3-02 两次）烧到 10 轮仍未收敛——加轮次不产生正确性，
+#     只放大墙钟（433s／727s）；
+#   · 故取 8＝能覆盖收敛运行的最小档，且不给「反复试错」留无限空间。
+MAX_TOOL_ROUNDS = int(os.environ.get("FDE_AF2_MAX_TOOL_ROUNDS", "8") or 8)
+
 DEV_TASKS_T3: dict[str, str] = {
     "T3-01": "t3-01.md",
     "T3-02": "t3-02.md",
@@ -183,7 +194,10 @@ def _t3_handle(name: str, arguments: dict[str, Any], ctx: dict[str, Any]) -> tup
     """T3 工具处理器：service 真身直调（含鉴权/同源校验/纵深再校验全闸）。
 
     不抛异常——服务层错误以数据形态回灌模型（denied/tool_failed 同款语义），
-    HTTP 形 ``(status, body)`` 如实入记录腿。
+    HTTP 形 ``(status, body)`` 如实入记录腿。**信封与状态码与生产路由逐字
+    一致**（``data_engineering/routes.py``：成功 ``{"data": payload, "error":
+    None}``＋计划/执行落库 201、视图 200；错误 ``{"error": code, "message": …}``
+    ＋4xx）——记录的就是生产面会给客户端的那份响应，面板不另造形状。
     """
     try:
         if name == "transform_plan_validate":
@@ -196,7 +210,7 @@ def _t3_handle(name: str, arguments: dict[str, Any], ctx: dict[str, Any]) -> tup
             result = data_eng_service.create_transform_plan(
                 actor=ctx["actor"], project_id=ctx["project_id"], plan=plan
             )
-            return 200, {"ok": True, "plan": result}
+            return 201, {"data": result, "error": None}
         if name == "transform_plan_execute":
             result = data_eng_service.submit_transform_run(
                 actor=ctx["actor"],
@@ -207,7 +221,7 @@ def _t3_handle(name: str, arguments: dict[str, Any], ctx: dict[str, Any]) -> tup
                     f"af2-eval-{ctx['task_id']}-{ctx['run_index']}-{uuid.uuid4().hex[:12]}"
                 ),
             )
-            return 201, {"ok": True, "run": result}
+            return 201, {"data": result, "error": None}
         if name == "transform_run_views":
             view = str(arguments.get("view") or "")
             run_id = str(arguments.get("run_id") or "")
@@ -224,7 +238,7 @@ def _t3_handle(name: str, arguments: dict[str, Any], ctx: dict[str, Any]) -> tup
                 if handler is None:
                     return 400, {"error": "invalid_request", "message": f"未知视图 {view!r}"}
                 payload = handler(actor=ctx["actor"], project_id=ctx["project_id"], run_id=run_id)
-            return 200, {"ok": True, "view": view, "payload": payload}
+            return 200, {"data": payload, "error": None}
         return 400, {"error": "invalid_request", "message": f"T3 面未知工具 {name!r}"}
     except DataEngineeringError as error:
         return int(error.status), {
@@ -271,18 +285,50 @@ def _t3_tool_calls_spy(monkeypatch: pytest.MonkeyPatch, ctx: dict[str, Any]) -> 
 def _t3_prompt(profile_id: str, material: str, project_id: str) -> str:
     return (
         "【工程规则（声明式数据工程）】\n"
-        "- 转换计划只使用平台声明式算子闭集（select/rename/cast/normalize_datetime/"
-        "convert_unit/map_enum/dedup/join/assert_quality）与枚举参数；平台不接受任何"
-        "表达式/SQL/脚本槽（expr/sql/script/template 等键会被拒绝）。\n"
+        "- 转换计划只使用平台声明式算子闭集与枚举参数；平台不接受任何表达式/SQL/脚本槽"
+        "（expr/sql/script/template 等键会被拒绝）。\n"
         "- 计划 JSON 骨架（键集精确）：plan_version=\"af2-wp2-v1\"；source 含 "
         "profile_id 与 table；input 含 columns（每列 name/type，类型词表 "
         "string/integer/number/decimal/boolean/date/datetime/enum）；output 含 columns；"
         "relations 为数组（无关系证据时留空）；steps 每步含 id/op/params/depends_on；"
-        "policies 三键必填（null_handling: reject|keep_null、reject_record: collect|count、"
-        "duplicate_key: error|keep_first）。cast 到 decimal 必须显式 scale（0..28 整数）"
-        "与 rounding（half_up/half_even/floor/ceiling）；normalize_datetime 要求列类型为 "
-        "date/datetime，to_tz 为 IANA 时区名；convert_unit 用 from_unit/to_unit（受控"
-        "量纲表）；map_enum 用 mapping 与 unmapped(error|keep)；join 需键对与基数声明。\n"
+        "policies 三键必填（语义见下条）。\n"
+        # 策略语义＝平台能力面的读法（集成轮实测：T3-05 连续三次把 duplicate_key
+        # 设成 error 导致整批失败——策略名不带语义，模型只能猜）。
+        "- 策略三键语义：null_handling＝reject 时，被算子引用列上的空值**整行拒绝**"
+        "进账本（null_policy）；keep_null 时空值保留继续。reject_record＝collect 时"
+        "质量违反行**保留在输出**同时进账本（不计入 rejected_row_count）；count 时"
+        "只计数不入细目。duplicate_key＝keep_first 时重复键**保留首次出现**、后续"
+        "重复行进账本（duplicate_key）；error 时一旦出现重复键**整批执行失败**。\n"
+        # 算子目录＝平台自己的能力清单（同生产工具描述面口径：模型不知道参数键
+        # 就只能靠猜，那不是能力信号而是仪器缺陷——集成轮实测 21 run 里 7 次
+        # 400 全是键名猜错）。逐算子给**精确键集**与**列归属语义**，参数值
+        # 语义仍由服务端校验闭环。
+        "- 列归属规则（各算子一律**就地作用于被引用列**，不产出新列名）："
+        "cast/normalize_datetime/convert_unit/map_enum/assert_quality 只改"
+        "**该列自身的值或类型**，列名不变——所以 convert_unit 的 params.column "
+        "必须写**源列名**（如 length_mm），不能写你想要的新名；"
+        "**rename 才是改列名的唯一算子**（mapping 的键=旧列名、值=新列名）；"
+        "select 决定**保留哪些列**（列出该列在该步之前已存在的列名）。"
+        "「换算并改名」＝先 convert_unit/cast 再 rename；"
+        "「只保留部分列」＝用 select 列出保留项。\n"
+        "- 九算子精确参数键集（不接受任何额外键，空集＝无需参数）：\n"
+        "  select {columns: [列名…]}；rename {mapping: {旧名: 新名}}；\n"
+        "  cast {column, to_type, scale?, rounding?}（to_type=decimal 时 scale 与 "
+        "rounding 必填，rounding ∈ half_up/half_even/floor/ceiling；to_type=enum 时 "
+        "values 必填，为非空无重复字符串数组）；\n"
+        "  normalize_datetime {column, to_tz}（列类型须为 date/datetime，to_tz 为 IANA "
+        "时区名）；convert_unit {column, from_unit, to_unit}（受控量纲表：length "
+        "mm/cm/m/km、mass g/kg/t、time s/min/h，跨量纲被拒）；\n"
+        "  map_enum {column, mapping: {旧值: 新值}, unmapped: error|keep}"
+        "（unmapped=error 时未命中映射的**原值整行拒绝**进账本 enum_unmapped；"
+        "unmapped=keep 时未命中的值**保留原值继续**——要把值域收紧到某个闭集，"
+        "用 unmapped=keep 先归整，再 cast 到 enum 并声明 values，靠 cast 拒绝越界行）；"
+        "dedup {keys: [列名…]}（保留首次出现，后续重复行进账本；是否整批失败由 policies."
+        "duplicate_key 决定）；\n"
+        "  join {left_key, right_table, right_key, cardinality: one_to_one|many_to_one, "
+        "basis: fk_catalog|declared_by_plan, right_columns?}（fk_catalog 须有 relations "
+        "证据）；assert_quality {kind: not_null|unique, column}（只做这两类断言，值域"
+        "收紧请用 cast 到 enum）。\n"
         "- 流程：先用 transform_plan_validate 预检计划（非法返回 invalid_transform_plan"
         " 与逐项明细，按明细修正后重新预检）；通过后用 transform_plan_execute 执行（传"
         " plan_id）；需要时用 transform_run_views 读取执行视图。\n"
@@ -438,7 +484,7 @@ def _run_one_t3_run(
     monkeypatch: pytest.MonkeyPatch,
     *,
     material_name: str,
-    max_tool_rounds: int = 6,
+    max_tool_rounds: int | None = None,
 ) -> dict[str, Any]:
     """执行单次 T3 运行并落盘 RunRecord（评分器消费的唯一产物）。
 
@@ -449,6 +495,7 @@ def _run_one_t3_run(
     scene = env["scene_spec"]
     seeded = env["seeded"]
     target = str(scene.get("target_terminal") or "completed")
+    rounds = MAX_TOOL_ROUNDS if max_tool_rounds is None else max_tool_rounds
     probe = _serving_probe(env.get("serving_base"))
     resolved: dict[str, Any] = {"base_url": None}
     transform_calls = _t3_tool_calls_spy(monkeypatch, {
@@ -478,7 +525,7 @@ def _run_one_t3_run(
                 ),
                 "resolved_base_url": resolved["base_url"],
                 "max_tokens": 16384,
-                "max_tool_rounds": max_tool_rounds,
+                "max_tool_rounds": rounds,
             },
             "scene_seeded": {
                 "file_version": bool(seeded.get("version_id")),
@@ -510,7 +557,7 @@ def _run_one_t3_run(
                 user=env["actor"],
                 project_id=env["project_id"],
                 execution_id=f"af2-eval-{task_id}-{run_index}",
-                max_tool_rounds=max_tool_rounds,
+                max_tool_rounds=rounds,
                 capabilities=["project.read"],
                 allowed_tools=list(T3_TOOL_NAMES),
             )
@@ -524,7 +571,7 @@ def _run_one_t3_run(
     duration_ms = int((time.monotonic() - started) * 1000)
 
     record = _record(_classify_terminal_t3(
-        task_id, text, usage, max_tool_rounds, target, transform_calls, trace))
+        task_id, text, usage, rounds, target, transform_calls, trace))
     statuses = [c["response"]["status"] for c in transform_calls]
     print(f"[af2-eval] {task_id} run{run_index}: {duration_ms}ms "
           f"transform_calls={len(transform_calls)} statuses={statuses} "
