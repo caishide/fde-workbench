@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 # 拒绝码闭集（与 errors.py 对齐；判定层不抛异常——verdict 让调用方决定信封）
 CODE_PROTECTED = "protected_path"        # S-AF3-01/02/03：.git/**、hooks、.github/workflows/**
@@ -28,6 +29,34 @@ CODE_SYMLINK = "symlink_escape"          # S-AF3-05：symlink 逃逸
 CODE_OVERSIZE = "oversize_patch"         # S-AF3-06：三上限
 
 _DENIED_PARTS = frozenset({".git", "hooks"})
+
+# verdict.code → 域错误码/用户消息（errors.py 闭集映射；403 面＝保护路径，
+# 422 面＝形状/越界）——判定层单一映射（service/patch_plan 共用，WP2 自
+# patch_plan/service 本地副本上收至此防循环依赖）。
+VERDICT_ERRORS: dict[str, str] = {
+    "protected_path": "protected_path_rejected",
+    "path_escape": "path_escape_rejected",
+    "outside_allow_roots": "outside_allow_roots",
+    "symlink_escape": "symlink_escape_rejected",
+    "oversize_patch": "oversize_patch",
+}
+
+VERDICT_MESSAGES: dict[str, str] = {
+    "protected_path_rejected": "保护路径拒绝（.git/**、hooks、.github/workflows/**）。",
+    "path_escape_rejected": "路径穿越形态拒绝（..、绝对路径、盘符、反斜杠）。",
+    "outside_allow_roots": "越界路径（不在绑定 allow_roots 内）。",
+    "symlink_escape_rejected": "符号链接逃逸拒绝。",
+    "oversize_patch": "Patch 超出上限（bytes/files/lines）。",
+}
+
+
+class VerdictErrorPayload(NamedTuple):
+    code: str
+    message: str
+
+
+def verdict_error(verdict: "Verdict") -> VerdictErrorPayload:
+    return VerdictErrorPayload(VERDICT_ERRORS[verdict.code], VERDICT_MESSAGES[VERDICT_ERRORS[verdict.code]])
 
 
 @dataclass(frozen=True)
@@ -112,6 +141,19 @@ def check_path_fs(
     if current.exists() and not current.resolve().is_relative_to(root):
         return Verdict(False, CODE_SYMLINK, f"解析后越出工作区：{current} → {current.resolve()}")
     return _OK
+
+
+def verify_resolved(real_path: str | Path, root: Path, rel_path: str, allow_roots: tuple[str, ...]) -> Verdict:
+    """评审 D1/H2 复核 helper（读面打开后／写面写入前共用）：
+    **解析真实路径**须 (a) 仍在工作区内（逃逸拒）且 (b) 相对工作区的路径过
+    check_path 四拒＋allow_roots 全判（仓内链接 ontology/x.yaml→.git/config
+    或 →server/ 这类「解析不逃逸但落入保护/越界区」同拒——probe 面 check_path_fs
+    只判逃逸不判落点，本 helper 补落点维度）。"""
+    real = Path(real_path)
+    if not real.is_relative_to(root):
+        return Verdict(False, CODE_SYMLINK, f"符号链接逃逸（复核）：解析后越出工作区 {real}")
+    rel = real.relative_to(root).as_posix()
+    return check_path(rel, allow_roots=allow_roots)
 
 
 @dataclass(frozen=True)

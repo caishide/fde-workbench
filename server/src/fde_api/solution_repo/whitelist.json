@@ -1,17 +1,18 @@
 {
-  "version": "1.0.0",
-  "artifact": "AF3-WP1 仓工具面白名单 v1",
-  "generated_at": "2026-11-20",
-  "status": "FROZEN-v1（2026-11-20 P1「全部批准」D-C 拍板冻结：三上限 512KB/100 文件/2 万行＋四拒规则集＝04 §3.3 A1）。白名单属安全红线件：规则封闭集合，变更须审核后升 v2；运行时不得动态注册路径或 Git 操作。",
+  "version": "2.0.0",
+  "artifact": "AF3 仓工具面白名单 v2",
+  "generated_at": "2026-11-21",
+  "status": "FROZEN-v2（2026-11-21 WP2 落位升版：git_ops 封闭集变更——patch_apply 自 human_only 转 agent_allowed〔20 号 §2 D2 已批「Agent 可触发：读/建分支/应用 patch/查状态」授权链齐；v1.0.0 系 WP1 时点占位〕）。白名单属安全红线件：规则封闭集合，后续变更须审核后升 v3；运行时不得动态注册路径或 Git 操作。",
   "authority": {
-    "work_order": "docs/ai-fde/20-af3-work-order.md §2 D2/D-C、§3 WP1",
+    "work_order": "docs/ai-fde/20-af3-work-order.md §2 D2（patch_apply 入 agent 面）、§3 WP2（类型化 Patch adapter）",
     "negative_rule": "docs/ai-fde/04-architecture-and-governance.md §3.3 v0.2 A1（Patch 能写 hook = 下一次人工 git 操作替 Agent 执行代码）",
     "design": "docs/ai-fde/_af3-wp0-design.md §3（机检化设计稿）＋§6 D-C（三上限拍板）",
-    "decision_record": "docs/ai-fde/20-af3-work-order.md §9（2026-11-20 WP0 决策单拍板行）"
+    "decision_record": "docs/ai-fde/20-af3-work-order.md §9（WP0/WP1 落痕行）",
+    "v1_baseline": "v1.0.0（2026-11-20 WP1 落位，FROZEN-v1；patch_apply 当时的 human_only 占位注记见 #557 diff）"
   },
   "path_rules": {
     "allow_roots": ["ontology/", "transforms/", "rules/", "tests/", "config/"],
-    "deny_semantics": "部件级判定：任一路径部件 == '.git' 或 'hooks' 即拒；连续部件 '.github'+'workflows' 即拒（任意深度）——比 glob 引擎更可预测，负向钉逐条对齐 S-AF3-01/02/03",
+    "deny_semantics": "部件级判定：任一路径部件剥尾点/空格后 == '.git' 或 'hooks' 即拒；连续部件 '.github'+'workflows' 即拒（任意深度）；中段冒号（NTFS ADS）与控制字符拒——比 glob 引擎更可预测，负向钉逐条对齐 S-AF3-01/02/03",
     "deny_absolute": true,
     "deny_dotdot": true,
     "deny_backslash": true,
@@ -22,13 +23,13 @@
     "max_file_read_bytes": 1048576
   },
   "git_ops": {
-    "agent_allowed": ["status", "read_file", "diff", "log", "branch_create"],
-    "human_only": ["push", "merge", "branch_delete", "remote_config", "protected_branch_write", "hooks_path_config", "patch_apply"],
+    "agent_allowed": ["status", "read_file", "diff", "log", "branch_create", "patch_apply"],
+    "human_only": ["push", "merge", "branch_delete", "remote_config", "protected_branch_write", "hooks_path_config"],
     "fail_closed": "闭集外操作名一律拒绝（不视为 human_only，防止误把未知操作当待办放行到人工面）",
-    "note": "patch_apply 归 WP2 类型化 Patch adapter 接线（当前为 human_only 占位）；push/merge/受保护分支直写永不入 agent 面（D2）；WP1 落位端点＝status/read_file/branch_create 三个（resolve_op 接线为其第二道闸，评审 G4）——diff/log 两操作随 WP2 类型化 adapter 的读面端点落位（notes-only 登记，不触发 v2）"
+    "note": "v2 落位端点＝status/read_file/branch_create（WP1）＋diff（GET /changes）＋log（GET /commits）＋patch_apply（POST /patches，类型化 PatchPlan 键集精确契约、原子应用＋受控 commit、失败回滚零残留）六个（resolve_op 为各服务入口第二道闸）；push/merge/受保护分支直写/hooks_path_config 永不入 agent 面（D2）"
   },
   "ci_bundle": {
-    "note": "固定受信任 CI bundle 执行器归 WP3（D3：不执行 Patch 夹带的任意脚本或测试装饰载荷）；本件只登记段位，WP1 不实现执行面",
+    "note": "固定受信任 CI bundle 执行器归 WP3（D3：不执行 Patch 夹带的任意脚本或测试装饰载荷）；本件只登记段位，WP2 不实现执行面",
     "fail_closed": true
   }
 }

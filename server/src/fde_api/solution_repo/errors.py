@@ -1,4 +1,4 @@
-"""solution_repo 错误面（AF3-WP1）：12 码闭集 + 域错误类型。
+"""solution_repo 错误面（AF3-WP1）：13 码闭集 + 域错误类型。
 
 闭集纪律沿 AE1 ``ActionExecutionError`` 同款（Q8 口径）：不运行时扩码——
 闭集外码在构造层即拒；错误面本身不得成为扩码通道。AF3 契约件随 WP2/WP3
@@ -20,6 +20,8 @@ ERROR_STATUS: dict[str, int] = {
     "oversize_patch": 422,              # S-AF3-06（WP2 接线时经本码出信封）
     "dirty_tree_conflict": 409,         # S-AF3-08：不进他人 dirty tree
     "binding_exists": 409,              # 同 org+repo+branch 重复绑定
+    "base_mismatch": 409,               # AF3-WP2：plan.base_commit != 应用时刻 HEAD（修改源内容后旧批准失效）
+    "idempotency_mismatch": 409,        # AF3-WP2：同 patch_id 重放但 plan 内容指纹不一致（AE1 同构）
     "git_operation_failed": 500,        # Git 执行层失败（结构化拒绝信息随 details）
 }
 
