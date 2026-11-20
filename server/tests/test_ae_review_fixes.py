@@ -337,7 +337,13 @@ class TestP8TimeoutWiring:
                 whitelist_gate=gate,
                 dispatch=dispatch,
             )
-        assert err.value.details is not None and err.value.details["reason"] == "connector_timeout"
+        # CI 环境连接阶段即可能耗尽 0.3s cap（代理 env/IPv6 解析慢）→ ConnectTimeout 映射
+        # connector_connect_failed；两码同属「服务端上限生效」的诚实映射（钉意图=cap min 语义，
+        # 非读阶段细分），故双码接受。本机直连快，稳定复现 connector_timeout。
+        assert err.value.details is not None and err.value.details["reason"] in (
+            "connector_timeout",
+            "connector_connect_failed",
+        )
 
 
 # ---- P9：多 binding 三元组对齐 ------------------------------------------------
