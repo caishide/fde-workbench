@@ -18,10 +18,12 @@
 
 ## 续跑位置
 
-- R1b 交付树为 `D:/test/fde-workbench`，分支 `feat/goal-optimize-r1b`。旧集成树为 R1a 的历史现场。
+- R1c 开发树为 `D:/test/fde-workbench`，分支 `feat/goal-optimize-r1c-manifest`，原起点为 #544 合并提交；本线提交前于 2026-11-20 07:42 快进合流 `fork/main` 至 `cc636b9f`（#546，docs-only）。
 - 原始提交 `212f26b2` 的 ruff、mypy 和完整服务端 pytest 钩子均通过。测试使用独立的临时 PostgreSQL 和 Redis 实例，两容器已清理。
-- 合入 `fork/main` 基线 `f0f16f4b` 时仅 CHANGELOG 冲突。新基线的交付证据以对应 PR 的四项 CI 为准。
+- R1b 以 `f0f16f4b` 为合流基线，`372e2a8f` 的 push 和 PR 两组 CI 均四项通过。#544 squash 合并为 `a8786f78`，本地 `main` 已快进至同一提交。合流后 Windows 协调器 13 例及 WSL 部署工具 57 例通过。
 - R1b-3 的生产前提和 R1c 的恢复验收分别见 BLOCKED 与 leader 任务书。
+- R1c-1 修复证据：独立只读审查发现空路径和父分量路径可能误批准；新增拒绝用例先红后绿。Windows 13 例与 WSL 部署工具 70 例在 `cc636b9f` 复测通过。原起点 `a8786f78` 的预检隔离 PG/Redis 环境中 ruff 通过、mypy 277 处零新增、服务端全量 4312 passed / 85 skipped / exit0，用时 5700.44s；正式提交钩子已在当前基线复用同款隔离服务。
+- cc636b9f 首次提交钩子：ruff/mypy 通过，服务端全量 4514 passed / 1 failed / 85 skipped / exit1，用时 4110.70s。红例为 #538 冻结 JSON 的 Windows checkout CRLF 字节锚错位；仅将工作树恢复为 HEAD blob 的 LF 原字节后定向 1 passed，未改断言、未 skip，随后复跑提交钩子。
 
 ## 分轮状态
 
@@ -29,8 +31,8 @@
 |---|---|---|---|
 | R0 | 建议、leader、进度、待决、观察模板已落盘 | 文档独立审查P2已关闭；leader 2823字符/6节；本地链接核验通过 | 随R1a提交 |
 | R1a | 只读CLI与44例测试；CI/README/AGENTS/CHANGELOG已接线 | WSL 44通过、零skip；兼容补丁及合流独立复审通过 | #530 四项 CI 通过并已合并 |
-| R1b | 隔离协调器与协议 | Windows 13 例、WSL 部署工具 57 例通过 | PR 验收待完成，生产接线另行确认 |
-| R1c | 固定产物与隔离恢复路线 | 恢复演练待实施 | 待规格 |
+| R1b | 隔离协调器与协议 | Windows 13 例、WSL 部署工具 57 例通过 | #544 已合并，生产接线另行确认 |
+| R1c | 固定产物规格及离线校验器；独立审查发现的空路径/父分量误批准已修复 | Windows 13 例与 WSL 部署工具 70 例通过；隔离恢复待实施 | R1c-1 开发中 |
 | R2 | 观察模板已备；R2a清单示例已校正并独立审查通过 | 真实用户与真发信未验 | OWNER前提见BLOCKED |
 | R3–R4 | 基线/容量路线已登记 | 未测量净收益与容量 | 未实施 |
 | R5 | 本轮入口与进度同步 | 两份手册逐字节相同 | 随轮交付 |
