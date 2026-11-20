@@ -164,8 +164,9 @@ class TestPatchPlanContract:
     def test_entries_must_be_non_empty_list(self) -> None:
         with pytest.raises(Exception):
             validate_patch_plan(_plan([]), allow_roots=("ontology/",))
+        bad = {"patch_id": "p-1", "base_commit": "0" * 40, "entries": "not-a-list"}
         with pytest.raises(Exception):
-            validate_patch_plan(_plan("not-a-list"), allow_roots=("ontology/",))
+            validate_patch_plan(bad, allow_roots=("ontology/",))
 
     def test_patch_id_shape(self) -> None:
         plan = _plan([{"path": "ontology/a.yaml", "operation": "update", "content": "x"}])
