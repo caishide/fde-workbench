@@ -1,4 +1,4 @@
-"""solution_repo 错误面（AF3-WP1）：13 码闭集 + 域错误类型。
+"""solution_repo 错误面（AF3-WP1）：14 码闭集 + 域错误类型。
 
 闭集纪律沿 AE1 ``ActionExecutionError`` 同款（Q8 口径）：不运行时扩码——
 闭集外码在构造层即拒；错误面本身不得成为扩码通道。AF3 契约件随 WP2/WP3
@@ -22,6 +22,7 @@ ERROR_STATUS: dict[str, int] = {
     "binding_exists": 409,              # 同 org+repo+branch 重复绑定
     "base_mismatch": 409,               # AF3-WP2：plan.base_commit != 应用时刻 HEAD（修改源内容后旧批准失效）
     "idempotency_mismatch": 409,        # AF3-WP2：同 patch_id 重放但 plan 内容指纹不一致（AE1 同构）
+    "acceptance_tests_intact_violation": 403,  # AF3-WP3：基线验收测试被 Patch 修改/删除（05 §2.1 T4「验收测试不能被 Agent 删除」）
     "git_operation_failed": 500,        # Git 执行层失败（结构化拒绝信息随 details）
 }
 

@@ -293,3 +293,92 @@ class TestBundleExecution:
         resp = _run_ci(client, af3_world, settings, binding_id, "lint")
         assert resp.status_code == 403
         assert resp.get_json()["error"]["code"] == "permission_revoked"
+
+
+# ---- 评审批次补钉（vg 两项＋H1/H2/H3 专钉） ---------------------------------------
+
+
+class TestReviewBatchPatches:
+    def test_run_ci_cross_tenant_404(self, client, af3_world, settings, sample_repo, db_session) -> None:
+        """评审 vg1：POST ci/runs 跨租户 404（org 过滤被改坏时该写端点会真实
+        执行 bundle——唯一无覆盖的租户边界）。"""
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        outsider = make_user(db_session, "project_lead", org_id=make_enterprise_org(db_session).id)
+        db_session.commit()
+        resp = _run_ci(client, {"actor": outsider, "org": None}, settings, binding_id, "lint")
+        assert resp.status_code == 404
+        assert resp.get_json()["error"]["code"] == "not_found"
+
+    def test_transform_test_bundle_executes(self, client, af3_world, settings, sample_repo) -> None:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        """评审 vg2：闭集第 4 条 transform_test 从未被执行——补执行钉（verdict
+        green＋executed nodeid 全落 tests/transforms/ 下）。"""
+        resp = _run_ci(client, af3_world, settings, binding_id, "transform_test")
+        assert resp.status_code == 201
+        data = resp.get_json()["data"]
+        assert data["verdict"] == "green"
+        assert data["executed_checks"]
+        assert all(nid.startswith("tests/transforms/") for nid in {c["nodeid"] for c in data["executed_checks"]})
+
+    def test_ci_protected_case_and_wildcard_variants(self, client, af3_world, settings, sample_repo) -> None:
+        """评审 H3：大小写伪装（tests/CONFTEST.py）与通配嵌套
+        （config/requirements-dev.txt）均命中 ci_protected。"""
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        head = _git(sample_repo, "rev-parse", "HEAD")
+        for path in ("tests/CONFTEST.py", "config/requirements-dev.txt"):
+            plan = {
+                "patch_id": "af3-patch-" + uuid.uuid4().hex[:8],
+                "base_commit": head,
+                "entries": [{"path": path, "operation": "create", "content": "x\n"}],
+            }
+            resp = client.post(
+                f"/api/v1/solution-repo/bindings/{binding_id}/patches",
+                json=plan,
+                headers=_auth(af3_world["actor"], settings),
+            )
+            assert resp.status_code == 403, path
+            assert resp.get_json()["error"]["code"] == "protected_path_rejected", path
+
+    def test_baseline_test_delete_rejected(self, client, af3_world, settings, sample_repo) -> None:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        """评审 H2：基线验收测试删除 → 403 acceptance_tests_intact_violation
+        （防「删验收断言＋加平凡新测试」绕对拍面）。"""
+        plan = {
+            "patch_id": "af3-patch-" + uuid.uuid4().hex[:8],
+            "base_commit": _git(sample_repo, "rev-parse", "HEAD"),
+            "entries": [{"path": "tests/test_failing_assertion.py", "operation": "delete"}],
+        }
+        resp = client.post(
+            f"/api/v1/solution-repo/bindings/{binding_id}/patches",
+            json=plan,
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 403
+        assert resp.get_json()["error"]["code"] == "acceptance_tests_intact_violation"
+
+    def test_non_test_py_create_in_tests_rejected(self, client, af3_world, settings, sample_repo) -> None:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        """评审 H1（D3 形态白名单）：tests/ 下新增非 test_*.py（payload.py）
+        → 422——任意脚本经 import 链在受信任 bundle 执行的路径封堵。"""
+        plan = {
+            "patch_id": "af3-patch-" + uuid.uuid4().hex[:8],
+            "base_commit": _git(sample_repo, "rev-parse", "HEAD"),
+            "entries": [{"path": "tests/payload.py", "operation": "create", "content": "import os\n"}],
+        }
+        resp = client.post(
+            f"/api/v1/solution-repo/bindings/{binding_id}/patches",
+            json=plan,
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_unit_test_replay_no_pycache_pollution(self, client, af3_world, settings, sample_repo) -> None:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        """评审 M1：pytest __pycache__ 污染（PYTHONDONTWRITEBYTECODE=1）——
+        同 binding 二次 run_ci 不得 409（可复跑语义真实成立）。"""
+        first = _run_ci(client, af3_world, settings, binding_id, "unit_test")
+        assert first.status_code == 201
+        second = _run_ci(client, af3_world, settings, binding_id, "unit_test")
+        assert second.status_code == 201, second.get_json()
+        assert second.get_json()["data"]["verdict"] in ("green", "red")

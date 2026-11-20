@@ -156,8 +156,8 @@ class RepoCIRun(Base, TimestampMixin):
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     executed_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     new_tests_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
-    stdout_head: Mapped[str] = mapped_column(String, nullable=False, default="")
-    stderr_head: Mapped[str] = mapped_column(String, nullable=False, default="")
+    stdout_head: Mapped[str] = mapped_column(String(4096), nullable=False, default="")
+    stderr_head: Mapped[str] = mapped_column(String(4096), nullable=False, default="")
     error_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     def snapshot(self) -> dict[str, Any]:

@@ -631,6 +631,13 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
     # 评审 T1/T2（设计件 §3.2）：Patch 条目命中 ci_protected 名单（conftest/
     # ini/pyproject 等装饰载荷与依赖面）→ 403——bundle 执行不可达的注入面。
     protected = _load_whitelist_or_fail()["ci_bundle"].get("ci_protected") or []
+    # 评审 H2（基线完整性锚）：绑定基线提交（base_commit）的 tests/ 清单为
+    # **验收测试锚**——Patch 修改/删除基线测试 → 403（05 §2.1 T4「验收测试
+    # 不能被 Agent 删除」；防「删验收断言＋加平凡新测试」绕对拍面）。
+    baseline_tests_raw = runner.run_ok(
+        "ls-tree", "-r", "--name-only", row.base_commit, "--", "tests/"
+    )
+    baseline_tests = set((baseline_tests_raw or "").splitlines())
     for entry in plan["entries"]:
         if _ci_protected_hit(entry["path"], protected):
             raise SolutionRepoError(
@@ -638,6 +645,27 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
                 "Patch 条目命中 ci_protected 名单（CI 装饰载荷防线）。",
                 details={"path": entry["path"]},
             )
+        posix_path = entry["path"].replace("\\", "/").lower()
+        if posix_path.startswith("tests/"):
+            # 评审 H1（D3 形态白名单，设计件 §3.5）：tests/ 下新增文件仅
+            # test_*.py（test 函数体）；任意 .py（payload.py 等）经 import 链
+            # 在受信任 bundle 执行——形态外一律 422。
+            if entry["operation"] == "create":
+                basename = posix_path.rsplit("/", 1)[-1]
+                if not (basename.startswith("test_") and basename.endswith(".py")):
+                    raise SolutionRepoError(
+                        "validation_failed",
+                        "tests/ 下新增文件须为 test_*.py 形态（D3 形态白名单，"
+                        "装饰载荷/任意脚本不可达）。",
+                        details={"path": entry["path"]},
+                    )
+            # 基线完整性：修改/删除基线验收测试 → 403（新增不受限）。
+            if entry["operation"] in ("update", "delete") and entry["path"] in baseline_tests:
+                raise SolutionRepoError(
+                    "acceptance_tests_intact_violation",
+                    "基线验收测试不可被 Patch 修改或删除（05 §2.1 T4）。",
+                    details={"path": entry["path"]},
+                )
 
     # 原子写入＋逆序回滚登记（written: [(path, kind, saved_bytes|None)]）。
     # 写入前复核（评审 H3/H4：probe→write 窗口）——已存在目标 realpath 落点
@@ -870,10 +898,17 @@ def get_patch(actor: Any, binding_id: str, patch_id: str) -> dict[str, Any]:
 
 
 def _ci_protected_hit(path: str, patterns: list[str]) -> bool:
+    """评审 H3：basename 级 fnmatch＋大小写不敏感——通配（requirements-*.txt）
+    与大小写伪装（tests/CONFTEST.py）均命中；嵌套子目录经 basename 判定覆盖。"""
     from fnmatch import fnmatch
 
-    posix = path.replace("\\", "/")
-    return any(fnmatch(posix, pat) or posix.endswith("/" + pat) for pat in patterns)
+    posix = path.replace("\\", "/").lower()
+    basename = posix.rsplit("/", 1)[-1]
+    for pat in patterns:
+        pat_l = pat.lower()
+        if fnmatch(posix, pat_l) or fnmatch(posix, "*/" + pat_l) or basename == pat_l or fnmatch(basename, pat_l):
+            return True
+    return False
 
 
 def _parse_pytest_verbose(text: str, cap: int) -> list[dict[str, str]]:
@@ -911,6 +946,14 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
     _resolve_op("run_ci")
     if not isinstance(payload, dict):
         raise SolutionRepoError("validation_failed", "请求体须为 JSON 对象。")
+    unknown_keys = sorted(set(payload) - {"bundle_id"})
+    if unknown_keys:
+        # 评审 M9：键集精确纪律延及 run_ci 入口（WP2 PatchPlan 同款）。
+        raise SolutionRepoError(
+            "validation_failed",
+            f"run_ci 请求含未登记键（键集精确）：{unknown_keys}",
+            details={"unknown_keys": unknown_keys},
+        )
     bundle_id = payload.get("bundle_id")
     snap = _load_whitelist_or_fail()
     ci_cfg = snap["ci_bundle"]
@@ -923,9 +966,16 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
         )
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
+        _ensure_grant(row, "run_ci")  # 评审 M6：授权先于审计计数（同 WP2 口径）
         _touch_audit(session, row, "run_ci")
         session.commit()
-    _ensure_grant(row, "run_ci")  # 评审 D3
+    if Path(row.workspace_root).resolve() != Path(row.repo_root).resolve():
+        # 评审 M7（WP2 M7 同款）：CI cwd 与归因锚分叉时结果错位——显式 422。
+        raise SolutionRepoError(
+            "validation_failed",
+            "workspace_root 与 repo_root 分叉时 run_ci 不受支持。",
+            details={"workspace_root": row.workspace_root, "repo_root": row.repo_root},
+        )
 
     runner = GitRunner(Path(row.repo_root))
     try:
@@ -957,6 +1007,7 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
     error_json: dict[str, Any] | None = None
     try:
         ci_env = GitRunner._safe_env()
+        ci_env["PYTHONDONTWRITEBYTECODE"] = "1"  # 评审 M1：防 pytest __pycache__ 污染工作树（二次 run 409）
         # 服务端受控 PYTHONPATH（fde_api 可寻址）：-I 隔离与 editable 安装冲突，
         # 改为 env 白名单内显式注入服务端 src（外部 PYTHONPATH 注入面仍被封堵——
         # 与 -I 等价受控，评审实测评测修正；设计件 §3.1 落痕同步）。
@@ -974,12 +1025,28 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             check=False,
         )
         exit_code = proc.returncode
+        if not -2147483648 <= exit_code <= 2147483647:
+            # 评审 M3b：Windows 强杀退码（0xC0000409 族）超 int32——PG INTEGER
+            # 溢出把已执行的 run 行丢掉；钳制为 500（执行层失败语义）。
+            exit_code = 500
         stdout_text = (proc.stdout or "")[:cap]
         stderr_text = (proc.stderr or "")[:cap]
         verdict = "red" if exit_code != 0 else "green"
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         verdict = "error"
-        error_json = {"reason": f"timeout after {timeout}s", "args": " ".join(argv)}
+        # 评审：超时部分输出留存（诊断面——TimeoutExpired.stdout/stderr 可得）
+        partial_out = exc.stdout or ""
+        partial_err = exc.stderr or ""
+        if isinstance(partial_out, bytes):
+            partial_out = partial_out.decode("utf-8", errors="replace")
+        if isinstance(partial_err, bytes):
+            partial_err = partial_err.decode("utf-8", errors="replace")
+        error_json = {
+            "reason": f"timeout after {timeout}s",
+            "args": " ".join(argv),
+            "stdout_head": partial_out[-4096:],
+            "stderr_head": partial_err[-4096:],
+        }
     except OSError as exc:
         verdict = "error"
         error_json = {"reason": str(exc), "args": " ".join(argv)}
@@ -989,7 +1056,14 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
     new_tests: list[str] = []
     if bundle_id in ("unit_test", "transform_test"):
         executed = _parse_pytest_verbose(stdout_text, int(ci_cfg.get("max_executed_checks") or 1000))
-        baseline_raw = runner.run_ok("ls-tree", "-r", "--name-only", row.base_commit, "--", "tests/")
+        # 评审 M3a：quotePath=false（非 ASCII 测试文件名不被引号转义）；失败
+        # → verdict=error 落行（基线差集失真不可接受）。
+        baseline_raw = runner.run_ok(
+            "-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", row.base_commit, "--", "tests/"
+        )
+        if baseline_raw is None:
+            verdict = "error"
+            error_json = {"reason": "baseline ls-tree 失败（基线差集不可构造）", "base_commit": row.base_commit}
         baseline_files = set((baseline_raw or "").splitlines())
         new_tests = [
             c["nodeid"]
@@ -1032,6 +1106,7 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
         return {
             "run_id": run_id,
             "bundle_id": bundle_id,
+            "base_commit": row.base_commit,
             "head_commit": head,
             "exit_code": exit_code,
             "verdict": verdict,
@@ -1046,9 +1121,11 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
 
 
 def get_ci_runs(actor: Any, binding_id: str) -> dict[str, Any]:
-    """CI 执行行列表（近 20 条；append-only 可复跑——每 run 新行）。"""
+    """CI 执行行列表（近 20 条；append-only 可复跑——每 run 新行）。
+
+    评审口径对齐：grant 闸＋revoked 拒（与 /changes /commits 同域读面一致）。"""
     with _sr_session() as session:
-        _load_binding(session, actor.org_id, binding_id, allow_revoked=True)
+        _load_binding(session, actor.org_id, binding_id)
         runs = (
             session.query(RepoCIRun)
             .filter(RepoCIRun.org_id == actor.org_id, RepoCIRun.binding_id == binding_id)
@@ -1056,4 +1133,4 @@ def get_ci_runs(actor: Any, binding_id: str) -> dict[str, Any]:
             .limit(20)
             .all()
         )
-        return {"items": [r.snapshot() for r in runs], "count": len(runs)}
+        return {"items": [r.snapshot() for r in runs], "count": len(runs), "limit": 20}

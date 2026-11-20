@@ -90,7 +90,12 @@ def run(mode: str, root: Path) -> int:
         base = root / domain
         if not base.is_dir():
             continue
-        files.extend(sorted(p for p in base.rglob("*") if p.is_file() and p.suffix.lower() in CHECKED_SUFFIXES))
+        files.extend(
+        sorted(
+            p for p in base.rglob("*")
+            if p.is_file() and not p.is_symlink() and p.suffix.lower() in CHECKED_SUFFIXES
+        )
+    )  # 评审：symlink 过滤（checkers 不读仓外链接目标——泄露面收敛）
     for path in files:
         ok, reason = check_file(path, mode)
         rel = path.relative_to(root).as_posix()

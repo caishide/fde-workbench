@@ -64,6 +64,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--out", required=True, help="输出目录（须在 solution_repo_base 围栏内）")
     args = parser.parse_args(argv)
     out = Path(args.out)
+    if out.exists() and not out.is_dir():
+        print(f"--out is a file, not a directory: {out}", file=sys.stderr)
+        return 2
     if out.exists() and any(out.iterdir()):
         print(f"输出目录非空：{out}", file=sys.stderr)
         return 2
