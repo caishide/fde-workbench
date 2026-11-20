@@ -369,6 +369,14 @@ def _t3_prompt(profile_id: str, material: str, project_id: str) -> str:
         "select 决定**保留哪些列**（列出该列在该步之前已存在的列名）。"
         "「换算并改名」＝先 convert_unit/cast 再 rename；"
         "「只保留部分列」＝用 select 列出保留项。\n"
+        # D11 补全（评审轮）：output.columns 须声明**两层归属**——列名归属
+        # （最终名）与类型归属（产出后类型）。T3-H01 实测六次 validate 全
+        # 400 output_mismatch＝提示面缺层导致模型按源列类型声明。
+        "- output.columns＝产出契约声明，须与执行链产出**精确一致**（否则 400 "
+        "output_mismatch）：列名写**最终列名**（rename 后的新名，select 掉的列"
+        "不写）；type 写**产出后类型**——算子链全部执行完后该列的最终类型，"
+        "不是源列类型（cast 到 decimal 的列在此写 decimal，未 cast 的列保持"
+        "输入声明的类型）。\n"
         "- 九算子精确参数键集（不接受任何额外键，空集＝无需参数）：\n"
         "  select {columns: [列名…]}；rename {mapping: {旧名: 新名}}；\n"
         "  cast {column, to_type, scale?, rounding?}（to_type=decimal 时 scale 与 "
@@ -860,6 +868,19 @@ def test_af2_t3_terminal_classification_and_instrument_adapters() -> None:
     ])
     assert [call["response"]["verdict"] for call in adapted] == ["violations", "pass"]
     assert all(call["response"]["status"] in (201, 400) for call in adapted)
+
+
+def test_af2_t3_prompt_output_contract_catalog() -> None:
+    """D11 补全钉：能力清单须声明 output.columns 的**列名/类型两层归属**。
+
+    T3-H01 三 run 六次 validate 全 400 ``output_mismatch``＝仪器缺陷（提示面
+    只说「output 含 columns」，未写列名是最终名、类型是产出后类型）——与
+    D9/D10 同教训：清单须覆盖列名归属与类型归属两层，缺层＝能力信号被
+    仪器噪声淹没。纯函数钉，无 fixtures 依赖，常规 CI 实跑。
+    """
+    prompt = _t3_prompt("prof-x", "【任务】材料", "proj-1")
+    assert "最终列名" in prompt
+    assert "产出后类型" in prompt
 
 
 # ---- 评测运行测试（FDE_AF2_EVAL 三闸收集期跳过，CI 恒跳过；上方 harness
