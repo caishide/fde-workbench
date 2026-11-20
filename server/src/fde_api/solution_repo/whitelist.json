@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "artifact": "AF3-WP1 仓工具面白名单 v1",
+  "generated_at": "2026-11-20",
+  "status": "FROZEN-v1（2026-11-20 P1「全部批准」D-C 拍板冻结：三上限 512KB/100 文件/2 万行＋四拒规则集＝04 §3.3 A1）。白名单属安全红线件：规则封闭集合，变更须审核后升 v2；运行时不得动态注册路径或 Git 操作。",
+  "authority": {
+    "work_order": "docs/ai-fde/20-af3-work-order.md §2 D2/D-C、§3 WP1",
+    "negative_rule": "docs/ai-fde/04-architecture-and-governance.md §3.3 v0.2 A1（Patch 能写 hook = 下一次人工 git 操作替 Agent 执行代码）",
+    "design": "docs/ai-fde/_af3-wp0-design.md §3（机检化设计稿）＋§6 D-C（三上限拍板）",
+    "decision_record": "docs/ai-fde/20-af3-work-order.md §9（2026-11-20 WP0 决策单拍板行）"
+  },
+  "path_rules": {
+    "allow_roots": ["ontology/", "transforms/", "rules/", "tests/", "config/"],
+    "deny_semantics": "部件级判定：任一路径部件 == '.git' 或 'hooks' 即拒；连续部件 '.github'+'workflows' 即拒（任意深度）——比 glob 引擎更可预测，负向钉逐条对齐 S-AF3-01/02/03",
+    "deny_absolute": true,
+    "deny_dotdot": true,
+    "deny_backslash": true,
+    "deny_symlink_escape": true,
+    "max_patch_bytes": 524288,
+    "max_patch_files": 100,
+    "max_patch_changed_lines": 20000,
+    "max_file_read_bytes": 1048576
+  },
+  "git_ops": {
+    "agent_allowed": ["status", "read_file", "diff", "log", "branch_create"],
+    "human_only": ["push", "merge", "branch_delete", "remote_config", "protected_branch_write", "hooks_path_config", "patch_apply"],
+    "fail_closed": "闭集外操作名一律拒绝（不视为 human_only，防止误把未知操作当待办放行到人工面）",
+    "note": "patch_apply 归 WP2 类型化 Patch adapter 接线（当前为 human_only 占位）；push/merge/受保护分支直写永不入 agent 面（D2）"
+  },
+  "ci_bundle": {
+    "note": "固定受信任 CI bundle 执行器归 WP3（D3：不执行 Patch 夹带的任意脚本或测试装饰载荷）；本件只登记段位，WP1 不实现执行面",
+    "fail_closed": true
+  }
+}
