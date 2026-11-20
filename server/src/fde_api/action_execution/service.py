@@ -29,10 +29,21 @@ from sqlalchemy.orm import joinedload
 
 from fde_api.action_execution.executor import ActionExecutor, replay_payload_from_row, request_fingerprint
 from fde_api.action_execution.errors import ActionExecutionError
-from fde_api.action_execution.models import ActionCompensation, ActionExecution, ActionExecutionLog
+from fde_api.action_execution.models import (
+    ActionCompensation,
+    ActionExecution,
+    ActionExecutionLog,
+    ActionTaskNode,
+    ActionTaskRun,
+)
 from fde_api.action_execution.schemas import build_error, build_rollback_result
 from fde_api.auth.models import User
-from fde_api.control.access import authorize_ai_capability
+from fde_api.control.access import (
+    ACCESS_RANK,
+    CAPABILITY_REQUIREMENTS,
+    authorize_ai_capability,
+    effective_ai_access,
+)
 from fde_api.control.models import AutomationApproval
 from fde_api.errors import NOT_FOUND_MESSAGE
 from fde_api.extensions import db
@@ -83,10 +94,13 @@ class _DbIdempotencyGate:
                 raise ActionExecutionError("idempotency_in_flight", "同键执行在途，请退避后重试。")
             if row.status == "succeeded":
                 return replay_payload_from_row(row)
-            # failed/cancelled 终态行：复放原失败态（WP1 执行段不产此类行；腿留 WP2+）
+            # failed/cancelled 终态行（评审 D1 甲案）：复放**原失败响应**——status
+            # 与 error 随快照返回，executor 按原态构造（不再伪 replayed 空载荷）。
             return {
                 "execution_id": row.id,
+                "status": row.status,
                 "output": row.output_json or {},
+                "error": row.error_json,
                 "audit": row.audit_json,
                 "cost": row.cost_json,
                 "rollback": row.rollback_json,
@@ -136,6 +150,11 @@ class _DbApprovalGate:
             project = approval.project
             if project is None or project.org_id != request["org_id"]:
                 raise ActionExecutionError("approval_not_found", "审批请求不存在。", status=404)
+            # 审批绑定（评审 D2 甲案）：审批单登记的 capability/tool_name 须与
+            # AE 执行入口一致——任一 risk≥3 审批单不得跨动作复用（不匹配按 404
+            # 不泄露，与 not_found 同口径）。
+            if approval.capability != AE_CAPABILITY or approval.tool_name != "action_execution.execute":
+                raise ActionExecutionError("approval_not_found", "审批请求不存在。", status=404)
             if approval.requested_by_user_id != request["requester_id"]:
                 raise ActionExecutionError("approval_not_found", "审批请求不存在。", status=404)
             now = datetime.now(UTC)
@@ -184,24 +203,42 @@ def submit_action(
     request_org = payload.get("org_id")
     if not isinstance(request_org, str) or request_org != actor.org_id:
         raise ActionExecutionError("not_found", NOT_FOUND_MESSAGE)
+    # 能力档位 org 域校验（评审 D5 甲案：CAPABILITY_REQUIREMENTS 注册即须接线——
+    # dry-run/低风险真执行同样要求发起人具备注册档位；project 域校验在 L4 risk≥3）
+    level, _source = effective_ai_access(actor)
+    required = CAPABILITY_REQUIREMENTS.get(AE_CAPABILITY)
+    if required is None or ACCESS_RANK.get(level, -1) < ACCESS_RANK.get(required, 0):
+        raise ActionExecutionError("permission_revoked", "任务发起人不具备该操作权限。")
 
+    # 锁句柄：记录**本请求**锁行的 execution_id——finalize 只翻自己落的锁行
+    # （评审 P1：mismatch/in_flight 等锁前拒绝路径零 finalize，不误伤他人行）
+    lock_handle: dict[str, str | None] = {"execution_id": None}
     executor = ActionExecutor(
         idempotency_gate=_DbIdempotencyGate(),
         whitelist_gate=whitelist_gate,
         approval_gate=_DbApprovalGate(actor),
         dispatch=dispatch,
-        in_flight_lock=_make_in_flight_lock(payload),
+        in_flight_lock=_make_in_flight_lock(payload, lock_handle),
     )
     try:
         result = executor.execute(payload)
     except ActionExecutionError as exc:
-        # 锁行翻 failed 诚实终态（拒绝路径发生在锁前——锁行不存在则跳过，保持
-        # WP1「白名单/审批拒绝零落库」行为；dispatch 失败的锁行翻 failed 留痕）
-        _finalize_in_flight(payload, result=None, error=exc)
+        # 锁行翻 failed 诚实终态——仅当锁行确由本请求落下；dispatch 失败留痕
+        if lock_handle["execution_id"] is not None:
+            _finalize_in_flight(payload, result=None, error=exc, execution_id=lock_handle["execution_id"])
         raise
-    if result["status"] == "replayed":
-        return result  # 复放零新行（同键一行真身；锁行未被本请求触碰）
-    _finalize_in_flight(payload, result=result, error=None, rollback_supported=rollback_supported)
+    except Exception as exc:  # 闭集外兜底（Q8 映射）：锁行诚实 failed＋闭集码冒泡，防裸 500/锁残留
+        mapped = ActionExecutionError(
+            "tool_not_allowed", "执行段内部失败。", details={"reason": type(exc).__name__}
+        )
+        if lock_handle["execution_id"] is not None:
+            _finalize_in_flight(payload, result=None, error=mapped, execution_id=lock_handle["execution_id"])
+        raise mapped from None
+    if result["status"] != "succeeded":
+        # 复放零新行（同键一行真身）——replayed 快照与 D1 甲案 failed 复放快照
+        # 均零 finalize（终态已在库；真执行失败走上方 except 路径 finalize）
+        return result
+    _finalize_in_flight(payload, result=result, error=None, execution_id=lock_handle["execution_id"])
     return result
 
 
@@ -221,13 +258,17 @@ def _in_flight_row(payload: dict) -> ActionExecution | None:
         )
 
 
-def _make_in_flight_lock(payload: dict):
+def _make_in_flight_lock(payload: dict, lock_handle: dict[str, str | None] | None = None):
     """构造在途锁闭包（executor L5 后调用，入参 execution_id）。
 
     落 ``awaiting_approval`` 锁行；``IntegrityError``（并发败者撞
     ``uq_action_executions_org_idem``）→ 重读既有行按指纹裁决：异体 409
     ``mismatch``／同键 409 ``in_flight``（U2 A9：败者未到 dispatch，副作用恒 1）。
     先例：``agents/service.py:649-664`` 败者重读在途行。
+
+    ``lock_handle``（评审 P1）：锁成功时回填本请求锁行 ``execution_id``——
+    失败 finalize 只翻**本请求**落的锁行，锁前拒绝（mismatch/in_flight 等）
+    零 finalize，不误伤他人已成功行/并发赢家锁行。
     """
     fingerprint = request_fingerprint(payload)
 
@@ -264,6 +305,8 @@ def _make_in_flight_lock(payload: dict):
                 if row is not None and row.request_fingerprint != fingerprint:
                     raise ActionExecutionError("idempotency_mismatch", "同键请求体不一致（幂等指纹不符）。") from None
                 raise ActionExecutionError("idempotency_in_flight", "同键执行在途，请退避后重试。") from None
+        if lock_handle is not None:
+            lock_handle["execution_id"] = execution_id
 
     return lock
 
@@ -335,9 +378,13 @@ def _finalize_in_flight(
     *,
     result: dict[str, Any] | None,
     error: ActionExecutionError | None,
-    rollback_supported: bool = False,
+    execution_id: str | None = None,
 ) -> None:
     """锁行 → 终态（同一行状态机推进；行不存在＝拒绝发生在锁前，零落库跳过）。
+
+    ``execution_id``（评审 P1）：**本请求**锁行 id——finalize 只按它定位；
+    None（兼容旧测试直调）退化按 (org, key) 查行。mismatch/in_flight 等
+    锁前拒绝路径不传入（handle 未回填）＝零 finalize，不误伤他人行。
 
     ``db.session()`` 每次调用返回**全新 Session**（extensions.Database 非
     scoped）——查询与属性赋值必须用**同一 session 变量**（跨 session 的
@@ -349,12 +396,21 @@ def _finalize_in_flight(
         org = payload.get("org_id")
         if not isinstance(key, str) or not isinstance(org, str):
             return
-        row = session.scalar(
-            select(ActionExecution).where(
-                ActionExecution.idempotency_key == key,
-                ActionExecution.org_id == org,
+        if execution_id is not None:
+            row = session.scalar(
+                select(ActionExecution).where(
+                    ActionExecution.id == execution_id,
+                    ActionExecution.idempotency_key == key,
+                    ActionExecution.org_id == org,
+                )
             )
-        )
+        else:
+            row = session.scalar(
+                select(ActionExecution).where(
+                    ActionExecution.idempotency_key == key,
+                    ActionExecution.org_id == org,
+                )
+            )
         if row is None:
             return
         # autobegin 口径同 lock：属性赋值 + commit，异常 rollback（不得 with session.begin()）
@@ -403,9 +459,15 @@ def rollback_action(
     - **审批读法**（U1 ``x-rollback.exceptions.approval_required``）：AE1 单步
       补偿＝撤销既有被审批副作用（非新副作用），被原执行 ``approval_id`` 覆盖；
       risk≥3 真执行行 approval_id 缺失属 L4 不变量破缺 → 防御 403。
+    - **异常集补齐**（评审补强 G2-19：契约 ``x-rollback.exceptions`` 七码逐码
+      落地）：入参非法 → 422 ``validation_failed``；发起人对该动作能力已失权
+      → 403 ``permission_revoked``；同幂等键不同执行体 → 409
+      ``idempotency_mismatch``（其余四码既有实现不动）。
     """
     if compensator is None:
         compensator = NO_COMPENSATOR
+    _validate_rollback_input(execution_id=execution_id, reason=reason, idempotency_key=idempotency_key)
+    _assert_rollback_capability(actor)
     with _ae_session() as session:
         row = session.scalar(select(ActionExecution).where(ActionExecution.id == execution_id))
         if row is None or row.org_id != actor.org_id:
@@ -422,11 +484,56 @@ def rollback_action(
                 "error": batch.error_json,
             }
 
+        # 契约 x-rollback.exceptions：回滚请求携带的幂等键与同键既有请求体
+        # 不一致 → 409 idempotency_mismatch（同键指向另一执行体＝请求体漂移）。
+        if idempotency_key:
+            same_key_other = session.scalar(
+                select(ActionCompensation).where(
+                    ActionCompensation.rollback_key == idempotency_key,
+                    ActionCompensation.execution_id != execution_id,
+                )
+            )
+            if same_key_other is not None:
+                raise ActionExecutionError("idempotency_mismatch", "回滚幂等键与同键既有请求体不一致。")
+
         result = _compute_rollback(row, compensator)
         _persist_compensation_batch(
             row, result, actor=actor, reason=reason, idempotency_key=idempotency_key
         )
         return result
+
+
+def _validate_rollback_input(
+    *, execution_id: str, reason: str | None, idempotency_key: str | None
+) -> None:
+    """契约 ``x-rollback.exceptions``：入参非法 → 422 ``validation_failed``。
+
+    逐字对齐契约签名域：``execution_id`` 1..128；``reason`` ≤500；回滚幂等键
+    1..160（缺省由 execution_id 派生——缺省不校验）。路由面已拦 reason 超长
+    （routes.py 评审 P17），此处补服务面直调路径（内部调用/测试直调）。
+    """
+    if not isinstance(execution_id, str) or not execution_id.strip() or len(execution_id) > 128:
+        raise ActionExecutionError("validation_failed", "execution_id 非法（1..128 字符）。")
+    if reason is not None and (not isinstance(reason, str) or len(reason) > 500):
+        raise ActionExecutionError("validation_failed", "回滚原因超长（≤500 字符）。")
+    if idempotency_key is not None and (
+        not isinstance(idempotency_key, str) or not (1 <= len(idempotency_key) <= 160)
+    ):
+        raise ActionExecutionError("validation_failed", "回滚幂等键非法（1..160 字符）。")
+
+
+def _assert_rollback_capability(actor: User) -> None:
+    """契约 ``x-rollback.exceptions``：发起人对该动作能力已失权 → 403。
+
+    与提交面同档位口径（``effective_ai_access`` ＋ ``CAPABILITY_REQUIREMENTS``
+    的 ``action_execution.invoke``＝project_operator）；沿 Workbench
+    ``control/service.py:865-871`` 执行前权限重验同源判定。判定只依赖发起人
+    自身档位，不泄露目标执行是否存在（跨租户仍走 404 口径）。
+    """
+    level, _source = effective_ai_access(actor)
+    required = CAPABILITY_REQUIREMENTS.get(AE_CAPABILITY)
+    if required is None or ACCESS_RANK.get(level, -1) < ACCESS_RANK.get(required, 0):
+        raise ActionExecutionError("permission_revoked", "回滚发起人不具备该操作权限。")
 
 
 def _compute_rollback(row: ActionExecution, compensator: Any) -> dict[str, Any]:
@@ -538,3 +645,33 @@ def get_execution_row(execution_id: str) -> ActionExecution | None:
     """内部辅助（测试/运维检视）：按 id 取原始行，无租户过滤。"""
     with _ae_session() as session:
         return session.scalar(select(ActionExecution).where(ActionExecution.id == execution_id))
+
+
+def get_task_run(*, actor: User, execution_id: str) -> dict[str, Any]:
+    """多步运行详情（AE2-WP2；同租户；跨租户 404 复用关闭面文案不泄露存在性）。
+
+    编排契约 ``_ae2-execution-contract-v1.json`` x-tenant-isolation：服务端
+    强制 org_id 绑定——跨租户一律 404，与 AE1 单步面同口径。"""
+    with _ae_session() as session:
+        row = session.scalar(select(ActionTaskRun).where(ActionTaskRun.id == execution_id))
+        if row is None or row.org_id != actor.org_id:
+            raise ActionExecutionError("not_found", NOT_FOUND_MESSAGE)
+        return row.snapshot()
+
+
+def list_task_nodes(*, actor: User, execution_id: str) -> list[dict[str, Any]]:
+    """多步运行的节点清单（AE2-WP2；同租户；跨租户 404）。
+
+    节点行是**节点序列**的权威载体（编排契约 x-audit-and-cost：运行级只留
+    ``definition_sha256`` 指纹，节点级留 ``params_sha256``；图定义与参数
+    明文不落库）。节点产物（output）留在 AE1 执行行，编排表不复制。"""
+    with _ae_session() as session:
+        run = session.scalar(select(ActionTaskRun).where(ActionTaskRun.id == execution_id))
+        if run is None or run.org_id != actor.org_id:
+            raise ActionExecutionError("not_found", NOT_FOUND_MESSAGE)
+        rows = session.scalars(
+            select(ActionTaskNode)
+            .where(ActionTaskNode.run_id == execution_id)
+            .order_by(ActionTaskNode.created_at, ActionTaskNode.node_key)
+        )
+        return [row.snapshot() for row in rows]

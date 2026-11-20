@@ -19,6 +19,7 @@
 ## 续跑位置
 
 - R1c 开发树为 `D:/test/fde-workbench`，分支 `feat/goal-optimize-r1c-manifest`，原起点为 #544 合并提交；本线提交前于 2026-11-20 07:42 快进合流 `fork/main` 至 `cc636b9f`（#546，docs-only）。
+- PR #555 四项 CI 全绿后 ork/main 前进至 211a61b9；已合入本分支，冲突仅 CHANGELOG，按「本线完整节在前＋上游完整节在后」保留双节。合流后 Windows 13 例（4.633s）与 WSL 部署工具 70 例（20.224s）通过。
 - 原始提交 `212f26b2` 的 ruff、mypy 和完整服务端 pytest 钩子均通过。测试使用独立的临时 PostgreSQL 和 Redis 实例，两容器已清理。
 - R1b 以 `f0f16f4b` 为合流基线，`372e2a8f` 的 push 和 PR 两组 CI 均四项通过。#544 squash 合并为 `a8786f78`，本地 `main` 已快进至同一提交。合流后 Windows 协调器 13 例及 WSL 部署工具 57 例通过。
 - R1b-3 的生产前提和 R1c 的恢复验收分别见 BLOCKED 与 leader 任务书。

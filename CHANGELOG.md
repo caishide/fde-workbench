@@ -6,6 +6,33 @@
 
 - `scripts/deploy/recovery_manifest.py` 使用独立批准的清单指纹和固定文件角色，逐项核对三类服务镜像、迁移包、数据库备份与文件存储备份的长度及 SHA-256。
 - 测试覆盖清单与载荷同时更换、同长度字节损坏、缺件、重复字段、硬链接、空路径及 `..` 分量。隔离环境中的数据库、附件和加密配置恢复验收归 R1c-2。
+## [未发布] — 训练场 r2 遗留四项收口轮：存量假发现批量裁定＋读数入账＋标定挂账＋回滚脚本交付（2026-11-20）
+
+纯运维＋数据登记轮：零代码零迁移零路由零桌面（结构口径不变，唯一真身 `docs/audit/v3-workbench-inventory.json`）。承接 #548/#549（rubric-v3 上线）后的人工拍板遗留四项；蔡工 2026-11-20 指示「遗留问题可以使用交互式选择方式解决」，交互式选择未获答复 ⇒ 按「按推荐项执行＋逐项留痕可推翻」先例推进（#124/#125 委托先例、somwyn G8/G9 批注代录先例同族）。报告：`docs/audit/训练场r2-遗留四项收口报告-20261120.md`。
+
+- **①存量假发现批量裁定**：第五批 FA-01×19＋FA-02×19 共 38 条 open 发现批量 reject（38/38 HTTP 200，活体 `POST /simulation/findings/<id>/adjudicate`）。判据＝逐条重叠率重算（106 个 expected_missing 项无一命中 0.25 阈值——94 项有重叠不足阈值＋12 项字面零重叠且均为 rubric 通用训条句）＋判据已随 rubric-v3 退役 ⇒ 判据假阴性主体的历史口径残留；逐条 note 含重叠率证据、报告 sha256 指针与授权依据。回执真相层 `LC裁定回执-第五批FA01FA02-20261120.json`。
+- **③第五批读数入账 `regression_results`**：行 `3e385f7d`（套件 `r2-mfg-25-replay`，基线自比形态 proposal_id=None，before=after=第五批实测 25 run：mean_total 0.874／mean_model_total 0.7667／model_runs 25）。verdict=`no_change`（规则层自比 Δ=0）＋model_verdict=`insufficient_data`（rubric-v2 轴无实测带——缺省带 0.1049 属 rubric-v1 轴，跨轴不套用）。系统对 out-of-band 登记无 API 入口 ⇒ 容器内运维级写入，`compare`/`result_fingerprint` 用系统真身（落库字段形状与 `execute_regression_sync` 同构），fingerprint 的 config 加 `_out_of_band` 标记 ⇒ 不与系统未来真实自比撞幂等；场景集合与套件 25 场景逐位对齐已核；HTTP 读面回读 200。回执真相层 `回归结果登记回执-第五批读数-20261120.json`。
+- **④rubric-v3 轴噪声带标定（挂账交蔡工）**：方法＝锚点 IMP-SOMWYN-E2E 同 run 反复 evaluate n=3 取 model_total 极差（`run_batch.py` 锚点模式首跑＋对既有锚点 run `3fc5617f` 重试，60s 间隔）——五轮调用全 `ai_rate_limited`；审计取证 11-19 17:57 后模型通道零成功调用且 16 小时空窗后首调即败 ⇒ 判定 MiniMax 配额/限流外部闸（同第五批先例）。读数回执真相层 `rubricv3-noise-20261120/`。恢复两步（脚本已备于仓外 zcode-tmp）：蔡工补配额 → `calibrate_v3_band.py`（3 轮取极差）→ `archive_v3_band.py`（band 存档进**新建**套件 `r2-mfg-25-replay-v3-noiseband` 的 `baseline_config.noise_band`，axis=`rubric-v3|model:server`——旧套件存档轴 rubric-v1 ⇒ v3 复判定必 409，复判定须新建套件）。
+- **②三挂错靶覆层回滚（脚本交付，执行权蔡工亲输密码）**：PROP-BE8D36B1／PROP-4F648E3F／PROP-E17DAD62 的 overlay purpose（discovery_extract／simulation_diagnostic_judge／plans_delivery_plan_draft）与 workbench 三腿实际 purpose 不咬合，2026-11-18 发布以来注入计数＝0（近 30 天审计分桶复核）⇒ 退役零回归风险；连带退役同源三 lesson 为预期（BE8D36B1「25/25 全因访谈不足」已被第五批推翻、4F648E3F 判据已随 rubric-v3 剔除、E17DAD62 的 FA-03 已由生效载体 PROP-A44B5646 处置；三 lesson 平台级注入 agent 上下文〔industries 空＝全行业〕，退役有真实正收益）。保留面（PROP-BE6DE878 lesson＋`6ef23be1`/`c6eccc50` 两生效 workbench 覆层）预检强校验，任一预检不满足即中止。脚本：`rollback_three_overlays.py`（只读预检 → 输入 YES → getpass 亲输 admin 密码 → 逐提案 rollback：published→approved＋lesson/overlay retired＋OperationEvent 留痕）。
+- **运行时数据面变化（唯一）**：mock 锚点 run `3fc5617f`（seed 20301120）＋评估行 2 行（deterministic rubric-v3＝pass/1.0；model rubric-v3＝unavailable/ai_rate_limited 如实落库）＋`regression_results` +1 行。零迁移零路由零表。
+
+挂账：④待蔡工补 MiniMax 配额后两步闭环；②待蔡工亲输密码执行回滚。
+
+## [未发布] — 训练场 r2 真相重估轮（F 面）：规则层剔除 D1-01/D2-01——rubric-v3 口径变更（2026-11-20）
+
+第五批（rubric-v2 统一 seed 段，25/25 completed）读数暴露：残余失败发现 FA-01×19＋FA-02×19 的主体是**判据假阴性**，不是模型缺陷。逐条取证（89 条 must_identify 现算）：D1-01「识别出客户真实问题」与 D2-01「根因覆盖度」在规则层是**同一计算**（同一 `hit_identify`、同一 textmatch 0.25 字面重叠，占 D1 权重 0.5＋D2 权重 0.6），而真模型对同一语义的自由措辞普遍落在 0.10–0.25 重叠区间 ⇒ **58% 的 MI 有重叠却被拒**（完全零重叠仅 7%）；传导核对证伪「漏识别」假设（披露事实 3.28/run vs root_causes 3.32/run，0/25 漏条目）。与 D3-01 同族（字面匹配冒充语义判定）但危害更大：非恒 0 且**挂失败码**（`CRITERION_TO_FAILURE` 的 D1-01→FA-01／D2-01→FA-02 ⇒ 假发现成批 confirmed 入库——旧链路靠 D1-01 的 expected_missing 双向证据「永远 confirmed」绕过提案闸）。
+
+本轮处置（蔡工 2026-11-20 拍板「按推荐实施」＝真相重估报告意见 1＋2）：
+
+- `server/src/fde_api/simulation/evaluation_rules.py`：`RUBRIC_VERSION` 升 **rubric-v3**；删除 D1-01/D2-01 两判据块（与 #540 剔 D3-01 同构）；D1 按 D1-02/D1-03、D2 按 D2-02 按已核实判据权重归一；`textmatch` 退出规则层消费面（库与工具校准钉保留）。
+- `server/src/fde_api/simulation/failure_analyzer.py`：`CRITERION_TO_FAILURE` 摘除 D1-01/D2-01 两映射；D1-02→FA-01、D2-02→FA-02 保留（零披露/零结构化仍应报——机械可验证面）。
+- MI 覆盖的语义判定交模型层 L-B（评分基准块已把 must_identify 整句给模型逐项判，输出契约 `MI-n` 即落点——信息不丢失，弱判定退出）。
+- 测试：NEW `server/tests/test_simulation_rubric_v3.py` 12 钉（版本／判据边界／D1+D2 归一／失败码闭集／HF-07 不受影响／噪声带轴纪律沿用）＋4 处换代：`test_simulation_textmatch.py` 判据钉（三桶字面覆盖判据全不在规则层）、`test_simulation_rubric_v2.py` 版本钉改「不回退」＋轴钉版本无关化、`test_simulation_regression.py` 三处轴字面量升 v3、`test_simulation_improvement*.py`／`test_simulation_e2e.py` 夹具换代（mock 零披露只产 hypothesis ⇒ 走 L-C 裁定面显式 confirm——把旧链路绕闸的假 confirmed 机制换成真实裁定流）。
+- 验证：定向 13 套件 **185 passed**；mypy 277/277 零新增；ruff 绿；行数预算/台账同步/蓝图同步钉绿（evaluation_rules 672→642 行只减不增）；**变异四连全红→还原复绿**（复活 D1-01／复活映射／版本回写／破坏归一）。
+
+★**口径变更**：D1/D2 维度分与总分刻度随之变化 ⇒ 历史读数按版本双口径并列登记、不跨轴直比；v3 轴无实测噪声带（缺省带标签留在实测轴 `rubric-v1|model:server`）⇒ 模型层 `insufficient_data`。★**效果指标纪律**：FA-01/FA-02 条数与 D1/D2 维度分在 v3 前的历史批不可用作效果指标（分母被假阴性污染）；效果判据改用披露事实数／提取率／传导率＋模型层 verdict。零迁移零路由零表。
+
+**活体部署回执（2026-11-20，合并后）**：从 fork/main `80563f13` 快进的隔离部署树 `D:/test/fde-wt-rubricv2-deploy` 重建三镜像（api `b4cb6a53`／worker `04e78281`／scheduler `4a5f98e0`）＋`up -d --force-recreate`；接管检查器零 FAIL（compose 插值 1 变量＋关键键 6 全在位、migrations 挂载源在场）。**三验全绿**：①活体 `url_map` **542**（non-static 541）②容器内 `alembic current`＝**`e2b4d6f8a0c2` (head)**，与从本工作树迁移文件现算的单 head 逐位一致（本次补跑 upgrade 应用三条待迁移 `c7d1e3a5b9f2`／`d9e3f5a7c1b9`／`e2b4d6f8a0c2`——并发线 AE1-WP1/WP2/WP4 的新增表，DB 原停在 `f0a1b2c3d4e5`）③三镜像 ID 与本工作树构建产物逐位一致；容器内 `RUBRIC_VERSION="rubric-v3"` 在位、`CRITERION_TO_FAILURE` 已无 D1-01/D2-01；api/worker/scheduler 三容器 healthy＋ready/live 200。★**教训 ⑯ 复现并加固**：部署前现役旧镜像连 `alembic current` 都跑不起来（`ModuleNotFoundError: No module named 'fde_api.action_execution'`）——「有值 ≠ =head」的更强形态是「**连值都取不到**」⇒ 部署顺序必须是「先重建容器、再跑 upgrade、再验 head」，且 head 必须由迁移文件现算（merge 迁移多父，单纯按 down_revision 首项取会误判多 head）。★**口径现测校正**：`docs/audit/v3-workbench-inventory.json`（唯一机器可读真身）现测＝**541 路由／57 蓝图／166 表／96 迁移，单头 `e2b4d6f8a0c2`**（并发线 #538 AE1-WP1–WP4 与 #543 AF2-WP5 推进结构面）；AGENTS「最新终态速览」段同步校正，各轮入口数字仍为「当轮基线值」，引用前须现测该 JSON。
 
 ## [未发布] — 优化 R1b：隔离验证部署协调（2026-11-19）
 

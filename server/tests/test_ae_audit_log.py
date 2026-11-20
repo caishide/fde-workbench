@@ -1,5 +1,5 @@
 """AE1-WP4：审计日志与成本登记（53 号 §3 WP4；契约 U1 ``$defs/AuditObject`` /
-``$defs/CostObject`` v1.0.3 FROZEN）。
+``$defs/CostObject`` v1.0.6 FROZEN）。
 
 WP4 交付面＝``action_execution_logs`` 表（append-only 迁移）＋审计写入函数＋
 本文件钉＋敏感键 grep 闸。验收六条逐条落钉（53 号 §3 WP4 行）：
@@ -168,7 +168,7 @@ def _make_approval(db_session, world, *, params: dict[str, Any]) -> Any:
         reviewed_by_user_id=world["actor"].id,
         request_key=f"ae-{uuid4().hex[:12]}",
         capability="action_execution.invoke",
-        tool_name="mock.email.send",
+        tool_name="action_execution.execute",  # 评审 D2 甲案：审批绑定比对
         arguments_json=params,
         arguments_sha256=_sha(params),
         risk_level=3,
