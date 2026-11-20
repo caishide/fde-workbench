@@ -309,24 +309,49 @@ class TestPatchApply:
         assert _git(sample_repo, "status", "--porcelain") == ""
         assert (sample_repo / "ontology" / "once.yaml").read_text(encoding="utf-8") == "once\n"
 
-    def test_failed_apply_rolls_back_clean(self, client, af3_world, settings, binding_id, sample_repo) -> None:
-        """应用中途失败（create 目标为已存在目录）→ 逆序回滚＋工作树零残留＋
-        RepoPatch failed 行留痕（不冒充成功）。"""
+    def test_create_on_existing_target_rejected(self, client, af3_world, settings, binding_id, sample_repo) -> None:
+        """评审 M8：create 语义守卫——目标已存在（目录/文件）→ 闸前 422，
+        不落行（拒绝路径不落库纪律）。"""
+        plan = _plan(
+            [{"path": "rules", "operation": "create", "content": "collides-with-directory\n"}],
+            base_commit=self._head(sample_repo),
+        )
+        resp = _post_patch(client, af3_world, settings, binding_id, plan)
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+        assert _git(sample_repo, "status", "--porcelain") == ""
+
+    def test_failed_apply_rolls_back_clean(self, client, af3_world, settings, binding_id, sample_repo, monkeypatch) -> None:
+        """评审 H1/M4：应用执行期失败（commit 步骤 GitFailed）→ 逆序回滚＋
+        工作树零残留＋HEAD 不前进＋RepoPatch failed 行留痕；**failed 行重放
+        按原失败快照复放（不伪 replayed）且同 patch_id 不可重试**。"""
+        from fde_api.solution_repo.git_ops import GitFailed, GitRunner
+
         base = self._head(sample_repo)
         plan = _plan(
             [
                 {"path": "ontology/first-ok.yaml", "operation": "create", "content": "ok\n"},
-                {"path": "rules", "operation": "create", "content": "collides-with-directory\n"},
+                {"path": "ontology/second-ok.yaml", "operation": "create", "content": "ok2\n"},
             ],
             base_commit=base,
         )
+        orig_run = GitRunner.run
+
+        def _fail_commit(self, *args, **kwargs):
+            if args and args[0] == "commit":
+                raise GitFailed(" ".join(args), 128, "simulated commit failure")
+            return orig_run(self, *args, **kwargs)
+
+        monkeypatch.setattr(GitRunner, "run", _fail_commit)
         resp = _post_patch(client, af3_world, settings, binding_id, plan)
+        monkeypatch.undo()
         assert resp.status_code == 500
         assert resp.get_json()["error"]["code"] == "git_operation_failed"
-        # 零残留：first-ok.yaml 被回滚、工作树干净
+        # 零残留：两文件被回滚、工作树干净、HEAD 未前进
         assert not (sample_repo / "ontology" / "first-ok.yaml").exists()
+        assert not (sample_repo / "ontology" / "second-ok.yaml").exists()
         assert _git(sample_repo, "status", "--porcelain") == ""
-        assert self._head(sample_repo) == base  # HEAD 未前进
+        assert self._head(sample_repo) == base
         # failed 行留痕（详情面可见）
         detail = client.get(
             f"/api/v1/solution-repo/bindings/{binding_id}/patches/{plan['patch_id']}",
@@ -334,6 +359,33 @@ class TestPatchApply:
         )
         assert detail.status_code == 200
         assert detail.get_json()["data"]["status"] == "failed"
+        # failed 重放＝原失败快照复放（不伪 replayed；HTTP 200 data.status=failed）
+        replay = _post_patch(client, af3_world, settings, binding_id, plan)
+        assert replay.status_code == 200
+        assert replay.get_json()["data"]["status"] == "failed"
+        assert replay.get_json()["data"]["error_code"] == "git_operation_failed"
+
+    def test_idempotency_mismatch_on_different_plan(self, client, af3_world, settings, binding_id, sample_repo) -> None:
+        """评审 H2：同 patch_id 异体 plan → 409 idempotency_mismatch（AE1 同键
+        异体口径——同键不同内容不得静默复放旧结果）。"""
+        base = self._head(sample_repo)
+        patch_id = "af3-patch-" + uuid.uuid4().hex[:8]
+        first = _plan(
+            [{"path": "ontology/v1.yaml", "operation": "create", "content": "v1\n"}],
+            base_commit=base,
+        )
+        first["patch_id"] = patch_id
+        ok = _post_patch(client, af3_world, settings, binding_id, first)
+        assert ok.status_code == 201
+        new_head = self._head(sample_repo)
+        second = _plan(
+            [{"path": "ontology/v2.yaml", "operation": "create", "content": "v2\n"}],
+            base_commit=new_head,
+        )
+        second["patch_id"] = patch_id  # 同 patch_id、不同 entries/base
+        mismatch = _post_patch(client, af3_world, settings, binding_id, second)
+        assert mismatch.status_code == 409
+        assert mismatch.get_json()["error"]["code"] == "idempotency_mismatch"
 
     def test_cross_tenant_404(self, client, af3_world, settings, binding_id) -> None:
         plan = _plan(
@@ -478,3 +530,143 @@ class TestReadFileTocTou:
         )
         assert resp.status_code == 422
         assert resp.get_json()["error"]["code"] == "symlink_escape_rejected"
+
+
+# ---- ⑥ 评审批次补钉（vg 三大项＋M1/M2 专项） -------------------------------------
+
+
+class TestApplyNarrowedBindingAndSymlink:
+    """评审 M1（vg 预验证：删除 apply 面绑定级 allow_roots 循环全套件绿——
+    本组负向钉让循环真实可观测）。"""
+
+    def test_apply_rejected_on_narrowed_binding(self, client, af3_world, settings, sample_repo) -> None:
+        """收窄绑定（allow_roots=["ontology/"]）上写 rules/ → 绑定级 422
+        outside_allow_roots（validate 阶段用快照全闭集、此处由绑定级循环拒绝）。"""
+        binding_id = _bind(
+            client, af3_world, settings, sample_repo,
+            allow_roots=["ontology/"],
+        )
+        plan = _plan(
+            [{"path": "rules/x.json", "operation": "create", "content": "x\n"}],
+            base_commit=_git(sample_repo, "rev-parse", "HEAD"),
+        )
+        resp = _post_patch(client, af3_world, settings, binding_id, plan)
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "outside_allow_roots"
+
+    def test_apply_symlink_entry_rejected(self, client, af3_world, settings, sample_repo, tmp_path) -> None:
+        """apply 面 symlink 实探负向钉（S-AF3-05 写面）：条目目标为仓外链接
+        → 422 symlink_escape_rejected（Windows 无特权 skip——CI ubuntu 实跑）。"""
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        outside = tmp_path / "outside-w.yaml"
+        outside.write_text("w", encoding="utf-8")
+        try:
+            (sample_repo / "ontology" / "link-w.yaml").symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlink 特权缺失（{exc}）——CI ubuntu-24.04 实跑")
+        plan = _plan(
+            [{"path": "ontology/link-w.yaml", "operation": "update", "content": "pwn\n"}],
+            base_commit=_git(sample_repo, "rev-parse", "HEAD"),
+        )
+        resp = _post_patch(client, af3_world, settings, binding_id, plan)
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "symlink_escape_rejected"
+        assert outside.read_text(encoding="utf-8") == "w"  # 仓外文件未被穿透
+
+
+class TestGrantAllSurfaces:
+    """评审 M2（vg 预验证：grant 六面仅 patch_apply 被钉——删除其余五面
+    _ensure_grant 接线全套件绿）。grant=["status"] 绑定上，其余五面一律 403。"""
+
+    @pytest.fixture
+    def restricted_binding(self, client, af3_world, settings, sample_repo) -> str:
+        return _bind(
+            client, af3_world, settings, sample_repo,
+            grant_json={"ops": ["status"]},
+        )
+
+    def _assert_forbidden(self, client, af3_world, settings, binding_id: str, method: str, path: str, **kwargs) -> None:
+        resp = getattr(client, method)(path, headers=_auth(af3_world["actor"], settings), **kwargs)
+        assert resp.status_code == 403, (method, path, resp.status_code)
+        assert resp.get_json()["error"]["code"] == "tool_not_allowed"
+
+    def test_read_file_forbidden(self, client, af3_world, settings, restricted_binding) -> None:
+        self._assert_forbidden(
+            client, af3_world, settings, restricted_binding, "get",
+            f"/api/v1/solution-repo/bindings/{restricted_binding}/files",
+            query_string={"path": "ontology/equipment.yaml"},
+        )
+
+    def test_branches_forbidden(self, client, af3_world, settings, restricted_binding) -> None:
+        self._assert_forbidden(
+            client, af3_world, settings, restricted_binding, "post",
+            f"/api/v1/solution-repo/bindings/{restricted_binding}/branches",
+            json={"name": "af3/x"},
+        )
+
+    def test_changes_forbidden(self, client, af3_world, settings, restricted_binding) -> None:
+        self._assert_forbidden(
+            client, af3_world, settings, restricted_binding, "get",
+            f"/api/v1/solution-repo/bindings/{restricted_binding}/changes",
+        )
+
+    def test_commits_forbidden(self, client, af3_world, settings, restricted_binding) -> None:
+        self._assert_forbidden(
+            client, af3_world, settings, restricted_binding, "get",
+            f"/api/v1/solution-repo/bindings/{restricted_binding}/commits",
+        )
+
+
+class TestAf3BotIdentity:
+    """评审 vg3：受控提交身份契约（af3-bot——不取宿主用户；git_ops env 注入）。"""
+
+    def test_apply_commit_author_is_af3_bot(self, client, af3_world, settings, sample_repo) -> None:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        plan = _plan(
+            [{"path": "ontology/who.yaml", "operation": "create", "content": "who\n"}],
+            base_commit=_git(sample_repo, "rev-parse", "HEAD"),
+        )
+        resp = _post_patch(client, af3_world, settings, binding_id, plan)
+        assert resp.status_code == 201
+        applied = resp.get_json()["data"]["applied_commit"]
+        author = _git(sample_repo, "show", "-s", "--format=%an|%ae", applied)
+        assert author == "af3-bot|af3-bot@workbench.local"
+
+
+class TestVerifyResolved:
+    """评审 D1 清偿有效性返工（auditor：monkeypatch 手法被 check_path_fs 前拦，
+    「打开后复核」代码路径未被测试执行）——helper 直测四判定，复核代码路径
+    真实可观测；HTTP 层仓内链接→保护区形态由 TestReadFileTocTou 承载。"""
+
+    def test_escape_outside_root(self) -> None:
+        from pathlib import Path as P
+        from fde_api.solution_repo.path_guard import verify_resolved
+
+        v = verify_resolved(P("Z:/out"), P("C:/ws"), "ontology/x.yaml", ("ontology/",))
+        assert v.ok is False and v.code == "symlink_escape"
+
+    def test_protected_landing_rejected(self, tmp_path: Path) -> None:
+        """仓内链接解析落点＝.git/config（不逃逸但落保护区）→ 拒（评审盲 H2）。"""
+        from pathlib import Path as P
+        from fde_api.solution_repo.path_guard import verify_resolved
+
+        ws = P(tmp_path)
+        v = verify_resolved(ws / ".git" / "config", ws, "ontology/x.yaml", ("ontology/",))
+        assert v.ok is False and v.code == "protected_path"
+
+    def test_outside_allow_roots_landing_rejected(self, tmp_path: Path) -> None:
+        """仓内链接解析落点＝allow_roots 外（server/）→ 拒。"""
+        from pathlib import Path as P
+        from fde_api.solution_repo.path_guard import verify_resolved
+
+        ws = P(tmp_path)
+        v = verify_resolved(ws / "server" / "app.py", ws, "ontology/x.yaml", ("ontology/",))
+        assert v.ok is False and v.code == "outside_allow_roots"
+
+    def test_normal_landing_accepted(self, tmp_path: Path) -> None:
+        from pathlib import Path as P
+        from fde_api.solution_repo.path_guard import verify_resolved
+
+        ws = P(tmp_path)
+        v = verify_resolved(ws / "ontology" / "x.yaml", ws, "ontology/x.yaml", ("ontology/",))
+        assert v.ok is True

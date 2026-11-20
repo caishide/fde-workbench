@@ -143,6 +143,19 @@ def check_path_fs(
     return _OK
 
 
+def verify_resolved(real_path: str | Path, root: Path, rel_path: str, allow_roots: tuple[str, ...]) -> Verdict:
+    """评审 D1/H2 复核 helper（读面打开后／写面写入前共用）：
+    **解析真实路径**须 (a) 仍在工作区内（逃逸拒）且 (b) 相对工作区的路径过
+    check_path 四拒＋allow_roots 全判（仓内链接 ontology/x.yaml→.git/config
+    或 →server/ 这类「解析不逃逸但落入保护/越界区」同拒——probe 面 check_path_fs
+    只判逃逸不判落点，本 helper 补落点维度）。"""
+    real = Path(real_path)
+    if not real.is_relative_to(root):
+        return Verdict(False, CODE_SYMLINK, f"符号链接逃逸（复核）：解析后越出工作区 {real}")
+    rel = real.relative_to(root).as_posix()
+    return check_path(rel, allow_roots=allow_roots)
+
+
 @dataclass(frozen=True)
 class PatchEntry:
     """类型化 Patch 条目最小形状（WP2 升格为完整 PatchPlan 契约；本件只承载

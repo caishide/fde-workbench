@@ -97,7 +97,9 @@ def apply_patch(binding_id: str):
     result = service.apply_patch(
         actor=g.current_user, binding_id=binding_id, payload=request.get_json(silent=True)
     )
-    status = 200 if result.get("status") == "replayed" else 201
+    # applied（新应用）＝201；replayed/failed 复放＝200（AE1 同键同态口径——
+    # failed 复放按原失败快照返回，不冒充新成功）。
+    status = 201 if result.get("status") == "applied" else 200
     return jsonify({"data": result, "error": None}), status
 
 

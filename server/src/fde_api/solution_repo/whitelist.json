@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "artifact": "AF3 仓工具面白名单 v2",
   "generated_at": "2026-11-21",
-  "status": "FROZEN-v2（2026-11-21 WP2 落位升版：git_ops 封闭集变更——patch_apply 自 human_only 转 agent_allowed（20 号 §2 D2 已批「Agent 可触发：读/建分支/应用 patch/查状态」授权链齐；v1.0.0 系 WP1 时点占位）。白名单属安全红线件：规则封闭集合，后续变更须审核后升 v3；运行时不得动态注册路径或 Git 操作。",
+  "status": "FROZEN-v2（2026-11-21 WP2 落位升版：git_ops 封闭集变更——patch_apply 自 human_only 转 agent_allowed〔20 号 §2 D2 已批「Agent 可触发：读/建分支/应用 patch/查状态」授权链齐；v1.0.0 系 WP1 时点占位〕）。白名单属安全红线件：规则封闭集合，后续变更须审核后升 v3；运行时不得动态注册路径或 Git 操作。",
   "authority": {
     "work_order": "docs/ai-fde/20-af3-work-order.md §2 D2（patch_apply 入 agent 面）、§3 WP2（类型化 Patch adapter）",
     "negative_rule": "docs/ai-fde/04-architecture-and-governance.md §3.3 v0.2 A1（Patch 能写 hook = 下一次人工 git 操作替 Agent 执行代码）",

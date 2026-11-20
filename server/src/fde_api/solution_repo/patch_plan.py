@@ -72,9 +72,11 @@ def validate_patch_plan(payload: Any, *, allow_roots: tuple[str, ...]) -> dict[s
         path = raw["path"]
         operation = raw["operation"]
         content = raw.get("content")
-        if operation not in OPERATIONS:
+        if not isinstance(path, str):
+            raise _reject("entry path 须为字符串。", details={"path": path})
+        if not isinstance(operation, str) or operation not in OPERATIONS:
             raise _reject(
-                f"operation 须为 {sorted(OPERATIONS)} 闭集内值。",
+                f"operation 须为 {sorted(OPERATIONS)} 闭集内字符串值。",
                 details={"operation": operation, "path": path},
             )
         if operation == "delete":
@@ -84,6 +86,14 @@ def validate_patch_plan(payload: Any, *, allow_roots: tuple[str, ...]) -> dict[s
         else:
             if not isinstance(content, str):
                 raise _reject(f"{operation} 条目 content 须为字符串。", details={"path": path})
+            try:
+                content.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                # 评审 M10：未配对代理等不可 UTF-8 编码内容前置 422（防写入面裸 500）
+                raise _reject(
+                    f"content 含不可 UTF-8 编码字符：{exc}",
+                    details={"path": path},
+                ) from None
             entry_content = content
         entries.append({"path": path, "operation": operation, "content": entry_content})
 
@@ -97,6 +107,15 @@ def validate_patch_plan(payload: Any, *, allow_roots: tuple[str, ...]) -> dict[s
                 f"entry 路径被路径白名单拒绝：{shape.reason}",
                 details={"path": entry["path"], "reason": shape.reason},
             )
+    seen_paths: set[str] = set()
+    for e in entries:
+        if e["path"] in seen_paths:
+            raise _reject(
+                f"entries 含重复 path（交叠语义未定义）：{e['path']}",
+                details={"path": e["path"]},
+            )
+        seen_paths.add(e["path"])
+
     patch_entries = tuple(
         PatchEntry(
             path=e["path"],

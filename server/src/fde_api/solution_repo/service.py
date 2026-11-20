@@ -25,6 +25,7 @@ branch_create 计数累加。结构化审计台账（actor/时刻/逐事件）�
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 from contextlib import contextmanager
@@ -40,7 +41,13 @@ from fde_api.solution_repo.git_boundary import resolve_op
 from fde_api.solution_repo.git_ops import GitFailed, GitRunner
 from fde_api.solution_repo.models import RepoBinding, RepoPatch
 from fde_api.solution_repo.patch_plan import validate_patch_plan
-from fde_api.solution_repo.path_guard import Verdict, verdict_error, check_path, check_path_fs
+from fde_api.solution_repo.path_guard import (
+    Verdict,
+    verdict_error,
+    verify_resolved,
+    check_path,
+    check_path_fs,
+)
 from fde_api.solution_repo.snapshot import load_whitelist
 
 _BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
@@ -86,18 +93,31 @@ def _resolve_op(op: str) -> None:
 def _ensure_grant(row: RepoBinding, op: str) -> None:
     """绑定级 grant 闸（评审 D3 清偿；04 §3.3 绑定五要素之「执行 grant」）：
     ``grant_json`` 为 null＝全量 agent_allowed；否则 op 必须在 ``ops`` 子集内，
-    越权 → 403 tool_not_allowed（二道闸之后的第三道闸）。"""
+    越权 → 403 tool_not_allowed（二道闸之后的第三道闸）。
+
+    评审 M11 fail-closed：损坏形态（非 dict／缺 ops／ops 非字符串元素）一律
+    403 拒绝该操作——空 dict ``{}`` 语义为「声明了 grant 但未授权任何 op」，
+    **不是**全量放行（fail-open 缺口的反向封堵）。"""
     grant = row.grant_json
-    if not grant:
+    if grant is None:
         return
-    ops = grant.get("ops") if isinstance(grant, dict) else None
-    if not isinstance(ops, list):
-        raise SolutionRepoError("git_operation_failed", "绑定 grant_json 形态损坏（fail-closed）。")
-    if op not in ops:
+    if not isinstance(grant, dict) or not isinstance(grant.get("ops"), list):
+        raise SolutionRepoError(
+            "tool_not_allowed",
+            "绑定 grant_json 形态损坏（fail-closed 拒绝操作）。",
+            details={"op": op},
+        )
+    if not all(isinstance(op_name, str) for op_name in grant["ops"]):
+        raise SolutionRepoError(
+            "tool_not_allowed",
+            "绑定 grant_json.ops 含非字符串元素（fail-closed 拒绝操作）。",
+            details={"op": op},
+        )
+    if op not in grant["ops"]:
         raise SolutionRepoError(
             "tool_not_allowed",
             f"绑定 grant 未授权该操作：{op}",
-            details={"op": op, "granted_ops": ops},
+            details={"op": op, "granted_ops": grant["ops"]},
         )
 
 
@@ -205,10 +225,22 @@ def bind_repo(actor: Any, payload: Any, *, repo_base: str) -> dict[str, Any]:
     grant_json = payload.get("grant_json")
     if grant_json is not None:
         # 评审 D3 清偿：grant 须为 {"ops": [...]} 且 ops ⊆ agent_allowed 封闭集
-        # （human_only/push 永不入 grant；越集 422）。
+        # （human_only/push 永不入 grant；越集 422）；**键集精确**——未知兄弟键
+        # 拒（与 PatchPlan 同款纪律，评审 M11 双标修复）；ops 元素须为字符串。
         if not isinstance(grant_json, dict) or not isinstance(grant_json.get("ops"), list):
             raise SolutionRepoError(
                 "validation_failed", 'grant_json 须为 {"ops": [...]} 形态。', details={"grant_json": grant_json}
+            )
+        unknown_keys = sorted(set(grant_json) - {"ops"})
+        if unknown_keys:
+            raise SolutionRepoError(
+                "validation_failed",
+                f"grant_json 含未登记键（键集精确）：{unknown_keys}",
+                details={"unknown_keys": unknown_keys},
+            )
+        if not all(isinstance(op_name, str) for op_name in grant_json["ops"]):
+            raise SolutionRepoError(
+                "validation_failed", "grant_json.ops 元素须为字符串。", details={"grant_json": grant_json}
             )
         agent_allowed = set(_load_whitelist_or_fail()["git_ops"]["agent_allowed"])
         outside = sorted({op for op in grant_json["ops"] if op not in agent_allowed})
@@ -396,17 +428,17 @@ def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
     flags |= getattr(os, "O_BINARY", 0)
     try:
         fd = os.open(str(target), flags)
+    except FileNotFoundError:
+        # 评审 L1：is_file 与 open 之间目标消失（正是本修复瞄准的竞态族）→ 404
+        raise SolutionRepoError("not_found", "文件不存在。", details={"path": rel_path}) from None
     except OSError as exc:
         raise SolutionRepoError("git_operation_failed", f"文件打开失败：{exc}", details={"path": rel_path}) from None
     try:
-        # 评审 D1：打开后复核——解析真实路径仍须在工作区内（TOCTOU 收口）。
-        real = Path(os.path.realpath(str(target)))
-        if not real.is_relative_to(root):
-            raise SolutionRepoError(
-                "symlink_escape_rejected",
-                "符号链接逃逸拒绝（打开后复核）。",
-                details={"path": rel_path, "resolved": str(real)},
-            )
+        # 评审 D1：打开后复核（真实路径仍须在工作区内 **且** 不落入保护路径
+        # ——仓内链接 ontology/x.yaml→.git/config 同拒，评审盲 H2）。
+        verify = verify_resolved(os.path.realpath(str(target)), root, rel_path, allow_roots)
+        if not verify.ok:
+            raise _verdict_error(verify, rel_path)
         size = os.fstat(fd).st_size
         if size > max_bytes:
             raise SolutionRepoError(
@@ -414,7 +446,13 @@ def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
                 f"文件超出读取上限（{size} > {max_bytes} 字节）。",
                 details={"path": rel_path, "size": size, "max_bytes": max_bytes},
             )
-        raw = os.read(fd, max_bytes)
+        raw = os.read(fd, max_bytes + 1)  # 评审 L2：读 max+1 检测读窗口内增长
+        if len(raw) > max_bytes:
+            raise SolutionRepoError(
+                "validation_failed",
+                f"读取窗口内文件增长超限（> {max_bytes} 字节）。",
+                details={"path": rel_path, "max_bytes": max_bytes},
+            )
     finally:
         os.close(fd)
     content = raw.decode("utf-8", errors="replace")
@@ -496,11 +534,19 @@ def _fail_row(org_id: str, binding_id: str, plan_id: str, plan_sha: str, entry_c
 
 
 def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
-    """patch_apply 面（白名单 v2）：二道闸→幂等查→grant→形状面→fs 实探→
-    dirty→base_commit 匹配→原子写入→受控 add/commit→applied 行。
+    """patch_apply 面（白名单 v2）：二道闸→形状面→幂等查→grant→fs 实探→
+    dirty→base_commit 匹配→原子写入（写入前复核）→受控 add/commit→applied 行。
 
-    失败路径逆序回滚（新文件删、改动文件恢复原内容）＋git reset——
-    **零残留**（porcelain 恢复空），RepoPatch failed 行留痕不冒充成功。
+    幂等（AE1 同构）：同 (org, binding, patch_id) 重放——applied 行且
+    ``plan_sha256`` 一致 → 200 replayed 复放首次结果；指纹不一致 → 409
+    idempotency_mismatch（AE1 同键异体口径）；**failed 行按原失败快照复放
+    （不伪 replayed）且同 patch_id 不可重试**（AE1：failed 终态行复放原失败
+    响应——重试须换新 patch_id）。
+
+    失败路径逆序回滚（新文件删、改动文件恢复原内容）＋git reset；``committed``
+    标志：commit 成功后不再恢复文件（防 HEAD 已前进仍写回旧字节）；执行期
+    域错误回滚后落 failed 行（审计留痕纪律）；``workspace_root == repo_root``
+    为 WP2 patch 面前置（分叉工作区 add/commit pathspec 语义错位——显式 422）。
     """
     _resolve_op("patch_apply")  # 白名单 v2：agent_allowed
     if not isinstance(payload, dict):
@@ -510,7 +556,9 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
 
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        # 幂等查先于一切校验（AE1 同构）：同键重放＝复放首次结果（零重复副作用）。
+        # 幂等查先于授权与执行（AE1 同构）：同键重放按 prior 终态分派——
+        # applied＋指纹一致 → replayed；指纹不一致 → idempotency_mismatch；
+        # failed → 按原失败快照复放（不伪 replayed，评审 H1）。
         prior = (
             session.query(RepoPatch)
             .filter(
@@ -521,13 +569,31 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             .first()
         )
         if prior is not None:
+            if prior.status == "failed":
+                snap = prior.snapshot()  # 原失败快照原样复放（error_code 随行）
+                return snap
+            if prior.plan_sha256 != plan_sha:
+                raise SolutionRepoError(
+                    "idempotency_mismatch",
+                    "同 patch_id 已存在但 plan 指纹不一致（AE1 同键异体口径）。",
+                    details={"patch_id": plan["patch_id"]},
+                )
+            _ensure_grant(row, "patch_apply")  # 重放分支同样过 grant（评审 M6——复放自身结果亦须授权）
             snap = prior.snapshot()
             snap["status"] = "replayed"
             return snap
+        _ensure_grant(row, "patch_apply")  # 评审 D3：授权先于审计计数（评审 M6——越权被拒不累加 ops）
         _touch_audit(session, row, "patch_apply")
         session.commit()
-    _ensure_grant(row, "patch_apply")  # 评审 D3
     allow_roots = tuple(row.allow_roots_json or [])
+    if Path(row.workspace_root).resolve() != Path(row.repo_root).resolve():
+        # 评审 M7：add/commit pathspec 相对 repo_root 解析——分叉工作区下写入/
+        # 暂存语义错位；WP2 patch 面显式要求 workspace == repo_root（422）。
+        raise SolutionRepoError(
+            "validation_failed",
+            "workspace_root 与 repo_root 分叉时 patch_apply 不受支持（WP2 前置）。",
+            details={"workspace_root": row.workspace_root, "repo_root": row.repo_root},
+        )
 
     # fs 实探（逐条目按绑定 allow_roots）
     ws_root = Path(row.workspace_root)
@@ -559,19 +625,35 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             details={"plan_base_commit": plan["base_commit"], "head": head},
         )
 
-    # 原子写入＋逆序回滚登记（written: [(path, kind, saved_bytes|None)]）
+    # 原子写入＋逆序回滚登记（written: [(path, kind, saved_bytes|None)]）。
+    # 写入前复核（评审 H3/H4：probe→write 窗口）——已存在目标 realpath 落点
+    # 判定（逃逸/保护路径/越界同拒）；create 目标已存在 → 422（M8 语义守卫）。
     written: list[tuple[str, str, bytes | None]] = []
+    committed = False
+    applied_commit: str | None = None
     try:
         for entry in plan["entries"]:
             target = ws_root / entry["path"]
             kind = entry["operation"]
             existed = target.exists()
+            if kind == "create" and existed:
+                raise SolutionRepoError(
+                    "validation_failed",
+                    "create 目标已存在（create 语义守卫，评审 M8）。",
+                    details={"path": entry["path"]},
+                )
+            if kind == "delete" and not existed:
+                raise SolutionRepoError(
+                    "validation_failed", "delete 目标不存在。", details={"path": entry["path"]}
+                )
+            if existed:
+                # 写入前复核（读面 D1 同构；仓内链接→.git/config 等「解析不
+                # 逃逸但落保护区」形态同拒——评审盲 H2）。
+                verify = verify_resolved(os.path.realpath(str(target)), ws_root.resolve(), entry["path"], allow_roots)
+                if not verify.ok:
+                    raise _verdict_error(verify, entry["path"])
             saved = target.read_bytes() if existed else None
             if kind == "delete":
-                if not existed:
-                    raise SolutionRepoError(
-                        "validation_failed", "delete 目标不存在。", details={"path": entry["path"]}
-                    )
                 target.unlink()
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -580,27 +662,38 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
         paths = [w[0] for w in written]
         runner.run("add", "--", *paths)
         runner.run("commit", "-m", f"af3: apply {plan['patch_id']}")
+        committed = True
         applied_commit = runner.run("rev-parse", "HEAD")
     except GitFailed as exc:
-        _rollback(written, runner, ws_root)
+        if not committed:
+            _rollback(written, runner, ws_root)
         err = exc.to_details()
         _fail_row(actor.org_id, binding_id, plan["patch_id"], plan_sha,
                   len(plan["entries"]), plan["base_commit"], "git_operation_failed", err)
         raise SolutionRepoError("git_operation_failed", "Patch 应用失败（已回滚零残留）。", details=err) from None
     except OSError as exc:
-        _rollback(written, runner, ws_root)
+        if not committed:
+            _rollback(written, runner, ws_root)
         err = {"stderr": str(exc)}
         _fail_row(actor.org_id, binding_id, plan["patch_id"], plan_sha,
                   len(plan["entries"]), plan["base_commit"], "git_operation_failed", err)
         raise SolutionRepoError("git_operation_failed", "Patch 应用失败（已回滚零残留）。", details=err) from None
-    except SolutionRepoError:
-        _rollback(written, runner, ws_root)
+    except SolutionRepoError as exc:
+        # 评审 M4：执行期域错误回滚后同样落 failed 行（审计留痕纪律一致）。
+        if not committed:
+            _rollback(written, runner, ws_root)
+        _fail_row(actor.org_id, binding_id, plan["patch_id"], plan_sha,
+                  len(plan["entries"]), plan["base_commit"], exc.code,
+                  {"message": exc.message, "details": exc.details})
         raise
 
     with _sr_session() as session:
         binding_row = session.get(RepoBinding, binding_id)
         if binding_row is None or binding_row.org_id != actor.org_id:
             raise SolutionRepoError("not_found", "绑定不存在。")
+        if binding_row.status == "revoked":
+            # 评审：绑定在执行窗口内被撤销——applied 行不落（撤权即时生效语义）
+            raise SolutionRepoError("permission_revoked", "绑定已撤销，操作面已停。")
         session.add(
             RepoPatch(
                 org_id=actor.org_id,
@@ -617,8 +710,29 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
                 },
             )
         )
-        session.commit()
-        _touch_audit(session, binding_row, "patch_committed")
+        try:
+            session.commit()
+        except IntegrityError:
+            # 评审 M3：并发同 patch_id 双 apply（都穿过预检）——败者按先到者
+            # 的 applied 行复放返回（bind_repo 同款兜底形态），不裸 500。
+            session.rollback()
+            prior = (
+                session.query(RepoPatch)
+                .filter(
+                    RepoPatch.org_id == actor.org_id,
+                    RepoPatch.binding_id == binding_id,
+                    RepoPatch.patch_id == plan["patch_id"],
+                )
+                .first()
+            )
+            if prior is not None:
+                snap = prior.snapshot()
+                snap["status"] = "replayed"
+                return snap
+            raise SolutionRepoError(
+                "binding_exists", "同 patch_id 并发应用冲突。", details={"patch_id": plan["patch_id"]}
+            ) from None
+        _touch_audit(session, binding_row, "patch_apply")  # 同操作同一计数名（评审：一名一事）
         session.commit()
         return {
             "patch_id": plan["patch_id"],
@@ -637,18 +751,30 @@ def _snapshot_roots() -> tuple[str, ...]:
 
 def _plan_sha256(payload: dict[str, Any], plan: dict[str, Any]) -> str:
     """PatchPlan 指纹（零明文落库——只存 sha256；同 plan 同指纹可复验）。"""
-    canon = repr(
-        (
-            payload.get("patch_id"),
-            payload.get("base_commit"),
-            tuple((e["path"], e["operation"], e["content"]) for e in plan["entries"]),
-        )
+    canon = json.dumps(
+        {
+            "patch_id": payload.get("patch_id"),
+            "base_commit": payload.get("base_commit"),
+            "entries": [
+                {"path": e["path"], "operation": e["operation"], "content": e["content"]}
+                for e in plan["entries"]
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     )
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 
 def _rollback(written: list[tuple[str, str, bytes | None]], runner: GitRunner, ws_root: Path) -> None:
-    """逆序恢复（新文件删、改动文件恢复原字节）＋git reset（撤销 staged）。"""
+    """逆序恢复（新文件删、改动文件恢复原字节）＋git reset（撤销 staged）。
+
+    残余声明（评审）：零残留由测试对单一路径断言与调用方回滚纪律承载，无
+    运行时 porcelain 守门——回滚自身 OSError 被吞，残留表现为下一次操作的
+    dirty_tree_conflict 409（不静默污染后续成功）；运行时 porcelain 复核与
+    告警归 WP4 修复闭环面（预算内失败观测正是其输入）。"""
     for path, kind, saved in reversed(written):
         target = ws_root / path
         try:

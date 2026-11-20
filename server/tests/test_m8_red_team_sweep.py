@@ -760,7 +760,7 @@ _EXCLUSION_RECORDS = {
         "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/patches/<patch_id>"): {
-        "reason": "AF3-WP2 Patch 行详情：双资源嵌套形态（binding_id+patch_id），M8 夹具无 Patch 行前置状态——A 实测 404（跨租户 not_found 不泄露）、同角色 A 实测 404、B 属主实测 404（夹具无 patch 行，阳性对照不可构造）；幂等/failed 留痕语义由 tests/test_af3_patch_plan.py 专项承担（同租户 200 实测）",
+        "reason": "AF3-WP2 Patch 行详情：双资源嵌套形态（binding_id+patch_id），M8 爬扫夹具无 Patch 行前置状态（功能测试面 tests/test_af3_patch_plan.py 经 POST /patches 对夹具绑定构造 Patch 行——阳性对照在该套件同租户 200 实测；M8 排除＝夹具形状局限非不可行）——A 实测 404（跨租户 not_found 不泄露）、同角色 A 实测 404、B 属主实测 404（夹具无 patch 行）",
         "exclusion_kind": "positive_control_infeasible",
         "verified_positive_control": False,
         "sweep_required": False,
