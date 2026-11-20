@@ -15,7 +15,7 @@ WP2 类型化 Patch adapter 落位（当前无此端点＝结构级 fail-closed�
 """
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from fde_api.auth.decorators import require_auth
 from fde_api.errors import error_response
@@ -33,7 +33,9 @@ def service_error(error: SolutionRepoError):
 @solution_repo_blueprint.post("/solution-repo/bindings")
 @require_auth
 def bind_repo():
-    result = service.bind_repo(actor=g.current_user, payload=request.get_json(silent=True))
+    # 评审 G1：受控基目录由服务端配置传入（绑定请求不得指定服务端围栏）。
+    repo_base = current_app.config["SETTINGS"].solution_repo_base
+    result = service.bind_repo(actor=g.current_user, payload=request.get_json(silent=True), repo_base=repo_base)
     return jsonify({"data": result, "error": None}), 201
 
 

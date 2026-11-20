@@ -243,6 +243,11 @@ class Settings(BaseSettings):
     agent_host_egress_allowlist: str = ""
     # run workspace 根目录（相对路径相对服务端工作目录）
     agent_workspace_root: str = "agent-workspaces"
+    # AF3-WP1（评审 G1 决策单推荐案）：solution_repo 绑定受控基目录——
+    # repo_root/workspace_root 必须位于其下（服务端围栏；空串＝禁绑定，
+    # fail-closed：未配置时任何绑定请求一律 422）。评测运行时配置为评测
+    # 工作区根；生产多租户部署必须显式配置方可开通绑定面。
+    solution_repo_base: str = ""
     # 沙箱内 agent CLI 命令（zcode 适配器 spawn 段）
     agent_cli_command: str = "zcode"
     # 宿主侧 zcode 代理通道（T-Z1 裁定 A 方案实施轮，2026-11-07；仅开发

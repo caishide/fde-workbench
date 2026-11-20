@@ -32,10 +32,26 @@ def whitelist_snapshot() -> dict:
     return load_whitelist()
 
 
+@pytest.fixture(autouse=True)
+def af3_repo_base(app, monkeypatch, tmp_path: Path) -> Path:
+    """评审 G1：受控基目录围栏——本文件全部测试在显式 base 下运行（服务端
+    SETTINGS.solution_repo_base 指向 tmp 子目录）；sample_repo 必须建在其下，
+    否则绑定被围栏 422 拒（fail-closed 默认＝未配置即禁绑定）。"""
+    base = tmp_path / "af3-repo-base"
+    base.mkdir()
+    monkeypatch.setitem(
+        app.config,
+        "SETTINGS",
+        app.config["SETTINGS"].model_copy(update={"solution_repo_base": str(base)}),
+    )
+    return base
+
+
 @pytest.fixture
-def sample_repo(tmp_path: Path) -> Path:
-    """受控示例仓（离线本地 git）：allow_roots 五目录＋一个可读产物＋初始提交。"""
-    repo = tmp_path / "solutions"
+def sample_repo(tmp_path: Path, af3_repo_base: Path) -> Path:
+    """受控示例仓（离线本地 git）：建在受控基目录下（围栏内）＋allow_roots
+    五目录＋一个可读产物＋初始提交。"""
+    repo = af3_repo_base / "solutions"
     for d in ("ontology", "transforms", "rules", "tests", "config"):
         (repo / d).mkdir(parents=True)
     (repo / "ontology" / "equipment.yaml").write_text(
@@ -81,20 +97,67 @@ def _bind_payload(repo: Path, **overrides) -> dict:
 
 class TestBindRepo:
     def test_bind_success(self, client, af3_world, settings, sample_repo) -> None:
+        payload = _bind_payload(sample_repo)  # 评审 G10：同一 payload 复用（等值断言不得自指失效）
         resp = client.post(
             "/api/v1/solution-repo/bindings",
-            json=_bind_payload(sample_repo),
+            json=payload,
             headers=_auth(af3_world["actor"], settings),
         )
         assert resp.status_code == 201, resp.get_json()
         data = resp.get_json()["data"]
         assert data["status"] == "active"
-        assert data["branch"] == _bind_payload(sample_repo)["branch"] or data["branch"].startswith("af3/")
+        assert data["branch"] == payload["branch"]  # 响应分支＝请求分支（绑定核心语义真钉）
         assert len(data["base_commit"]) == 40
         assert data["allow_roots"] == ["ontology/", "transforms/", "rules/", "tests/", "config/"]
 
-    def test_bind_rejects_non_git_repo(self, client, af3_world, settings, tmp_path) -> None:
-        plain = tmp_path / "plain"
+    def test_bind_rejects_repo_outside_base(self, client, af3_world, settings, tmp_path) -> None:
+        """评审 G1：受控基目录外的仓 → 422（围栏 fail-closed）。"""
+        outside = tmp_path / "outside-repo"
+        outside.mkdir()
+        (outside / "ontology").mkdir()
+        _git(outside, "init")
+        resp = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(outside),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_bind_rejected_when_base_unconfigured(self, client, af3_world, settings, app, monkeypatch, tmp_path) -> None:
+        """评审 G1：solution_repo_base 未配置（空串）＝绑定面整体停用（fail-closed）。"""
+        monkeypatch.setitem(
+            app.config,
+            "SETTINGS",
+            app.config["SETTINGS"].model_copy(update={"solution_repo_base": ""}),
+        )
+        repo = tmp_path / "any-repo"
+        repo.mkdir()
+        (repo / "ontology").mkdir()
+        _git(repo, "init")
+        resp = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(repo),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_bind_rejects_empty_repo(self, client, af3_world, settings, af3_repo_base) -> None:
+        """评审 G5：零提交空仓 → 422（rev-parse HEAD 探测，非 500）。"""
+        repo = af3_repo_base / "empty-repo"
+        repo.mkdir()
+        _git(repo, "init")
+        resp = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(repo),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_bind_rejects_non_git_repo(self, client, af3_world, settings, af3_repo_base) -> None:
+        plain = af3_repo_base / "plain"
         plain.mkdir()
         (plain / "ontology").mkdir()
         resp = client.post(
@@ -147,6 +210,41 @@ class TestBindRepo:
         )
         assert resp.status_code == 422
         assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_bind_rejects_allow_root_outside_snapshot_set(self, client, af3_world, settings, sample_repo) -> None:
+        """评审 G3：绑定声明超出快照封闭集（server/）→ 422——快照 allow_roots
+        是 FROZEN 规则集而非死数据；扩集走白名单 v2＋决策单。"""
+        resp = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(sample_repo, allow_roots=["ontology/", "server/"]),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_bind_rejects_missing_allow_root_dir(self, client, af3_world, settings, sample_repo) -> None:
+        """评审 G11：allow_roots 目录不存在 → 422（防「绑定成功但读面全 422」死绑定）。"""
+        resp = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(sample_repo, allow_roots=["ontology/", "rules/"]),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 201  # rules/ 在仓内存在（对照组：成功）
+        missing_repo = sample_repo.parent / "repo-missing-root"
+        for d in ("ontology", "transforms", "tests", "config"):
+            (missing_repo / d).mkdir(parents=True)
+        (missing_repo / "ontology" / "placeholder.yaml").write_text("x\n", encoding="utf-8")
+        _git(missing_repo, "init")
+        _git(missing_repo, "add", ".")
+        _git(missing_repo, "-c", "user.email=af3@test.local", "-c", "user.name=AF3 Test", "commit", "-m", "init")
+        resp2 = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(missing_repo),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp2.status_code == 422
+        assert resp2.get_json()["error"]["code"] == "validation_failed"
+        assert "rules" in str(resp2.get_json()["error"]["details"])
 
     def test_bind_duplicate_conflict(self, client, af3_world, settings, sample_repo) -> None:
         payload = _bind_payload(sample_repo, branch="af3/dup-check")
@@ -245,6 +343,22 @@ class TestReadFile:
         assert resp.status_code == 404
         assert resp.get_json()["error"]["code"] == "not_found"
 
+    def test_read_oversize_file_rejected(self, client, af3_world, settings, binding_id, sample_repo) -> None:
+        """评审 G9：读取上限负向钉（>1MB → 422，details 携 size/max_bytes）——
+        上限分支此前零验证（vg 预验证：删判断全部测试照绿）。"""
+        big = sample_repo / "ontology" / "large.yaml"
+        big.write_text("x" * (1048576 + 1), encoding="utf-8")
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{binding_id}/files",
+            query_string={"path": "ontology/large.yaml"},
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+        details = resp.get_json()["error"]["details"] or {}
+        assert details.get("max_bytes") == 1048576
+        assert details.get("size") == 1048577
+
     def test_read_cross_tenant_404(self, client, af3_world, settings, binding_id) -> None:
         """跨租户 404 不泄露（沿 AE1 get_execution 同款纪律）。"""
         resp = client.get(
@@ -296,6 +410,39 @@ class TestStatusSurface:
         assert resp.status_code == 404
 
 
+class TestListBindings:
+    """评审 G8：列表端点租户隔离验证（vg 预验证——此前零覆盖，删 org 过滤
+    全部测试照绿；载荷含 repo_root 服务器路径，跨租户泄露即路径情报泄露）。"""
+
+    def test_list_scoped_to_own_org(self, client, af3_world, settings, sample_repo) -> None:
+        payload = _bind_payload(sample_repo, branch="af3/list-a")
+        first = client.post(
+            "/api/v1/solution-repo/bindings", json=payload, headers=_auth(af3_world["actor"], settings)
+        )
+        assert first.status_code == 201
+        listed = client.get("/api/v1/solution-repo/bindings", headers=_auth(af3_world["actor"], settings))
+        assert listed.status_code == 200
+        data = listed.get_json()["data"]
+        ids = {row["binding_id"] for row in data["items"]}
+        assert first.get_json()["data"]["binding_id"] in ids
+        assert data["count"] == len(data["items"])
+        assert data["limit"] == 100
+
+    def test_list_cross_tenant_empty(self, client, af3_world, settings, sample_repo) -> None:
+        """A 建绑定后，outsider（他租户）列表为空且不含 A 的 repo_root。"""
+        created = client.post(
+            "/api/v1/solution-repo/bindings",
+            json=_bind_payload(sample_repo, branch="af3/list-b"),
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert created.status_code == 201
+        listed = client.get("/api/v1/solution-repo/bindings", headers=_auth(af3_world["outsider"], settings))
+        assert listed.status_code == 200
+        data = listed.get_json()["data"]
+        assert data["count"] == 0
+        assert data["items"] == []
+
+
 class TestBranchSurface:
     @pytest.fixture
     def binding_id(self, client, af3_world, settings, sample_repo) -> str:
@@ -317,7 +464,7 @@ class TestBranchSurface:
         assert resp.get_json()["data"]["branch"] == "af3/feature-x"
 
     def test_branch_invalid_name(self, client, af3_world, settings, binding_id) -> None:
-        for bad in ("../escape", "-evil", "af3//x", ""):
+        for bad in ("../escape", "-evil", "af3//x", "", "a.", "af3/.hidden", "af3/x@{y", "x@"):
             resp = client.post(
                 f"/api/v1/solution-repo/bindings/{binding_id}/branches",
                 json={"name": bad},

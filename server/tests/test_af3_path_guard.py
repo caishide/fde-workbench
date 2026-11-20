@@ -61,6 +61,7 @@ class TestWhitelistSnapshot:
         assert rules["max_patch_bytes"] == 524288
         assert rules["max_patch_files"] == 100
         assert rules["max_patch_changed_lines"] == 20000
+        assert rules["max_file_read_bytes"] == 1048576  # 评审 G9：读取上限值钉
         assert rules["deny_absolute"] is True
         assert rules["deny_dotdot"] is True
         assert rules["deny_symlink_escape"] is True
@@ -96,6 +97,8 @@ class TestProtectedPaths:
             ".git/hooks/pre-commit",            # S-AF3-02 hook 注入（根 .git/hooks）
             "ontology/.git/hooks/pre-commit",   # S-AF3-02 任意深度 hooks
             "config/hooks/post-checkout",       # 宽拒绝：任意 hooks 目录（受控仓 fail-closed）
+            ".git./config",                     # 评审 G7：Win32 尾点别名（打开的就是 .git）
+            "ontology/hooks /x",                # 评审 G7：尾空格别名
         ],
     )
     def test_git_and_hooks_paths_rejected(self, raw: str) -> None:
@@ -145,6 +148,8 @@ class TestTraversalForms:
             "ontology\\equipment.yaml",     # 反斜杠分隔
             "",                          # 空路径
             "ontology//x.yaml",          # 空部件
+            "ontology/x.yaml:ads",       # 评审 G16：NTFS ADS 中段冒号
+            "ontology/x.yaml",       # 评审 G16：控制字符
         ],
     )
     def test_traversal_forms_rejected(self, raw: str) -> None:
@@ -273,6 +278,12 @@ class TestPatchLimits:
         )
         verdict = check_patch(entries, allow_roots=ALLOW_ROOTS)
         assert verdict.ok is True
+
+    def test_patch_negative_values_rejected(self) -> None:
+        """评审 G16：负值拉低合计绕过三上限——非负守卫。"""
+        verdict = check_patch((_entry("ontology/a.yaml", size=-5, lines=-1),), allow_roots=ALLOW_ROOTS)
+        assert verdict.ok is False
+        assert verdict.code == "oversize_patch"
 
     def test_patch_entry_with_protected_path_rejected(self) -> None:
         entries = (_entry(".git/hooks/pre-commit"),)

@@ -129,7 +129,8 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/research/exports/<export_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/research/exports/{w['export'].id}",
     ("GET", "/api/v1/projects/<project_id>/research/subjects"): lambda w: f"/api/v1/projects/{w['project_b'].id}/research/subjects",
     ("GET", "/api/v1/projects/<project_id>/solutions"): lambda w: f"/api/v1/projects/{w['project_b'].id}/solutions",
-    ("GET", "/api/v1/projects/<project_id>/tasks"): lambda w: f"/api/v1/projects/{w['project_b'].id}/tasks",    ("GET", "/api/v1/solution-repo/bindings/<binding_id>"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}",
+    ("GET", "/api/v1/projects/<project_id>/tasks"): lambda w: f"/api/v1/projects/{w['project_b'].id}/tasks",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/status"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/status",
     ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans",
@@ -861,33 +862,25 @@ def _b_markers(world):
     ]
 
 
-_M8_REPO_MARKER = "af3-m8-shared-repo"
-
-
-def _m8_shared_repo() -> Path:
-    """session 级共享真仓（tmp 目录、幂等创建）：M8 爬扫 status 面阳性对照的
-    git 执行底座。仓为只读使用（爬扫只打 GET 面）。"""
-    import tempfile
-
-    root = Path(tempfile.gettempdir()) / _M8_REPO_MARKER
-    if not (root / ".git").exists():
-        root.mkdir(parents=True, exist_ok=True)
-        for d in ("ontology", "transforms", "rules", "tests", "config"):
-            (root / d).mkdir(exist_ok=True)
-        (root / "ontology" / "equipment.yaml").write_text(
-            "kind: ontology\nname: m8-isolation\n", encoding="utf-8"
-        )
-        subprocess.run(["git", "init"], cwd=root, capture_output=True, check=True)
-        subprocess.run(["git", "add", "."], cwd=root, capture_output=True, check=True)
-        subprocess.run(
-            ["git", "-c", "user.email=m8@test.local", "-c", "user.name=M8", "commit", "-m", "m8 base"],
-            cwd=root, capture_output=True, check=True,
-        )
-    return root
+def _init_m8_repo(root: Path) -> None:
+    """评审 G12：在 tmp_path_factory 分配的独立目录建受控仓（每用例新仓——
+    消除固定 tempdir 路径的 xdist 并发 init 竞态与中断残留复用）。仓为只读
+    使用（爬扫只打 GET 面）。"""
+    for d in ("ontology", "transforms", "rules", "tests", "config"):
+        (root / d).mkdir(parents=True, exist_ok=True)
+    (root / "ontology" / "equipment.yaml").write_text(
+        "kind: ontology\nname: m8-isolation\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "init"], cwd=root, capture_output=True, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=m8@test.local", "-c", "user.name=M8", "commit", "-m", "m8 base"],
+        cwd=root, capture_output=True, check=True,
+    )
 
 
 @pytest.fixture
-def m8_world(db_session):
+def m8_world(db_session, tmp_path_factory):
     """跨企业世界：两个企业 org、A 企业两账号（含与 B 属主同角色者）、
     B 企业属主与项目，以及挂在该项目上的 B 企业资源（导出/AI run/对话/
     待确认 API-action）。所有工厂均自带 ``db_session.commit()``——HTTP
@@ -1069,7 +1062,8 @@ def m8_world(db_session):
 
     # AF3-WP1（20 号 §3 WP1）：B 企业仓库绑定行——真 git 真仓（status 面
     # 阳性对照须真实可执行 rev-parse；仓内 allow_roots 产物供 files 面）。
-    m8_repo = Path(_m8_shared_repo())
+    m8_repo = tmp_path_factory.mktemp("af3-m8-repo") / "solutions"
+    _init_m8_repo(m8_repo)
     db_session.add(
         RepoBinding(
             org_id=org_b.id,

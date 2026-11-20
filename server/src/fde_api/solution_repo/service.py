@@ -3,16 +3,24 @@
 纪律：
 - **租户绑定服务端强制**（任务书 §15；沿 AE1 ``submit_action`` 口径）：一律以
   ``actor.org_id`` 过滤，不盲信请求体 org_id；跨租户 404 不泄露；
+- **服务端围栏（评审 G1 决策单推荐案）**：``repo_root``/``workspace_root``
+  必须位于 ``Settings.solution_repo_base`` 之下；未配置（空串）＝绑定面整体
+  停用（fail-closed，任何绑定请求 422）——「指定 solution repo」的服务端
+  强制语义由此承载，绑定请求只提供相对选址，不能指到宿主任意路径；
 - **不进他人 dirty tree**（04 §3.3）：绑定时刻 porcelain 非空即 409；
 - **四拒 fail-closed**（04 §3.3 A1）：读面前先 ``check_path``（形状）再
   ``check_path_fs``（symlink 实探）；
-- **撤权即时生效**（AF1② 同构）：``revoked`` 后一切操作面 403 permission_revoked；
+- **Git 操作两级闭集**（D2；评审 G4 接线）：服务面各操作入口经
+  ``resolve_op`` 二道闸（第一道＝路由层只暴露 agent_allowed 端点）；
+- **撤权即时生效**（AF1② 同构）：``revoked`` 后读写/状态/分支面 403
+  permission_revoked（详情/列表面保持可见——撤权状态本身可查，评审 G18 口径）；
 - **停点纪律**（AF2① 携带）：branch 缺失/allow_roots 空＝422，禁臆造参数继续；
 - session 纪律沿 AE1 ``_ae_session``（``db.session()`` 全新 Session 用完即还，
   同一 session 变量贯穿查询与赋值）。
 
 审计口径（WP1 范围声明）：bind/revoke 落 ``audit_json`` 事件；read/status/
-branch_create 计数累加。结构化审计台账归 WP5 证据绑定面（20 号 §3 WP5）。
+branch_create 计数累加。结构化审计台账（actor/时刻/逐事件）归 WP5 证据
+绑定面（评审 D2 defer 登记，20 号 §3 WP5）。
 """
 from __future__ import annotations
 
@@ -26,6 +34,7 @@ from sqlalchemy.exc import IntegrityError
 
 from fde_api.extensions import db
 from fde_api.solution_repo.errors import SolutionRepoError
+from fde_api.solution_repo.git_boundary import resolve_op
 from fde_api.solution_repo.git_ops import GitFailed, GitRunner
 from fde_api.solution_repo.models import RepoBinding
 from fde_api.solution_repo.path_guard import Verdict, check_path, check_path_fs
@@ -70,6 +79,24 @@ def _sr_session() -> Iterator[Any]:
         session.close()
 
 
+def _load_whitelist_or_fail() -> dict:
+    """快照加载折算（评审 G5）：缺失/损坏/结构残缺 → 域信封 git_operation_failed，
+    不让 FileNotFoundError/ValueError/KeyError 逃成裸 500。"""
+    try:
+        return load_whitelist()
+    except SolutionRepoError:
+        raise
+    except (OSError, ValueError, KeyError) as exc:
+        raise SolutionRepoError("git_operation_failed", f"白名单快照加载失败：{exc}") from None
+
+
+def _resolve_op(op: str) -> None:
+    """第二道闸（评审 G4 接线）：Git 操作闭集判定，闭集外/human_only → 403。"""
+    verdict = resolve_op(op, whitelist=_load_whitelist_or_fail())
+    if not verdict.ok:
+        raise SolutionRepoError("tool_not_allowed", verdict.reason)
+
+
 def _validate_branch_name(name: Any) -> str:
     if not isinstance(name, str) or not name or len(name) > 128:
         raise SolutionRepoError("validation_failed", "branch 名须为 1..128 字符字符串。")
@@ -77,6 +104,11 @@ def _validate_branch_name(name: Any) -> str:
         raise SolutionRepoError("validation_failed", "branch 名含非法字符或以非法字符开头。")
     if ".." in name or "//" in name or name.endswith("/") or name.endswith(".lock"):
         raise SolutionRepoError("validation_failed", "branch 名含非法序列（..、空段、.lock 结尾）。")
+    if name.endswith(".") or "@" in name:
+        # 评审 G15：git 语义拒绝形态——组件尾点与 @/@{ 序列（refspec 语法保留字）。
+        raise SolutionRepoError("validation_failed", "branch 名含 git 语义非法序列（尾点、@）。")
+    if any(part.startswith(".") for part in name.split("/")):
+        raise SolutionRepoError("validation_failed", "branch 名部件不得以点开头。")
     return name
 
 
@@ -84,14 +116,23 @@ def _validate_allow_roots(allow_roots: Any) -> list[str]:
     if not isinstance(allow_roots, list) or not allow_roots:
         # 停点纪律：allow_roots 空＝禁臆造（不默认放全仓）。
         raise SolutionRepoError("validation_failed", "allow_roots 须为非空数组（禁臆造参数）。")
-    whitelist = load_whitelist()
-    deny_semantics = whitelist["path_rules"]
+    whitelist = _load_whitelist_or_fail()
+    snapshot_roots = {r.rstrip("/") for r in whitelist["path_rules"]["allow_roots"]}
     roots: list[str] = []
     for root in allow_roots:
         if not isinstance(root, str) or not root.endswith("/") or "/" in root.rstrip("/"):
             raise SolutionRepoError(
                 "validation_failed",
                 "allow_roots 条目须为形如 'dir/' 的单层目录前缀。",
+                details={"root": root},
+            )
+        key = root.rstrip("/")
+        # 评审 G3：绑定声明必须是快照 allow_roots 封闭集的子集——快照是
+        # FROZEN 规则集而非死数据；扩集走白名单 v2＋决策单。
+        if key not in snapshot_roots:
+            raise SolutionRepoError(
+                "validation_failed",
+                f"allow_roots 条目不在白名单封闭集内（{sorted(snapshot_roots)}）。",
                 details={"root": root},
             )
         # 白名单自身不得引入四拒路径：对 '<root>/probe' 走形状面判定。
@@ -103,7 +144,6 @@ def _validate_allow_roots(allow_roots: Any) -> list[str]:
                 details={"root": root, "reason": probe.reason},
             )
         roots.append(root)
-    del deny_semantics
     return roots
 
 
@@ -118,7 +158,11 @@ def _load_binding(session: Any, actor_org: str, binding_id: str, *, allow_revoke
 
 
 def _touch_audit(session: Any, row: RepoBinding, event: str, details: dict[str, Any] | None = None) -> None:
-    """审计计数＋事件累加（bind/revoke 落事件；读面计数）。"""
+    """审计计数＋事件累加（bind/revoke 落事件；读面计数）。
+
+    actor/时刻的结构化留痕归 WP5 审计台账（评审 D2 defer）——本面 ``ops``
+    计数与 ``events`` 只承载轻量快照语义。
+    """
     audit = dict(row.audit_json or {})
     ops = dict(audit.get("ops") or {})
     ops[event] = int(ops.get(event) or 0) + 1
@@ -130,24 +174,43 @@ def _touch_audit(session: Any, row: RepoBinding, event: str, details: dict[str, 
     row.audit_json = audit
 
 
-def bind_repo(actor: Any, payload: Any) -> dict[str, Any]:
-    """绑定受控示例仓：git 仓校验→dirty tree 校验→分支创建→白名单快照落行。"""
+def bind_repo(actor: Any, payload: Any, *, repo_base: str) -> dict[str, Any]:
+    """绑定受控示例仓：围栏→git 仓校验→dirty tree 校验→分支创建→白名单快照落行。
+
+    ``repo_base`` 由路由层取 ``Settings.solution_repo_base`` 传入（评审 G1）：
+    空串＝绑定面整体停用；``repo_root``/``workspace_root`` resolve 后必须
+    位于 base 之内。
+    """
+    if not isinstance(repo_base, str) or not repo_base.strip():
+        raise SolutionRepoError(
+            "validation_failed",
+            "服务端未配置 solution_repo_base，绑定面停用（fail-closed）。",
+        )
+    _resolve_op("branch_create")  # 评审 G4：绑定含建分支动作，经二道闸
     if not isinstance(payload, dict):
         raise SolutionRepoError("validation_failed", "请求体须为 JSON 对象。")
     repo_root = payload.get("repo_root")
-    workspace_root = payload.get("workspace_root") or repo_root
+    workspace_root = payload.get("workspace_root")
     branch = _validate_branch_name(payload.get("branch"))
     allow_roots = _validate_allow_roots(payload.get("allow_roots"))
     if not isinstance(repo_root, str) or not repo_root:
         raise SolutionRepoError("validation_failed", "repo_root 须为非空字符串。")
+    if workspace_root is not None and (not isinstance(workspace_root, str) or not workspace_root.strip()):
+        # 评审 G13：空串/非字符串显式 422（停点纪律——不静默回退 repo_root）。
+        raise SolutionRepoError("validation_failed", "workspace_root 须为非空字符串或省略。")
 
     repo_path = Path(repo_root)
     ws_path = Path(workspace_root) if isinstance(workspace_root, str) and workspace_root else repo_path
-    if not repo_path.is_dir():
-        raise SolutionRepoError("validation_failed", f"repo_root 不存在：{repo_root}")
     try:
         repo_resolved = repo_path.resolve()
         ws_resolved = ws_path.resolve()
+        base_resolved = Path(repo_base).resolve()
+        if not repo_resolved.is_relative_to(base_resolved):
+            raise SolutionRepoError(
+                "validation_failed",
+                "repo_root 不在服务端受控基目录内（solution_repo_base）。",
+                details={"repo_root": repo_root},
+            )
         if not ws_resolved.is_relative_to(repo_resolved):
             raise SolutionRepoError("validation_failed", "workspace_root 须位于 repo_root 内。")
     except OSError as exc:
@@ -159,6 +222,9 @@ def bind_repo(actor: Any, payload: Any) -> dict[str, Any]:
         if inside != "true":
             # 探测失败（退码非零）＝非 git 仓：请求形状级问题 → 422，不是执行层 500。
             raise SolutionRepoError("validation_failed", "repo_root 不是 git 工作树。")
+        if runner.run_ok("rev-parse", "--verify", "--quiet", "HEAD", "--") is None:
+            # 评审 G5：零提交空仓 → 422（rev-parse HEAD 退码 128 不是执行层失败）。
+            raise SolutionRepoError("validation_failed", "仓库无任何提交（须先有基线提交）。")
         porcelain = runner.run("status", "--porcelain")
         if porcelain:
             # S-AF3-08：不进他人 dirty tree。
@@ -189,6 +255,16 @@ def bind_repo(actor: Any, payload: Any) -> dict[str, Any]:
             "binding_exists", "同 org+repo+branch 绑定已存在。", details={"branch": branch}
         )
 
+    # 评审 G11：allow_roots 目录必须真实存在（设计稿 §3 明文——不存在＝422，
+    # 防「绑定成功但读面全 422」的死绑定）。
+    missing = [r for r in allow_roots if not (ws_resolved / r.rstrip("/")).is_dir()]
+    if missing:
+        raise SolutionRepoError(
+            "validation_failed",
+            f"allow_roots 目录不存在：{missing}",
+            details={"missing_roots": missing},
+        )
+
     try:
         if runner.run_ok("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", "--") is not None:
             raise SolutionRepoError(
@@ -197,31 +273,41 @@ def bind_repo(actor: Any, payload: Any) -> dict[str, Any]:
         base_commit = runner.run("rev-parse", "HEAD")
         runner.run("branch", branch)
     except GitFailed as exc:
-        raise SolutionRepoError("git_operation_failed", "Git 执行失败。", details=exc.to_details()) from None
-
-    binding_id = str(uuid4())
-    with _sr_session() as session:
-        row = RepoBinding(
-            id=binding_id,
-            org_id=actor.org_id,
-            requester_id=actor.id,
-            repo_root=str(repo_resolved),
-            workspace_root=str(ws_resolved),
-            allow_roots_json=allow_roots,
-            base_commit=base_commit,
-            branch=branch,
-            status="active",
-            audit_json={"ops": {}, "events": [{"event": "bind", "details": {"branch": branch}}]},
-        )
-        session.add(row)
-        try:
-            session.commit()
-        except IntegrityError:
-            session.rollback()
+        if "already exists" in (exc.stderr or ""):
+            # 评审 G5：并发绑定竞态（双请求同过 DB 预检）→ 409 而非 500。
             raise SolutionRepoError(
                 "binding_exists", "同 org+repo+branch 绑定已存在。", details={"branch": branch}
             ) from None
-        return row.snapshot()
+        raise SolutionRepoError("git_operation_failed", "Git 执行失败。", details=exc.to_details()) from None
+
+    binding_id = str(uuid4())
+    try:
+        with _sr_session() as session:
+            row = RepoBinding(
+                id=binding_id,
+                org_id=actor.org_id,
+                requester_id=actor.id,
+                repo_root=str(repo_resolved),
+                workspace_root=str(ws_resolved),
+                allow_roots_json=allow_roots,
+                base_commit=base_commit,
+                branch=branch,
+                status="active",
+                audit_json={"ops": {}, "events": [{"event": "bind", "details": {"branch": branch}}]},
+            )
+            session.add(row)
+            session.commit()
+            return row.snapshot()
+    except IntegrityError:
+        # 评审 G6：落库失败回滚 git 分支（不留孤儿分支阻断重试——重试走
+        # 409 binding_exists 而非 422「分支已存在」，错误码语义归一）。
+        runner.run_ok("branch", "-D", branch)
+        raise SolutionRepoError(
+            "binding_exists", "同 org+repo+branch 绑定已存在。", details={"branch": branch}
+        ) from None
+    except Exception:
+        runner.run_ok("branch", "-D", branch)
+        raise
 
 
 def get_binding(actor: Any, binding_id: str) -> dict[str, Any]:
@@ -232,14 +318,15 @@ def get_binding(actor: Any, binding_id: str) -> dict[str, Any]:
 
 def list_bindings(actor: Any) -> dict[str, Any]:
     with _sr_session() as session:
+        query = session.query(RepoBinding).filter(RepoBinding.org_id == actor.org_id)
+        total = query.count()
         rows = (
-            session.query(RepoBinding)
-            .filter(RepoBinding.org_id == actor.org_id)
-            .order_by(RepoBinding.created_at.desc())
+            query.order_by(RepoBinding.created_at.desc())
             .limit(100)
             .all()
         )
-        return {"items": [row.snapshot() for row in rows], "count": len(rows)}
+        # 评审 G8：count＝全集总数（截断时显式携带 limit，不以页大小冒充总量）。
+        return {"items": [row.snapshot() for row in rows], "count": total, "limit": 100}
 
 
 def revoke_binding(actor: Any, binding_id: str) -> dict[str, Any]:
@@ -252,7 +339,8 @@ def revoke_binding(actor: Any, binding_id: str) -> dict[str, Any]:
 
 
 def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
-    """读文件面：形状面→symlink 实探→大小上限→文本返回（四拒在读取面同样生效）。"""
+    """读文件面：二道闸→形状面→symlink 实探→大小上限→文本返回（四拒同生效）。"""
+    _resolve_op("read_file")  # 评审 G4
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
         _touch_audit(session, row, "read_file")
@@ -271,8 +359,7 @@ def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
     target = Path(row.workspace_root) / rel_path
     if not target.is_file():
         raise SolutionRepoError("not_found", "文件不存在。", details={"path": rel_path})
-    whitelist = load_whitelist()
-    max_bytes = int(whitelist["path_rules"]["max_file_read_bytes"])
+    max_bytes = int(_load_whitelist_or_fail()["path_rules"]["max_file_read_bytes"])
     size = target.stat().st_size
     if size > max_bytes:
         raise SolutionRepoError(
@@ -286,6 +373,7 @@ def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
 
 def get_status(actor: Any, binding_id: str) -> dict[str, Any]:
     """状态面：porcelain 如实回报（脏树不阻断读取面——读无害；写面 WP2 另钉）。"""
+    _resolve_op("status")  # 评审 G4
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
         _touch_audit(session, row, "status")
@@ -310,7 +398,8 @@ def get_status(actor: Any, binding_id: str) -> dict[str, Any]:
 
 
 def create_branch(actor: Any, binding_id: str, name: Any) -> dict[str, Any]:
-    """分支面（agent_allowed branch_create）：名校验→已存在拒→受控创建。"""
+    """分支面（agent_allowed branch_create）：二道闸→名校验→已存在拒→受控创建。"""
+    _resolve_op("branch_create")  # 评审 G4
     branch = _validate_branch_name(name)
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)

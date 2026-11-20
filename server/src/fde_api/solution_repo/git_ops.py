@@ -1,13 +1,19 @@
 """Git 受控执行器（AF3-WP1；离线本地 Git 先通）。
 
-安全面（红线：Agent 禁任意 Shell）：
+安全面（红线：Agent 禁任意 Shell；评审 G2 沙箱化）：
 - 固定 ``git`` 可执行 + **argv 列表构造**（``shell=False`` 恒定）——参数不经过
   shell 解释，注入面收敛到 git 自身语义；
-- **清 GIT_* 环境**：子进程 env 白名单重建，防外部 ``GIT_EXEC_PATH``/
-  ``GIT_ALTERNATE_OBJECT_DIRECTORIES``/``GIT_CONFIG`` 等环境注入；
-- 超时 30s＋``-c core.hooksPath=/dev/null`` 类封锁不做——绑定仓是受控示例仓，
-  hook 防护由路径白名单（写 .git/hooks 拒）＋human_only（hooks_path_config 拒）
-  承担，执行层不静默改写仓配置。
+- **子命令前强制封锁参数**（评审 G2，RCE 面封堵）：``-c core.fsmonitor=false``
+  （绑定仓 ``.git/config`` 若被写入 fsmonitor 命令，``git status`` 会执行它）＋
+  ``-c core.hooksPath=``（空＝禁 hooks 执行）；这两项与路径白名单（写
+  ``.git/**`` 拒）互为纵深——config 可由绑定者可控，封锁不依赖仓可信度；
+- **清 GIT_* 环境＋隔离全局配置**：子进程 env 白名单重建＋
+  ``GIT_CONFIG_GLOBAL=<os.devnull>``＋``GIT_CONFIG_NOSYSTEM=1``——宿主全局
+  ``~/.gitconfig`` 的 ``core.hooksPath``/``url.*.insteadOf``/``credential.helper``
+  对绑定仓内调用一律失效（评审 G2：HOME 保留导致的全局 config 注入面）；
+- 超时 30s；``OSError``（git 缺失/仓被删）与 ``TimeoutExpired`` 统一折算为
+  ``GitFailed``（评审 G5：不逃出域错误信封）；stdout/stderr 固定 utf-8 解码
+  （评审 G5：Windows 默认 cp936 会把 git utf-8 输出炸成 UnicodeDecodeError）。
 """
 from __future__ import annotations
 
@@ -18,8 +24,17 @@ from typing import Any
 
 GIT_TIMEOUT_SECONDS = 30
 
-# 子进程 env 白名单：PATH/HOME/系统locale 足够 git CLI 运行；任何 GIT_*/SSH_*
-# 全部剥离（环境注入面收敛）。
+# 子命令前强制封锁参数（任意 run/run_ok 都带上；与仓内 config 无关地生效）
+_FORCE_CONFIG = (
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=",
+)
+
+# 子进程 env 白名单：PATH/HOME/系统路径足够 git CLI 运行；任何 GIT_*/SSH_*
+# 全部剥离（环境注入面收敛）；全局/系统 git 配置经 GIT_CONFIG_GLOBAL/
+# GIT_CONFIG_NOSYSTEM 隔离（评审 G2）。
 _ENV_KEEP = ("PATH", "HOME", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TMP", "TEMP", "LANG", "LC_ALL")
 
 
@@ -45,22 +60,31 @@ class GitRunner:
         return (proc.stdout or "").strip()
 
     def _spawn(self, *args: str, timeout: int) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 — argv 列表构造，禁 shell=True
-            ["git", *args],
-            cwd=str(self._root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            shell=False,
-            env=self._safe_env(),
-            check=False,
-        )
+        try:
+            return subprocess.run(  # noqa: S603 — argv 列表构造，禁 shell=True
+                ["git", *_FORCE_CONFIG, *args],
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                shell=False,
+                env=self._safe_env(),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise GitFailed(" ".join(args), -1, f"timeout after {timeout}s") from None
+        except OSError as exc:
+            # git 可执行缺失 / cwd 被删等执行环境失败——统一折算 GitFailed
+            # （评审 G5：FileNotFoundError 不得逃出域错误信封）。
+            raise GitFailed(" ".join(args), -1, str(exc)) from None
 
     @staticmethod
     def _safe_env() -> dict[str, str]:
         env = {key: value for key, value in os.environ.items() if key in _ENV_KEEP}
-        env.pop("GIT_DIR", None)
-        env.pop("GIT_WORK_TREE", None)
+        env["GIT_CONFIG_GLOBAL"] = os.devnull  # 全局 ~/.gitconfig 失效（insteadOf/credential/hooksPath）
+        env["GIT_CONFIG_NOSYSTEM"] = "1"  # 系统 /etc/gitconfig 失效
         return env
 
 
