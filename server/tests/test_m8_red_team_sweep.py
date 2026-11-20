@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -48,6 +50,7 @@ from fde_api.agents.models import AgentArtifact, AgentRegistry, AgentRun
 from fde_api.auth.tokens import issue_access_token
 from fde_api.control.chat import AIConversation
 from fde_api.data_engineering.models import DataProfile, TransformPlan, TransformRun
+from fde_api.solution_repo.models import RepoBinding
 from fde_api.research.models import (
     ProjectResearchExport,
     ProjectResearchForm,
@@ -127,6 +130,8 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/research/subjects"): lambda w: f"/api/v1/projects/{w['project_b'].id}/research/subjects",
     ("GET", "/api/v1/projects/<project_id>/solutions"): lambda w: f"/api/v1/projects/{w['project_b'].id}/solutions",
     ("GET", "/api/v1/projects/<project_id>/tasks"): lambda w: f"/api/v1/projects/{w['project_b'].id}/tasks",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/status"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/status",
     ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans/<plan_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans/{w['plan_b'].id}",
@@ -752,6 +757,14 @@ _EXCLUSION_RECORDS = {
         "b_owner_status": 404,
         "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/files"): {
+        "reason": "AF3-WP1 读文件面：path 走 query 参数（M8 爬扫形态只拼路径变量、无 query 槽）——无参形态属请求形状错误：A 实测 404（跨租户 not_found 不泄露）、同角色 A 实测 404、B 属主实测 422（path_escape_rejected）；租户隔离阳性对照（B 属主带合法 path 实测 200）由 tests/test_af3_solution_repo.py::TestReadFile 承担（含 S-AF3-01/04/05/07 四拒负向）",
+        "exclusion_kind": "internal_service",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 422,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 422},
+    },
 }
 # 人类可读视图（由 _EXCLUSION_RECORDS 派生，不单独维护，避免两处失同步）
 _EXCLUDED_WITH_REASON = {route: rec["reason"] for route, rec in _EXCLUSION_RECORDS.items()}
@@ -814,6 +827,7 @@ def _measurement_ids(world):
         "package_id": uuid4().hex,
         "extraction_id": uuid4().hex,
         "execution_id": uuid4().hex,
+        "binding_id": world["binding_b"].id,
         "proposal_id": uuid4().hex,
         "result_id": uuid4().hex,
         "suite_id": uuid4().hex,
@@ -848,8 +862,25 @@ def _b_markers(world):
     ]
 
 
+def _init_m8_repo(root: Path) -> None:
+    """评审 G12：在 tmp_path_factory 分配的独立目录建受控仓（每用例新仓——
+    消除固定 tempdir 路径的 xdist 并发 init 竞态与中断残留复用）。仓为只读
+    使用（爬扫只打 GET 面）。"""
+    for d in ("ontology", "transforms", "rules", "tests", "config"):
+        (root / d).mkdir(parents=True, exist_ok=True)
+    (root / "ontology" / "equipment.yaml").write_text(
+        "kind: ontology\nname: m8-isolation\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "init"], cwd=root, capture_output=True, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=m8@test.local", "-c", "user.name=M8", "commit", "-m", "m8 base"],
+        cwd=root, capture_output=True, check=True,
+    )
+
+
 @pytest.fixture
-def m8_world(db_session):
+def m8_world(db_session, tmp_path_factory):
     """跨企业世界：两个企业 org、A 企业两账号（含与 B 属主同角色者）、
     B 企业属主与项目，以及挂在该项目上的 B 企业资源（导出/AI run/对话/
     待确认 API-action）。所有工厂均自带 ``db_session.commit()``——HTTP
@@ -1029,6 +1060,27 @@ def m8_world(db_session):
     )
     db_session.commit()
 
+    # AF3-WP1（20 号 §3 WP1）：B 企业仓库绑定行——真 git 真仓（status 面
+    # 阳性对照须真实可执行 rev-parse；仓内 allow_roots 产物供 files 面）。
+    m8_repo = tmp_path_factory.mktemp("af3-m8-repo") / "solutions"
+    _init_m8_repo(m8_repo)
+    db_session.add(
+        RepoBinding(
+            org_id=org_b.id,
+            requester_id=user_b.id,
+            repo_root=str(m8_repo),
+            workspace_root=str(m8_repo),
+            allow_roots_json=["ontology/"],
+            base_commit=subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=m8_repo, capture_output=True, text=True, check=True
+            ).stdout.strip(),
+            branch=f"af3/m8-{uuid4().hex[:8]}",
+            status="active",
+            audit_json={},
+        )
+    )
+    db_session.commit()  # 造行须 commit 才对请求侧连接可见（fixture docstring 纪律）
+
     return {
         "org_a": org_a,
         "org_b": org_b,
@@ -1047,6 +1099,7 @@ def m8_world(db_session):
         "run_b": run_b,
         "execution_b": execution_b,
         "action_id": action_id,
+        "binding_b": db_session.query(RepoBinding).filter(RepoBinding.org_id == org_b.id).one(),
     }
 
 
@@ -1146,8 +1199,8 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 50, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 74, (
+    assert len(ROUTES) == 52, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(_EXCLUSION_RECORDS) == 75, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

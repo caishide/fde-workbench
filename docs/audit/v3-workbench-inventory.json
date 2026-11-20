@@ -1,10 +1,10 @@
 {
- "route_count": 541,
- "blueprint_count": 57,
- "table_count": 168,
- "revision_count": 97,
+ "route_count": 548,
+ "blueprint_count": 58,
+ "table_count": 169,
+ "revision_count": 98,
  "heads": [
-  "b3e8c7d1a9f4"
+  "a3f5e7c9d1b3"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -52,6 +52,14 @@
    "down_revision": "d7e2f4a9c1b3",
    "create_tables": [
     "lead_diagnostic_channel_links"
+   ],
+   "add_column_tables": []
+  },
+  "a3f5e7c9d1b3": {
+   "file": "a3f5e7c9d1b3_repo_bindings.py",
+   "down_revision": "b3e8c7d1a9f4",
+   "create_tables": [
+    "repo_bindings"
    ],
    "add_column_tables": []
   },
