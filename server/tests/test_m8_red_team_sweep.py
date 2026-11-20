@@ -134,6 +134,7 @@ ROUTES = {
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/status"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/status",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/changes"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/changes",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/commits"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/commits",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/ci/runs"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/ci/runs",
     ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans/<plan_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans/{w['plan_b'].id}",
@@ -1209,7 +1210,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 54, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(ROUTES) == 55, ("爬扫面条数基线被改动：", len(ROUTES))
     assert len(_EXCLUSION_RECORDS) == 76, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
