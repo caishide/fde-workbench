@@ -128,7 +128,8 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # AE1-WP4：action_execution_logs 审计日志表（e2b4d6f8a0c2；挂 d9e3f5a7c1b9）
 # AE2-WP2：action_task_runs/action_task_nodes 多步编排表（b3e8c7d1a9f4；挂 e2b4d6f8a0c2）
 # AF3-WP1：repo_bindings 仓库绑定表（a3f5e7c9d1b3；挂 b3e8c7d1a9f4）
-HEAD_REVISION = "a3f5e7c9d1b3"
+# AF3-WP2：repo_patches 类型化 Patch 应用表＋repo_bindings.grant_json（c9e1f3a5b7d9；挂 a3f5e7c9d1b3）
+HEAD_REVISION = "c9e1f3a5b7d9"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1248,7 +1249,8 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + AE1-WP4（action_execution_logs 审计日志 e2b4d6f8a0c2）之后 = 96
     # + AE2-WP2（action_task_runs/action_task_nodes 多步编排 b3e8c7d1a9f4）之后 = 97
     # + AF3-WP1（repo_bindings 仓库绑定 a3f5e7c9d1b3）之后 = 98
-    assert len(known) == 98
+    # + AF3-WP2（repo_patches＋grant_json c9e1f3a5b7d9）之后 = 99
+    assert len(known) == 99
     # 链内任意已落戳都在集内（下探历史抽样：共享老 revision + M6-WP0 缝合
     # 新入的 fork 支链头——钉「支链确实入了集」而非只靠聚合值）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8", "a9f3e5c7b1d2"):

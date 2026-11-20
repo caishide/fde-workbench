@@ -85,6 +85,11 @@ class GitRunner:
         env = {key: value for key, value in os.environ.items() if key in _ENV_KEEP}
         env["GIT_CONFIG_GLOBAL"] = os.devnull  # 全局 ~/.gitconfig 失效（insteadOf/credential/hooksPath）
         env["GIT_CONFIG_NOSYSTEM"] = "1"  # 系统 /etc/gitconfig 失效
+        # AF3-WP2 受控提交身份（patch_apply 原子 commit；固定 af3-bot——不取宿主用户）
+        env["GIT_AUTHOR_NAME"] = "af3-bot"
+        env["GIT_AUTHOR_EMAIL"] = "af3-bot@workbench.local"
+        env["GIT_COMMITTER_NAME"] = "af3-bot"
+        env["GIT_COMMITTER_EMAIL"] = "af3-bot@workbench.local"
         return env
 
 

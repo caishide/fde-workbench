@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 # 拒绝码闭集（与 errors.py 对齐；判定层不抛异常——verdict 让调用方决定信封）
 CODE_PROTECTED = "protected_path"        # S-AF3-01/02/03：.git/**、hooks、.github/workflows/**
@@ -28,6 +29,34 @@ CODE_SYMLINK = "symlink_escape"          # S-AF3-05：symlink 逃逸
 CODE_OVERSIZE = "oversize_patch"         # S-AF3-06：三上限
 
 _DENIED_PARTS = frozenset({".git", "hooks"})
+
+# verdict.code → 域错误码/用户消息（errors.py 闭集映射；403 面＝保护路径，
+# 422 面＝形状/越界）——判定层单一映射（service/patch_plan 共用，WP2 自
+# patch_plan/service 本地副本上收至此防循环依赖）。
+VERDICT_ERRORS: dict[str, str] = {
+    "protected_path": "protected_path_rejected",
+    "path_escape": "path_escape_rejected",
+    "outside_allow_roots": "outside_allow_roots",
+    "symlink_escape": "symlink_escape_rejected",
+    "oversize_patch": "oversize_patch",
+}
+
+VERDICT_MESSAGES: dict[str, str] = {
+    "protected_path_rejected": "保护路径拒绝（.git/**、hooks、.github/workflows/**）。",
+    "path_escape_rejected": "路径穿越形态拒绝（..、绝对路径、盘符、反斜杠）。",
+    "outside_allow_roots": "越界路径（不在绑定 allow_roots 内）。",
+    "symlink_escape_rejected": "符号链接逃逸拒绝。",
+    "oversize_patch": "Patch 超出上限（bytes/files/lines）。",
+}
+
+
+class VerdictErrorPayload(NamedTuple):
+    code: str
+    message: str
+
+
+def verdict_error(verdict: "Verdict") -> VerdictErrorPayload:
+    return VerdictErrorPayload(VERDICT_ERRORS[verdict.code], VERDICT_MESSAGES[VERDICT_ERRORS[verdict.code]])
 
 
 @dataclass(frozen=True)

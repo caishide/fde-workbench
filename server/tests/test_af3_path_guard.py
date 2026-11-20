@@ -52,10 +52,11 @@ def _symlink(link: Path, target: Path) -> None:
 
 class TestWhitelistSnapshot:
     def test_snapshot_matches_decision_anchor(self) -> None:
-        """仓内快照锚：v1.0.0 / D-C 三上限 / agent_allowed 闭集——白名单升 v2
-        时此钉显式翻新（防快照静默漂移；沿 test_ae_connector_allowlist 锚钉形态）。"""
+        """仓内快照锚：**v2.0.0**（WP2 升版：patch_apply 自 human_only 转
+        agent_allowed——20 号 §2 D2 授权链齐）/ D-C 三上限 / agent_allowed 闭集
+        ——白名单升 v3 时此钉再次显式翻新（防快照静默漂移）。"""
         snap = load_whitelist()
-        assert snap["version"] == "1.0.0"
+        assert snap["version"] == "2.0.0"
         rules = snap["path_rules"]
         assert rules["allow_roots"] == ["ontology/", "transforms/", "rules/", "tests/", "config/"]
         assert rules["max_patch_bytes"] == 524288
@@ -65,12 +66,15 @@ class TestWhitelistSnapshot:
         assert rules["deny_absolute"] is True
         assert rules["deny_dotdot"] is True
         assert rules["deny_symlink_escape"] is True
-        # D2：Agent 可触发面闭集——patch_apply 归 WP2 类型化 adapter 接线，
-        # push/merge 永不入 agent 面（human_only）。
-        assert snap["git_ops"]["agent_allowed"] == ["status", "read_file", "diff", "log", "branch_create"]
+        # D2：Agent 可触发面闭集（v2）——WP2 落位六操作；push/merge/受保护
+        # 分支直写/hooks_path_config 永不入 agent 面（human_only）。
+        assert snap["git_ops"]["agent_allowed"] == [
+            "status", "read_file", "diff", "log", "branch_create", "patch_apply",
+        ]
         assert "push" in snap["git_ops"]["human_only"]
         assert "merge" in snap["git_ops"]["human_only"]
-        assert "patch_apply" in snap["git_ops"]["human_only"]
+        assert "hooks_path_config" in snap["git_ops"]["human_only"]
+        assert "patch_apply" not in snap["git_ops"]["human_only"]
 
     def test_load_missing_file_fails_closed(self, tmp_path: Path) -> None:
         with mock_patch.object(snapshot_module, "SNAPSHOT_PATH", tmp_path / "absent.json"):

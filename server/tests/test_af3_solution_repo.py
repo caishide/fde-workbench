@@ -504,7 +504,9 @@ class TestGitBoundary:
             verdict = resolve_op(op, whitelist=whitelist_snapshot)
             assert verdict.ok is False, op
             assert verdict.code == "tool_not_allowed", op
-        assert resolve_op("patch_apply", whitelist=whitelist_snapshot).ok is False
+        # 白名单 v2.0.0（WP2 升版）：patch_apply 自 human_only 转 agent_allowed
+        # （20 号 §2 D2 授权链）——其余 human_only 仍拒。
+        assert resolve_op("patch_apply", whitelist=whitelist_snapshot).ok is True
 
     def test_unknown_op_fails_closed(self, whitelist_snapshot) -> None:
         verdict = resolve_op("format_disk", whitelist=whitelist_snapshot)
@@ -528,6 +530,10 @@ class TestRouteSurface:
             "/api/v1/solution-repo/bindings/<binding_id>/files",
             "/api/v1/solution-repo/bindings/<binding_id>/status",
             "/api/v1/solution-repo/bindings/<binding_id>/branches",
+            "/api/v1/solution-repo/bindings/<binding_id>/patches",           # AF3-WP2 patch_apply（v2 agent_allowed）
+            "/api/v1/solution-repo/bindings/<binding_id>/patches/<patch_id>",  # AF3-WP2 Patch 行详情
+            "/api/v1/solution-repo/bindings/<binding_id>/changes",           # AF3-WP2 diff 读面
+            "/api/v1/solution-repo/bindings/<binding_id>/commits",           # AF3-WP2 log 读面
         }
 
     def test_revoke_then_read_forbidden(self, client, af3_world, settings, sample_repo) -> None:

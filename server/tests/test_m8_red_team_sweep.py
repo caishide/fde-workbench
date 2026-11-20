@@ -132,6 +132,8 @@ ROUTES = {
     ("GET", "/api/v1/projects/<project_id>/tasks"): lambda w: f"/api/v1/projects/{w['project_b'].id}/tasks",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/status"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/status",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/changes"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/changes",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/commits"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/commits",
     ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans/<plan_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans/{w['plan_b'].id}",
@@ -757,6 +759,14 @@ _EXCLUSION_RECORDS = {
         "b_owner_status": 404,
         "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
     },
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/patches/<patch_id>"): {
+        "reason": "AF3-WP2 Patch 行详情：双资源嵌套形态（binding_id+patch_id），M8 夹具无 Patch 行前置状态——A 实测 404（跨租户 not_found 不泄露）、同角色 A 实测 404、B 属主实测 404（夹具无 patch 行，阳性对照不可构造）；幂等/failed 留痕语义由 tests/test_af3_patch_plan.py 专项承担（同租户 200 实测）",
+        "exclusion_kind": "positive_control_infeasible",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 404,
+        "measured": {"a": 404, "same_role_a": 404, "b_owner": 404},
+    },
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/files"): {
         "reason": "AF3-WP1 读文件面：path 走 query 参数（M8 爬扫形态只拼路径变量、无 query 槽）——无参形态属请求形状错误：A 实测 404（跨租户 not_found 不泄露）、同角色 A 实测 404、B 属主实测 422（path_escape_rejected）；租户隔离阳性对照（B 属主带合法 path 实测 200）由 tests/test_af3_solution_repo.py::TestReadFile 承担（含 S-AF3-01/04/05/07 四拒负向）",
         "exclusion_kind": "internal_service",
@@ -1199,8 +1209,8 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 52, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 75, (
+    assert len(ROUTES) == 54, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(_EXCLUSION_RECORDS) == 76, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

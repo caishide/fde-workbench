@@ -84,3 +84,38 @@ def create_branch(binding_id: str):
             "error": None,
         }
     ), 201
+
+
+# ---- AF3-WP2：类型化 Patch 应用＋diff/log 读面 ----------------------------------
+
+
+@solution_repo_blueprint.post("/solution-repo/bindings/<binding_id>/patches")
+@require_auth
+def apply_patch(binding_id: str):
+    """patch_apply（白名单 v2 agent_allowed）：PatchPlan 键集精确→原子应用＋
+    受控 commit；幂等同键重放＝复放首次结果（200 replayed）。"""
+    result = service.apply_patch(
+        actor=g.current_user, binding_id=binding_id, payload=request.get_json(silent=True)
+    )
+    status = 200 if result.get("status") == "replayed" else 201
+    return jsonify({"data": result, "error": None}), status
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/patches/<patch_id>")
+@require_auth
+def get_patch(binding_id: str, patch_id: str):
+    return jsonify(
+        {"data": service.get_patch(actor=g.current_user, binding_id=binding_id, patch_id=patch_id), "error": None}
+    ), 200
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/changes")
+@require_auth
+def get_changes(binding_id: str):
+    return jsonify({"data": service.get_changes(actor=g.current_user, binding_id=binding_id), "error": None}), 200
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/commits")
+@require_auth
+def get_commit_log(binding_id: str):
+    return jsonify({"data": service.get_commit_log(actor=g.current_user, binding_id=binding_id), "error": None}), 200

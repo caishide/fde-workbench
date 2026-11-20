@@ -20,6 +20,7 @@ ERROR_STATUS: dict[str, int] = {
     "oversize_patch": 422,              # S-AF3-06（WP2 接线时经本码出信封）
     "dirty_tree_conflict": 409,         # S-AF3-08：不进他人 dirty tree
     "binding_exists": 409,              # 同 org+repo+branch 重复绑定
+    "base_mismatch": 409,               # AF3-WP2：plan.base_commit != 应用时刻 HEAD（修改源内容后旧批准失效）
     "git_operation_failed": 500,        # Git 执行层失败（结构化拒绝信息随 details）
 }
 
