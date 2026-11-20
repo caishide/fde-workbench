@@ -27,6 +27,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
+import sys
+import time
 import re
 from contextlib import contextmanager
 from pathlib import Path
@@ -39,7 +42,7 @@ from fde_api.extensions import db
 from fde_api.solution_repo.errors import SolutionRepoError
 from fde_api.solution_repo.git_boundary import resolve_op
 from fde_api.solution_repo.git_ops import GitFailed, GitRunner
-from fde_api.solution_repo.models import RepoBinding, RepoPatch
+from fde_api.solution_repo.models import RepoBinding, RepoCIRun, RepoPatch
 from fde_api.solution_repo.patch_plan import validate_patch_plan
 from fde_api.solution_repo.path_guard import (
     Verdict,
@@ -625,6 +628,17 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             details={"plan_base_commit": plan["base_commit"], "head": head},
         )
 
+    # 评审 T1/T2（设计件 §3.2）：Patch 条目命中 ci_protected 名单（conftest/
+    # ini/pyproject 等装饰载荷与依赖面）→ 403——bundle 执行不可达的注入面。
+    protected = _load_whitelist_or_fail()["ci_bundle"].get("ci_protected") or []
+    for entry in plan["entries"]:
+        if _ci_protected_hit(entry["path"], protected):
+            raise SolutionRepoError(
+                "protected_path_rejected",
+                "Patch 条目命中 ci_protected 名单（CI 装饰载荷防线）。",
+                details={"path": entry["path"]},
+            )
+
     # 原子写入＋逆序回滚登记（written: [(path, kind, saved_bytes|None)]）。
     # 写入前复核（评审 H3/H4：probe→write 窗口）——已存在目标 realpath 落点
     # 判定（逃逸/保护路径/越界同拒）；create 目标已存在 → 422（M8 语义守卫）。
@@ -850,3 +864,196 @@ def get_patch(actor: Any, binding_id: str, patch_id: str) -> dict[str, Any]:
     if patch is None:
         raise SolutionRepoError("not_found", "Patch 行不存在。", details={"patch_id": patch_id})
     return patch.snapshot()
+
+
+# ---- AF3-WP3：固定受信任 CI bundle（设计件 §3；P1 W-A~W-E 推荐案） ----------------
+
+
+def _ci_protected_hit(path: str, patterns: list[str]) -> bool:
+    from fnmatch import fnmatch
+
+    posix = path.replace("\\", "/")
+    return any(fnmatch(posix, pat) or posix.endswith("/" + pat) for pat in patterns)
+
+
+def _parse_pytest_verbose(text: str, cap: int) -> list[dict[str, str]]:
+    """pytest -v 输出解析：nodeid 级执行清单（PASSED/FAILED/SKIPPED/ERROR 等
+    终态词）——「CI 绿但没执行新增断言」对拍面（评审 T7）。"""
+    outcomes = ("PASSED", "FAILED", "SKIPPED", "ERROR", "XFAIL", "XPASS")
+    checks: list[dict[str, str]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if "::" not in line:
+            continue
+        for oc in outcomes:
+            marker = f" {oc} "
+            idx = line.find(marker)
+            if idx == -1:
+                if line.endswith(f" {oc}"):
+                    idx = len(line) - len(oc) - 1
+                else:
+                    continue
+            nodeid = line[:idx].strip()
+            if nodeid:
+                checks.append({"nodeid": nodeid, "outcome": oc.lower()})
+            break
+        if len(checks) >= cap:
+            break
+    return checks
+
+
+def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
+    """run_ci 面（白名单 v3 agent_allowed）：二道闸→bundle 闭集→grant→
+    dirty 前置→受控子进程→结果解析→RepoCIRun 落行。
+
+    verdict 三态诚实归因（设计件 §3.3）：green＝exit 0 且执行清单非空；
+    red＝exit≠0；error＝timeout/执行层失败（error_json 归因，不冒充 red）。"""
+    _resolve_op("run_ci")
+    if not isinstance(payload, dict):
+        raise SolutionRepoError("validation_failed", "请求体须为 JSON 对象。")
+    bundle_id = payload.get("bundle_id")
+    snap = _load_whitelist_or_fail()
+    ci_cfg = snap["ci_bundle"]
+    bundles = ci_cfg.get("bundles") or {}
+    if not isinstance(bundle_id, str) or bundle_id not in bundles:
+        raise SolutionRepoError(
+            "tool_not_allowed",
+            f"bundle_id 不在受信任闭集内：{sorted(bundles)}",
+            details={"bundle_id": bundle_id},
+        )
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id)
+        _touch_audit(session, row, "run_ci")
+        session.commit()
+    _ensure_grant(row, "run_ci")  # 评审 D3
+
+    runner = GitRunner(Path(row.repo_root))
+    try:
+        porcelain = runner.run("status", "--porcelain")
+        if porcelain:
+            # 结果归因前置：干净树才可把 CI 结果锚到 HEAD（与 patch 前置一致）
+            raise SolutionRepoError(
+                "dirty_tree_conflict",
+                "工作树存在未提交变更（CI 结果须可归因到 commit）。",
+                details={"porcelain_rows": porcelain.splitlines()[:20]},
+            )
+        head = runner.run("rev-parse", "HEAD")
+    except GitFailed as exc:
+        raise SolutionRepoError("git_operation_failed", "Git 执行失败。", details=exc.to_details()) from None
+
+    ws_root = Path(row.workspace_root)
+    argv = list(bundles[bundle_id]["argv"])
+    if argv and argv[0] == "python":
+        # 模板首项 "python"＝服务端进程解释器（sys.executable——venv 内含
+        # fde_api/pytest；PATH 上的裸 python 在部署形态下不可信）
+        argv = [sys.executable, *argv[1:]]
+    timeout = int(ci_cfg.get("subprocess_timeout_seconds") or 300)
+    cap = int(ci_cfg.get("stdout_cap_bytes") or 1048576)
+    started = time.monotonic()
+    verdict = "error"
+    exit_code = -1
+    stdout_text = ""
+    stderr_text = ""
+    error_json: dict[str, Any] | None = None
+    try:
+        ci_env = GitRunner._safe_env()
+        # 服务端受控 PYTHONPATH（fde_api 可寻址）：-I 隔离与 editable 安装冲突，
+        # 改为 env 白名单内显式注入服务端 src（外部 PYTHONPATH 注入面仍被封堵——
+        # 与 -I 等价受控，评审实测评测修正；设计件 §3.1 落痕同步）。
+        ci_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+        proc = subprocess.run(  # noqa: S603 — 服务端模板 argv，禁 shell
+            list(argv),
+            cwd=str(ws_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            shell=False,
+            env=ci_env,
+            check=False,
+        )
+        exit_code = proc.returncode
+        stdout_text = (proc.stdout or "")[:cap]
+        stderr_text = (proc.stderr or "")[:cap]
+        verdict = "red" if exit_code != 0 else "green"
+    except subprocess.TimeoutExpired:
+        verdict = "error"
+        error_json = {"reason": f"timeout after {timeout}s", "args": " ".join(argv)}
+    except OSError as exc:
+        verdict = "error"
+        error_json = {"reason": str(exc), "args": " ".join(argv)}
+    duration_ms = int((time.monotonic() - started) * 1000)
+
+    executed: list[dict[str, str]] = []
+    new_tests: list[str] = []
+    if bundle_id in ("unit_test", "transform_test"):
+        executed = _parse_pytest_verbose(stdout_text, int(ci_cfg.get("max_executed_checks") or 1000))
+        baseline_raw = runner.run_ok("ls-tree", "-r", "--name-only", row.base_commit, "--", "tests/")
+        baseline_files = set((baseline_raw or "").splitlines())
+        new_tests = [
+            c["nodeid"]
+            for c in executed
+            if c["nodeid"].split("::")[0] not in baseline_files
+        ]
+    else:
+        # 校验器 bundle：stdout JSON 的 checked 清单 → executed（nodeid 级）
+        try:
+            parsed = json.loads(stdout_text) if stdout_text.strip().startswith("{") else {}
+            for item in parsed.get("checked") or []:
+                executed.append({"nodeid": item["nodeid"], "outcome": item["outcome"]})
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass  # 校验器输出异常时 executed 置空——verdict 仍按 exit_code 诚实
+    if verdict == "green" and not executed:
+        # 「CI 绿但没执行任何检查」＝判定层拒绝（05 §5 AF3 行防线）
+        verdict = "error"
+        error_json = {"reason": "green 但执行清单为空（无新增断言执行证据）", "bundle_id": bundle_id}
+
+    run_id = str(uuid4())
+    with _sr_session() as session:
+        session.add(
+            RepoCIRun(
+                id=run_id,
+                org_id=actor.org_id,
+                binding_id=binding_id,
+                bundle_id=bundle_id,
+                head_commit=head,
+                exit_code=exit_code,
+                verdict=verdict,
+                duration_ms=duration_ms,
+                executed_json=executed,
+                new_tests_json=new_tests,
+                stdout_head=stdout_text[:4096],
+                stderr_head=stderr_text[:4096],
+                error_json=error_json,
+            )
+        )
+        session.commit()
+        return {
+            "run_id": run_id,
+            "bundle_id": bundle_id,
+            "head_commit": head,
+            "exit_code": exit_code,
+            "verdict": verdict,
+            "duration_ms": duration_ms,
+            "executed_checks": executed,
+            "new_test_nodeids": new_tests,
+            "stdout_head": stdout_text[:4096],
+            "stderr_head": stderr_text[:4096],
+            "error_json": error_json,
+            "executed_truncated": len(executed) >= int(ci_cfg.get("max_executed_checks") or 1000),
+        }
+
+
+def get_ci_runs(actor: Any, binding_id: str) -> dict[str, Any]:
+    """CI 执行行列表（近 20 条；append-only 可复跑——每 run 新行）。"""
+    with _sr_session() as session:
+        _load_binding(session, actor.org_id, binding_id, allow_revoked=True)
+        runs = (
+            session.query(RepoCIRun)
+            .filter(RepoCIRun.org_id == actor.org_id, RepoCIRun.binding_id == binding_id)
+            .order_by(RepoCIRun.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        return {"items": [r.snapshot() for r in runs], "count": len(runs)}

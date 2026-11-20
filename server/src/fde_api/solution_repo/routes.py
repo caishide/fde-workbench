@@ -121,3 +121,22 @@ def get_changes(binding_id: str):
 @require_auth
 def get_commit_log(binding_id: str):
     return jsonify({"data": service.get_commit_log(actor=g.current_user, binding_id=binding_id), "error": None}), 200
+
+
+# ---- AF3-WP3：固定受信任 CI bundle -----------------------------------------------
+
+
+@solution_repo_blueprint.post("/solution-repo/bindings/<binding_id>/ci/runs")
+@require_auth
+def run_ci(binding_id: str):
+    """run_ci（白名单 v3 agent_allowed）：受信任 bundle 执行＋RepoCIRun 落行。"""
+    result = service.run_ci(
+        actor=g.current_user, binding_id=binding_id, payload=request.get_json(silent=True)
+    )
+    return jsonify({"data": result, "error": None}), 201
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/ci/runs")
+@require_auth
+def get_ci_runs(binding_id: str):
+    return jsonify({"data": service.get_ci_runs(actor=g.current_user, binding_id=binding_id), "error": None}), 200

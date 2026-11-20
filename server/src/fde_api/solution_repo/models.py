@@ -123,3 +123,54 @@ class RepoPatch(Base, TimestampMixin):
             "status": self.status,
             "error_code": self.error_code,
         }
+
+
+REPO_CI_VERDICTS = ("green", "red", "error")
+
+
+class RepoCIRun(Base, TimestampMixin):
+    """固定 CI bundle 执行行（AF3-WP3；append-only 可复跑——每次 run 新行）。
+
+    verdict 三态诚实归因：green＝exit 0 且执行清单非空；red＝exit≠0；
+    error＝timeout/执行层失败（不冒充 red）。``executed_json`` 携 nodeid 级
+    执行清单（cap）、``new_tests_json`` 携相对绑定基线新增的已执行测试
+    （「CI 绿但没执行新增断言」对拍面——05 §5 AF3 行）。
+    """
+
+    __tablename__ = "repo_ci_runs"
+    __table_args__ = (
+        CheckConstraint(
+            f"verdict IN {REPO_CI_VERDICTS!r}",
+            name="ck_repo_ci_runs_verdict",
+        ),
+        Index("ix_repo_ci_runs_org_binding", "org_id", "binding_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    bundle_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    head_commit: Mapped[str] = mapped_column(String(40), nullable=False)
+    exit_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    verdict: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    executed_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    new_tests_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    stdout_head: Mapped[str] = mapped_column(String, nullable=False, default="")
+    stderr_head: Mapped[str] = mapped_column(String, nullable=False, default="")
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "run_id": self.id,
+            "bundle_id": self.bundle_id,
+            "head_commit": self.head_commit,
+            "exit_code": self.exit_code,
+            "verdict": self.verdict,
+            "duration_ms": self.duration_ms,
+            "executed_checks": list(self.executed_json or []),
+            "new_test_nodeids": list(self.new_tests_json or []),
+            "stdout_head": self.stdout_head,
+            "stderr_head": self.stderr_head,
+            "error_json": self.error_json,
+        }

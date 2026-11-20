@@ -1,14 +1,14 @@
 {
-  "version": "2.0.0",
-  "artifact": "AF3 仓工具面白名单 v2",
+  "version": "3.0.0",
+  "artifact": "AF3 仓工具面白名单 v3",
   "generated_at": "2026-11-21",
-  "status": "FROZEN-v2（2026-11-21 WP2 落位升版：git_ops 封闭集变更——patch_apply 自 human_only 转 agent_allowed〔20 号 §2 D2 已批「Agent 可触发：读/建分支/应用 patch/查状态」授权链齐；v1.0.0 系 WP1 时点占位〕）。白名单属安全红线件：规则封闭集合，后续变更须审核后升 v3；运行时不得动态注册路径或 Git 操作。",
+  "status": "FROZEN-v3（2026-11-21 WP3 落位升版：agent_allowed += run_ci〔固定受信任 CI bundle〕＋ci_bundle 段实装 bundles 闭集/ci_protected 名单/资源上限——设计件 _af3-wp3-ci-bundle-spec.md §3，P1 推荐案无异议按默认推进呈追认。白名单属安全红线件：规则封闭集合，后续变更须审核后升 v4；运行时不得动态注册路径、Git 操作或 CI 命令。）",
   "authority": {
-    "work_order": "docs/ai-fde/20-af3-work-order.md §2 D2（patch_apply 入 agent 面）、§3 WP2（类型化 Patch adapter）",
-    "negative_rule": "docs/ai-fde/04-architecture-and-governance.md §3.3 v0.2 A1（Patch 能写 hook = 下一次人工 git 操作替 Agent 执行代码）",
-    "design": "docs/ai-fde/_af3-wp0-design.md §3（机检化设计稿）＋§6 D-C（三上限拍板）",
-    "decision_record": "docs/ai-fde/20-af3-work-order.md §9（WP0/WP1 落痕行）",
-    "v1_baseline": "v1.0.0（2026-11-20 WP1 落位，FROZEN-v1；patch_apply 当时的 human_only 占位注记见 #557 diff）"
+    "work_order": "docs/ai-fde/20-af3-work-order.md §3 WP3（固定受信任 CI）＋§2 D3（不执行 Patch 夹带脚本）",
+    "negative_rule": "docs/ai-fde/04-architecture-and-governance.md §3.3 v0.2 A1",
+    "design": "docs/ai-fde/_af3-wp3-ci-bundle-spec.md §3（bundle 语义表·P1 评审对象）",
+    "decision_record": "docs/ai-fde/20-af3-work-order.md §9（WP0/WP1/WP2 落痕行）",
+    "v2_baseline": "v2.0.0（2026-11-21 WP2 落位，FROZEN-v2）"
   },
   "path_rules": {
     "allow_roots": ["ontology/", "transforms/", "rules/", "tests/", "config/"],
@@ -16,20 +16,29 @@
     "deny_absolute": true,
     "deny_dotdot": true,
     "deny_backslash": true,
-    "deny_symlink_escape": true,
+ "deny_symlink_escape": true,
     "max_patch_bytes": 524288,
     "max_patch_files": 100,
     "max_patch_changed_lines": 20000,
     "max_file_read_bytes": 1048576
   },
   "git_ops": {
-    "agent_allowed": ["status", "read_file", "diff", "log", "branch_create", "patch_apply"],
+    "agent_allowed": ["status", "read_file", "diff", "log", "branch_create", "patch_apply", "run_ci"],
     "human_only": ["push", "merge", "branch_delete", "remote_config", "protected_branch_write", "hooks_path_config"],
     "fail_closed": "闭集外操作名一律拒绝（不视为 human_only，防止误把未知操作当待办放行到人工面）",
-    "note": "v2 落位端点＝status/read_file/branch_create（WP1）＋diff（GET /changes）＋log（GET /commits）＋patch_apply（POST /patches，类型化 PatchPlan 键集精确契约、原子应用＋受控 commit、失败回滚零残留）六个（resolve_op 为各服务入口第二道闸）；push/merge/受保护分支直写/hooks_path_config 永不入 agent 面（D2）"
+    "note": "v3 落位端点＝status/read_file/branch_create/patch_apply/diff/log（WP1/WP2）＋run_ci（WP3 POST /ci/runs）七个（resolve_op 为各服务入口第二道闸）；push/merge/受保护分支直写/hooks_path_config 永不入 agent 面（D2）"
   },
   "ci_bundle": {
-    "note": "固定受信任 CI bundle 执行器归 WP3（D3：不执行 Patch 夹带的任意脚本或测试装饰载荷）；本件只登记段位，WP2 不实现执行面",
-    "fail_closed": true
+    "bundles": {
+      "lint": {"argv": ["python", "-m", "fde_api.solution_repo.checkers", "--mode", "lint", "."]},
+      "contract": {"argv": ["python", "-m", "fde_api.solution_repo.checkers", "--mode", "contract", "."]},
+      "unit_test": {"argv": ["python", "-m", "pytest", "tests/", "-v", "--tb=line", "-p", "no:cacheprovider"]},
+      "transform_test": {"argv": ["python", "-m", "pytest", "tests/transforms/", "-v", "--tb=line", "-p", "no:cacheprovider"]}
+    },
+    "ci_protected": ["conftest.py", "tests/conftest.py", "pytest.ini", ".pytest.ini", "pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "requirements.txt", "requirements-*.txt", "Pipfile", "poetry.lock"],
+    "subprocess_timeout_seconds": 300,
+    "stdout_cap_bytes": 1048576,
+    "max_executed_checks": 1000,
+    "note": "设计件 _af3-wp3-ci-bundle-spec.md §3：bundle argv 服务端模板零请求体拼接；argv[0] python 执行时替换为服务端进程解释器（sys.executable）；解释器隔离＝env 白名单重建＋服务端受控 PYTHONPATH（server/src 显式注入——外部 PYTHONPATH 注入面仍被封堵，与 -I 等价受控，评审实测评测修正）；ci_protected＝T1/T2 装饰载荷防线（patch 命中 403）；verdict 三态 green|red|error 诚实归因"
   }
 }
