@@ -71,15 +71,17 @@ def _auth(user, settings) -> dict[str, str]:
     return {"Authorization": f"Bearer {issue_access_token(user, settings)}"}
 
 
-def _bind(client, af3_world, settings, sample_repo) -> str:
+def _bind(client, af3_world, settings, sample_repo, **overrides) -> str:
+    payload = {
+        "repo_root": str(sample_repo),
+        "workspace_root": str(sample_repo),
+        "branch": f"af3/{uuid.uuid4().hex[:8]}",
+        "allow_roots": ["ontology/", "transforms/", "rules/", "tests/", "config/"],
+    }
+    payload.update(overrides)
     resp = client.post(
         "/api/v1/solution-repo/bindings",
-        json={
-            "repo_root": str(sample_repo),
-            "workspace_root": str(sample_repo),
-            "branch": f"af3/{uuid.uuid4().hex[:8]}",
-            "allow_roots": ["ontology/", "transforms/", "rules/", "tests/", "config/"],
-        },
+        json=payload,
         headers=_auth(af3_world["actor"], settings),
     )
     assert resp.status_code == 201, resp.get_json()
@@ -179,7 +181,12 @@ class TestEvidenceVerbatim:
         )
         assert resp.status_code == 200, resp.get_json()
         data = resp.get_json()["data"]
-        assert data["sha256"] == expected_sha
+        # 评审 H1 双锚：git_blob_oid＝blob OID（rev-parse 输出）；sha256＝内容
+        # 真实 sha256（非 blob OID——字段名实相符）。
+        assert data["git_blob_oid"] == expected_sha
+        import hashlib as _h
+
+        assert data["sha256"] == _h.sha256(data["content"].encode("utf-8", errors="replace")).hexdigest()
         assert "name: applied" in data["content"]
 
     def test_verbatim_unknown_commit_rejected(self, client, af3_world, settings, applied) -> None:
@@ -340,3 +347,85 @@ def _run_and_fix(client, af3_world, settings, binding_id: str, sample_repo: Path
         headers=_auth(af3_world["actor"], settings),
     )
     return {"first_verdict": first_verdict, "recovered_verdict": second.get_json()["data"]["verdict"]}
+
+
+# ---- 评审批次补钉（H2 判型/H3 上限/H4 跨租户/H5 M6/目录判型/恒真断言修） ------------
+
+
+class TestEvidenceFileReviewPatches:
+    @pytest.fixture
+    def applied(self, client, af3_world, settings, sample_repo) -> dict:
+        binding_id = _bind(client, af3_world, settings, sample_repo)
+        patch = _apply(client, af3_world, settings, binding_id, sample_repo, "applied")
+        return {"binding_id": binding_id, "patch": patch}
+
+    def test_directory_path_not_verbatim(self, client, af3_world, settings, applied) -> None:
+        """评审 H2：目录路径 rev-parse 返回 tree OID——判型后 404（不作伪取证）。"""
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{applied['binding_id']}/evidence/file",
+            query_string={"path": "ontology", "commit": applied["patch"]["applied_commit"]},
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["error"]["code"] == "not_found"
+
+    def test_oversize_blob_rejected(self, client, af3_world, settings, applied, sample_repo) -> None:
+        """评审 H3：blob 大小上限（cat-file -s——G9 读取上限钉在 git 对象面生效）。"""
+        (sample_repo / "ontology" / "big-seed.yaml").write_text("x" * 1048577, encoding="utf-8")
+        _git(sample_repo, "add", ".")
+        _git(sample_repo, "-c", "user.email=af3@test.local", "-c", "user.name=T", "commit", "-m", "big")
+        head = _git(sample_repo, "rev-parse", "HEAD")
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{applied['binding_id']}/evidence/file",
+            query_string={"path": "ontology/big-seed.yaml", "commit": head},
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == "validation_failed"
+
+    def test_cross_tenant_verbatim_404(self, client, af3_world, settings, applied) -> None:
+        """评审 vg1：合法 path+commit 形态下跨租户 404（逐字取证泄漏面回归钉——
+        M8 排除登记实测证据的专项承担者）。"""
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{applied['binding_id']}/evidence/file",
+            query_string={"path": "ontology/applied.yaml", "commit": applied["patch"]["applied_commit"]},
+            headers=_auth(af3_world["outsider"], settings),
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["error"]["code"] == "not_found"
+
+    def test_grant_gated_before_audit_count(self, client, af3_world, settings, applied, sample_repo, db_session) -> None:
+        """评审 H5/M6：grant 未授权 read_file → 403 且 audit ops 零累加
+        （授权先于审计计数——顺序钉）。"""
+        restricted = _bind(
+            client, af3_world, settings, sample_repo, grant_json={"ops": ["status"]}
+        )
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{restricted}/evidence/file",
+            query_string={"path": "ontology/equipment.yaml", "commit": "0" * 40},
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert resp.status_code == 403
+        assert resp.get_json()["error"]["code"] == "tool_not_allowed"
+        detail = client.get(
+            f"/api/v1/solution-repo/bindings/{restricted}",
+            headers=_auth(af3_world["actor"], settings),
+        )
+        ops = detail.get_json()["data"]["audit_json"]["ops"]
+        assert "evidence_file" not in ops, ops
+
+    def test_evidence_verdict_pinned_green(self, client, af3_world, settings, applied) -> None:
+        """评审 B9：恒真断言修——verdict 钉具体值（lint 种子仓无违例 → green）。"""
+        run = client.post(
+            f"/api/v1/solution-repo/bindings/{applied['binding_id']}/ci/runs",
+            json={"bundle_id": "lint"},
+            headers=_auth(af3_world["actor"], settings),
+        )
+        assert run.status_code == 201
+        assert run.get_json()["data"]["verdict"] == "green"
+        resp = client.get(
+            f"/api/v1/solution-repo/bindings/{applied['binding_id']}/evidence",
+            headers=_auth(af3_world["actor"], settings),
+        )
+        ev = resp.get_json()["data"]
+        assert ev["ci_runs"][0]["verdict"] == "green"
