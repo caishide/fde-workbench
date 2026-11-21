@@ -1401,3 +1401,96 @@ def start_correction(actor: Any, binding_id: str, payload: Any) -> dict[str, Any
             "status": status,
             "error_json": error_json,
         }
+
+
+# ---- AF3-WP5：证据绑定与审计台账聚合 -----------------------------------------------
+
+
+def get_evidence(actor: Any, binding_id: str) -> dict[str, Any]:
+    """证据聚合端点（AF2③/AF1③；05 §5「成功提案绑定 commit/hash/真实 CI」）：
+    一次取证包＝绑定快照＋Patch 行（plan_sha256/applied_commit）＋CI runs
+    （head_commit/verdict）＋corrections 轨迹＋审计 events（actor/at）。"""
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id, allow_revoked=True)
+        patches = (
+            session.query(RepoPatch)
+            .filter(RepoPatch.org_id == actor.org_id, RepoPatch.binding_id == binding_id)
+            .order_by(RepoPatch.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        ci_runs = (
+            session.query(RepoCIRun)
+            .filter(RepoCIRun.org_id == actor.org_id, RepoCIRun.binding_id == binding_id)
+            .order_by(RepoCIRun.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        corrections = (
+            session.query(RepoCorrection)
+            .filter(RepoCorrection.org_id == actor.org_id, RepoCorrection.binding_id == binding_id)
+            .order_by(RepoCorrection.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        return {
+            "binding": row.snapshot(),
+            "patches": [p.snapshot() for p in patches],
+            "ci_runs": [r.snapshot() for r in ci_runs],
+            "corrections": [c.snapshot() for c in corrections],
+            "audit_events": list((row.audit_json or {}).get("events") or []),
+        }
+
+
+def get_evidence_file(actor: Any, binding_id: str, rel_path: str, commit: str) -> dict[str, Any]:
+    """evidence_verbatim 逐字取证（AF2③ 溯源）：按指定 commit 读 blob 内容＋
+    sha256（git rev-parse <commit>:<path> 对拍锚——提案引用的文件内容必须与
+    该 commit 逐字一致）。路径过形状面（四拒/越界）。"""
+    _resolve_op("read_file")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit or ""):
+        raise SolutionRepoError(
+            "validation_failed", "commit 须为 40 位十六进制 commit hash。", details={"commit": commit}
+        )
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id)
+        _touch_audit(session, row, "evidence_file", actor_id=actor.id)
+        session.commit()
+    _ensure_grant(row, "read_file")
+    allow_roots = tuple(row.allow_roots_json or [])
+    shape = check_path(rel_path, allow_roots=allow_roots)
+    if not shape.ok:
+        raise _verdict_error(shape, rel_path)
+    runner = GitRunner(Path(row.repo_root))
+    try:
+        blob_sha = runner.run_ok("rev-parse", "--verify", "--quiet", f"{commit}:{rel_path}")
+        if blob_sha is None:
+            raise SolutionRepoError(
+                "not_found",
+                "commit 或路径在该提交中不存在。",
+                details={"commit": commit, "path": rel_path},
+            )
+        content = runner.run("show", f"{commit}:{rel_path}")
+    except GitFailed as exc:
+        raise SolutionRepoError("git_operation_failed", "Git 执行失败。", details=exc.to_details()) from None
+    return {
+        "path": rel_path,
+        "commit": commit,
+        "sha256": blob_sha,
+        "content": content,
+    }
+
+
+def get_audit_ledger(actor: Any, binding_id: str) -> dict[str, Any]:
+    """结构化审计台账聚合（D2 承接；WP5）：binding audit events（actor/at）
+    ＋patch/ci/correction 三类行计数与清单。"""
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id, allow_revoked=True)
+        patches = session.query(RepoPatch).filter(RepoPatch.binding_id == binding_id).count()
+        ci_runs = session.query(RepoCIRun).filter(RepoCIRun.binding_id == binding_id).count()
+        corrections = session.query(RepoCorrection).filter(RepoCorrection.binding_id == binding_id).count()
+        return {
+            "binding_id": row.id,
+            "binding_events": list((row.audit_json or {}).get("events") or []),
+            "ops": dict((row.audit_json or {}).get("ops") or {}),
+            "row_counts": {"patches": patches, "ci_runs": ci_runs, "corrections": corrections},
+        }
