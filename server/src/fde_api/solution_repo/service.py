@@ -33,6 +33,7 @@ import time
 import re
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Iterator
 from uuid import uuid4
 
@@ -42,7 +43,7 @@ from fde_api.extensions import db
 from fde_api.solution_repo.errors import SolutionRepoError
 from fde_api.solution_repo.git_boundary import resolve_op
 from fde_api.solution_repo.git_ops import GitFailed, GitRunner
-from fde_api.solution_repo.models import RepoBinding, RepoCIRun, RepoPatch
+from fde_api.solution_repo.models import RepoBinding, RepoCIRun, RepoCorrection, RepoPatch
 from fde_api.solution_repo.patch_plan import validate_patch_plan
 from fde_api.solution_repo.path_guard import (
     Verdict,
@@ -184,11 +185,17 @@ def _load_binding(session: Any, actor_org: str, binding_id: str, *, allow_revoke
     return row
 
 
-def _touch_audit(session: Any, row: RepoBinding, event: str, details: dict[str, Any] | None = None) -> None:
+def _touch_audit(
+    session: Any,
+    row: RepoBinding,
+    event: str,
+    details: dict[str, Any] | None = None,
+    actor_id: str | None = None,
+) -> None:
     """审计计数＋事件累加（bind/revoke 落事件；读面计数）。
 
-    actor/时刻的结构化留痕归 WP5 审计台账（评审 D2 defer）——本面 ``ops``
-    计数与 ``events`` 只承载轻量快照语义。
+    评审 D2 清偿（WP4）：events 逐条携 ``actor_id`` 与 UTC ``at`` 时刻——
+    WP5 结构化审计台账的取证前置落位（20 号 §3 WP5 台账面在此之上聚合）。
     """
     audit = dict(row.audit_json or {})
     ops = dict(audit.get("ops") or {})
@@ -196,7 +203,14 @@ def _touch_audit(session: Any, row: RepoBinding, event: str, details: dict[str, 
     audit["ops"] = ops
     if event in ("bind", "revoke"):
         events = list(audit.get("events") or [])
-        events.append({"event": event, "details": details or {}})
+        events.append(
+            {
+                "event": event,
+                "actor_id": actor_id,
+                "at": datetime.now(timezone.utc).isoformat(),
+                "details": details or {},
+            }
+        )
         audit["events"] = events[-20:]
     row.audit_json = audit
 
@@ -349,7 +363,17 @@ def bind_repo(actor: Any, payload: Any, *, repo_base: str) -> dict[str, Any]:
                 branch=branch,
                 grant_json=grant_json,
                 status="active",
-                audit_json={"ops": {}, "events": [{"event": "bind", "details": {"branch": branch}}]},
+                audit_json={
+                "ops": {},
+                "events": [
+                    {
+                        "event": "bind",
+                        "actor_id": actor.id,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        "details": {"branch": branch},
+                    }
+                ],
+            },
             )
             session.add(row)
             session.commit()
@@ -389,7 +413,7 @@ def revoke_binding(actor: Any, binding_id: str) -> dict[str, Any]:
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
         row.status = "revoked"
-        _touch_audit(session, row, "revoke")
+        _touch_audit(session, row, "revoke", actor_id=actor.id)
         session.commit()
         return row.snapshot()
 
@@ -407,7 +431,7 @@ def read_file(actor: Any, binding_id: str, rel_path: str) -> dict[str, Any]:
     _resolve_op("read_file")  # 评审 G4
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        _touch_audit(session, row, "read_file")
+        _touch_audit(session, row, "read_file", actor_id=actor.id)
         session.commit()
     _ensure_grant(row, "read_file")  # 评审 D3
 
@@ -467,7 +491,7 @@ def get_status(actor: Any, binding_id: str) -> dict[str, Any]:
     _resolve_op("status")  # 评审 G4
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        _touch_audit(session, row, "status")
+        _touch_audit(session, row, "status", actor_id=actor.id)
         session.commit()
     _ensure_grant(row, "status")  # 评审 D3
 
@@ -495,7 +519,7 @@ def create_branch(actor: Any, binding_id: str, name: Any) -> dict[str, Any]:
     branch = _validate_branch_name(name)
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        _touch_audit(session, row, "branch_create")
+        _touch_audit(session, row, "branch_create", actor_id=actor.id)
         session.commit()
     _ensure_grant(row, "branch_create")  # 评审 D3
 
@@ -586,7 +610,7 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             snap["status"] = "replayed"
             return snap
         _ensure_grant(row, "patch_apply")  # 评审 D3：授权先于审计计数（评审 M6——越权被拒不累加 ops）
-        _touch_audit(session, row, "patch_apply")
+        _touch_audit(session, row, "patch_apply", actor_id=actor.id)
         session.commit()
     allow_roots = tuple(row.allow_roots_json or [])
     if Path(row.workspace_root).resolve() != Path(row.repo_root).resolve():
@@ -774,7 +798,7 @@ def apply_patch(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
             raise SolutionRepoError(
                 "binding_exists", "同 patch_id 并发应用冲突。", details={"patch_id": plan["patch_id"]}
             ) from None
-        _touch_audit(session, binding_row, "patch_apply")  # 同操作同一计数名（评审：一名一事）
+        _touch_audit(session, binding_row, "patch_apply", actor_id=actor.id)  # 同操作同一计数名（评审：一名一事）
         session.commit()
         return {
             "patch_id": plan["patch_id"],
@@ -839,7 +863,7 @@ def get_changes(actor: Any, binding_id: str) -> dict[str, Any]:
     _resolve_op("diff")
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        _touch_audit(session, row, "diff")
+        _touch_audit(session, row, "diff", actor_id=actor.id)
         session.commit()
     _ensure_grant(row, "diff")
     runner = GitRunner(Path(row.repo_root))
@@ -865,7 +889,7 @@ def get_commit_log(actor: Any, binding_id: str) -> dict[str, Any]:
     _resolve_op("log")
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
-        _touch_audit(session, row, "log")
+        _touch_audit(session, row, "log", actor_id=actor.id)
         session.commit()
     _ensure_grant(row, "log")
     runner = GitRunner(Path(row.repo_root))
@@ -967,7 +991,7 @@ def run_ci(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
     with _sr_session() as session:
         row = _load_binding(session, actor.org_id, binding_id)
         _ensure_grant(row, "run_ci")  # 评审 M6：授权先于审计计数（同 WP2 口径）
-        _touch_audit(session, row, "run_ci")
+        _touch_audit(session, row, "run_ci", actor_id=actor.id)
         session.commit()
     if Path(row.workspace_root).resolve() != Path(row.repo_root).resolve():
         # 评审 M7（WP2 M7 同款）：CI cwd 与归因锚分叉时结果错位——显式 422。
@@ -1134,3 +1158,246 @@ def get_ci_runs(actor: Any, binding_id: str) -> dict[str, Any]:
             .all()
         )
         return {"items": [r.snapshot() for r in runs], "count": len(runs), "limit": 20}
+
+
+# ---- AF3-WP4：修复闭环（correction_loop 预算内失败→修复→复测） --------------------
+
+
+def get_corrections(actor: Any, binding_id: str) -> dict[str, Any]:
+    """修复闭环轨迹列表（近 20 条；append-only——每轨迹新行）。
+
+    评审 M2：grant 闸（轨迹读回＝patch_apply 域读面）＋排序 tiebreaker。"""
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id)
+        _ensure_grant(row, "patch_apply")
+        rows = (
+            session.query(RepoCorrection)
+            .filter(RepoCorrection.org_id == actor.org_id, RepoCorrection.binding_id == binding_id)
+            .order_by(RepoCorrection.created_at.desc(), RepoCorrection.id.desc())
+            .limit(20)
+            .all()
+        )
+        return {"items": [r.snapshot() for r in rows], "count": len(rows), "limit": 20}
+
+
+def _canonical_plan_sha(plan_payload: dict[str, Any]) -> str:
+    """PatchPlan canonical 指纹（WP2 同构算法——闭环预校验与指纹一致性）。"""
+    plan = validate_patch_plan(plan_payload, allow_roots=_snapshot_roots())
+    return _plan_sha256(plan_payload, plan)
+
+
+def start_correction(actor: Any, binding_id: str, payload: Any) -> dict[str, Any]:
+    """修复闭环（AF1① correction_loop「预算内收敛不无限重试」）：
+
+    失败 CI run（verdict=red，**CI 结果消费锚**——AF2④：修复必须锚真实失败）
+    → ≤max_rounds 轮「逐轮 PatchPlan（``patches`` 数组——评审 H1：单 patch
+    重提是 replay 死预算，收敛必须逐轮新计划）apply＋同 bundle 复测」→
+    corrected（某轮 green）／budget_exhausted（预算耗尽仍 red——诚实终态）/
+    failed（执行期失败，错误快照随行）。
+
+    闸前拒绝（形状/锚时效/patch_id 已用/基线守卫）一律 422/403 **不落行**；
+    执行期域错误落 failed 行＋错误快照。轨迹逐轮记 ``{patch_id, status,
+    run_id, verdict}``（评审 M10：中间轮 red 证据不丢）。
+    """
+    _resolve_op("patch_apply")
+    if not isinstance(payload, dict):
+        raise SolutionRepoError("validation_failed", "请求体须为 JSON 对象。")
+    unknown_keys = sorted(set(payload) - {"failed_run_id", "bundle_id", "patches", "max_rounds"})
+    if unknown_keys:
+        raise SolutionRepoError(
+            "validation_failed",
+            f"correction 请求含未登记键（键集精确）：{unknown_keys}",
+            details={"unknown_keys": unknown_keys},
+        )
+    max_rounds = payload.get("max_rounds")
+    if max_rounds is None:
+        max_rounds = 3
+    if isinstance(max_rounds, bool) or not isinstance(max_rounds, int) or not 1 <= max_rounds <= 5:
+        # 评审 M6：bool 穿透（isinstance(True, int)）显式拒。
+        raise SolutionRepoError("validation_failed", "max_rounds 须为 1..5 整数。", details={"max_rounds": max_rounds})
+    bundle_id = payload.get("bundle_id")
+    if not isinstance(bundle_id, str) or not bundle_id:
+        raise SolutionRepoError("validation_failed", "bundle_id 须为非空字符串。")
+    patches_raw = payload.get("patches")
+    if not isinstance(patches_raw, list) or not patches_raw or len(patches_raw) > max_rounds:
+        raise SolutionRepoError(
+            "validation_failed",
+            "patches 须为 1..max_rounds 个 PatchPlan 的数组（逐轮收敛——评审 H1）。",
+            details={"len": len(patches_raw) if isinstance(patches_raw, list) else None,
+                     "max_rounds": max_rounds},
+        )
+    failed_run_id = payload.get("failed_run_id")
+    if not isinstance(failed_run_id, str) or not failed_run_id:
+        raise SolutionRepoError("validation_failed", "failed_run_id 须为非空字符串（CI 结果消费锚）。")
+
+    # 闸前预校验（全部 422/403，不落行）：逐 plan 形状＋patch_id 未用。
+    plans: list[dict[str, Any]] = []
+    seen_patch_ids: set[str] = set()
+    for plan_payload in patches_raw:
+        if not isinstance(plan_payload, dict):
+            raise SolutionRepoError("validation_failed", "patches 元素须为 PatchPlan 对象。")
+        plan = validate_patch_plan(plan_payload, allow_roots=_snapshot_roots())
+        if plan["patch_id"] in seen_patch_ids:
+            raise SolutionRepoError(
+                "validation_failed",
+                f"patches 内 patch_id 重复：{plan['patch_id']}",
+                details={"patch_id": plan["patch_id"]},
+            )
+        seen_patch_ids.add(plan["patch_id"])
+        plans.append(plan)
+
+    with _sr_session() as session:
+        row = _load_binding(session, actor.org_id, binding_id)
+        _ensure_grant(row, "patch_apply")
+        _ensure_grant(row, "run_ci")  # 闭环含复测面（评审 M2 口径）
+        failed_run = (
+            session.query(RepoCIRun)
+            .filter(
+                RepoCIRun.org_id == actor.org_id,
+                RepoCIRun.binding_id == binding_id,
+                RepoCIRun.id == failed_run_id,
+            )
+            .first()
+        )
+    if failed_run is None:
+        raise SolutionRepoError("not_found", "失败 CI run 不存在。", details={"failed_run_id": failed_run_id})
+    if failed_run.verdict != "red":
+        # CI 结果消费纪律（AF2④）：不锚真实失败的修复请求拒。
+        raise SolutionRepoError(
+            "validation_failed",
+            "correction 必须锚 verdict=red 的 CI run（消费真实失败）。",
+            details={"failed_run_id": failed_run_id, "verdict": failed_run.verdict},
+        )
+    if failed_run.bundle_id != bundle_id:
+        raise SolutionRepoError(
+            "validation_failed",
+            "bundle_id 与失败 run 的 bundle 不一致（复测须同 bundle 对拍）。",
+            details={"failed_bundle": failed_run.bundle_id, "bundle_id": bundle_id},
+        )
+    if plans[0]["base_commit"] != failed_run.head_commit:
+        # 评审 H5（锚时效）：修复 patch 必须基于失败 run 的 HEAD——基线漂移即拒
+        # （防「他人已修好、二次计入成功」的归因错乱）。
+        raise SolutionRepoError(
+            "validation_failed",
+            "patches[0].base_commit 与失败 run 的 head_commit 不一致（锚时效）。",
+            details={"plan_base": plans[0]["base_commit"], "failed_run_head": failed_run.head_commit},
+        )
+    with _sr_session() as session:
+        used = (
+            session.query(RepoPatch)
+            .filter(
+                RepoPatch.org_id == actor.org_id,
+                RepoPatch.binding_id == binding_id,
+                RepoPatch.patch_id.in_(seen_patch_ids),
+            )
+            .count()
+        )
+    if used:
+        # 评审 H4 前置：已用 patch_id（含 failed 行）重提＝无视失败重提同一方案
+        # （AF2④）——预校验拒，不给「失败重放洗白」通道。
+        raise SolutionRepoError(
+            "validation_failed",
+            "patches 含已使用过的 patch_id（AF2④：不得无视错误重提同一方案）。",
+            details={"failed_run_id": failed_run_id},
+        )
+
+    _ensure_grant(row, "run_ci")  # 复测面授权（闭环含 run_ci）
+    rounds = 0
+    trajectory: list[dict[str, Any]] = []
+    patches_applied: list[str] = []
+    final_verdict = failed_run.verdict
+    final_run_id = failed_run_id
+    status = "budget_exhausted"
+    error_json: dict[str, Any] | None = None
+    try:
+        while rounds < len(plans):
+            plan = plans[rounds]
+            plan_payload = patches_raw[rounds]
+            rounds += 1
+            result = apply_patch(actor, binding_id, plan_payload)
+            if result.get("status") != "applied":
+                # 评审 H4：replay/failed 快照不得计入轨迹（patches_applied 只收
+                # 真实应用——「失败重放洗白」通道封堵）。
+                raise SolutionRepoError(
+                    "validation_failed",
+                    "patch 未真实应用（replay/failed 快照）。",
+                    details={"patch_id": result.get("patch_id"), "status": result.get("status")},
+                )
+            patches_applied.append(result["patch_id"])
+            ci_result = run_ci(actor, binding_id, {"bundle_id": bundle_id})
+            trajectory.append(
+                {
+                    "patch_id": result["patch_id"],
+                    "status": result["status"],
+                    "run_id": ci_result["run_id"],
+                    "verdict": ci_result["verdict"],
+                }
+            )
+            final_run_id = ci_result["run_id"]
+            final_verdict = ci_result["verdict"]
+            if final_verdict == "green":
+                status = "corrected"
+                break
+            if final_verdict == "error":
+                # 评审 M5：infra 归因诚实——error 不烧预算也不冒充 budget_exhausted。
+                status = "failed"
+                error_json = ci_result.get("error_json")
+                break
+            # 仍 red：下一轮消费 patches[rounds]（AF2④——逐轮新计划）。
+        else:
+            status = "budget_exhausted"
+    except SolutionRepoError as exc:
+        # 执行期域错误（apply/run_ci）＝闭环 failed（错误快照随行——诚实终态）。
+        status = "failed"
+        error_json = {"round": rounds, "error_code": exc.code, "message": exc.message, "details": exc.details}
+    except Exception as exc:  # 评审：未包装异常兜底——轨迹行不丢，异常如实上抛
+        status = "failed"
+        error_json = {"reason": str(exc)}
+        with _sr_session() as session:
+            session.add(
+                RepoCorrection(
+                    org_id=actor.org_id,
+                    binding_id=binding_id,
+                    failed_run_id=failed_run_id,
+                    bundle_id=bundle_id,
+                    rounds_consumed=rounds,
+                    patches_json=[p["patch_id"] for p in trajectory],
+                    final_run_id=final_run_id,
+                    final_verdict=final_verdict,
+                    status=status,
+                    error_json=error_json,
+                )
+            )
+            session.commit()
+        raise
+
+    correction_id = str(uuid4())
+    with _sr_session() as session:
+        session.add(
+            RepoCorrection(
+                id=correction_id,
+                org_id=actor.org_id,
+                binding_id=binding_id,
+                failed_run_id=failed_run_id,
+                bundle_id=bundle_id,
+                rounds_consumed=rounds,
+                patches_json=patches_applied,
+                final_run_id=final_run_id,
+                final_verdict=final_verdict,
+                status=status,
+                error_json=error_json,
+            )
+        )
+        session.commit()
+        return {
+            "correction_id": correction_id,
+            "failed_run_id": failed_run_id,
+            "bundle_id": bundle_id,
+            "rounds_consumed": rounds,
+            "patches_applied": patches_applied,
+            "trajectory": trajectory,
+            "final_run_id": final_run_id,
+            "final_verdict": final_verdict,
+            "status": status,
+            "error_json": error_json,
+        }
