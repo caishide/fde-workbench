@@ -28,6 +28,8 @@ PRODUCTS = {
     "config/settings.json": '{"kind": "config", "settings": {"threshold": 3}}\n',
     # T4 失败种子③（lint 类）：坏 YAML——lint bundle 红；修复＝合法化该文件
     "ontology/broken-seed.yaml": "kind: [unclosed\n",
+    # T4 失败种子②（契约类）：缺 kind——contract schema 必备键；修复＝补 kind
+    "config/missing-kind-seed.json": '{"settings": {"threshold": 1}}\n',
 }
 BASELINE_TESTS = {
     "tests/test_sample.py": "def test_baseline_passes():\n    assert 1 + 1 == 2\n",
@@ -72,7 +74,7 @@ def main(argv: list[str]) -> int:
         return 2
     build(out)
     print(f"受控示例仓已生成：{out}")
-    print("T4 失败种子：① lint（ontology/broken-seed.yaml 坏 YAML）② 单测（tests/test_failing_assertion.py 产物值断言）③ 契约（修复 broken-seed 后可造缺 kind 形态——见规格件 §5）")
+    print("T4 失败种子：① lint（ontology/broken-seed.yaml 坏 YAML）② 单测（tests/test_failing_assertion.py 产物值断言）③ 契约（config/missing-kind-seed.json 缺 kind——contract schema 必备键）")
     return 0
 
 

@@ -140,3 +140,22 @@ def run_ci(binding_id: str):
 @require_auth
 def get_ci_runs(binding_id: str):
     return jsonify({"data": service.get_ci_runs(actor=g.current_user, binding_id=binding_id), "error": None}), 200
+
+
+# ---- AF3-WP4：修复闭环（correction_loop） ----------------------------------------
+
+
+@solution_repo_blueprint.post("/solution-repo/bindings/<binding_id>/corrections")
+@require_auth
+def start_correction(binding_id: str):
+    """修复闭环（AF1① 预算内收敛）：失败 run 锚→修复 patch→同 bundle 复测。"""
+    result = service.start_correction(
+        actor=g.current_user, binding_id=binding_id, payload=request.get_json(silent=True)
+    )
+    return jsonify({"data": result, "error": None}), 201
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/corrections")
+@require_auth
+def get_corrections(binding_id: str):
+    return jsonify({"data": service.get_corrections(actor=g.current_user, binding_id=binding_id), "error": None}), 200

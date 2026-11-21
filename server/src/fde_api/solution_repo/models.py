@@ -69,6 +69,7 @@ class RepoBinding(Base, TimestampMixin):
             "branch": self.branch,
             "status": self.status,
             "grant_json": self.grant_json,
+            "audit_json": self.audit_json,
         }
 
 
@@ -172,5 +173,53 @@ class RepoCIRun(Base, TimestampMixin):
             "new_test_nodeids": list(self.new_tests_json or []),
             "stdout_head": self.stdout_head,
             "stderr_head": self.stderr_head,
+            "error_json": self.error_json,
+        }
+
+
+REPO_CORRECTION_STATUSES = ("corrected", "budget_exhausted", "failed")
+
+
+class RepoCorrection(Base, TimestampMixin):
+    """修复闭环轨迹行（AF3-WP4；AF1① correction_loop「预算内收敛」）。
+
+    一行一条闭环轨迹：失败 CI run（verdict=red）→ ≤max_rounds 轮「修复
+    PatchPlan＋同 bundle 复测」→ 终态三值——corrected（复测 green）/
+    budget_exhausted（预算耗尽仍 red——诚实终态不无限重试）/failed（应用
+    执行期失败）。``patches_json`` 留逐轮 patch_id（T4「修复轨迹」证据链；
+    patch 明文在 RepoPatch/绑定仓 git 历史，本行不复制）。
+    """
+
+    __tablename__ = "repo_corrections"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN {REPO_CORRECTION_STATUSES!r}",
+            name="ck_repo_corrections_status",
+        ),
+        Index("ix_repo_corrections_org_binding", "org_id", "binding_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    failed_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    bundle_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rounds_consumed: Mapped[int] = mapped_column(Integer, nullable=False)
+    patches_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    final_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    final_verdict: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "correction_id": self.id,
+            "failed_run_id": self.failed_run_id,
+            "bundle_id": self.bundle_id,
+            "rounds_consumed": self.rounds_consumed,
+            "patches_applied": list(self.patches_json or []),
+            "final_run_id": self.final_run_id,
+            "final_verdict": self.final_verdict,
+            "status": self.status,
             "error_json": self.error_json,
         }
