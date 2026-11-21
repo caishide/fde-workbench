@@ -1,0 +1,264 @@
+{
+  "version": "1.0",
+  "task_set": "_ae2-tasks-v1",
+  "family": "T5",
+  "status": "FROZEN-v1（2026-11-21 AE2-WP5 冻结；54 号 v0.2-ACTIVE §3 WP5；公开断言逐字冻结，修订须双标＋P1 终判）",
+  "generated_at": "2026-11-21",
+  "revision_note": "v1.0 初版（2026-11-21）：公开 2 复合任务（T5-001 成功链／T5-002 失败注入→逆序补偿）×3 次独立运行＋隐藏槽 1（T5-H01，SEALED-PENDING——P1 现场交割后开箱，锚配方沿 AE0 先例 _ae-tasks-v1-hidden.json.sealed 同构）；分母锚 expected_runs=9（公开 6＋隐藏 3）。断言文法沿 _ae-tasks-v1.md §5 冻结文法逐字复用（AE1 引擎只读复用零改动）。",
+  "work_order_ref": "docs/ai-fde/54-ae2-work-order.md §3 WP5",
+  "decision_basis": "D1–D4 已于 2026-11-20 经 P1「全部批准」生效（54 号 §2.1）；WP3 编排执行器（wb PR #556 efcfead1）与 WP4 路由与审计（wb PR #563 ca205a04）已合并 main——本任务集绑定其公开服务面 submit_task／get_task_result／compensate_task 与路由 POST /api/v1/action-tasks。",
+  "alignment": {
+    "orchestration_contract": {
+      "file": "docs/ai-fde/_ae2-execution-contract-v1.json",
+      "version": "1.0.0（FROZEN-v1）",
+      "bound_fields": "请求＝$defs/TaskRequest（required: org_id/requester_id/idempotency_key/definition；optional: reason；additionalProperties=false）；定义＝$defs/TaskDefinition/NodeDef/NodeAction（NodeAction＝U1 ActionExecutionRequest 子集投影）；结果＝$defs/TaskRunResult（required: execution_id/idempotency_key/status/nodes/error；optional: rollback；status 七值闭集）；节点结果＝$defs/NodeResult（required: node_key/status/attempt/action_execution_id/output/error；optional: compensation_status）；补偿汇总＝$defs/CompensationSummary"
+    },
+    "single_step_contract": {
+      "file": "docs/ai-fde/_ae-execution-contract-v1.json",
+      "version": "1.0.6（FROZEN——节点＝一次 AE1 单步执行，五层门原样复用；15 码错误闭集逐字沿用）"
+    },
+    "connector_whitelist": {
+      "file": "docs/ai-fde/_ae-connectors-whitelist-v1.json",
+      "version": "1.3.3（FROZEN——封闭四连接器；mock.erp query_inventory risk0／workbench.workflow create risk1／mock.email send risk3）"
+    }
+  },
+  "run_discipline": {
+    "runs_per_task": 3,
+    "runs_note": "3 次独立运行（沿 AE1 05:45/05:47 口径）：运行间重置执行台账（action_task_nodes→action_task_runs→action_execution_logs→action_compensations→action_executions，FK 子先父后）＋Mock 桩（收件箱/计数器清零）——同一冻结输入逐字重放；运行独立性＝状态隔离，不是复放链（任务内 replay2/replay3 复放链与运行间独立在报告分列）；任务间亦重置 Mock 桩（每任务的零重复副作用锚按任务独立判定——轮内前序任务的写副作用不残留进后序任务的快照）",
+    "denominator_anchor": {
+      "expected_runs": 9,
+      "note": "预登记分母锚＝公开 2 任务×3 运行＋隐藏 1 任务×3 运行＝9；落盘记录数不符即报告顶层 denominator_mismatch 显著标注（分母本身不改，05:54 口径）"
+    },
+    "counts_note": "唯一任务数与运行次数分列（05:47：同一任务重复 3 次不等于 3 个业务案例）"
+  },
+  "hidden_set_ref": {
+    "file": "_ae2-tasks-v1-hidden.json.sealed",
+    "status": "SEALED-PENDING（槽位 1；HMAC-SHA256 锚配方沿 AE0/AE1 先例；P1 现场交割后开箱——54 号 §5.2 B8）",
+    "slots": 1,
+    "note": "隐藏槽断言数在开箱前不计入公开断言总数；开箱后补录并重跑全量 9 运行"
+  },
+  "hidden_ratio": {
+    "hidden_count": 1,
+    "public_count": 2,
+    "note": "复合任务公开 2＋隐藏 1（54 号 §5.1 门禁行任务集规模口径）"
+  },
+  "design_notes": [
+    "复合链映射（白名单封闭集内的「查库存→生成单据→发通知」）：n1＝mock.erp query_inventory（真读，risk0）→ n2＝workbench.workflow create（真写工作流草稿＝单据 mock 替身，risk1 无需审批；AE1-WP3「同键重放只建 1 条」先例同构）→ n3＝mock.email send（真发，risk3＋审批预签）。",
+    "ref 腿（入参出参引用）：T5-001 n2.params.description＝{kind:ref, node:n1, path:output.sku}——上游读产物（KD-01 归一化展形 {sku,quantity,available}）经白名单化路径引用整值替换；ref 缺键即节点 failed（编排器运行期诚实失败）。",
+    "失败注入的确定性：T5-002 n2＝mock.email send risk3 且 approval_id 缺失 → U1 L4 审批闸 approval_required（提交期无法静态拒——approval_id 在 NodeAction 上合法缺席，运行期才可判）→ 节点 failed；n3 携合法审批但依赖 n2 → fail-fast skipped（若 fail-fast 失效即真发信，mailbox_count==0 断言炸红）。",
+    "补偿的生产诚实面：AE2 阶段无已注册补偿器（生产装配＝NO_COMPENSATOR fail-closed）——T5-002 已成功上游取干跑形态（零副作用→rollback_action 判 noop＝残留为真空）；真实写节点的补偿能力随 AE3 真实补偿器注册（54 号 §6.3 风险项已计）。补偿机制的深层语义（部分失败残留/逆拓扑序/not_supported 不计残留）由 S-AE-08 单元钉（B2–B6，test_ae_task_compensation.py）在注入补偿器下逐条覆盖——评测面钉生产面，单元钉钉机制面，两层不互相替代。",
+    "任务内复放＝整图同键同体重提交（编排契约 x-idempotency 运行级）：复放返回既有运行快照逐字一致（B7）——零新增外呼经外部锚证明（mailbox_count 不随复放增加／workflow_definitions_added 不随复放增加）。"
+  ],
+  "desensitization": {
+    "policy": "凡 org/user 相关字符串值一律 test- 前缀占位（沿 AE1 字面 ID 世界：占位串＝真实主键）；禁止真实凭据、真实主机名、客户标识。",
+    "placeholders_used": [
+      "test-org-001（org_id）",
+      "test-user-001（requester_id；邮箱 to 本地部分同）",
+      "test-project-001（project_id，org 域内资源占位）",
+      "test-sku-001（sku）",
+      "test-idem-t5-001-a / test-idem-t5-002-a（运行级幂等键）",
+      "test-wf-t5-001（工作流定义草稿名）",
+      "test-subject-t5-001 / test-body-t5-001（邮件主题/正文）",
+      "<runtime-binding: ...>（approval_id，由评测 runner 每轮经审批面预签——params 为字面量故指纹可预计算；非固定字面量）"
+    ],
+    "non_placeholder_notes": [
+      "n2 dag.nodes[0].capability 值 \"project.read\" 为白名单登记的既有能力名（AE1 T4-004 同源），非客户标识。"
+    ]
+  },
+  "observation_envelope_ref": "docs/ai-fde/_ae-tasks-v1.md §4（观测包络）——AE2 同构：attempts.first/replay2/replay3＝TaskRunResult（编排契约 $defs/TaskRunResult）；task.external_state.*＝harness 只读观测；attempts.*.run_cost＝harness 只读投影运行行 cost_json（TaskRunResult 契约不含 cost 字段——运行级成本登记于库，x-audit-and-cost 口径）；task.total_cost_usd＝评分器派生（Σ attempts.*.run_cost.estimated_usd＝运行级成本聚合）",
+  "assertion_grammar_ref": "docs/ai-fde/_ae-tasks-v1.md §5 冻结文法（逐字复用——引擎 ae_eval/assertions.py 零改动；B-9 关键字 ident 口径沿用）",
+  "tasks": [
+    {
+      "id": "T5-001",
+      "title": "复合成功链：查库存 → 生成工作流单据（ref 引用上游 SKU）→ 发通知（审批真发）",
+      "description": "三节点线性 DAG 端到端：n1 真读库存（KD-01 归一化展形）→ n2 真写工作流草稿（description 经 output.sku 引用上游产物；risk1 无需审批）→ n3 真发邮件（risk3＋预签审批）。任务内复放×2：整图同键同体重提交，快照逐字一致、外呼零重复（收件箱仍 1 条／草稿增量仍 1）。",
+      "run_input": {
+        "org_id": "test-org-001",
+        "requester_id": "test-user-001",
+        "idempotency_key": "test-idem-t5-001-a",
+        "reason": "AE2 复合任务评测 T5-001（公开集）",
+        "definition": {
+          "nodes": [
+            {
+              "node_key": "n1",
+              "depends_on": [],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "mock.erp.query_inventory",
+                "connector_id": "mock.erp",
+                "method": "query_inventory",
+                "params": {"sku": {"kind": "literal", "value": "test-sku-001"}},
+                "dry_run": false,
+                "risk_level": 0,
+                "timeout_seconds": 30
+              }
+            },
+            {
+              "node_key": "n2",
+              "depends_on": ["n1"],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "workbench.workflow.create",
+                "connector_id": "workbench.workflow",
+                "method": "create",
+                "action_type": "create_record",
+                "params": {
+                  "project_id": {"kind": "literal", "value": "test-project-001"},
+                  "name": {"kind": "literal", "value": "test-wf-t5-001"},
+                  "description": {"kind": "ref", "node": "n1", "path": "output.sku"},
+                  "dag": {"kind": "literal", "value": {"nodes": [{"key": "review", "type": "human_approval", "capability": "project.read"}]}}
+                },
+                "dry_run": false,
+                "risk_level": 1,
+                "timeout_seconds": 30
+              }
+            },
+            {
+              "node_key": "n3",
+              "depends_on": ["n2"],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "mock.email.send",
+                "connector_id": "mock.email",
+                "method": "send",
+                "action_type": "send_email",
+                "params": {
+                  "to": {"kind": "literal", "value": "test-user-001@example.test"},
+                  "subject": {"kind": "literal", "value": "test-subject-t5-001"},
+                  "body": {"kind": "literal", "value": "test-body-t5-001"}
+                },
+                "dry_run": false,
+                "risk_level": 3,
+                "timeout_seconds": 30,
+                "approval_id": "<runtime-binding: 每轮经审批面预签，指纹＝params canonical sha256>"
+              }
+            }
+          ]
+        }
+      },
+      "expected_output": {
+        "status": "succeeded",
+        "error": null,
+        "nodes": "3 节点全 succeeded（拓扑序 n1→n2→n3）；n1.output.sku=KD-01 归一化展形；n3.output.delivered_count=1；rollback=null（无补偿过程）",
+        "cost": "attempts.first.run_cost.tool_calls == 3（每节点一次执行器调用，干跑与真执行同口径；run_cost＝harness 只读投影运行行 cost_json——TaskRunResult 契约不含 cost 字段，运行级成本登记于库）",
+        "replay_expectation": "replay2/replay3 快照逐字一致（execution_id 不新分配）；mailbox_count 恒 1；workflow_definitions_added 恒 1"
+      },
+      "external_state_observed": ["mailbox_count（运行后收件箱条数——桩每轮清零）", "workflow_definitions_added（运行前后工作流草稿数增量——相对锚跨轮成立）"],
+      "assertions": [
+        "attempts.first.status == \"succeeded\"",
+        "attempts.first.error == null",
+        "len(attempts.first.nodes) == 3",
+        "attempts.first.nodes[0].status == \"succeeded\"",
+        "attempts.first.nodes[0].output.sku == \"test-sku-001\"",
+        "attempts.first.nodes[1].status == \"succeeded\"",
+        "attempts.first.nodes[2].status == \"succeeded\"",
+        "attempts.first.nodes[2].output.delivered_count == 1",
+        "attempts.first.run_cost.tool_calls == 3",
+        "attempts.replay2.status == \"succeeded\"",
+        "attempts.replay2.execution_id == attempts.first.execution_id",
+        "len(attempts.replay2.nodes) == len(attempts.first.nodes)",
+        "task.external_state.mailbox_count == 1",
+        "task.external_state.workflow_definitions_added == 1"
+      ],
+      "cost_budget": {"estimated_usd": 0.10, "note": "51:213 单任务预算上限；mock 面 estimated_usd 恒 0.0（AE1 B-5 defer AE3 口径沿用）"},
+      "notes": "n3 approval_id 每轮由评测 runner 经审批面预签（四眼闸：复核人≠发起人，AE1 P15 口径）——params 全字面量故指纹可预计算；ref 节点（n2）不涉审批（risk1）"
+    },
+    {
+      "id": "T5-002",
+      "title": "失败注入：缺审批写节点 → fail-fast → 逆序补偿（干跑上游 noop）→ 回滚零遗留",
+      "description": "三节点线性 DAG 的失败传播与补偿收口：n1 干跑读（成功，零副作用）→ n2 真写邮件但 approval_id 缺失（U1 L4 审批闸 approval_required，确定性失败）→ n3 携合法审批但依赖 n2（fail-fast skipped——若派发即真发信，零派发锚可判定）。补偿：n1（干跑）经 rollback_action 判 noop；运行收口 rolled_back＋残留空数组＋error null（补偿过程零失败）。任务内复放：终态快照逐字一致（B7 对终态运行同样成立）。",
+      "run_input": {
+        "org_id": "test-org-001",
+        "requester_id": "test-user-001",
+        "idempotency_key": "test-idem-t5-002-a",
+        "reason": "AE2 失败注入评测 T5-002（公开集）",
+        "definition": {
+          "nodes": [
+            {
+              "node_key": "n1",
+              "depends_on": [],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "mock.erp.query_inventory",
+                "connector_id": "mock.erp",
+                "method": "query_inventory",
+                "params": {"sku": {"kind": "literal", "value": "test-sku-001"}},
+                "dry_run": true,
+                "risk_level": 0,
+                "timeout_seconds": 30
+              }
+            },
+            {
+              "node_key": "n2",
+              "depends_on": ["n1"],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "mock.email.send",
+                "connector_id": "mock.email",
+                "method": "send",
+                "action_type": "send_email",
+                "params": {
+                  "to": {"kind": "literal", "value": "test-user-001@example.test"},
+                  "subject": {"kind": "literal", "value": "test-subject-t5-002-n2"},
+                  "body": {"kind": "literal", "value": "test-body-t5-002-n2"}
+                },
+                "dry_run": false,
+                "risk_level": 3,
+                "timeout_seconds": 30
+              }
+            },
+            {
+              "node_key": "n3",
+              "depends_on": ["n2"],
+              "rollback_supported": true,
+              "action": {
+                "action_id": "mock.email.send",
+                "connector_id": "mock.email",
+                "method": "send",
+                "action_type": "send_email",
+                "params": {
+                  "to": {"kind": "literal", "value": "test-user-001@example.test"},
+                  "subject": {"kind": "literal", "value": "test-subject-t5-002-n3"},
+                  "body": {"kind": "literal", "value": "test-body-t5-002-n3"}
+                },
+                "dry_run": false,
+                "risk_level": 3,
+                "timeout_seconds": 30,
+                "approval_id": "<runtime-binding: 每轮经审批面预签——若 fail-fast 失效被派发即真发信，mailbox_count==0 断言炸红>"
+              }
+            }
+          ]
+        }
+      },
+      "expected_output": {
+        "status": "rolled_back（failed→compensating→rolled_back；n1 补偿 noop 零失败）",
+        "error": "null（补偿全成功收口；原失败原因按节点登记于 nodes[1].error）",
+        "nodes": "n1 succeeded＋compensation_status=noop；n2 failed＋error.code=approval_required＋action_execution_id=null（L4 拒绝在锁前零落库）；n3 skipped＋error=null（fail-fast 零派发）",
+        "cost": "attempts.first.run_cost.tool_calls == 1（仅 n1 干跑一次执行器调用；n2/n3 零派发；run_cost＝harness 只读投影运行行 cost_json）",
+        "replay_expectation": "终态快照逐字一致（execution_id 不新分配）；mailbox_count 恒 0"
+      },
+      "external_state_observed": ["mailbox_count（运行后收件箱条数——失败注入下恒 0）"],
+      "assertions": [
+        "attempts.first.status == \"rolled_back\"",
+        "attempts.first.error == null",
+        "attempts.first.rollback.status == \"rolled_back\"",
+        "len(attempts.first.rollback.residual) == 0",
+        "attempts.first.nodes[0].status == \"succeeded\"",
+        "attempts.first.nodes[0].compensation_status == \"noop\"",
+        "attempts.first.nodes[1].status == \"failed\"",
+        "attempts.first.nodes[1].error.code == \"approval_required\"",
+        "attempts.first.nodes[1].action_execution_id == null",
+        "attempts.first.nodes[2].status == \"skipped\"",
+        "attempts.first.nodes[2].error == null",
+        "attempts.first.run_cost.tool_calls == 1",
+        "attempts.replay2.status == \"rolled_back\"",
+        "attempts.replay2.execution_id == attempts.first.execution_id",
+        "task.external_state.mailbox_count == 0"
+      ],
+      "cost_budget": {"estimated_usd": 0.10, "note": "51:213 单任务预算上限；mock 面 estimated_usd 恒 0.0"},
+      "notes": "n2 的 approval_id 在 NodeAction 上合法缺席（可选字段）——此类失败只能运行期 L4 判定（提交期静态层不可判），是「运行期诚实失败」的正向覆盖；n3 携合法审批作 fail-fast 的反向哨兵（被派发即断言红）"
+    }
+  ],
+  "public_assertion_count": 29,
+  "negative_variants_note": "负向断言（S-AE-07~09 共 31 条）不由本任务集承载——其自动化钉落位于 test_ae_task_orchestrator.py（33）/test_ae_task_compensation.py（8）/test_ae_task_routes.py（10）/test_ae_task_audit.py（9）＋既有 AE1 负向面（S-AE-01~06 全量适用）；AE2 出口报告 §负向 映射表逐条对名。评测面（本件）钉生产正 path＋外部锚，单元钉钉机制与越权面——两层不互相替代（沿 AE1 任务集 §6 同款分工）。"
+}
