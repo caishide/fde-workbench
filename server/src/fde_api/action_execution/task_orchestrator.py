@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 
@@ -56,6 +57,7 @@ from fde_api.action_execution.service import AE_CAPABILITY, _ae_session
 
 __all__ = [
     "compensate_task",
+    "get_task_result",
     "node_idempotency_key",
     "submit_task",
     "task_definition_digest",
@@ -131,6 +133,7 @@ def submit_task(
         payload=payload,
         graph=graph,
         order=order,
+        digest=digest,
         whitelist_gate=whitelist_gate,
         dispatch=dispatch,
         compensator=compensator,
@@ -417,16 +420,22 @@ def _execute_run(
     payload: dict[str, Any],
     graph: list[dict[str, Any]],
     order: list[str],
+    digest: str,
     whitelist_gate: Any,
     dispatch: Any,
     compensator: Any,
 ) -> dict[str, Any]:
     """主循环：整图节点行预落 → 拓扑序逐节点 ``submit_action`` → 失败即停 →
-    未派发节点 skipped → 逆拓扑序补偿 → 运行终态诚实收口。"""
+    未派发节点 skipped → 逆拓扑序补偿 → 运行终态诚实收口。
+
+    运行级审计（WP4）：``audit_json`` 只落零明文字段集（org/requester/actor/
+    指纹/计数/时刻/节点序——**零 params、零产物**，C9/C10 结构保证）；节点级
+    审计由 ``submit_action`` 原样落 ``action_execution_logs``（九必填复用面）。"""
     by_key = {node["node_key"]: node for node in graph}
     org = payload["org_id"]
     requester = payload["requester_id"]
     run_key = payload["idempotency_key"]
+    started_at = datetime.now(UTC)
     _create_node_rows(run_id, graph, run_key)
     _set_run_status(run_id, "running")
     outputs: dict[str, Any] = {}
@@ -485,13 +494,26 @@ def _execute_run(
         cost["duration_ms"] += int(node_cost.get("duration_ms") or 0)
         cost["estimated_usd"] += float(node_cost.get("estimated_usd") or 0.0)
         _mark_node_succeeded(run_id, key, node_ids[key])
-    audit = {"node_order": list(order), "orchestration": "fail_fast"}
+    finished_at = datetime.now(UTC)
+    audit: dict[str, Any] = {
+        "org_id": org,
+        "requester_id": requester,
+        "actor_user_id": actor.id,
+        "definition_sha256": digest,
+        "node_count": len(graph),
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_ms": max(int((finished_at - started_at).total_seconds() * 1000), 0),
+        "node_order": list(order),
+        "orchestration": "fail_fast",
+    }
     if failure is None:
         _finalize_run(run_id, status="succeeded", error=None, rollback={}, audit=audit, cost=cost)
         return _run_result(run_id)
     # fail-fast：失败节点标 failed（诚实失败态），未派发节点 → skipped
     # （error=null；原因登记在运行级 error.details——不伪造节点级错误）
     node_error = failure["error"]
+    audit["failed_node"] = failure["node_key"]  # 审计闭集内的可选键（失败腿诚实登记）
     _set_node_failed(run_id, failure["node_key"], node_error)
     remaining = [key for key in order if key not in attempted]
     _mark_nodes_skipped(run_id, remaining)
@@ -561,6 +583,18 @@ def _compensate_pass(
 
 
 # ---- 回滚触发（B11 幂等；WP4 路由的服务面） ------------------------------------
+
+
+def get_task_result(*, actor: User, run_id: str) -> dict[str, Any]:
+    """运行详情全量重建（TaskRunResult 形态；同租户；跨租户 404 不泄露）。
+
+    路由面出口——租户检查在此闸（不泄露「存在但无权」与「不存在」的差别，
+    U1 同口径），过闸后走 ``_run_result`` 单一出口（与复放同构）。"""
+    with _ae_session() as session:
+        run = session.scalar(select(ActionTaskRun).where(ActionTaskRun.id == run_id))
+        if run is None or run.org_id != actor.org_id:
+            raise ActionExecutionError("not_found", NOT_FOUND_MESSAGE)
+    return _run_result(run_id)
 
 
 def compensate_task(

@@ -342,6 +342,7 @@ class ActionTaskNode(Base, TimestampMixin):
     def snapshot(self) -> dict[str, Any]:
         return {
             "node_key": self.node_key,
+            "depends_on_json": self.depends_on_json,  # 依赖快照随读面透出（节点序列权威载体，WP4 additive）
             "status": self.status,
             "attempt": self.attempt,
             "action_execution_id": self.action_execution_id,

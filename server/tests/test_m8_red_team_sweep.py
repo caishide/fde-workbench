@@ -45,7 +45,7 @@ from uuid import uuid4
 
 import pytest
 
-from fde_api.action_execution.models import ActionExecution
+from fde_api.action_execution.models import ActionExecution, ActionTaskRun
 from fde_api.agents.models import AgentArtifact, AgentRegistry, AgentRun
 from fde_api.auth.tokens import issue_access_token
 from fde_api.control.chat import AIConversation
@@ -92,6 +92,8 @@ def _candidate_get_var_routes(app):
 # 条数基线由 test_m8_sweep_registry_count_and_semantic_baseline 钉住。
 ROUTES = {
     ("GET", "/api/v1/action-executions/<execution_id>"): lambda w: f"/api/v1/action-executions/{w['execution_b'].id}",
+    ("GET", "/api/v1/action-tasks/<run_id>"): lambda w: f"/api/v1/action-tasks/{w['task_run_b'].id}",
+    ("GET", "/api/v1/action-tasks/<run_id>/nodes"): lambda w: f"/api/v1/action-tasks/{w['task_run_b'].id}/nodes",
     ("GET", "/api/v1/agents/runs/<run_id>"): lambda w: f"/api/v1/agents/runs/{w['run'].id}",
     ("GET", "/api/v1/agents/runs/<run_id>/artifacts/<artifact_id>/content"): lambda w: f"/api/v1/agents/runs/{w['run'].id}/artifacts/{w['artifact'].id}/content",
     ("GET", "/api/v1/agents/runs/<run_id>/tool-calls"): lambda w: f"/api/v1/agents/runs/{w['run'].id}/tool-calls",
@@ -1067,6 +1069,24 @@ def m8_world(db_session, tmp_path_factory):
     )
     db_session.add(execution_b)
 
+    # AE2-WP4：多步运行行（B 租户资产——编排读面爬扫的阳性对照资源；
+    # 零明文：只留定义指纹，node_count/状态机值域为编排契约闭集）
+    task_run_b = ActionTaskRun(
+        id=str(uuid4()),
+        idempotency_key=f"m8-task-{uuid4().hex}",
+        org_id=org_b.id,
+        requester_id=user_b.id,
+        definition_sha256="c" * 64,
+        node_count=1,
+        status="succeeded",
+        error_code="",
+        error_json=None,
+        audit_json={},
+        cost_json={},
+        rollback_json={},
+    )
+    db_session.add(task_run_b)
+
     action_id = uuid4().hex + uuid4().hex
     db_session.add(
         OperationEvent(
@@ -1125,6 +1145,7 @@ def m8_world(db_session, tmp_path_factory):
         "plan_b": plan_b,
         "run_b": run_b,
         "execution_b": execution_b,
+        "task_run_b": task_run_b,
         "action_id": action_id,
         "binding_b": db_session.query(RepoBinding).filter(RepoBinding.org_id == org_b.id).one(),
     }
@@ -1226,7 +1247,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 58, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(ROUTES) == 60, ("爬扫面条数基线被改动：", len(ROUTES))
     assert len(_EXCLUSION_RECORDS) == 77, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
