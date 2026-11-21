@@ -173,7 +173,7 @@
    "id": "api",
    "type": "backend",
    "label": "Flask API (fde_api)",
-   "sublabel": "127.0.0.1:8010 · 58 蓝图 · 556 路由",
+   "sublabel": "127.0.0.1:8010 · 58 蓝图 · 559 路由",
    "tag": "v0.3.0",
    "sources": [
     {

@@ -136,6 +136,8 @@ ROUTES = {
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/commits"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/commits",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/ci/runs"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/ci/runs",
     ("GET", "/api/v1/solution-repo/bindings/<binding_id>/corrections"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/corrections",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/evidence"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/evidence",
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/audit"): lambda w: f"/api/v1/solution-repo/bindings/{w['binding_b'].id}/audit",
     ("GET", "/api/v1/projects/<project_id>/test-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/test-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans",
     ("GET", "/api/v1/projects/<project_id>/transform-plans/<plan_id>"): lambda w: f"/api/v1/projects/{w['project_b'].id}/transform-plans/{w['plan_b'].id}",
@@ -159,6 +161,19 @@ ROUTES = {
 # 数值口径来自基线 d092c2e 的 A/B/同角色 A 三状态码现测，并由
 # test_m8_exclusion_registry_matches_live_measurement 逐条现测复核。
 _EXCLUSION_RECORDS = {
+    # AF3-WP5（20 号 §3 WP5）逐字取证面：path+commit 双 query 参数（M8 爬扫
+    # 形态无 query 槽）——无参形态属请求形状错误：A 实测 404（跨租户 not_found
+    # 不泄露）、同角色 A 实测 404、B 属主实测 422（validation_failed：commit
+    # 缺失/形状错）；逐字取证阳性对照（B 属主带合法 path+commit 实测 200＋
+    # sha256 对拍）由 tests/test_af3_evidence.py::TestEvidenceVerbatim 承担。
+    ("GET", "/api/v1/solution-repo/bindings/<binding_id>/evidence/file"): {
+        "reason": "AF3-WP5 逐字取证面：path+commit 双 query 参数（M8 爬扫形态无 query 槽）——无参形态属请求形状错误，且 commit 形状校验先于租户判定（实现序）：A 实测 422、同角色 A 实测 422、B 属主实测 422（validation_failed：commit 缺失）；租户隔离由 _load_binding 承载（合法 commit 下跨租户 404 实测见 test_evidence_cross_tenant_404），逐字取证阳性对照（B 属主带合法 path+commit 实测 200＋sha256 对拍）由 tests/test_af3_evidence.py::TestEvidenceVerbatim 承担",
+        "exclusion_kind": "internal_service",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 422,
+        "measured": {"a": 422, "same_role_a": 422, "b_owner": 422},
+    },
     # AF1-WP4（docs/ai-fde/13 §7-B）：工程台两段式 token 读面——Bearer
     # eng-session/handover 鉴权（非用户 JWT 读面），JWT/匿名一律 403
     # （eng_missing_token/malformed），投影语义（一次性消费/白名单逐字段/
@@ -1211,8 +1226,8 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
        均被拒」的路由若停留在排除登记里即转红（正向降级逃逸口）；
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
-    assert len(ROUTES) == 56, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 76, (
+    assert len(ROUTES) == 58, ("爬扫面条数基线被改动：", len(ROUTES))
+    assert len(_EXCLUSION_RECORDS) == 77, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

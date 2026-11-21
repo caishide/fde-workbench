@@ -159,3 +159,34 @@ def start_correction(binding_id: str):
 @require_auth
 def get_corrections(binding_id: str):
     return jsonify({"data": service.get_corrections(actor=g.current_user, binding_id=binding_id), "error": None}), 200
+
+
+# ---- AF3-WP5：证据绑定与审计台账聚合 -----------------------------------------------
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/evidence")
+@require_auth
+def get_evidence(binding_id: str):
+    return jsonify({"data": service.get_evidence(actor=g.current_user, binding_id=binding_id), "error": None}), 200
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/evidence/file")
+@require_auth
+def get_evidence_file(binding_id: str):
+    return jsonify(
+        {
+            "data": service.get_evidence_file(
+                actor=g.current_user,
+                binding_id=binding_id,
+                rel_path=request.args.get("path", ""),
+                commit=request.args.get("commit", ""),
+            ),
+            "error": None,
+        }
+    ), 200
+
+
+@solution_repo_blueprint.get("/solution-repo/bindings/<binding_id>/audit")
+@require_auth
+def get_audit_ledger(binding_id: str):
+    return jsonify({"data": service.get_audit_ledger(actor=g.current_user, binding_id=binding_id), "error": None}), 200

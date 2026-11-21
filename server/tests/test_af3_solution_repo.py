@@ -536,6 +536,9 @@ class TestRouteSurface:
             "/api/v1/solution-repo/bindings/<binding_id>/commits",           # AF3-WP2 log 读面
             "/api/v1/solution-repo/bindings/<binding_id>/ci/runs",           # AF3-WP3 run_ci POST＋列表 GET
             "/api/v1/solution-repo/bindings/<binding_id>/corrections",       # AF3-WP4 corrections POST＋列表 GET
+            "/api/v1/solution-repo/bindings/<binding_id>/evidence",          # AF3-WP5 证据聚合 GET
+            "/api/v1/solution-repo/bindings/<binding_id>/evidence/file",     # AF3-WP5 evidence_verbatim GET
+            "/api/v1/solution-repo/bindings/<binding_id>/audit",             # AF3-WP5 审计台账 GET
         }
 
     def test_revoke_then_read_forbidden(self, client, af3_world, settings, sample_repo) -> None:
