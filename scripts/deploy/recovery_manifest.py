@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from typing import Any
 
 FILES = {
     "api": "api-image.tar",
@@ -109,6 +110,7 @@ def read_file(path: Path, role: str | None, size: int | None) -> bytes | str:
             # Windows can report different ctime values for a path and its open handle.
             if stamp(os.fstat(handle.fileno())) != stamp(before):
                 raise Rejected("input_changed", role)
+            result: bytes | str
             if size is None:
                 result = handle.read(MANIFEST_LIMIT + 1)
                 if len(result) > MANIFEST_LIMIT:
@@ -134,7 +136,7 @@ def read_file(path: Path, role: str | None, size: int | None) -> bytes | str:
         raise Rejected("input_unavailable", role, exit_code=2) from None
 
 
-def verify(bundle: str, expected: str) -> None:
+def verify(bundle: str, expected: str) -> dict:
     if not matches(expected, r"[0-9a-f]{64}"):
         raise Rejected("invalid_expected_digest", exit_code=2)
     if not bundle.strip():
@@ -156,10 +158,11 @@ def verify(bundle: str, expected: str) -> None:
         item = manifest["artifacts"][role]
         if read_file(root / filename, role, item["size_bytes"]) != item["sha256"]:
             raise Rejected("artifact_digest_mismatch", role)
+    return manifest
 
 
 def main(argv=None) -> int:
-    report = {"schema_version": 1, "status": "rejected", "restore_status": "not_checked"}
+    report: dict[str, Any] = {"schema_version": 1, "status": "rejected", "restore_status": "not_checked"}
     try:
         parser = Parser(description=__doc__, allow_abbrev=False)
         parser.add_argument("command", choices=("verify",))
