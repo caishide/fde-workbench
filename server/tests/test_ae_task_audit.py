@@ -28,7 +28,7 @@ from sqlalchemy import select
 from fde_api.action_execution.models import ActionExecutionLog, ActionTaskRun
 from multi_tenant_harness import make_enterprise_org, make_user
 
-SENTINEL = "AE-SENTINEL-SECRET-0001"
+SENTINEL = f"AE-SENTINEL-SECRET-{uuid4().hex[:12]}"  # 评审：每运行随机（防实现侧按字面量黑名单过滤的假通过）
 SENSITIVE_KEYS = ("access_token", "refresh_token", "client_secret", "api_key", "password", "bearer", "authorization")
 
 # 运行级 audit_json 零明文字段集（闭集——多一个键即钉红；C10 结构保证）
@@ -211,7 +211,7 @@ class TestSentinelZeroHit:
             audit_env["actor"].id,
             [_node("n1", params={"note": {"kind": "literal", "value": SENTINEL}})],
         )
-        with caplog.at_level(logging.INFO, logger="fde_api"):
+        with caplog.at_level(logging.DEBUG, logger="fde_api"):  # 评审：对齐 AE1 先例 DEBUG 阈值（INFO 漏 DEBUG 段）
             result = orch.submit_task(
                 actor=audit_env["actor"],
                 payload=payload,
@@ -246,14 +246,22 @@ class TestSentinelZeroHit:
         ):
             assert SENTINEL not in surface_text, f"哨兵命中 {surface_name}"
             assert "SKU-n1" not in surface_text, f"参数明文命中 {surface_name}"  # params 明文同样零落痕
-        # 七敏感键名同样零命中（AE2 增运行级一处）
-        for surface_name, surface_text in (("run-row", run_text), ("audit-row", log_text), ("response", response_text)):
+        # 七敏感键名同样零命中（AE2 增运行级一处；评审：app-log 第四面同扫——
+        # 自声称「四处口径」此前键名只扫三面）
+        for surface_name, surface_text in (
+            ("run-row", run_text), ("audit-row", log_text), ("response", response_text), ("app-log", log_records),
+        ):
             for key in SENSITIVE_KEYS:
                 assert key not in surface_text, f"敏感键名 {key} 命中 {surface_name}"
         # 指纹在场（运行级只留 definition_sha256 与 params_sha256 锚）
         assert run.definition_sha256 == _sha(json.dumps(payload["definition"], ensure_ascii=False, sort_keys=True,
                                                        separators=(",", ":")))
-        assert len(log_rows[0].params_sha256) == 64
+        # 评审：派生式对拍（此前只钉长度——canonical 序列化漂移不可检出）。
+        # 口径分层：AE1 审计行（本断言）＝解析后实材 canonical；声明面
+        # ParamValue 规格指纹在 AE2 节点行（task_orchestrator._create_node_rows）。
+        assert log_rows[0].params_sha256 == _sha(
+            json.dumps({"note": SENTINEL}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        )
 
     def test_run_audit_json_key_set_is_closed(self, db_session, audit_env, wired_orchestrator) -> None:
         """运行级 audit_json 键集闭集钉（多一个键即红——零明文结构保证）。"""

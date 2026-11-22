@@ -194,12 +194,18 @@ def _run_task_once(
     for slot in ("first", "replay2", "replay3"):
         if attempts[slot].get("execution_id") and not attempts[slot].get("execution_id", "").startswith("not-issued"):
             attempts[slot]["run_cost"] = dict(run_cost)
+            # 评审 F5：同步写 cost 键——AE1 records 派生面读 attempts.*.cost
+            # （观测包络登记 task.total_cost_usd＝Σ attempts.*.run_cost.estimated_usd
+            # 的实际派生链经 cost 键；run_cost 为装置自读投影双登记）。
+            attempts[slot]["cost"] = {"estimated_usd": float(run_cost.get("estimated_usd") or 0.0)}
     after = _snapshot_state(stack)
     note = ""
-    error = (attempts.get("first") or {}).get("error") or {}
-    if isinstance(error, dict) and error.get("retryable") is True:
-        reason = (error.get("details") or {}).get("reason")
-        note = f"infrastructure_error: {reason}" if reason else "infrastructure_error"
+    for slot_name in ("first", "replay2", "replay3"):
+        slot_error = (attempts.get(slot_name) or {}).get("error") or {}
+        if isinstance(slot_error, dict) and slot_error.get("retryable") is True:
+            reason = (slot_error.get("details") or {}).get("reason")
+            tag = f"infrastructure_error: {reason}" if reason else "infrastructure_error"
+            note = f"{note} {slot_name}:{tag}".strip()  # 评审：逐槽归因（此前只看 first 槽）
     return RunRecord(
         task_id=task_id,
         run_index=run_index,

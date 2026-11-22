@@ -229,14 +229,14 @@ def submit_action(
     except ActionExecutionError as exc:
         # 锁行翻 failed 诚实终态——仅当锁行确由本请求落下；dispatch 失败留痕
         if lock_handle["execution_id"] is not None:
-            _finalize_in_flight(payload, result=None, error=exc, execution_id=lock_handle["execution_id"])
+            _finalize_in_flight(payload, result=None, error=exc, execution_id=lock_handle["execution_id"], rollback_supported=rollback_supported)
         raise
     except Exception as exc:  # 闭集外兜底（Q8 映射）：锁行诚实 failed＋闭集码冒泡，防裸 500/锁残留
         mapped = ActionExecutionError(
             "tool_not_allowed", "执行段内部失败。", details={"reason": type(exc).__name__}
         )
         if lock_handle["execution_id"] is not None:
-            _finalize_in_flight(payload, result=None, error=mapped, execution_id=lock_handle["execution_id"])
+            _finalize_in_flight(payload, result=None, error=mapped, execution_id=lock_handle["execution_id"], rollback_supported=rollback_supported)
         raise mapped from None
     if result["status"] != "succeeded":
         # 复放零新行（同键一行真身）——replayed 快照与 D1 甲案 failed 复放快照
@@ -450,6 +450,11 @@ def _finalize_in_flight(
                 row.status = "failed"
                 row.error_code = error.code
                 row.error_json = build_error(error.code, error.message, retryable=False, details=error.details)
+                # 失败腿同样按调用方置位（AE2 评审 DN-1 甲案）：派发已发生的
+                # 失败行（超时/连接器 5xx——副作用可能已发生）若节点声明支持
+                # 补偿，行上 supported 同步置位，补偿通道不被恒 not_supported
+                # 堵死（覆盖面＝两条 finalize 腿一致；缺省 False＝既有行为）。
+                row.rollback_json = {**(row.rollback_json or {}), "supported": bool(rollback_supported)}
             session.commit()
         except Exception:
             session.rollback()

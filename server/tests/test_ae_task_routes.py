@@ -22,7 +22,7 @@ from flask import Flask
 from fde_api.auth.tokens import issue_access_token
 from multi_tenant_harness import make_enterprise_org, make_user
 
-SENTINEL = "AE-SENTINEL-SECRET-0001"
+SENTINEL = f"AE-SENTINEL-SECRET-{uuid4().hex[:12]}"  # 评审：每运行随机（防黑名单式假通过）
 
 
 class AllowAllWhitelist:
@@ -195,6 +195,8 @@ class TestSubmitRoute:
         assert resp.status_code == 404
         assert resp.get_json()["error"]["code"] == "not_found"
         assert wired_orchestrator["dispatch"].calls == 0
+        # 评审：C1「零泄漏」半边——404 响应体不含他 org 任何标识（同 C2 钉先例）
+        assert route_env["org_b"].id not in resp.get_data(as_text=True)
 
     def test_submit_viewer_is_403(self, app: Flask, client, db_session, route_env, wired_orchestrator, test_settings) -> None:
         from multi_tenant_harness import make_user as _make_user

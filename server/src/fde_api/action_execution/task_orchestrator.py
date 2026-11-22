@@ -262,8 +262,10 @@ def _validate_action(raw: dict[str, Any], node_key: str, whitelist_gate: Any) ->
     if type(timeout_seconds) is not int or not (1 <= timeout_seconds <= 300):
         raise ActionExecutionError("validation_failed", "timeout_seconds 须为 1..300 整数。")
     approval_id = raw.get("approval_id")
-    if approval_id is not None and (not isinstance(approval_id, str) or len(approval_id) > 128):
-        raise ActionExecutionError("validation_failed", "approval_id 非法（≤128 字符或 null）。")
+    if approval_id is not None and (
+        not isinstance(approval_id, str) or not (1 <= len(approval_id) <= 128)
+    ):
+        raise ActionExecutionError("validation_failed", "approval_id 非法（1..128 字符或 null）。")
     # A5/A6：白名单三元组**提交期预检**（未登记即 422 静态拒，不派发到运行期 403）。
     # 映射读法（Q8）：门拒绝（运行期 tool_not_allowed）在提交期静态层转
     # validation_failed ＋ details 标注；运行期 L3 门仍在（防御纵深不撤）。
@@ -556,7 +558,11 @@ def _compensate_pass(
     """逆序补偿：逐节点调用 U1 ``rollback_action``（四态逐字同义转写登记）。
 
     单节点补偿面自身拒绝（审批防御/失权等 ``ActionExecutionError``）＝该节点
-    补偿 failed（诚实），补偿过程对其余节点照常推进。"""
+    补偿 failed（诚实），补偿过程对其余节点照常推进；非域异常（基础设施
+    故障等）同样按该节点补偿 failed 诚实登记——不冒泡（否则运行行滞留
+    ``compensating`` 非终态、同键提交与补偿触发恒 409 in_flight 无恢复面）。
+    ``compensation_ids`` 中 ``node:<key>`` 为无批次行的节点级伪标记（与
+    ``action_compensations`` 行 ID 形态可区分）。"""
     if compensator is None:
         compensator = ae_service.NO_COMPENSATOR
     compensated: list[str] = []
@@ -571,6 +577,9 @@ def _compensate_pass(
             ]
         except ActionExecutionError:
             comp_status = "failed"
+            failed_ids = [f"node:{key}"]
+        except Exception:
+            comp_status = "failed"  # 非域异常＝该节点补偿 failed 诚实登记（零冒泡不卡终态）
             failed_ids = [f"node:{key}"]
         _set_node_compensation(run_id, key, comp_status)
         if comp_status == "rolled_back":
@@ -607,13 +616,14 @@ def compensate_task(
     """对既有运行触发补偿。幂等：终态运行直接快照重建（零新补偿副作用）；
     ``failed`` 运行补跑未登记补偿的节点（inline 流已全登记 → 恒零新增）；
     在途 409；succeeded 422（状态机不含 succeeded→compensating 边）。
-    ``reason`` 透传 U1 批次登记面。"""
-    _check_capability(actor)
+    ``reason`` 透传 U1 批次登记面。校验序对齐契约 x-validation-order：
+    S3 租户绑定（404 不泄露）先于 S4 能力档位（403）。"""
     with _ae_session() as session:
         run = session.scalar(select(ActionTaskRun).where(ActionTaskRun.id == execution_id))
         if run is None or run.org_id != actor.org_id:
             raise ActionExecutionError("not_found", NOT_FOUND_MESSAGE)
         status = run.status
+    _check_capability(actor)  # S4 档位在租户闸后（跨租户 404 不被 403 抢先）
     if status == "succeeded":
         raise ActionExecutionError("validation_failed", "运行已成功：补偿只对失败运行开放（状态机 failed→compensating）。")
     if status in ("queued", "running", "compensating"):

@@ -215,7 +215,9 @@ class TestB3Residual:
         assert result["status"] == "compensation_failed"
         assert result["error"] is not None
         assert result["error"]["code"] == "compensation_failed"
-        assert result["error"]["details"]["compensation_ids"]  # 失败条目 id 非空
+        # 评审：归因 id 对拍——失败条目 id 须为节点 b 批次登记的真实 compensation_id
+        # （c-2＝TaskCompensator 对 b 的第 2 次发放；此前只钉非空，张冠李戴仍绿）
+        assert result["error"]["details"]["compensation_ids"] == ["c-2"]
         summary = result["rollback"]
         assert summary is not None
         assert summary["status"] == "failed"
@@ -273,7 +275,7 @@ class TestCompensationOutcomes:
         )
         nodes = _by_key(result)
         assert nodes["n1"]["compensation_status"] == "noop"
-        assert result["status"] != "succeeded"
+        assert result["status"] == "rolled_back"  # 评审：终态精确钉（与 B5 同口径，此前只钉 != succeeded）
         summary = result["rollback"]
         assert summary is not None
         assert summary["residual"] == []
@@ -308,6 +310,15 @@ class TestCompensationIdempotency:
             actor=comp_env["actor"], execution_id=first["execution_id"], compensator=compensator
         )
         assert again == first  # 快照逐字一致（节点结果/补偿登记零漂移）
+        # 评审：DB 面登记行数不变（U1「一行一批次」幂等的库表证据；此前只钉桩计数。
+        # ActionCompensation.execution_id＝AE1 节点行 id 非 run_id——按 org 域前后对比）
+        from sqlalchemy import func, select as _select
+        from fde_api.action_execution.models import ActionCompensation as _AC
+
+        batch_count = db_session.scalar(
+            _select(func.count()).select_from(_AC).where(_AC.org_id == comp_env["org"].id)
+        )
+        assert batch_count == 1
         assert compensator.kinds == kinds_after_first  # 零新补偿副作用
         assert dispatch.calls == dispatch_calls_after_first  # 零新外呼
 
@@ -326,6 +337,15 @@ class TestCompensationIdempotency:
         with pytest.raises(ActionExecutionError) as exc:
             orch.compensate_task(actor=comp_env["actor_b"], execution_id=result["execution_id"])
         assert exc.value.code == "not_found"
+        # 评审：C3「等值＋计数」——跨租户触发后补偿登记零新增（零副作用半边；
+        # org 域前后对比——触发前内联流已有 1 行）
+        from sqlalchemy import func, select as _select
+        from fde_api.action_execution.models import ActionCompensation as _AC2
+
+        batch_count_after = db_session.scalar(
+            _select(func.count()).select_from(_AC2).where(_AC2.org_id == comp_env["org"].id)
+        )
+        assert batch_count_after == 1  # 仅内联流既有批次，跨租户触发零新增
         assert exc.value.status == 404
 
     def test_compensate_task_on_succeeded_run_is_rejected_by_state_machine(

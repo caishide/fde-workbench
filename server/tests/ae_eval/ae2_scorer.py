@@ -82,8 +82,10 @@ def _replay_consistent(record: RunRecord, slot: str) -> bool:
     attempt = record.attempts.get(slot)
     if attempt is None or not first:
         return False
+    first_id = first.get("execution_id")
     return (
-        attempt.get("execution_id") == first.get("execution_id")
+        bool(first_id)  # 评审：execution_id 双缺失（None==None）不得判一致
+        and attempt.get("execution_id") == first_id
         and attempt.get("status") == first.get("status")
     )
 
@@ -96,6 +98,12 @@ def score_records(
 ) -> dict[str, Any]:
     """落盘记录 × 冻结复合任务集 → 逐条判定 + 指标 + 报告数据（AE2 版）。"""
     taskset = _load_taskset(taskset_path)
+    if expected_runs is None:
+        # 评审 F2：预登记分母锚机械消费——调用方未显式传参时读冻结件
+        # run_discipline.denominator_anchor.expected_runs（显式传参优先，
+        # 公开段部分覆盖场景由调用方传 6 并自行登记口径）。
+        anchor = (taskset.get("run_discipline") or {}).get("denominator_anchor") or {}
+        expected_runs = anchor.get("expected_runs")
     assertions_by_task: dict[str, list[str]] = {
         str(task["id"]): list(task["assertions"]) for task in taskset["tasks"]
     }
@@ -131,9 +139,12 @@ def score_records(
     replay_checks = 0
     replay_passed = 0
     for record in records:
+        first_id = str((record.attempts.get("first") or {}).get("execution_id") or "")
         for slot in ("replay2", "replay3"):
             if record.attempts.get(slot) is None:
                 continue
+            if first_id.startswith("not-issued-"):
+                continue  # 评审：S 层拒绝折叠槽未建立复放通道——不计幂等分母（note 归因）
             replay_checks += 1
             if _replay_consistent(record, slot):
                 replay_passed += 1
@@ -148,8 +159,14 @@ def score_records(
         if rollback is None:
             continue
         rollback_runs += 1
+        # 评审 F1：零遗留须补偿**全成功**收口（status==rolled_back）——
+        # compensation_failed 但残留空的形态不得计 clean（空转满分防护）。
         residual = rollback.get("residual")
-        if isinstance(residual, list) and not residual:
+        if (
+            rollback.get("status") == "rolled_back"
+            and isinstance(residual, list)
+            and not residual
+        ):
             rollback_clean += 1
 
     metrics = [

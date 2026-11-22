@@ -11,4 +11,5 @@
 # Windows smudge 时会把 LF 转 CRLF，锚钉（sha256+size）随检出环境翻转即红。
 tests/ae_eval/taskset_v1.json -text
 server/tests/ae_eval/taskset_v1.json -text
+server/tests/ae_eval/taskset_ae2_v1.json -text
 server/src/fde_api/action_execution/whitelist.json -text
