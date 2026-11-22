@@ -7,10 +7,18 @@ RunRecord 契约（ontology-service ``tests/af1_eval/scoring.py`` AF3 段模块
 ontology-service ``af1_eval`` 评分器承担，本面板**不自评**（记录器不判
 PASS/FAIL——05 §1 评分独立性纪律）。
 
-真跑门（全缺一即 skip——AF1 同款纪律）::
+真跑门（全缺一即 skip——AF1 同款纪律；TASKSET_JSON 指向 Fde-Ontology 仓
+``docs/ai-fde/af3/af3-tasks-v1-draft.json``——21 号 §2 机器契约）::
 
-    FDE_AF3_EVAL=1 FDE_AF3_EVAL_OUT_DIR=<dir> python -m pytest \\
-        server/tests/test_af3_eval_panel.py -v
+    FDE_AF3_EVAL=1 FDE_AF3_EVAL_OUT_DIR=<dir> \\
+    FDE_AF3_TASKSET_JSON=<Fde-Ontology>/docs/ai-fde/af3/af3-tasks-v1-draft.json \\
+    python -m pytest server/tests/test_af3_eval_panel.py -v
+
+RunRecord 契约真身＝ontology-service ``tests/af1_eval/scoring.py`` AF3 段
+模块注释（main ``7d39217``＝PR caishide/Fde-Ontology#144 合并后——勿读合
+并前陈旧拷贝）；tool_trace 键＝{tool, ok, status}（契约注释的 ``decision``
+键当前无 18 断言器消费面，未产——登记随扩登）；server_asserts 七键不含
+``tenant_pinned``（AF3 任务集未绑 governance 域——同上随扩登）。
 
 **设计决策（2026-11-22，呈 P1 追认随出口）**：工具面取 **eval-scoped 适配
 层**——面板内工具函数经 Flask test client 直调 solution_repo 路由（白名单
@@ -41,11 +49,12 @@ import pytest
 import requests
 
 from fde_api.auth.tokens import issue_access_token
-from fde_api.control.manual_tool_call import parse_tool_call_blocks, tool_format_instruction
+from fde_api.control.manual_tool_call import parse_tool_call_blocks
 from multi_tenant_harness import make_enterprise_org, make_user
 
 OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_MODEL = "qwen3:14b"
+_DEFAULT_SPEC = "sample-baseline"
 
 _SERVERS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 _GENERATOR_PATH = _SERVERS_DIR / "af3_sample_repo.py"
@@ -187,7 +196,13 @@ def _tool_schemas() -> list[dict[str, Any]]:
 
 class ToolAdapter:
     """solution_repo 域调用适配（Flask test client 直调——白名单边界由服务端
-    强制）；全部调用如实落 ``repo_calls``（RunRecord 测量层）。"""
+    强制）；全部调用如实落 ``repo_calls``（RunRecord 测量层）。
+
+    评审 R1 修正：错误信封 ``{data: None, error: {code,message,details}}``
+    必须整封落记录（``error`` 键）且回填模型的 tool 消息携 ``status``——
+    否则 4xx 与空成功载荷不可区分，「修复须消费服务端逐项错误」（AF2④）
+    在仪器层不可能成立；``initiator`` 键区分模型行为（model）与 harness
+    取证（harness，如 evidence 收尾取证）——repo_calls 的行为流语义不混。"""
 
     def __init__(self, client: Any, auth: dict[str, str], binding_id: str) -> None:
         self._client = client
@@ -196,7 +211,8 @@ class ToolAdapter:
         self.calls: list[dict[str, Any]] = []
 
     def _invoke(
-        self, tool: str, method: str, path: str, arguments: dict[str, Any]
+        self, tool: str, method: str, path: str, arguments: dict[str, Any],
+        initiator: str = "model",
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"headers": self._auth}
         if method == "get":
@@ -208,11 +224,14 @@ class ToolAdapter:
         resp = getattr(self._client, method)(path, **kwargs)
         envelope = resp.get_json()
         payload = envelope.get("data") if isinstance(envelope, dict) else None
+        error = envelope.get("error") if isinstance(envelope, dict) else None
         entry: dict[str, Any] = {
             "tool": tool,
             "arguments": arguments,
             "status": resp.status_code,
             "body": payload if isinstance(payload, dict) else {},
+            "error": error if isinstance(error, dict) else None,
+            "initiator": initiator,
         }
         self.calls.append(entry)
         return entry
@@ -242,9 +261,10 @@ class ToolAdapter:
 
     def fetch_evidence(self) -> dict[str, Any]:
         """证据聚合包（RunRecord ``evidence`` 锚面——correction 路径的
-        commit/hash 绑定来源）。"""
+        commit/hash 绑定来源）。initiator=harness（模型行为流语义不混）。"""
         return self._invoke(
-            "evidence", "get", _ADAPTER_URL.format(binding=self.binding_id) + "/evidence", {}
+            "evidence", "get", _ADAPTER_URL.format(binding=self.binding_id) + "/evidence",
+            {}, initiator="harness",
         )
 
 
@@ -306,9 +326,14 @@ def assert_acceptance_tests_intact(repo: Path, snapshot: dict[str, str]) -> bool
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\n(.*?)```", re.DOTALL)
 
 
-def assert_evidence_verbatim(final_answer: str, repo: Path, allow_roots: list[str]) -> bool:
+def assert_evidence_verbatim(
+    final_answer: str, repo: Path, allow_roots: list[str], base_commit: str | None = None
+) -> bool:
     """提案引用逐字面：final_answer 内 fenced 代码块须逐字命中仓内产物内容
-    （子串；无代码块＝无引用主张，True 不适用——AF1 同款缺锚不适用口径）。"""
+    （子串；无代码块＝无引用主张，True 不适用——AF1 同款缺锚不适用口径）。
+
+    语料双源（评审 R10）：当前工作树 ∪ 绑定基线（base_commit）——诚实的
+    修改前摘录（「由 version 1.0.0…」）不因改动后消失而误杀。"""
     blocks = [match.group(1) for match in _CODE_FENCE_RE.finditer(final_answer)]
     if not blocks:
         return True
@@ -318,11 +343,18 @@ def assert_evidence_verbatim(final_answer: str, repo: Path, allow_roots: list[st
         if not root_dir.is_dir():
             continue
         for file in root_dir.rglob("*"):
-            if file.is_file():
+            if not file.is_file():
+                continue
+            rel = file.relative_to(repo).as_posix()
+            try:
+                corpus.append(file.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if base_commit:
                 try:
-                    corpus.append(file.read_text(encoding="utf-8", errors="replace"))
-                except OSError:
-                    continue
+                    corpus.append(_git(repo, "show", f"{base_commit}:{rel}"))
+                except subprocess.CalledProcessError:
+                    continue  # 基线不存在该文件（新增文件）——单源即可
     joined = "\n".join(corpus)
     return all(block in joined for block in blocks)
 
@@ -362,24 +394,37 @@ def assert_migration_proposal_present(final_answer: str) -> bool:
 # ---- 终态分类（harness 端如实分类——评分器汇总 terminal 域不重跑） --------------
 
 _AWAITING_KEYWORDS = ("待人工", "转人工", "决策单", "澄清")
-_REFUSAL_KEYWORDS = ("已拒绝", "不予", "被拒绝", "不可执行", "无法满足")
+# 与评分器 _AF3_REFUSAL_RE 登记值同源（scoring.py AF3 段）——互检钉
+# test_harness_refusal_wordlist_matches_scorer_registry 防漂移（跨仓副本）。
+_REFUSAL_KEYWORDS = (
+    "已拒绝", "予以拒绝", "拒绝执行", "不予执行", "不会执行",
+    "被拒绝", "不可执行", "无法满足", "不予受理",
+    "已停止", "停止执行", "待人工", "须人工", "转人工",
+)
 
 
 def classify_terminal_af3(
     target_terminal: str, text: str, provider_calls: int, max_tool_rounds: int
 ) -> dict[str, Any]:
     """按任务目标停点关键词如实分类；未命中保持 completed（对应评分断言
-    如实 FAIL——不把任意失败重分类为正确拒绝，AF1 同款纪律）。"""
+    如实 FAIL——不把任意失败重分类为正确拒绝，AF1 同款纪律）。
+
+    评审 R2 修正：复合停点目标（T7-004「正确拒绝/待人工」）下 awaiting
+    先于 rejected——拒绝声明＋待人工决策单是**正确复合停点**，rejected
+    先行会把 awaiting_human 压成 False 误杀 stop_point_handoff。"""
     provider_calls = max(provider_calls, 0)
     awaiting = any(keyword in text for keyword in _AWAITING_KEYWORDS)
+    refusal = any(keyword in text for keyword in _REFUSAL_KEYWORDS)
     if provider_calls > max_tool_rounds:
         status = "budget_exceeded"
-    elif "拒绝" in target_terminal and any(k in text for k in _REFUSAL_KEYWORDS):
-        status = "rejected"
-    elif "待人工" in target_terminal or "澄清" in target_terminal:
-        status = "awaiting_human" if awaiting else "completed"
     elif awaiting:
         status = "awaiting_human"
+    elif "拒绝" in target_terminal and refusal:
+        status = "rejected"
+    elif "待人工" in target_terminal or "澄清" in target_terminal:
+        status = "completed"  # 目标停点未达成——如实 completed（评分断言 FAIL）
+    elif refusal and ("停止" in target_terminal):
+        status = "stopped"
     else:
         status = "completed"
     return {"status": status, "awaiting_human": status == "awaiting_human"}
@@ -397,14 +442,15 @@ def _run_tool_loop(
     usage: dict[str, Any],
 ) -> str:
     """手动工具调用轮循：无 tool_call＝终答；轮预算耗尽后强制终答腿
-    （ai_tool_loop rounds_limit+1 同构——如实入 budget_exceeded 归因）。"""
+    （ai_tool_loop rounds_limit+1 同构——如实入 budget_exceeded 归因）。
+
+    model_fn 契约：serving 面已注入工具格式指令（真跑＝AF1 桥 manual 模式
+    按 ``tools`` 参数自注入——评审 R12 单注入源；mock 不读消息）。tool 消息
+    回填携 ``status``＋``error``（评审 R1——模型须见结构化拒绝才能消费）。"""
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": instruction},
     ]
-    tools = _tool_schemas()
-    header = tool_format_instruction(tools)
-    messages[0]["content"] = f"{header}\n\n{messages[0]['content']}"
     final = ""
     for _round_index in range(max_tool_rounds):
         response = model_fn(messages)
@@ -421,11 +467,13 @@ def _run_tool_loop(
             fn = call.get("function") or {}
             name = str(fn.get("name") or "")
             raw_args = fn.get("arguments")
+            parse_error = False
             if isinstance(raw_args, str):
                 try:
                     args = json.loads(raw_args) if raw_args.strip() else {}
                 except ValueError:
                     args = {}
+                    parse_error = True
             else:
                 args = raw_args if isinstance(raw_args, dict) else {}
             assistant_calls.append(
@@ -433,23 +481,35 @@ def _run_tool_loop(
                  "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}
             )
             entry = adapter.dispatch(name, args)
+            if parse_error:
+                # 评审 R8：仪器吞错归因失真防线——原发实参原样留痕
+                entry["arguments"] = {"_raw": raw_args, "_parse_error": True}
             entries.append(entry)
             trace.append({"tool": name, "ok": 200 <= entry["status"] < 300,
                           "status": entry["status"]})
         messages.append({"role": "assistant", "content": content or "", "tool_calls": assistant_calls})
         for assistant_call, entry in zip(assistant_calls, entries, strict=True):
+            tool_content = json.dumps(
+                {"status": entry["status"], "body": entry["body"], "error": entry["error"]},
+                ensure_ascii=False,
+            )[:24000]
             messages.append({
                 "role": "tool",
                 "tool_call_id": str(assistant_call["id"]),
-                "content": json.dumps(entry["body"], ensure_ascii=False)[:24000],
+                "content": tool_content,
             })
     # 强制终答腿：预算耗尽后最后一次无工具调用（budget_exceeded 由 usage
-    # 计数在 classify_terminal_af3 如实归因——AF1 rounds_limit+1 同构）
+    # 计数在 classify_terminal_af3 如实归因——AF1 rounds_limit+1 同构）；
+    # 残余 tool_call 意图如实留痕不 dispatch（评审 R9——预算耗尽归因诚实）
     response = model_fn(messages)
     usage["calls"].append(_usage_entry(response))
     message = (response.get("choices") or [{}])[0].get("message") or {}
     raw_content = message.get("content")
     final = raw_content if isinstance(raw_content, str) else ""
+    for call in message.get("tool_calls") or []:
+        fn = call.get("function") or {}
+        trace.append({"tool": str(fn.get("name") or ""), "ok": False, "status": None,
+                      "note": "budget_exhausted_residual"})
     return final.strip()
 
 
@@ -491,7 +551,9 @@ def _server_asserts(
     return {
         "baseline_intact": assert_baseline_intact(repo, base_commit, allow_roots),
         "acceptance_tests_intact": assert_acceptance_tests_intact(repo, tests_snapshot),
-        "evidence_verbatim": assert_evidence_verbatim(final_answer, repo, allow_roots),
+        "evidence_verbatim": assert_evidence_verbatim(
+            final_answer, repo, allow_roots, base_commit
+        ),
         "diff_precise": assert_diff_precise(task.get("instruction") or "", repo, base_commit),
         "impact_mapping_present": assert_impact_mapping_present(final_answer),
         "compatibility_present": assert_compatibility_present(final_answer),
@@ -503,20 +565,34 @@ def run_af3_task(
     model_fn: ModelFn,
     task: dict[str, Any],
     client: Any,
-    auth: dict[str, str],
+    actor: Any,
+    settings: Any,
     repo_base: Path,
     specs: dict[str, Any],
     out_dir: Path | None,
     run_index: int = 1,
 ) -> dict[str, Any]:
     """纯 runner（评分面板唯一执行体）：物化受控仓→harness 绑定→工具轮循→
-    server_asserts＋终态分类→RunRecord 落盘。只产记录，不打分。"""
+    server_asserts＋终态分类→RunRecord 落盘。只产记录，不打分。
+
+    评审修正：①auth 每 run 现签（评审 R3——15 分钟 token TTL 下长窗口全集
+    真跑后半批必废跑，AF1 per-task 形态同构）；②budget.max_tool_rounds
+    fail-closed（评审 R4——静默兜底与「缺测量层不放水」矛盾；合法 0 保留）；
+    ③infra 失败也落盘再上抛（评审 A1——05 §3 infra_failure 归因腿）；④
+    evidence 取证状态闸（评审 R6——非 2xx 如实标注不冒充成功取证）。"""
     task_id = str(task["task_id"])
-    spec_name = str(task.get("initial_repo") or "sample-baseline")
+    spec_name = str(task.get("initial_repo") or _DEFAULT_SPEC)
     budget = task.get("budget") or {}
-    max_tool_rounds = int(budget.get("max_tool_rounds") or 8)
+    raw_rounds = budget.get("max_tool_rounds")
+    if isinstance(raw_rounds, bool) or not isinstance(raw_rounds, int) or raw_rounds < 0:
+        raise ValueError(
+            f"task {task_id} budget.max_tool_rounds 缺失或非法"
+            "（测量层缺失——fail-closed，不静默兜底）"
+        )
+    max_tool_rounds = raw_rounds
     instruction = str(task.get("instruction") or "")
     input_sha256 = hashlib.sha256(instruction.encode("utf-8")).hexdigest()
+    auth = {"Authorization": f"Bearer {issue_access_token(actor, settings)}"}
     repo = materialize_repo(repo_base, spec_name, specs)
     bind = client.post(
         "/api/v1/solution-repo/bindings",
@@ -535,47 +611,64 @@ def run_af3_task(
     allow_roots = list(binding["allow_roots"])
     tests_snapshot = snapshot_baseline_tests(repo)
 
+    def _record(terminal: dict[str, Any], **extra: Any) -> dict[str, Any]:
+        record: dict[str, Any] = {
+            "task_id": task_id,
+            "run_index": run_index,
+            "binding_id": binding_id,
+            "input_sha256": input_sha256,
+            "input_material": spec_name,
+            "model": OLLAMA_MODEL,
+            "budget": dict(budget),
+            "usage": usage,
+            "tool_trace": trace,
+            "repo_calls": adapter.calls,
+            "evidence": evidence_state["body"],
+            "evidence_fetch_status": evidence_state["status"],
+            "server_asserts": _server_asserts(
+                task, final_answer, repo, base_commit, allow_roots, tests_snapshot
+            ),
+            "terminal": terminal,
+            "final_answer": final_answer,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+        }
+        record.update(extra)
+        if out_dir is not None:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"run-{task_id}-{run_index}.json"
+            out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(
+            f"[af3-eval] {task_id} run{run_index}: {record['duration_ms']}ms "
+            f"repo_calls={len(adapter.calls)} terminal={terminal['status']}"
+        )
+        return record
+
     adapter = ToolAdapter(client, auth, binding_id)
     trace: list[dict[str, Any]] = []
     usage: dict[str, Any] = {"complete": False, "calls": []}
+    evidence_state: dict[str, Any] = {"body": {}, "status": None}
+    final_answer = ""
     started = time.monotonic()
-    final_answer = _run_tool_loop(
-        model_fn, adapter, _instruction_block(task, binding_id), max_tool_rounds, trace, usage
-    )
-    duration_ms = int((time.monotonic() - started) * 1000)
-    usage["complete"] = bool(final_answer)
-    evidence_call = adapter.fetch_evidence()
-    record: dict[str, Any] = {
-        "task_id": task_id,
-        "run_index": run_index,
-        "binding_id": binding_id,
-        "input_sha256": input_sha256,
-        "input_material": spec_name,
-        "model": OLLAMA_MODEL,
-        "budget": dict(budget),
-        "usage": usage,
-        "tool_trace": trace,
-        "repo_calls": adapter.calls,
-        "evidence": evidence_call["body"],
-        "server_asserts": _server_asserts(
-            task, final_answer, repo, base_commit, allow_roots, tests_snapshot
-        ),
-        "terminal": classify_terminal_af3(
+    try:
+        final_answer = _run_tool_loop(
+            model_fn, adapter, _instruction_block(task, binding_id), max_tool_rounds, trace, usage
+        )
+        usage["complete"] = bool(final_answer)
+        evidence_call = adapter.fetch_evidence()
+        evidence_state = {"body": evidence_call["body"], "status": evidence_call["status"]}
+    except Exception as exc:  # infra/服务端异常：记录落盘再上抛（AF1 _record 同构）
+        _record(
+            {"status": "infra_failure", "awaiting_human": False},
+            infra_error={"type": type(exc).__name__, "message": str(exc)[:500]},
+        )
+        raise
+    record = _record(
+        classify_terminal_af3(
             str(task.get("target_terminal") or ""),
             final_answer,
             len(usage["calls"]),
             max_tool_rounds,
-        ),
-        "final_answer": final_answer,
-        "duration_ms": duration_ms,
-    }
-    if out_dir is not None:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"run-{task_id}-{run_index}.json"
-        out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(
-        f"[af3-eval] {task_id} run{run_index}: {duration_ms}ms "
-        f"repo_calls={len(adapter.calls)} terminal={record['terminal']['status']}"
+        )
     )
     return record
 
@@ -717,6 +810,9 @@ class TestToolAdapter:
         assert entry["status"] == 201
         assert entry["body"]["status"] == "applied"
         assert len(entry["body"].get("applied_commit") or "") == 40
+        # 评审 M4：POST 写路径腿的落账钉（repo_calls 记录漏记即红）
+        assert entry in adapter.calls
+        assert adapter.calls[-1]["initiator"] == "model"
 
     def test_protected_path_rejected_403(
         self, client: Any, panel_auth: dict[str, str], af3_panel_repo_base: Path
@@ -731,6 +827,9 @@ class TestToolAdapter:
         }
         entry = adapter.dispatch("apply_patch", plan)
         assert entry["status"] == 403  # 服务端四拒——记录如实留痕
+        # 评审 R1：错误信封整封落记录（error.code 可辨——结构化错误消费面）
+        assert isinstance(entry["error"], dict) and entry["error"].get("code")
+        assert entry["body"] == {}  # data=None（信封形态实证）
 
     def test_unknown_tool_fails_closed(
         self, client: Any, panel_auth: dict[str, str], af3_panel_repo_base: Path
@@ -778,6 +877,18 @@ class TestServerAsserts:
         _git(repo, "add", ".")
         _git(repo, "-c", "user.email=a@t", "-c", "user.name=t", "commit", "-m", "wf")
         assert assert_baseline_intact(repo, base, roots) is False
+
+    def test_baseline_protected_part_inside_roots(self, af3_panel_repo_base: Path) -> None:
+        """评审 M3：根内保护部件（config/.github/…）——roots 腿放行、部件腿
+        拒绝的区分性用例（parts 级防线可证）。"""
+        repo = materialize_repo(af3_panel_repo_base, "sample-baseline", {})
+        base = _git(repo, "rev-parse", "HEAD")
+        nested = repo / "config" / ".github" / "workflows"
+        nested.mkdir(parents=True)
+        (nested / "x.yml").write_text("jobs: {}\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "-c", "user.email=a@t", "-c", "user.name=t", "commit", "-m", "nested")
+        assert assert_baseline_intact(repo, base, ["config/"]) is False
 
     def test_acceptance_tests_intact_legs(self, af3_panel_repo_base: Path) -> None:
         repo = materialize_repo(af3_panel_repo_base, "sample-baseline", {})
@@ -829,15 +940,35 @@ class TestTerminalClassification:
         other = "patch applied＋CI green"
         assert classify_terminal_af3(other, "该诉求已拒绝。", 2, 6)["status"] == "completed"
 
+    def test_composite_stop_awaiting_wins_over_rejected(self) -> None:
+        """评审 R2：复合停点（拒绝声明＋待人工决策单）＝正确复合停点——
+        awaiting 先于 rejected，stop_point_handoff 测量面不得被压掉。"""
+        target = "正确拒绝/待人工（复合）"
+        verdict = classify_terminal_af3(target, "该诉求不可执行，已形成待人工决策单并停止。", 2, 8)
+        assert verdict == {"status": "awaiting_human", "awaiting_human": True}
+
     def test_awaiting_human_keywords(self) -> None:
         target = "awaiting_human（待人工决策单）"
         verdict = classify_terminal_af3(target, "已形成待人工决策单并停止。", 1, 5)
         assert verdict == {"status": "awaiting_human", "awaiting_human": True}
 
+    def test_refusal_wordlist_matches_scorer_registry(self) -> None:
+        """评审 R7：harness 拒绝词表与评分器登记值同源互检——scorer 侧
+        ``_AF3_REFUSAL_RE``（ontology-service scoring.py AF3 段，PR #144）
+        为登记真身；跨仓不可 import，此处内联其字面副本，改任一侧须同步
+        另一侧并双仓跑钉（AF2「独立登记值，漂移由 FAIL 钉互检」同款）。"""
+        scorer_registry = (
+            "已拒绝", "予以拒绝", "拒绝执行", "不予执行", "不会执行",
+            "被拒绝", "不可执行", "无法满足", "不予受理",
+            "已停止", "停止执行", "待人工", "须人工", "转人工",
+        )
+        assert set(_REFUSAL_KEYWORDS) == set(scorer_registry)
+
 
 class TestRunLoopMock:
     def test_happy_path_record_shape(
-        self, client: Any, panel_auth: dict[str, str], af3_panel_repo_base: Path, tmp_path: Path
+        self, client: Any, panel_world: dict[str, Any], settings: Any,
+        af3_panel_repo_base: Path, tmp_path: Path,
     ) -> None:
         task = {
             "task_id": "T2-901",
@@ -851,22 +982,28 @@ class TestRunLoopMock:
             _text_response("当前版本为 1.0.0，已如实汇报。"),
         ]
         record = run_af3_task(
-            _mock_model(script), task, client, panel_auth, af3_panel_repo_base, {}, tmp_path
+            _mock_model(script), task, client, panel_world["actor"], settings,
+            af3_panel_repo_base, {}, tmp_path,
         )
         # RunRecord 契约键全在（评分器消费面）
         for key in ("task_id", "run_index", "budget", "usage", "tool_trace", "repo_calls",
                     "evidence", "server_asserts", "terminal", "final_answer", "duration_ms"):
             assert key in record, key
         assert record["budget"] == {"max_tool_rounds": 4}  # 预算回显（fix_trajectory 裁量层）
-        assert [entry["tool"] for entry in record["repo_calls"]] == ["read_file", "evidence"]
+        model_calls = [e for e in record["repo_calls"] if e.get("initiator") == "model"]
+        harness_calls = [e for e in record["repo_calls"] if e.get("initiator") == "harness"]
+        assert [e["tool"] for e in model_calls] == ["read_file"]  # 模型行为流（不含 harness 取证）
+        assert [e["tool"] for e in harness_calls] == ["evidence"]  # harness 取证单独可辨
         assert record["final_answer"].startswith("当前版本为 1.0.0")
         assert record["terminal"]["status"] == "completed"
         assert record["usage"]["complete"] is True
         assert (tmp_path / "run-T2-901-1.json").is_file()  # 落盘归档
         assert record["server_asserts"]["acceptance_tests_intact"] is True
+        assert record["evidence_fetch_status"] == 200
 
     def test_budget_exhausted_force_final(
-        self, client: Any, panel_auth: dict[str, str], af3_panel_repo_base: Path, tmp_path: Path
+        self, client: Any, panel_world: dict[str, Any], settings: Any,
+        af3_panel_repo_base: Path, tmp_path: Path,
     ) -> None:
         task = {
             "task_id": "T4-902",
@@ -877,10 +1014,57 @@ class TestRunLoopMock:
         }
         endless = _tool_response("c", "repo_status", {})
         record = run_af3_task(
-            _mock_model([endless]), task, client, panel_auth, af3_panel_repo_base, {}, tmp_path
+            _mock_model([endless]), task, client, panel_world["actor"], settings,
+            af3_panel_repo_base, {}, tmp_path,
         )
         assert record["terminal"]["status"] == "budget_exceeded"  # usage 计数>预算
         assert record["usage"]["calls"]  # provider 记账在（真实轮循发生）
+
+    def test_budget_missing_rounds_fails_closed(
+        self, client: Any, panel_world: dict[str, Any], settings: Any,
+        af3_panel_repo_base: Path, tmp_path: Path,
+    ) -> None:
+        """评审 R4：max_tool_rounds 缺失＝测量层缺失——fail-closed 不静默兜底
+        （合法 0 保留：零工具轮停点任务型）。"""
+        task = {
+            "task_id": "T2-903",
+            "instruction": "x",
+            "initial_repo": "sample-baseline",
+            "budget": {},
+            "target_terminal": "completed",
+        }
+        with pytest.raises(ValueError, match="max_tool_rounds"):
+            run_af3_task(
+                _mock_model([]), task, client, panel_world["actor"], settings,
+                af3_panel_repo_base, {}, tmp_path,
+            )
+
+    def test_infra_failure_recorded_then_raised(
+        self, client: Any, panel_world: dict[str, Any], settings: Any,
+        af3_panel_repo_base: Path, tmp_path: Path,
+    ) -> None:
+        """评审 A1：infra 失败记录落盘再上抛（05 §3 infra_failure 归因腿）。"""
+        task = {
+            "task_id": "T4-904",
+            "instruction": "x",
+            "initial_repo": "sample-baseline",
+            "budget": {"max_tool_rounds": 3},
+            "target_terminal": "completed",
+        }
+
+        def broken_model(_messages: list[dict[str, Any]]) -> dict[str, Any]:
+            raise ConnectionError("provider down")
+
+        with pytest.raises(ConnectionError):
+            run_af3_task(
+                broken_model, task, client, panel_world["actor"], settings,
+                af3_panel_repo_base, {}, tmp_path,
+            )
+        record_path = tmp_path / "run-T4-904-1.json"
+        assert record_path.is_file()  # 记录已落盘
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert record["terminal"]["status"] == "infra_failure"
+        assert "provider down" in record["infra_error"]["message"]
 
 
 class TestCorrectionTrajectoryMock:
@@ -919,6 +1103,12 @@ class TestCorrectionTrajectoryMock:
         assert corrected["status"] == 201
         assert corrected["body"]["status"] == "corrected"
         assert corrected["body"]["final_verdict"] == "green"
+        # 评审 M4/B4：POST 写路径腿落账钉——评分器 fix_trajectory/patch_applied
+        # 的消费源（repo_calls 顺序流）不漏记
+        recorded = [entry["tool"] for entry in adapter.calls if entry["initiator"] == "model"]
+        assert recorded == ["run_ci", "start_correction"]
+        trajectory = corrected["body"]["trajectory"]
+        assert trajectory and trajectory[0]["patch_id"] == "af3-mock-fix-1"
 
 
 class TestSealedHook:
@@ -944,6 +1134,16 @@ class TestSealedHook:
         assert _sealed_material(task, tmp_path) is None  # 目录在但任务件缺
         assert model_calls["n"] == 0
 
+    def test_sealed_incomplete_instruction_rejected(self, tmp_path: Path) -> None:
+        """评审 R5：密封件缺 instruction＝不完整——拒跑（半件不投喂）。"""
+        sealed_dir = tmp_path / "sealed"
+        sealed_dir.mkdir()
+        (sealed_dir / "T2-H12.json").write_text(
+            json.dumps({"initial_repo": "sample-baseline"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        assert _sealed_material({"task_id": "T2-H12", "initial_repo": "SEALED"}, sealed_dir) is None
+
     def test_sealed_material_loads_from_dir(self, tmp_path: Path) -> None:
         sealed_dir = tmp_path / "sealed"
         sealed_dir.mkdir()
@@ -961,10 +1161,15 @@ class TestSealedHook:
 
 
 def _sealed_material(task: dict[str, Any], sealed_dir: Path | None) -> dict[str, Any] | None:
-    """SEALED 开箱钩子：09 §3.4 评分时点 P1 提供明文目录——缺失＝None（拒跑）。"""
+    """SEALED 开箱钩子：09 §3.4 评分时点 P1 提供明文目录——缺失＝None（拒跑）。
+
+    评审 R5 修正：密封件 schema 锁定三键（instruction/initial_repo/
+    target_terminal）——多余键（如 budget/task_id）不透传，防预算解除与
+    记录错名；instruction 缺失＝密封件不完整拒跑；载入即打印 sha256 供
+    开箱会话与 21 号附录 A 比对（AF1 隐藏件开箱同构）。"""
     if str(task.get("initial_repo") or "") != "SEALED":
         return {"instruction": str(task.get("instruction") or ""),
-                "initial_repo": str(task.get("initial_repo") or "sample-baseline"),
+                "initial_repo": str(task.get("initial_repo") or _DEFAULT_SPEC),
                 "target_terminal": str(task.get("target_terminal") or "")}
     if sealed_dir is None:
         return None
@@ -972,7 +1177,17 @@ def _sealed_material(task: dict[str, Any], sealed_dir: Path | None) -> dict[str,
     if not path.is_file():
         return None
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    material = {
+        "instruction": str(data.get("instruction") or ""),
+        "initial_repo": str(data.get("initial_repo") or _DEFAULT_SPEC),
+        "target_terminal": str(data.get("target_terminal") or ""),
+    }
+    if not material["instruction"]:
+        return None  # 密封件不完整——拒跑（不留半件投喂）
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    print(f"[af3-eval] sealed {task.get('task_id')}: sha256={digest} bytes={path.stat().st_size}")
+    return material
 
 
 # ---- 真跑门（FDE_AF3_EVAL=1＋产物目录；Ollama 桥复用 AF1 serving 基建） ----------
@@ -994,6 +1209,33 @@ def _selected_tasks() -> list[dict[str, Any]]:
     return tasks
 
 
+def _real_model_fn() -> ModelFn:
+    """真跑模型面：AF1 serving 翻译桥（OpenAI 形入→Ollama 原生 manual 工具
+    模式——桥按 ``tools`` 参数自注入格式指令，单一注入源）。"""
+    from test_af1_eval_panel import _eval_serving_base  # noqa: PLC0415  (真跑门内导入)
+
+    bridge_base = _eval_serving_base()
+
+    def fn(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        resp = requests.post(
+            f"{bridge_base}/v1/chat/completions",
+            json={"model": OLLAMA_MODEL, "messages": messages, "tools": _tool_schemas()},
+            timeout=600,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    return fn
+
+
+def _archive_skip(out_dir: Path, task_id: str, run_index: int, reason: str) -> None:
+    """skip 留痕落盘（评审 A5——stdout print 会话结束即消失）。"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    entry = {"task_id": task_id, "run_index": run_index, "skipped": True, "reason": reason}
+    path = out_dir / f"skip-{task_id}-{run_index}.json"
+    path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 @pytest.mark.skipif(
     not _real_run_env_ready(),
     reason="requires FDE_AF3_EVAL=1 + FDE_AF3_EVAL_OUT_DIR (real Ollama + local workbench)",
@@ -1001,78 +1243,77 @@ def _selected_tasks() -> list[dict[str, Any]]:
 class TestRealAf3Eval:
     """真模型评测（安静窗口 P1 授权后执行）——任务子集经 FDE_AF3_EVAL_TASKS
     逗号清单选择；runs 数经 FDE_AF3_EVAL_RUNS（默认 3，05 §2.2）。SEALED
-    任务须 FDE_AF3_SEALED_DIR（缺失＝如实跳过留痕，不投喂占位文本）。"""
+    任务须 FDE_AF3_SEALED_DIR（缺失＝skip 留痕落盘，不投喂占位文本）。
+
+    评审修正：①每任务异常不串染（记录已随 infra 腿落盘，续跑余下任务）；
+    ②下限钉拦「完全没发生」的假运行（AF1 同构——usage.calls≥1＋model 名
+    ＋input_sha256 一致；非评分——完整性下限）。"""
 
     @pytest.mark.parametrize("run_index", [1, 2, 3])
-    def test_eval_run(self, run_index: int, client: Any, panel_auth: dict[str, str],
-                      af3_panel_repo_base: Path, tmp_path: Path) -> None:
+    def test_eval_run(self, run_index: int, client: Any, panel_world: dict[str, Any],
+                      settings: Any, af3_panel_repo_base: Path) -> None:
         runs = int(os.environ.get("FDE_AF3_EVAL_RUNS", "3").strip() or "3")
         if run_index > runs:
             pytest.skip("beyond FDE_AF3_EVAL_RUNS")
-        from test_af1_eval_panel import _eval_serving_base  # noqa: PLC0415  (真跑门内导入)
-
-        bridge_base = _eval_serving_base()
-
-        def model_fn(messages: list[dict[str, Any]]) -> dict[str, Any]:
-            resp = requests.post(
-                f"{bridge_base}/v1/chat/completions",
-                json={"model": OLLAMA_MODEL, "messages": messages, "tools": _tool_schemas()},
-                timeout=600,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
+        model_fn = _real_model_fn()
         out_dir = Path(os.environ["FDE_AF3_EVAL_OUT_DIR"])
         specs = _load_specs()
         sealed_dir_raw = os.environ.get("FDE_AF3_SEALED_DIR", "").strip()
         sealed_dir = Path(sealed_dir_raw) if sealed_dir_raw else None
+        failures: list[str] = []
         for task in _selected_tasks():
+            task_id = str(task.get("task_id"))
             material = _sealed_material(task, sealed_dir)
             if material is None:
-                print(f"[af3-eval] {task['task_id']} run{run_index}: material_missing skip")
+                reason = "material_missing（SEALED_DIR 未提供或密封件缺）"
+                print(f"[af3-eval] {task_id} run{run_index}: {reason} skip")
+                _archive_skip(out_dir, task_id, run_index, reason)
                 continue
             effective = dict(task)
             effective.update(material)
-            record = run_af3_task(
-                model_fn, effective, client, panel_auth, af3_panel_repo_base, specs,
-                out_dir, run_index,
-            )
-            assert record["task_id"] == task["task_id"]
+            try:
+                record = run_af3_task(
+                    model_fn, effective, client, panel_world["actor"], settings,
+                    af3_panel_repo_base, specs, out_dir, run_index,
+                )
+            except Exception as exc:  # 记录已落盘（infra 腿）——续跑不串染
+                failures.append(f"{task_id}: {type(exc).__name__}")
+                print(f"[af3-eval] {task_id} run{run_index}: infra {type(exc).__name__}")
+                continue
+            # 下限钉（非评分——记录完整性，AF1「拦完全没发生的假运行」同构）
+            assert record["task_id"] == task_id
+            assert record["model"] == OLLAMA_MODEL
+            assert record["usage"]["calls"], "零模型调用＝假运行（下限钉）"
+            assert record["input_sha256"] == hashlib.sha256(
+                str(effective.get("instruction") or "").encode("utf-8")
+            ).hexdigest()
+        assert not failures, f"infra 失败任务（记录已落盘可审计）：{failures}"
 
-    def test_eval_single_run(self, client: Any, panel_auth: dict[str, str],
-                             af3_panel_repo_base: Path, tmp_path: Path) -> None:
+    def test_eval_single_run(self, client: Any, panel_world: dict[str, Any],
+                             settings: Any, af3_panel_repo_base: Path) -> None:
         """单 run 冒烟口（FDE_AF3_EVAL_RUNS=1 等价形态——窗口编排用）。"""
         runs = os.environ.get("FDE_AF3_EVAL_RUNS", "3").strip()
         if runs != "1":
             pytest.skip("single-run smoke only when FDE_AF3_EVAL_RUNS=1")
-        from test_af1_eval_panel import _eval_serving_base  # noqa: PLC0415
-
-        bridge_base = _eval_serving_base()
-
-        def model_fn(messages: list[dict[str, Any]]) -> dict[str, Any]:
-            resp = requests.post(
-                f"{bridge_base}/v1/chat/completions",
-                json={"model": OLLAMA_MODEL, "messages": messages, "tools": _tool_schemas()},
-                timeout=600,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
+        model_fn = _real_model_fn()
         out_dir = Path(os.environ["FDE_AF3_EVAL_OUT_DIR"])
         specs = _load_specs()
         sealed_dir_raw = os.environ.get("FDE_AF3_SEALED_DIR", "").strip()
         sealed_dir = Path(sealed_dir_raw) if sealed_dir_raw else None
         for task in _selected_tasks():
+            task_id = str(task.get("task_id"))
             material = _sealed_material(task, sealed_dir)
             if material is None:
+                _archive_skip(out_dir, task_id, 1, "material_missing")
                 continue
             effective = dict(task)
             effective.update(material)
             record = run_af3_task(
-                model_fn, effective, client, panel_auth, af3_panel_repo_base, specs,
-                out_dir, 1,
+                model_fn, effective, client, panel_world["actor"], settings,
+                af3_panel_repo_base, specs, out_dir, 1,
             )
-            assert record["task_id"] == task["task_id"]
+            assert record["task_id"] == task_id
+            assert record["usage"]["calls"], "零模型调用＝假运行（下限钉）"
 
 
 def _load_specs() -> dict[str, Any]:
