@@ -47,6 +47,12 @@
 
 版本 1 报告包含 `capture_id`、`bundle_verified`、`status`、`restore_status`、各已尝试回调的 `timings_ms` 以及已通过的证据摘要。执行前拒绝使用 `rejected/not_run`，阶段失败使用 `restore_failed/blocked`，全部证据匹配使用 `restore_verified/passed`。错误仅含固定代码与阶段或字段名。报告按允许字段生成快照，路径、连接串、密钥指纹、解密样本指纹和异常原文留在报告之外。
 
+### R1c-2a 冻结水位核对
+
+构造 `RehearsalPlan` 时必传正整数 `expected_watermark`，取自数据库停止写入后、采集备份前登记的合成写入水位。恢复回调在恢复库中读取同一种水位。批次、对象数和水位均须匹配。水位不符在 `restore_database` 阶段返回 `database_evidence_mismatch` 并停止。计划水位无效时在调用回调前拒绝。v1 成功报告的 `evidence.database.watermark` 记录实读值。
+
+回退可撤销本轮补丁，并将调用方恢复为上一版 `RehearsalPlan` 参数。冻结回执、恢复库实读及 RTO/RPO 的测量归 R1c-2b。
+
 ### R1c-2b 实机取证
 
 接入隔离环境适配器并执行本节上方的恢复验收。适配器负责在整个运行窗口固定产物和目标、验证实际资源归属、关闭外部通道、核对对象及写入水位差，并回收演练资源。R1c-2a 的验证采用合成回调和本地文件。实机隔离、冻结窗口、数据恢复及准备、恢复和核验耗时在 R1c-2b 记录。

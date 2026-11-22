@@ -82,6 +82,7 @@ class RehearsalTests(unittest.TestCase):
             image_ids=self.image_ids,
             expected_storage_sha256="e" * 64,
             expected_object_count=2,
+            expected_watermark=17,
             expected_marker_sha256="f" * 64,
         )
         self.calls = []
@@ -168,6 +169,7 @@ class RehearsalTests(unittest.TestCase):
         )
         self.assertEqual(report["evidence"]["database"]["capture_id"], self.capture)
         self.assertEqual(report["evidence"]["database"]["object_count"], 2)
+        self.assertEqual(report["evidence"]["database"]["watermark"], 17)
         self.assertEqual(report["evidence"]["storage"]["byte_identical"], True)
         self.assertEqual(report["evidence"]["migrations"]["head"], "deadbeefcafe")
         self.assertEqual(report["evidence"]["images"], self.image_ids)
@@ -236,6 +238,43 @@ class RehearsalTests(unittest.TestCase):
         report = execute_rehearsal(self.plan, steps)
         self.assertEqual(report["error"], {"stage": "restore_database", "code": "database_evidence_mismatch"})
         self.assertNotIn("restore_storage", self.calls)
+
+    def test_database_watermark_must_match_the_capture_cutoff(self):
+        for restored_watermark in (16, 18, True):
+            with self.subTest(restored_watermark=restored_watermark):
+                self.calls.clear()
+                steps = self.steps()
+
+                def restore_database(_plan):
+                    self.calls.append("restore_database")
+                    return {"object_count": 2, "capture_id": self.capture, "watermark": restored_watermark}
+
+                report = execute_rehearsal(self.plan, {**steps, "restore_database": restore_database})
+                self.assertEqual(report["restore_status"], "blocked")
+                self.assertEqual(report["error"], {
+                    "stage": "restore_database", "code": "database_evidence_mismatch",
+                })
+                self.assertNotIn("database", report["evidence"])
+                self.assertEqual(self.calls, ["preflight", "restore_database"])
+
+    def test_database_watermark_uses_the_planned_cutoff(self):
+        plan = replace(self.plan, expected_watermark=9)
+        steps = self.steps()
+        steps["restore_database"] = lambda _plan: {"object_count": 2, "capture_id": self.capture, "watermark": 9}
+        report = execute_rehearsal(plan, steps)
+        self.assertEqual(report["restore_status"], "passed")
+        self.assertEqual(report["evidence"]["database"]["watermark"], 9)
+
+    def test_invalid_expected_watermark_is_rejected_before_callbacks(self):
+        for watermark in (True, 0, -1, "17"):
+            with self.subTest(watermark=watermark):
+                plan = replace(self.plan, expected_watermark=watermark)
+                report = execute_rehearsal(plan, self.steps())
+                self.assertEqual(report["restore_status"], "not_run")
+                self.assertEqual(report["error"], {
+                    "code": "unsafe_rehearsal_plan", "field": "expected_watermark",
+                })
+                self.assertEqual(self.calls, [])
 
     def test_unregistered_step_code_is_not_echoed(self):
         def fail(_plan):
