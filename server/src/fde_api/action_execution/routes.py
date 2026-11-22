@@ -176,6 +176,8 @@ def compensate_task_route(run_id: str):
     """触发补偿（B11 幂等）：终态运行快照短路重建零新副作用；失败运行补跑
     未登记补偿节点；成功运行 422（状态机不含 succeeded→compensating 边）。"""
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise ActionExecutionError("validation_failed", "请求体须为 JSON 对象。")
     reason = payload.get("reason")
     if reason is not None and (not isinstance(reason, str) or len(reason) > 500):
         raise ActionExecutionError("validation_failed", "补偿原因超长（≤500 字符）。")

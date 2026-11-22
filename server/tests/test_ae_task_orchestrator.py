@@ -384,14 +384,19 @@ class TestS2NodeAction:
         _expect_reject(exc, code="validation_failed", status=422)
         assert dispatch.calls == 0
 
-    def test_c8_sensitive_param_key_rejected(self, db_session, task_env) -> None:
-        """C8（七键同源扫描）：params 键名命中敏感集 → 422 sensitive_argument_forbidden。"""
+    @pytest.mark.parametrize(
+        "sensitive_key",
+        ["access_token", "refresh_token", "client_secret", "api_key", "password", "bearer", "authorization"],
+    )
+    def test_c8_sensitive_param_key_rejected(self, db_session, task_env, sensitive_key: str) -> None:
+        """C8（七键同源扫描·评审集合等值化）：七键逐一提交期拒绝——此前只测
+        api_key 一键，集合等值（不扩不缩）不可判定。"""
         from fde_api.action_execution import task_orchestrator as orch
 
         payload = _task(
             task_env["org"].id,
             task_env["actor"].id,
-            [_node("n1", params={"api_key": {"kind": "literal", "value": "secret"}})],
+            [_node("n1", params={sensitive_key: {"kind": "literal", "value": "secret"}})],
         )
         dispatch = TaskDispatch()
         with pytest.raises(ActionExecutionError) as exc:
@@ -559,6 +564,108 @@ class TestRunIdempotency:
 
 
 # ---- 运行期 · 拓扑就绪 / 引用求值 / fail-fast（B1） ----------------------------
+
+
+    def test_s_layer_rejections_leave_zero_run_rows(self, db_session, task_env) -> None:
+        """族纪律①集中钉（评审）：S1/S2 各代表拒绝形态（A3 键重复／A4 空节点／
+        A5 未知连接器／A7 未登记字段／A8 kind 非法／A10 越权 path）均零运行行——
+        防护「先落占位行后校验」类回归（此前仅部分钉断言此腿）。"""
+        from fde_api.action_execution import task_orchestrator as orch
+
+        cases = [
+            # A3 键重复
+            [_node("n1"), _node("n1")],
+            # A4 空节点
+            [],
+            # A7 未登记字段（action 内越界字段）
+            [_node("n1", ghost_field="x")],
+            # A8 kind 非法
+            [_node("n1", params={"sku": {"kind": "quantum", "value": 1}})],
+            # A10 越权 path（下游引用）
+            [_node("n1"), _node("n2", ("n1",), params={"q": {"kind": "ref", "node": "n1",
+                                                          "path": "params.sku"}})],
+        ]
+        for nodes in cases:
+            payload = _task(task_env["org"].id, task_env["actor"].id, nodes)
+            with pytest.raises(ActionExecutionError):
+                orch.submit_task(
+                    actor=task_env["actor"], payload=payload,
+                    whitelist_gate=AllowAllWhitelist(), dispatch=TaskDispatch(),
+                )
+            assert _run_rows_for_key(db_session, str(payload["idempotency_key"])) == 0
+        # A5 形态单列（须用拒白名单桩——AllowAll 放行一切不构成拒绝形态；原 A5 钉已有零运行行腿）
+        payload_a5 = _task(task_env["org"].id, task_env["actor"].id, [_node("n1")])
+        with pytest.raises(ActionExecutionError):
+            orch.submit_task(
+                actor=task_env["actor"], payload=payload_a5,
+                whitelist_gate=RejectingWhitelist(), dispatch=TaskDispatch(),
+            )
+        assert _run_rows_for_key(db_session, str(payload_a5["idempotency_key"])) == 0
+
+    def test_a9c_transitive_ancestor_ref_rejected(self, db_session, task_env) -> None:
+        """A9 补强（评审）：传递祖先引用（上游但非直接上游）→ 422——ref 必须
+        **直接**上游；实现若放宽为任意祖先则本钉红。"""
+        from fde_api.action_execution import task_orchestrator as orch
+
+        payload = _task(
+            task_env["org"].id,
+            task_env["actor"].id,
+            [
+                _node("n1"),
+                _node("n2", ("n1",)),
+                _node("n3", ("n2",), params={"qty": {"kind": "ref", "node": "n1",
+                                                       "path": "output.available"}}),
+            ],
+        )
+        dispatch = TaskDispatch()
+        with pytest.raises(ActionExecutionError) as exc:
+            orch.submit_task(
+                actor=task_env["actor"], payload=payload, whitelist_gate=AllowAllWhitelist(), dispatch=dispatch
+            )
+        _expect_reject(exc, code="validation_failed", status=422)
+        assert dispatch.calls == 0
+
+    def test_b8b_cross_org_same_key_runs_independently(self, db_session, task_env) -> None:
+        """B8 补强（评审）：跨租户同键同体 → 各自独立执行（UNIQUE(org_id,key)
+        作用域——不触发 409、不跨租户复放）。"""
+        from fde_api.action_execution import task_orchestrator as orch
+        from multi_tenant_harness import make_enterprise_org as _org, make_user as _mk
+
+        org_b = _org(db_session)
+        user_b = _mk(db_session, "project_lead", org_id=org_b.id)
+        db_session.commit()
+        shared_key = "ae2-b8b-" + uuid4().hex[:10]
+        first = orch.submit_task(
+            actor=task_env["actor"],
+            payload=_task(task_env["org"].id, task_env["actor"].id, [_node("n1")], key=shared_key),
+            whitelist_gate=AllowAllWhitelist(),
+            dispatch=TaskDispatch(),
+        )
+        second = orch.submit_task(
+            actor=user_b,
+            payload=_task(org_b.id, user_b.id, [_node("n1")], key=shared_key),
+            whitelist_gate=AllowAllWhitelist(),
+            dispatch=TaskDispatch(),
+        )
+        assert second["execution_id"] != first["execution_id"]  # 独立运行行（非跨租户复放）
+
+    def test_node_count_32_accepted_boundary(self, db_session, task_env) -> None:
+        """评审（边界接受侧）：恰 32 节点提交成功（上界 1..32 的接受半边——
+        此前只钉 33 拒绝侧，上界回退 31 或放行 33 均不可检出）。"""
+        from fde_api.action_execution import task_orchestrator as orch
+
+        nodes = [
+            _node(f"n{i}", (f"n{i-1}",) if i else ()) for i in range(32)
+        ]
+        payload = _task(task_env["org"].id, task_env["actor"].id, nodes)
+        result = orch.submit_task(
+            actor=task_env["actor"],
+            payload=payload,
+            whitelist_gate=AllowAllWhitelist(),
+            dispatch=TaskDispatch(),
+        )
+        assert result["status"] == "succeeded"
+        assert len(result["nodes"]) == 32
 
 
 class TestRuntimeExecution:

@@ -94,6 +94,10 @@ class TestPublicEval:
         assert metrics["rollback_zero_residual_rate"]["denominator"] == 3  # 仅 T5-002 有补偿过程
         assert metrics["rollback_zero_residual_rate"]["numerator"] == 3
         assert metrics["rollback_zero_residual_rate"]["rate"] == 1.0
+        # Wilson 95% 区间三指标全随报（05:66——评审：此前只钉成功率一腿）
+        for name in ("task_success_rate", "idempotency_rate", "rollback_zero_residual_rate"):
+            low, high = metrics[name]["wilson_95"]
+            assert 0.0 <= low <= metrics[name]["rate"] <= high <= 1.0
 
         assert result["failed_task_scores"] == []  # 公开集全绿
 
@@ -103,7 +107,10 @@ class TestPublicEval:
         assert all(score["passed"] for score in t5_002)
 
     def test_denominator_anchor_mismatch_is_flagged(self, db_session, tmp_path) -> None:
-        """分母锚机保护（沿 AE1 B-2）：落盘记录数 ≠ 预登记锚 → 顶层显著标注。"""
+        """分母锚机保护（沿 AE1 B-2）：落盘记录数 ≠ 预登记锚 → 顶层显著标注；
+        评审 F2：expected_runs=None 时机械消费冻结件注册锚（expected_runs=9）；
+        评审：任务集外 ID 零断言 ⇒ 不通过＋known_task=False＋note 明示
+        （「证据缺失不得静默通过」防御在此有钉，回退即红）。"""
         from ae_eval.records import RunRecord
 
         record = RunRecord(task_id="T5-999", run_index=1, attempts={}, external_state={}, note="")
@@ -111,14 +118,61 @@ class TestPublicEval:
         result = score_records(load_records(path), TASKSET, expected_runs=9)
         assert result["denominator_mismatch"]["expected_runs"] == 9
         assert result["denominator_mismatch"]["actual_runs"] == 1
+        # 注册锚机械消费（传 None → 冻结件 run_discipline.denominator_anchor）
+        result_anchor = score_records(load_records(path), TASKSET, expected_runs=None)
+        assert result_anchor["denominator_mismatch"]["expected_runs"] == 9
+        # 零断言不通过（任务集外 ID：无断言可判 ⇒ 不通过——G3-22 沿 AE1）
+        score = result_anchor["task_scores"][0]
+        assert score["passed"] is False
+        assert score["known_task"] is False
+        assert "unknown_task_id" in score["note"]
+
+    def test_gitattributes_covers_ae2_taskset(self) -> None:
+        """评审（检出防护）：AE2 冻结件 -text 规则在位（沿 AE1 评审 P4——
+        text=auto 在 Windows smudge 转 CRLF，byte 锚随检出环境翻转即红）。"""
+        from pathlib import Path
+
+        attrs = Path(__file__).resolve().parents[1].parent / ".gitattributes"
+        rules = attrs.read_text(encoding="utf-8")
+        assert "server/tests/ae_eval/taskset_ae2_v1.json -text" in rules
+
+    def test_rollback_metric_requires_rolled_back_status(self, tmp_path) -> None:
+        """评审 F1：零遗留须补偿**全成功**收口——compensation_failed 但残留
+        空的形态不得计 clean（空转满分防护；回退 status 判定即红）。"""
+        from ae_eval.records import RunRecord
+
+        record = RunRecord(
+            task_id="T5-002",
+            run_index=1,
+            attempts={
+                "first": {
+                    "execution_id": "e-1",
+                    "status": "compensation_failed",
+                    "rollback": {"status": "compensation_failed", "residual": []},
+                }
+            },
+            external_state={},
+            note="",
+        )
+        path = write_records([record], tmp_path / "r.jsonl")
+        result = score_records(load_records(path), TASKSET, expected_runs=1)
+        metrics = {m["name"]: m for m in result["metrics"]}
+        assert metrics["rollback_zero_residual_rate"]["denominator"] == 1
+        assert metrics["rollback_zero_residual_rate"]["numerator"] == 0  # 非 rolled_back 不计 clean
 
     def test_taskset_byte_copy_matches_docs_freeze(self) -> None:
-        """冻结件双份 byte 一致（沿 AE1 纪律）：仓内副本 sha256 与 docs 仓冻结件一致。"""
+        """冻结件双份 byte 一致（沿 AE1 纪律）：仓内副本 sha256＋字节数**字面量锚**
+        （评审：docs 挂载路径在 CI 恒缺、旧形态恒 skip＝「逐字冻结」无机器强制；
+        改为硬编码锚 CI 恒实跑，docs 挂载比对降为可选加强腿）。"""
         import hashlib
         from pathlib import Path
 
         local = Path(TASKSET).read_bytes()
+        # 字面量锚（WP5 交付时实测；冻结件修订须走 v2 升版决策单——本锚随修订同步）
+        assert len(local) == 18481
+        assert hashlib.sha256(local).hexdigest() == (
+            "a0866e2d9d8058315cffc777cdb759f46b94414a705887a80f5a24678d1b9ed8"
+        )
         docs = Path("D:/test/Fde-Ontology/docs/ai-fde/_ae2-tasks-v1.json")
-        if not docs.exists():  # CI 无 docs 仓挂载时跳过（锚随 PR 证据件落档）
-            pytest.skip("docs 仓不在本机挂载路径")
-        assert hashlib.sha256(local).hexdigest() == hashlib.sha256(docs.read_bytes()).hexdigest()
+        if docs.exists():  # 可选加强腿：docs 仓在位时双份 byte 一致
+            assert local == docs.read_bytes()
