@@ -114,9 +114,6 @@ src/fde_api/jobs/queue.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/modules/routes.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
 src/fde_api/projects/events.py:return-value: Incompatible return value type (got "...", expected "...")
 src/fde_api/projects/events.py:union-attr: Item "..." of "..." has no attribute "..."
-src/fde_api/projects/gantt.py:var-annotated: Need type annotation for "..."
-src/fde_api/projects/gantt.py:var-annotated: Need type annotation for "..."
-src/fde_api/projects/gantt.py:var-annotated: Need type annotation for "..." (hint: "...")
 src/fde_api/projects/gate_service.py:arg-type: Argument N to "..." of "..." has incompatible type "..."; expected "..."
 src/fde_api/projects/payment_service.py:union-attr: Item "..." of "..." has no attribute "..."
 src/fde_api/projects/payment_service.py:union-attr: Item "..." of "..." has no attribute "..."
