@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
@@ -48,7 +49,7 @@ def _serialize_gantt(session: Session, project: Project) -> dict[str, Any]:
     tasks = [task for module in modules for task in module.tasks]
     dependencies, incomplete = _dependency_metadata(session, tasks)
     groups = []
-    active_dates = []
+    active_dates: list[date] = []
     for module in modules:
         module_tasks = sorted(
             module.tasks,
@@ -107,8 +108,8 @@ def _dependency_metadata(
     session: Session, tasks: list[ProjectTask]
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     task_ids = {task.id for task in tasks}
-    dependency_ids = {task.id: [] for task in tasks}
-    incomplete_ids = {task.id: [] for task in tasks}
+    dependency_ids: dict[str, list[str]] = {task.id: [] for task in tasks}
+    incomplete_ids: dict[str, list[str]] = {task.id: [] for task in tasks}
     if not task_ids:
         return dependency_ids, incomplete_ids
     dependencies = session.scalars(

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-
 from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any, TypedDict
 from unicodedata import normalize
 from uuid import uuid4
 
+from flask import current_app
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
@@ -227,7 +227,8 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
         ) from None
     except (ValueError, TypeError):
         raise _invalid_request_error() from None
-    except Exception:
+    except Exception as error:
+        current_app.logger.error("project_creation_failed (%s)", type(error).__name__)
         raise ProjectServiceError(
             "project_creation_failed", "Unable to create the project at this time.", 503
         ) from None
