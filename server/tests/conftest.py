@@ -269,6 +269,10 @@ def test_settings(tmp_path_factory):
         redis_url=os.environ.get("FDE_TEST_REDIS_URL", "redis://127.0.0.1:16379/2"),
         jwt_secret="test-secret-with-at-least-thirty-two-characters",
         local_storage_root=tmp_path_factory.mktemp("fde-object-storage"),
+        # 封闭测试面：Settings 默认经 env_file=".env" 暗读 server/.env（活体部署配置）。
+        # 本地活体一旦启用 FDE_AGENT_HOST_CHANNEL_ENABLED 等部署键，agent 路由面测试集体假红
+        # （2026-11-22 R3 轮实录）。测试设置必须与 CI 同语义——CI 上没有 server/.env。
+        _env_file=None,
     )
 
 

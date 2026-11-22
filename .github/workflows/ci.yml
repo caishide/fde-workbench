@@ -65,6 +65,9 @@ jobs:
       - name: Release candidate preflight (isolated Git CLI tests)
         run: python -m unittest discover -s tests/deploy -p test_*.py -v
 
+      - name: Observation rollup contract tests (R3 offline)
+        run: python -m unittest discover -s tests/metrics -p test_*.py -v
+
       - name: Install server dependencies (test + dev extras)
         working-directory: server
         run: |
