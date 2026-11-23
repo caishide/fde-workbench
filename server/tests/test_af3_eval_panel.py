@@ -50,6 +50,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -271,13 +272,13 @@ def _prune_to_spec(out: Path, keep: set[str]) -> None:
         rel = path.relative_to(out).as_posix()
         if rel == ".git" or rel.startswith(".git/"):
             continue
-        if path.is_dir() or path.is_symlink():
+        if path.is_dir():
             continue
         if not any(rel.startswith(root) for root in _MATERIAL_ROOTS):
             continue  # 物化域外——保留
         if rel not in keep:
             try:
-                path.unlink()
+                path.unlink()  # 符号链接亦按「非清单项」删除（unlink 只解链接）
             except OSError as exc:  # fail-closed：裁剪失败即显式报错，不静默留脏
                 raise RuntimeError(f"按 spec 裁剪失败：{rel}（{exc}）") from exc
     for path in sorted(
@@ -332,10 +333,23 @@ def materialize_repo(base: Path, spec_name: str, specs: dict[str, Any]) -> Path:
                 "initial_repo 契约基线清单与生成器基线不一致："
                 f"多={sorted(set(manifest) - baseline)} 缺={sorted(baseline - set(manifest))}"
             )
+        # 内容比对（生成器＝基线内容真身；契约＝物化真身——内容漂移同样 fail-closed，
+        # 否则契约表一改，所有受控仓被静默改写而 CI 无告警）
+        drift = sorted(
+            rel for rel in baseline
+            if str(manifest.get(rel)) != str(_generator_baseline()[rel])
+        )
+        if drift:
+            raise RuntimeError(
+                f"initial_repo 契约基线内容与生成器基线不一致：{drift}"
+            )
         _prune_to_spec(out, set(files))
     for rel, content in files.items():
         target = out / rel
         target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink():
+            # 物化面不得残留符号链接（写入会跟随链接写到仓外）——先解链接再写
+            target.unlink()
         target.write_text(content, encoding="utf-8", newline="\n")
     _git(out, "add", ".")
     staged = subprocess.run(
@@ -1066,15 +1080,28 @@ class TestRepoMaterialization:
         with pytest.raises(RuntimeError, match="与生成器基线不一致"):
             materialize_repo(af3_panel_repo_base, "sample-baseline", specs)
 
-    def test_contract_content_is_authoritative(self, af3_panel_repo_base: Path) -> None:
-        """契约内容是评测物化真身（生成器只提供超集骨架）——同路径内容以契约为准。"""
+    def test_contract_baseline_content_drift_is_rejected(
+        self, af3_panel_repo_base: Path
+    ) -> None:
+        """基线**内容**漂移亦 fail-closed（生成器＝内容真身；契约表一改就会
+        静默改写所有受控仓——评审发现：此前只比文件集）。"""
         specs = _contract_specs()
         specs["sample-baseline"] = {
-            "files": {**specs["sample-baseline"]["files"],
-                      "config/settings.json": '{"kind": "config", "settings": {"threshold": 7}}\n'},
+            "files": {
+                **specs["sample-baseline"]["files"],
+                "config/settings.json": '{"kind": "config", "settings": {"threshold": 7}}\n',
+            }
         }
+        with pytest.raises(RuntimeError, match="内容与生成器基线不一致"):
+            materialize_repo(af3_panel_repo_base, "sample-baseline", specs)
+
+    def test_contract_content_must_agree_with_generator(self, af3_panel_repo_base: Path) -> None:
+        """契约与生成器的基线内容须一致（生成器＝基线内容真身，契约＝物化真身）——
+        物化时逐字比对，不一致即 fail-closed（内容漂移会静默改写所有受控仓）。"""
+        specs = _contract_specs()
         repo = materialize_repo(af3_panel_repo_base, "sample-baseline", specs)
-        assert '"threshold": 7' in (repo / "config" / "settings.json").read_text(encoding="utf-8")
+        for rel, content in _generator_baseline().items():
+            assert (repo / rel).read_text(encoding="utf-8") == content, rel
 
     @pytest.mark.parametrize(
         "bad_path",
@@ -1108,8 +1135,16 @@ class TestRepoMaterialization:
             _resolve_spec(deep, "s7")
 
     def test_contract_materialized_baseline_is_ci_green(self, af3_panel_repo_base: Path) -> None:
-        """决定性语义钉：契约物化的**基线仓必须三绿**（lint/contract 判定绿），
-        种子仓只在自己那族红——修复前基线仓三红恒定（「CI green」不可达）。"""
+        """决定性语义钉：契约物化的**基线仓必须四绿**（lint／contract 判定绿 ＋
+        unit_test／transform_test 退出码 0），种子仓只在自己那族红——修复前基线仓
+        三红恒定（「CI green」不可达）。
+
+        注：产品 ``run_ci`` 的 verdict 口径是 ``exit_code != 0 ⇒ red``（含 pytest
+        exit 4/5「无测试可收集」）——故「无测试」判红而非 error（05 §3 归因须按
+        产品口径写，不得写成 error）。
+        """
+        import subprocess
+
         from fde_api.solution_repo.checkers import run as checkers_run
 
         specs = _contract_specs()
@@ -1122,6 +1157,12 @@ class TestRepoMaterialization:
 
         assert _verdict("lint") == 0
         assert _verdict("contract") == 0
+        for target in ("tests/", "tests/transforms/"):
+            proc = subprocess.run(
+                [sys.executable, "-m", "pytest", target, "-q", "--tb=no", "-p", "no:cacheprovider"],
+                cwd=repo, capture_output=True, text=True, timeout=300,
+            )
+            assert proc.returncode == 0, f"{target} bundle 非绿（exit={proc.returncode}）"
 
         seeded = materialize_repo(af3_panel_repo_base, "af3-seed-lint", specs)
         buffer = io.StringIO()
@@ -1130,6 +1171,79 @@ class TestRepoMaterialization:
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             assert int(checkers_run("contract", seeded)) == 1  # 坏 YAML ⇒ contract 也红
+
+    def test_materialization_prunes_symlinks_in_scope(self, af3_panel_repo_base: Path) -> None:
+        """物化域内的符号链接不得残留（写入会跟随链接写到仓外）——裁剪按清单项
+        处理链接（评审发现：此前链接被跳过，既不裁剪也不被文件集自检看见）。"""
+        repo = af3_panel_repo_base / "repo-symlink-probe"
+        (repo / "ontology").mkdir(parents=True)
+        outside = af3_panel_repo_base / "outside-target.yaml"
+        outside.write_text("secret: true\n", encoding="utf-8")
+        link = repo / "ontology" / "escape.yaml"
+        try:
+            try:
+                link.symlink_to(outside)
+            except OSError as exc:  # Windows 无符号链接权限（Developer Mode 关）——跳过
+                pytest.skip(f"符号链接不可创建（平台权限）：{exc}")
+            _prune_to_spec(repo, {"ontology/equipment.yaml"})
+            assert not link.is_symlink(), "物化域内的符号链接未被裁剪"
+            assert not link.exists(), "符号链接目标未被解引用（存在即仍指向仓外）"
+            assert outside.exists(), "裁剪只解链接——仓外目标不得被删"
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_contract_loader_fails_closed_without_spec_table(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """契约已加载却缺 initial_repo_specs ＝ 生产者侧漂移——加载器须 fail-closed
+        （静默回落无契约路径会让三个失败种子恒在每个仓 ⇒ CI green 结构性不可达）。"""
+        contract = tmp_path / "taskset-drift.json"
+        contract.write_text(json.dumps({"tasks": [], "seal_anchors": {}}), encoding="utf-8")
+        monkeypatch.setenv("FDE_AF3_TASKSET_JSON", str(contract))
+        with pytest.raises(RuntimeError, match="initial_repo_specs"):
+            _load_specs()
+        # 无契约文件（mock 路径）→ 回落最小内联集，不抛
+        monkeypatch.setenv("FDE_AF3_TASKSET_JSON", str(tmp_path / "absent.json"))
+        assert _load_specs() == {"sample-baseline": {}}
+
+    @pytest.mark.skipif(
+        not os.environ.get("FDE_AF3_TASKSET_JSON", "").strip(),
+        reason="需机器契约指针（FDE_AF3_TASKSET_JSON）——真跑路径",
+    )
+    def test_real_contract_materialization_has_no_leaked_seeds(
+        self, af3_panel_repo_base: Path
+    ) -> None:
+        """**真实机器契约**物化（真跑所用的同一份契约）——基线仓零失败种子；
+        内联镜像恒等于生成器，无法发现契约侧漂移（评审发现）。"""
+        specs = _load_specs()
+        repo = materialize_repo(af3_panel_repo_base, "sample-baseline", specs)
+        for seed in _SEED_FILES:
+            assert not (repo / seed).exists(), f"真实契约物化残留失败种子：{seed}"
+
+    def test_seed_specs_fail_their_own_bundle(self, af3_panel_repo_base: Path) -> None:
+        """每个种子 spec 必须在**自己那族** bundle 上红（失败面被静默改成无失败
+        ⇒ T4 族的 red→green 轨迹永不成立 ⇒ 整族扣分却无 CI 告警）。"""
+        import subprocess
+
+        from fde_api.solution_repo.checkers import run as checkers_run
+
+        specs = _contract_specs()
+
+        def _verdict(mode: str, repo: Path) -> int:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                return int(checkers_run(mode, repo))
+
+        lint_seed = materialize_repo(af3_panel_repo_base, "af3-seed-lint", specs)
+        assert _verdict("lint", lint_seed) == 1
+        contract_seed = materialize_repo(af3_panel_repo_base, "af3-seed-contract", specs)
+        assert _verdict("contract", contract_seed) == 1
+        unit_seed = materialize_repo(af3_panel_repo_base, "af3-seed-unit", specs)
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-p", "no:cacheprovider"],
+            cwd=unit_seed, capture_output=True, text=True, timeout=300,
+        )
+        assert proc.returncode != 0, "单测种子仓 unit_test 必须红（否则 T4 轨迹面失效）"
 
 
 class TestToolAdapter:
@@ -1353,6 +1467,18 @@ class TestRunLoopMock:
         assert record["usage"]["complete"] is True
         assert (tmp_path / "run-T2-901-1.json").is_file()  # 落盘归档
         assert record["server_asserts"]["acceptance_tests_intact"] is True
+        # 生产者↔评分器键集契约钉（跨仓：评分器读的七个 server_asserts 键必须
+        # 全部由本面板产出——键被改名或漏产时，隐藏件绑定的断言每跑必红，而本仓
+        # 的金标准记录自造数据看不出问题）
+        assert set(record["server_asserts"]) == {
+            "baseline_intact",
+            "acceptance_tests_intact",
+            "evidence_verbatim",
+            "diff_precise",
+            "impact_mapping_present",
+            "compatibility_present",
+            "migration_proposal_present",
+        }
         assert record["evidence_fetch_status"] == 200
 
     def test_budget_exhausted_force_final(
@@ -1515,7 +1641,8 @@ class TestSealedHook:
 
     def test_sealed_anchor_mismatch_refuses_run(self, tmp_path: Path) -> None:
         """锚对拍（2026-11-23）：机器契约登记的 sha256/字节与密封件不符＝
-        **密封破坏**——fail-closed 拒跑（09 §3.4 第 5 条：作废重密封）。"""
+        **密封破坏**——fail-closed 拒跑（09 §3.4 第 5 条：作废重密封）；拒跑原因
+        须可观测（区别于普通缺料，出口归因可分辨）。"""
         sealed_dir = tmp_path / "sealed"
         sealed_dir.mkdir()
         payload = {
@@ -1526,19 +1653,49 @@ class TestSealedHook:
         path = sealed_dir / "T2-H11.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         task = {"task_id": "T2-H11", "initial_repo": "SEALED"}
+        reason: dict[str, str] = {}
         assert _sealed_material(
-            task, sealed_dir, {"T2-H11": {"sha256": "0" * 64, "bytes": 3}}
+            task, sealed_dir, {"T2-H11": {"sha256": "0" * 64, "bytes": 3}}, reason
         ) is None
+        assert "seal_anchor_mismatch" in reason.get("reason", "")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        reason = {}
         assert _sealed_material(
-            task, sealed_dir, {"T2-H11": {"sha256": digest, "bytes": path.stat().st_size}}
+            task, sealed_dir, {"T2-H11": {"sha256": digest, "bytes": path.stat().st_size}},
+            reason,
         ) is not None
+        assert reason == {}
+
+    def test_sealed_anchor_missing_registration_refuses_run(self, tmp_path: Path) -> None:
+        """契约有锚面（seal_anchors 非空）时该槽未登记锚＝密封面不完整——亦须
+        fail-closed 拒跑（不得因缺登记而放行；闸门方向须与 runbook 声明一致）。"""
+        sealed_dir = tmp_path / "sealed"
+        sealed_dir.mkdir()
+        payload = {
+            "instruction": "真实隐藏指令",
+            "initial_repo": "sample-baseline",
+            "target_terminal": "patch applied＋CI green",
+        }
+        (sealed_dir / "T2-H11.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+        task = {"task_id": "T2-H11", "initial_repo": "SEALED"}
+        reason: dict[str, str] = {}
+        assert _sealed_material(
+            task, sealed_dir, {"T7-H11": {"sha256": "0" * 64, "bytes": 3}}, reason
+        ) is None
+        assert "seal_anchor_missing" in reason.get("reason", "")
+        # 契约完全无锚面（无任务集 env／旧契约）→ 不设此闸（兼容路径）
+        reason = {}
+        assert _sealed_material(task, sealed_dir, {}, reason) is not None
 
 
 def _sealed_material(
     task: dict[str, Any],
     sealed_dir: Path | None,
     anchors: dict[str, Any] | None = None,
+    reason_out: dict[str, str] | None = None,
+    anchors_required: bool = False,
 ) -> dict[str, Any] | None:
     """SEALED 开箱钩子：09 §3.4 评分时点 P1 提供明文目录——缺失＝None（拒跑）。
 
@@ -1550,15 +1707,21 @@ def _sealed_material(
     **锚对拍（2026-11-23）**：机器契约登记的 ``seal_anchors``（sha256＋字节数）
     与实际文件不符＝**密封破坏**——fail-closed 拒跑（该槽作废重密封，
     09 §3.4 第 5 条）；锚的机器副本消除「手抄漂移」面（附录 A 为人类可读镜像）。
+    **登记缺失亦 fail-closed**：契约有锚面（``seal_anchors`` 非空）时，该槽未登记
+    锚＝密封面不完整——拒跑（不得因缺登记而放行，闸门方向须与 runbook 声明一致）；
+    契约完全无锚面（无任务集 env／旧契约）时不设此闸（兼容无契约路径）。
+    拒跑原因经 ``reason_out`` 回传（区别于普通缺料，出口归因可观测）。
     """
     if str(task.get("initial_repo") or "") != "SEALED":
         return {"instruction": str(task.get("instruction") or ""),
                 "initial_repo": str(task.get("initial_repo") or _DEFAULT_SPEC),
                 "target_terminal": str(task.get("target_terminal") or "")}
     if sealed_dir is None:
+        _seal_reason(reason_out, "material_missing（SEALED_DIR 未提供）")
         return None
     path = sealed_dir / f"{task.get('task_id')}.json"
     if not path.is_file():
+        _seal_reason(reason_out, "material_missing（密封件缺）")
         return None
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -1568,21 +1731,39 @@ def _sealed_material(
         "target_terminal": str(data.get("target_terminal") or ""),
     }
     if not material["instruction"]:
+        _seal_reason(reason_out, "material_missing（密封件不完整：无 instruction）")
         return None  # 密封件不完整——拒跑（不留半件投喂）
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     size = path.stat().st_size
     print(f"[af3-eval] sealed {task.get('task_id')}: sha256={digest} bytes={size}")
-    registered = (anchors or {}).get(str(task.get("task_id"))) or {}
-    if registered:
+    if anchors_required or anchors:
+        registered = (anchors or {}).get(str(task.get("task_id")))
+        if not registered:
+            _seal_reason(
+                reason_out,
+                "seal_anchor_missing（契约 seal_anchors 未登记该槽锚——密封面不完整，拒跑）",
+            )
+            print(f"[af3-eval] sealed {task.get('task_id')}: 锚未登记——拒跑（密封面不完整）")
+            return None
         reg_digest = str(registered.get("sha256") or "").lower()
         reg_size = registered.get("bytes")
         if reg_digest != digest or str(reg_size) != str(size):
+            _seal_reason(
+                reason_out,
+                "seal_anchor_mismatch（锚不符＝密封破坏——该槽作废重密封，09 §3.4 第 5 条）",
+            )
             print(
                 f"[af3-eval] sealed {task.get('task_id')}: 锚不符＝密封破坏——拒跑"
                 f"（登记 {reg_digest[:12]}…/{reg_size} 实际 {digest[:12]}…/{size}）"
             )
             return None
     return material
+
+
+def _seal_reason(sink: dict[str, str] | None, reason: str) -> None:
+    """拒跑原因回传（出口归因可观测——锚不符与普通缺料须可区分）。"""
+    if sink is not None:
+        sink["reason"] = reason
 
 
 # ---- 真跑门（FDE_AF3_EVAL=1＋产物目录；Ollama 桥复用 AF1 serving 基建） ----------
@@ -1654,14 +1835,16 @@ class TestRealAf3Eval:
         out_dir = Path(os.environ["FDE_AF3_EVAL_OUT_DIR"])
         specs = _load_specs()
         anchors = _load_seal_anchors()
+        anchors_required = _contract_loaded()
         sealed_dir_raw = os.environ.get("FDE_AF3_SEALED_DIR", "").strip()
         sealed_dir = Path(sealed_dir_raw) if sealed_dir_raw else None
         failures: list[str] = []
         for task in _selected_tasks():
             task_id = str(task.get("task_id"))
-            material = _sealed_material(task, sealed_dir, anchors)
+            reason_out: dict[str, str] = {}
+            material = _sealed_material(task, sealed_dir, anchors, reason_out, anchors_required)
             if material is None:
-                reason = "material_missing（SEALED_DIR 未提供或密封件缺）"
+                reason = reason_out.get("reason") or "material_missing（密封件缺）"
                 print(f"[af3-eval] {task_id} run{run_index}: {reason} skip")
                 _archive_skip(out_dir, task_id, run_index, reason)
                 continue
@@ -1695,13 +1878,15 @@ class TestRealAf3Eval:
         out_dir = Path(os.environ["FDE_AF3_EVAL_OUT_DIR"])
         specs = _load_specs()
         anchors = _load_seal_anchors()
+        anchors_required = _contract_loaded()
         sealed_dir_raw = os.environ.get("FDE_AF3_SEALED_DIR", "").strip()
         sealed_dir = Path(sealed_dir_raw) if sealed_dir_raw else None
         for task in _selected_tasks():
             task_id = str(task.get("task_id"))
-            material = _sealed_material(task, sealed_dir, anchors)
+            reason_out: dict[str, str] = {}
+            material = _sealed_material(task, sealed_dir, anchors, reason_out, anchors_required)
             if material is None:
-                _archive_skip(out_dir, task_id, 1, "material_missing")
+                _archive_skip(out_dir, task_id, 1, reason_out.get("reason") or "material_missing")
                 continue
             effective = dict(task)
             effective.update(material)
@@ -1723,11 +1908,32 @@ def _load_taskset() -> dict[str, Any]:
 
 
 def _load_specs() -> dict[str, Any]:
-    """initial_repo_specs（机器契约同源物化）；无任务集 env＝最小内联集。"""
-    return _load_taskset().get("initial_repo_specs") or {"sample-baseline": {}}
+    """initial_repo_specs（机器契约同源物化）。
+
+    **fail-closed（评审发现）**：契约文件已加载但缺 ``initial_repo_specs`` 键＝
+    生产者侧漂移——此时若静默回落 ``{"sample-baseline": {}}``，物化将不做按 spec
+    过滤（生成器超集里的三个失败种子恒在每个仓 ⇒ 一切「CI green」终态结构性
+    不可达）而 CI 无告警。故：契约在 ⇒ 键缺失即拒；契约不在（无任务集 env）
+    ⇒ 最小内联集（mock 路径）。
+    """
+    taskset = _load_taskset()
+    if not taskset:
+        return {"sample-baseline": {}}
+    specs = taskset.get("initial_repo_specs")
+    if not isinstance(specs, dict) or not specs:
+        raise RuntimeError(
+            "机器契约缺 initial_repo_specs（或为空）——按 spec 过滤物化不可用，拒跑"
+            "（回落无契约路径会让三个失败种子恒在每个仓 ⇒ CI green 结构性不可达）"
+        )
+    return specs
 
 
 def _load_seal_anchors() -> dict[str, Any]:
     """机器契约登记的密封锚（``seal_anchors``：task_id → sha256/bytes）——
     开箱对拍用（锚不符＝密封破坏，fail-closed 拒跑）。"""
     return _load_taskset().get("seal_anchors") or {}
+
+
+def _contract_loaded() -> bool:
+    """机器契约文件是否已加载（区分「无契约的 mock 路径」与「契约漂移」）。"""
+    return bool(_load_taskset())
