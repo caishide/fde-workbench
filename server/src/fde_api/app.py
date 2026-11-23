@@ -50,6 +50,7 @@ _BLUEPRINT_SPECS: tuple[tuple[str, str], ...] = (
     ("fde_api.ontology.routes", "ontology_blueprint"),
     ("fde_api.ontology.routes", "global_ontology_blueprint"),
     ("fde_api.expirations", "blueprint"),
+    ("fde_api.ops_todos", "blueprint"),  # Ecosystem OS M2 WP-2 运营待办只读聚合
     ("fde_api.workflows.routes", "workflows_blueprint"),
     ("fde_api.dispatch.routes", "blueprint"),
     ("fde_api.guidance.routes", "guidance_blueprint"),
