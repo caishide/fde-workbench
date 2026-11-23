@@ -138,6 +138,11 @@
         "周报和异常清单"
       ],
       "prohibitions": [
+        "不绕过 Gate Service 自行改门禁状态",
+        "不把 AI 产物直接置为终态（必须先进入草稿/候选/待审状态）",
+        "不在工具调用前跳过项目成员权限与客户数据范围校验"
+      ],
+      "principles": [
         "复用现有 Workbench Workflow、Agent、Jobs、Evidence、Gate，不另起炉灶",
         "AI 产物先进入草稿/候选/待审状态",
         "Gate Service 是唯一 Gate 权威",
@@ -176,7 +181,7 @@
         "自动开启区域售卖闸"
       ],
       "tasks": [
-        {"key": "region_coverage", "name": "区域市场覆盖分析", "requires_egress": true},
+        {"key": "region_coverage", "name": "区域市场覆盖分析", "requires_egress": false},
         {"key": "partner_activation", "name": "伙伴激活", "requires_egress": false},
         {"key": "regional_funnel", "name": "商机/项目/交付漏斗", "requires_egress": false},
         {"key": "partner_monthly", "name": "服务商月报", "requires_egress": false},
@@ -235,6 +240,22 @@
         "自动结算或改变分账规则",
         "自动开启区域售卖闸"
       ],
+      "allowed_api_operations": [
+        "projects.list",
+        "projects.read",
+        "projects.members",
+        "tasks.list",
+        "tasks.read",
+        "metrics.report",
+        "dispatch.offers_mine",
+        "dispatch.packages_list",
+        "dispatch.packages_read",
+        "dispatch.disputes_list",
+        "dispatch.claim_gates_list",
+        "dispatch.settlements_mine",
+        "documents.list",
+        "documents.read"
+      ],
       "budget_and_runtime_limit": "每 24 小时 1 轮，单轮 ≤ 10 分钟，无模型调用预算（纯确定性聚合）。",
       "failure_fallback": "降级为「只列异常不推断」并留痕，缺口标注为待人工核对；不得静默跳过。",
       "requires_human_approval": true,
@@ -264,11 +285,45 @@
       "output_schema": "草稿件（项目拆解草稿、风险清单、派发建议、证据候选、周报异常清单），落既有草稿/候选/待审状态。",
       "tool_allowlist": ["group:research-readonly"],
       "prohibitions": [
+        "不绕过 Gate Service 自行改门禁状态",
+        "不把 AI 产物直接置为终态（必须先进入草稿/候选/待审状态）",
+        "不在工具调用前跳过项目成员权限与客户数据范围校验",
+        "自动结算或改变分账规则"
+      ],
+      "principles": [
         "复用现有 Workbench Workflow、Agent、Jobs、Evidence、Gate，不另起炉灶",
         "AI 产物先进入草稿/候选/待审状态",
         "Gate Service 是唯一 Gate 权威",
-        "项目成员权限和客户数据范围在每次工具调用前校验",
-        "自动结算或改变分账规则"
+        "项目成员权限和客户数据范围在每次工具调用前校验"
+      ],
+      "allowed_api_operations": [
+        "projects.list",
+        "projects.read",
+        "projects.members",
+        "tasks.list",
+        "tasks.read",
+        "documents.list",
+        "documents.read",
+        "documents.templates",
+        "documents.versions",
+        "solutions.list",
+        "solutions.read",
+        "solutions.health",
+        "solutions.review_trail",
+        "research.list",
+        "forms.list",
+        "forms.read",
+        "forms.export_status",
+        "files.list",
+        "files.versions",
+        "meetings.get",
+        "meetings.minutes",
+        "meetings.cost",
+        "dispatch.packages_list",
+        "dispatch.packages_read",
+        "dispatch.rules_list",
+        "dispatch.profiles_list",
+        "translator.translations"
       ],
       "budget_and_runtime_limit": "每项目每周 ≤ 2 轮，单轮 ≤ 20 分钟。",
       "failure_fallback": "降级为「只列证据候选与异常」并留痕，不生成结论性判断。",
@@ -304,6 +359,19 @@
         "绕过既有 Goal/PR/CI/部署纪律",
         "执行被审代码"
       ],
+      "allowed_api_operations": [
+        "documents.list",
+        "documents.read",
+        "documents.templates",
+        "documents.versions",
+        "metrics.report",
+        "projects.list",
+        "projects.read",
+        "plugins.read",
+        "plugins.search",
+        "tasks.list",
+        "tasks.read"
+      ],
       "budget_and_runtime_limit": "每 24 小时 ≤ 1 轮，单轮 ≤ 15 分钟。",
       "failure_fallback": "降级为「只列差异与待核对项」并留痕，不得自动执行任何写动作。",
       "requires_human_approval": true,
@@ -336,6 +404,22 @@
         "仅凭课程完成自动发放交付资格",
         "自动判定争议性考试",
         "代替导师签署认证终判"
+      ],
+      "allowed_api_operations": [
+        "modules.catalog",
+        "templates.catalog",
+        "documents.templates",
+        "documents.list",
+        "documents.read",
+        "research.list",
+        "forms.list",
+        "forms.read",
+        "memos.read",
+        "memos.personal_list",
+        "projects.list",
+        "projects.read",
+        "tasks.list",
+        "tasks.read"
       ],
       "budget_and_runtime_limit": "每 24 小时 ≤ 2 轮，单轮 ≤ 15 分钟。",
       "failure_fallback": "降级为「只列问题与资料缺口」并留痕，转人工答疑；不得代答争议性考试。",
