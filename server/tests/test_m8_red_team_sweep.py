@@ -14,7 +14,8 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
   A 企业内与 B 属主**同角色**的账号仍须 ``403/404``（排除「403 其实由
   角色差异产生」的假绿）。两条都过才算 org 维度真收敛。
 - **候选面动态派生**：``create_app().url_map`` 派生「GET＋路径含模板变量」
-  的全部路由（现测 102 条），**绝不引用 ``docs/audit/v3-route-inventory.csv``
+    的全部路由，**绝不引用 ``docs/audit/v3-route-inventory.csv``
+
   作集合**（在途 PR 会改清单，且清单列是 AST 富化产物，CI 只钉
   (method,path)）；候选面条数只在基线断言处写死本轮实测值。
 - **排除登记结构化**：``_EXCLUSION_RECORDS`` 每条带
@@ -22,7 +23,7 @@ leader 任务书 :106-107 与 ADR-M3 §6 :44 定的最终兜底：用企业 A �
   ``sweep_required``／``b_owner_status``／``measured``（三套 token 实测码）。
 - **降级即红（反逃逸闸，本轮新增）**：并集恒等对「把爬扫面降级成排除登记」
   是不变量，故另配四道闸：
-  ① 条数基线 ``len(ROUTES) == 41``／``len(_EXCLUSION_RECORDS) == 74``；
+  ① 条数基线固定在 ``test_m8_sweep_registry_count_and_semantic_baseline``；
   ② **实测派生 must_sweep 必须为空**——凡「B 属主实测 200 且 A/同角色 A
      均被拒」的路由若停留在排除登记里即转红；
   ③ 排除登记的 ``measured`` 与**现测重测**逐条一致（登记不可伪造、不可陈旧）；
@@ -190,6 +191,14 @@ _EXCLUSION_RECORDS = {
     },
     ("GET", "/api/v1/admin/commercial/orgs/<org_id>/ai-budget"): {
         "reason": "admin-only 平台面，非企业 token 读面：A 实测 403、同角色 A 实测 403、B 属主实测 403；M6 已证 admin 全量可见是平台能力非漏洞",
+        "exclusion_kind": "admin_only",
+        "verified_positive_control": False,
+        "sweep_required": False,
+        "b_owner_status": 403,
+        "measured": {"a": 403, "same_role_a": 403, "b_owner": 403},
+    },
+    ("GET", "/api/v1/admin/dispatch/projects/<project_id>/settlements"): {
+        "reason": "仅平台管理员可读项目完整结算。A、同角色 A、B 属主均为 403，管理员阳性对照见 test_dispatch_settlement_admin。",
         "exclusion_kind": "admin_only",
         "verified_positive_control": False,
         "sweep_required": False,
@@ -1248,7 +1257,7 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
     assert len(ROUTES) == 60, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 77, (
+    assert len(_EXCLUSION_RECORDS) == 78, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )

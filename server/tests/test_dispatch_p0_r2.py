@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -27,6 +29,7 @@ from fde_api.dispatch.models import (
     DeliverySettlement,
     DispatchOffer,
     DispatchRuleVersion,
+    DispatchSettlementAllocation,
     FdeLevelEvidence,
     FdeProfile,
 )
@@ -35,10 +38,12 @@ from fde_api.meetings.models import ReviewMeeting, ReviewMeetingMinutes
 from fde_api.dispatch.rules import (
     activate_due_versions,
     active_rule_snapshot,
+    active_rule_version,
     create_rule_version,
     default_rule_snapshot,
 )
 from fde_api.dispatch.settlements import (
+    allocate_five_seats_with_lead_attribution,
     compute_withholding,
     mark_disputed,
     mark_paid,
@@ -768,6 +773,214 @@ def test_g8_pass_marks_acceptance_and_accrues_settlements(g8_project, db_session
         select(Payment).where(Payment.project_id == project_id, Payment.milestone_key == "G8")
     )
     assert g8_payment.acceptance_passed_at is not None
+
+
+@pytest.mark.parametrize(
+    ("missing_province", "receipt_order"),
+    [(False, "gate_first"), (True, "gate_first"), (False, "receipt_first"),
+     (True, "receipt_first"), (False, "parallel_receipts"), (False, "parallel_gate")],
+)
+def test_g8_receipt_inherits_g4_five_seats(
+    g8_project, db_session, app, missing_province, receipt_order,
+):
+    receipt_first = receipt_order == "receipt_first"
+    admin = g8_project["admin"]
+    admin_client = g8_project["admin_client"]
+    project_id = g8_project["project_id"]
+    payments_url = f"/api/v1/projects/{project_id}/payments"
+    assert admin_client.post(f"{payments_url}/G4", json={"received_amount": 9000}).status_code == 200
+    package = db_session.scalar(select(DeliveryPackage).where(DeliveryPackage.project_id == project_id))
+    advance = db_session.scalar(select(Payment).where(Payment.project_id == project_id, Payment.milestone_key == "G4"))
+    version = active_rule_version(db_session)
+    assert version.version_no == 100
+    original = allocate_five_seats_with_lead_attribution(
+        db_session, advance, package, actor=admin,
+        seat_payees={"delivery": g8_project["fde"].id, "county": admin.id,
+                     "province": None if missing_province else admin.id},
+        vacant_reasons={"province": "no_province_partner"} if missing_province else None,
+        confirm_password=INITIAL_PASSWORD,
+    )
+    original_ids = {row.id for row in original}
+    advance_id = original[0].settlement_id
+    version_id = version.id
+    db_session.commit()
+
+    tail_url = f"{payments_url}/G8"
+    receipt = {"received_amount": 10000, "received_at": date.today().isoformat()}
+    if receipt_first:
+        assert admin_client.post(tail_url, json=receipt).status_code == 200
+
+    gates_url = g8_project["gates_url"]
+    revision = _submit_all_evidence(admin_client, gates_url, "G8")
+    decision_url = f"{gates_url}/G8/decision"
+    decision = {"expected_revision": revision, "result": "pass", "decision": "proceed"}
+    if receipt_order == "parallel_gate":
+        barrier = threading.Barrier(2, timeout=15)
+
+        def post(url, payload, headers):
+            with app.test_client() as worker:
+                barrier.wait()
+                return worker.post(url, json=payload, headers=headers)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            gate_future = pool.submit(post, decision_url, decision, g8_project["leader_client"].headers)
+            receipt_future = pool.submit(post, tail_url, receipt, admin_client.headers)
+            decided = gate_future.result(timeout=40)
+            assert receipt_future.result(timeout=40).status_code == 200
+        assert decided.status_code == 200, decided.json
+        assert decided.json["data"]["acceptance_marked"]["settlements_accrued"] in (1, 2)
+    else:
+        decided = g8_project["leader_client"].post(decision_url, json=decision)
+        assert decided.status_code == 200, decided.json
+        assert decided.json["data"]["acceptance_marked"] == {
+            "payments_marked": 2 if receipt_first else 1,
+            "settlements_accrued": 2 if receipt_first and not missing_province else 1,
+        }
+
+    version.status = "retired"
+    db_session.add(DispatchRuleVersion(
+        version_no=101, status="active", rule_snapshot=default_rule_snapshot(),
+    ))
+    db_session.commit()
+
+    if missing_province and not receipt_first:
+        denied = admin_client.post(tail_url, json=receipt)
+        assert (denied.status_code, denied.json["error"]["code"]) == (400, "invalid_request")
+        db_session.expire_all()
+        assert db_session.scalar(select(Payment).where(Payment.project_id == project_id, Payment.milestone_key == "G8")).received_amount is None
+        assert db_session.scalar(select(DeliverySettlement).where(DeliverySettlement.package_id == package.id, DeliverySettlement.settlement_key == "G8")) is None
+
+    if receipt_order == "parallel_receipts":
+        barrier = threading.Barrier(2, timeout=15)
+
+        def post_receipt(_):
+            with app.test_client() as worker:
+                barrier.wait()
+                response = worker.post(tail_url, json=receipt, headers=admin_client.headers)
+                return response.status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert list(pool.map(post_receipt, range(2), timeout=40)) == [200, 200]
+    else:
+        accepted = admin_client.post(tail_url, json={**receipt, "confirm_password": INITIAL_PASSWORD})
+        assert accepted.status_code == 200, accepted.json
+    assert admin_client.post(tail_url, json=receipt).status_code == 200
+    edit = admin_client.post(tail_url, json={**receipt, "received_amount": 11000})
+    assert (edit.status_code, edit.json["error"]["code"]) == (409, "allocation_mirror_protected")
+
+    db_session.expire_all()
+    tail = db_session.scalar(select(DeliverySettlement).where(
+        DeliverySettlement.package_id == package.id, DeliverySettlement.settlement_key == "G8",
+    ))
+    assert (tail.status, tail.base_amount, tail.delivery_amount, tail.withholding_tax) == (
+        "accrued", Decimal("10000"), Decimal("3500"), Decimal("9.60"),
+    )
+    assert tail.acceptance_passed_at is not None
+    details = db_session.scalars(select(DispatchSettlementAllocation).where(
+        DispatchSettlementAllocation.settlement_id == tail.id,
+    )).all()
+    assert {row.rule_version_id for row in details} == {version_id}
+    assert {row.seat_key: row.amount for row in details} == {
+        "platform": Decimal("5800" if missing_province else "5100"), "lead": Decimal("0"),
+        "delivery": Decimal("3500"), "county": Decimal("700"),
+        "province": Decimal("0" if missing_province else "700"),
+    }
+    assert {row.id for row in db_session.scalars(select(DispatchSettlementAllocation).where(
+        DispatchSettlementAllocation.settlement_id == advance_id,
+    ))} == original_ids
+    events = db_session.scalars(select(OperationEvent).where(
+        OperationEvent.target_id == package.id,
+        OperationEvent.event_type.in_(("late_receipt_allocation_inherited", "settlement_accrued")),
+    )).all()
+    assert [event.changes["source_settlement_id"] for event in events
+            if event.event_type == "late_receipt_allocation_inherited"] == [advance_id]
+    assert sum(event.event_type == "settlement_accrued" and event.changes["settlement_key"] == "G8"
+               for event in events) == 1
+
+
+def test_g8_inheritance_conflict_rolls_back_receipt(g8_project, db_session):
+    admin_client = g8_project["admin_client"]
+    project_id = g8_project["project_id"]
+    payments_url = f"/api/v1/projects/{project_id}/payments"
+    assert admin_client.post(f"{payments_url}/G4", json={"received_amount": 9000}).status_code == 200
+    package = db_session.scalar(select(DeliveryPackage).where(DeliveryPackage.project_id == project_id))
+    advance = db_session.scalar(select(Payment).where(Payment.project_id == project_id, Payment.milestone_key == "G4"))
+    admin = g8_project["admin"]
+    allocations = allocate_five_seats_with_lead_attribution(
+        db_session, advance, package, actor=admin,
+        seat_payees={"delivery": g8_project["fde"].id, "county": admin.id, "province": admin.id},
+    )
+    db_session.commit()
+    gate_url = g8_project["gates_url"]
+    revision = _submit_all_evidence(admin_client, gate_url, "G8")
+    decided = g8_project["leader_client"].post(
+        f"{gate_url}/G8/decision",
+        json={"expected_revision": revision, "result": "pass", "decision": "proceed"},
+    )
+    assert decided.status_code == 200
+    # 模拟已计提的 G4 明细损坏，隔离验证晚到尾款的整笔回滚。
+    db_session.delete(allocations[-1])
+    db_session.commit()
+
+    package_id = package.id
+    payment = db_session.scalar(select(Payment).where(Payment.project_id == project_id, Payment.milestone_key == "G8"))
+    payment_id = payment.id
+    event_query = select(OperationEvent.id).where(OperationEvent.target_id.in_((package_id, payment_id, project_id)))
+    prior_events = set(db_session.scalars(event_query))
+    result = admin_client.post(f"{payments_url}/G8", json={"received_amount": 10000, "invoice_no": "synthetic-tail"})
+    assert (result.status_code, result.json["error"]["code"]) == (409, "late_receipt_allocation_conflict")
+
+    db_session.expire_all()
+    assert (payment.received_amount, payment.received_at, payment.acceptance_passed_at, payment.invoice_no) == (None, None, None, None)
+    assert db_session.scalar(select(DeliverySettlement).where(
+        DeliverySettlement.package_id == package_id, DeliverySettlement.settlement_key == "G8",
+    )) is None
+    assert set(db_session.scalars(event_query)) == prior_events
+
+
+def test_quoted_b_order_keeps_unallocated_receipts_open_until_admin_allocates(g8_project, db_session):
+    admin = g8_project["admin_client"]
+    project_id = g8_project["project_id"]
+    project = db_session.get(Project, project_id)
+    package = db_session.scalar(select(DeliveryPackage).where(DeliveryPackage.project_id == project_id))
+    package.quote_id = _quote(db_session, project, branch="B").id
+    db_session.commit()
+
+    payments = f"/api/v1/projects/{project_id}/payments"
+    book = f"/api/v1/admin/dispatch/projects/{project_id}/settlements"
+    for key in ("G4", "G8"):
+        assert admin.post(f"{payments}/{key}", json={"received_amount": 9000}).status_code == 200
+    date_only = admin.post(f"{payments}/G8", json={"received_at": (date.today() - timedelta(days=1)).isoformat()})
+    assert date_only.status_code == 200, date_only.json
+
+    gates = g8_project["gates_url"]
+    revision = _submit_all_evidence(admin, gates, "G8")
+    decided = g8_project["leader_client"].post(
+        f"{gates}/G8/decision", json={"expected_revision": revision, "result": "pass", "decision": "proceed"},
+    )
+    assert decided.status_code == 200, decided.json
+    assert decided.json["data"]["acceptance_marked"] == {"payments_marked": 2, "settlements_accrued": 0}
+    by_key = {row["settlement_key"]: row for row in admin.get(book).json["data"]["settlements"]}
+    assert all(row["status"] == "draft" and row["allocations"] == [] for row in by_key.values())
+    assert by_key["G8"]["base_amount"] == "9000.00"
+
+    confirm = {"confirm_password": INITIAL_PASSWORD}
+    allocation = {**confirm, "vacant_reasons": {"county": "self_sourced_self_delivered", "province": "no_province_partner"}}
+    for key in ("G4", "G8"):
+        action = f"{book}/{by_key[key]['id']}"
+        result = admin.post(f"{action}/allocate", json={
+            **allocation, "expected_allocation_snapshot": by_key[key]["allocation_snapshot"],
+        })
+        assert result.status_code == 200, result.json
+        assert result.json["data"]["status"] == "accrued"
+
+    invoice = {"invoice_no": "SYNTHETIC-G8"}
+    assert admin.post(f"{payments}/G8", json=invoice).status_code == 200
+    payable = admin.post(f"{book}/{by_key['G8']['id']}/payable", json=confirm)
+    assert payable.status_code == 200, payable.json
+    locked = admin.post(f"{payments}/G8", json={"invoice_no": "SYNTHETIC-CHANGED"})
+    assert (locked.status_code, locked.json["error"]["code"]) == (409, "invoice_locked")
+    assert admin.post(f"{payments}/G8", json=invoice).status_code == 200
 
 
 # ---------------------------------------------------------------------------

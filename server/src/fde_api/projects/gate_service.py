@@ -617,7 +617,10 @@ def decide_gate(
                 )
 
                 try:
-                    acceptance = mark_acceptance_passed(session, actor, project.id)
+                    acceptance = mark_acceptance_passed(
+                        session, actor, project.id,
+                        confirm_password=payload.get("confirm_password"), defer_vacancy=True,
+                    )
                 except PaymentServiceError as error:
                     # F 线 T4：验收咽喉的结构排除（本人验收 403
                     # self_acceptance_forbidden）原样透传为门禁错误——

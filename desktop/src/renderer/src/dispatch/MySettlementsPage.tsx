@@ -4,18 +4,14 @@ import { ApiClientError } from "../api/client"
 import { useAuth } from "../auth/AuthProvider"
 import { formatSeatAmount } from "./DispatchPoolPage"
 
-/** B1 接单工作台：我的席位结算（§7.2 商务四席位）。
-
- *  数据源 GET /dispatch/settlements/mine——服务端只回本人席位的角色与
- *  金额（他席存在与金额零出现，§9.5 同源隔离）；withholding_tax 原样
- *  透出、前端不算净额（预扣口径=B-③ 待法务确认，不发明）。 */
+/** 本人席位结算支持五席明细与历史四席。预扣仅展示给交付席收款人。 */
 
 export interface MySettlementView {
   settlement_id: string
   package_code: string
   settlement_key: string
   status: string
-  base_amount: number
+  base_amount: number | null
   my_roles: string[]
   my_amount: number
   withholding_tax: number
@@ -36,6 +32,9 @@ export const SEAT_ROLE_LABELS: Record<string, string> = {
   region: "区域合伙人",
   city: "城市合伙人",
   delivery: "交付方",
+  lead: "拉单方",
+  county: "市县级服务商",
+  province: "省级服务商",
 }
 
 export function isMySettlementView(value: unknown): value is MySettlementView {
@@ -87,8 +86,7 @@ export function MySettlementsPage() {
         <div>
           <h1>我的结算</h1>
           <p className="page-subtitle">
-            只显示本人席位的分成（他席金额不可见）；金额口径为 §7.2
-            席位级结算，预扣税按法务确认前的原值展示。
+            查看本人席位的税前分成。交付席收款人可查看本笔预扣税。
           </p>
         </div>
         <button className="secondary-button" type="button" onClick={load}>
@@ -118,10 +116,12 @@ export function MySettlementsPage() {
               <span className="dispatch-seat-amount">
                 我的分成 {formatSeatAmount(row.my_amount)}
               </span>
-              <span className="muted">
-                计提基数 {formatSeatAmount(row.base_amount)} · 预扣税{" "}
-                {formatSeatAmount(row.withholding_tax)}
-              </span>
+              {typeof row.base_amount === "number" ? (
+                <span className="muted">计提基数 {formatSeatAmount(row.base_amount)}</span>
+              ) : null}
+              {row.my_roles.includes("delivery") ? (
+                <span className="muted">预扣税 {formatSeatAmount(row.withholding_tax)}</span>
+              ) : null}
               <span className="muted">
                 {row.paid_at ? `打款于 ${row.paid_at}` : "尚未打款"}
               </span>

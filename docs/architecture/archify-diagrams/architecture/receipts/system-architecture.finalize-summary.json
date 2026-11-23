@@ -6,14 +6,14 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-    "sha256": "9e8a029eba3d63b9c4547bc8c6d7d6cc42d9f0c070ced0b124f32d3f791edc08",
-    "bytes": 16118
+    "path": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "e3cfffa82ff073d142f84933405a3ac3d0be500b2552b36ec88447067485f54c",
+    "bytes": 12338
   },
   "artifact": {
-    "path": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
-    "sha256": "051dcc1be0e85c65360bee93a8cdf3a7a96fa7e702af7e7ec4f8eac2510b9e1a",
-    "bytes": 845952
+    "path": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "a997fe55575a6dd8cbe409595c0ca26a24a2d9253a2f60d70459a0e44cb4e02e",
+    "bytes": 845372
   },
   "gates": {
     "validate": "pass",
@@ -28,22 +28,25 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize.json",
-    "summaryReceipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize-summary.json",
-    "browserCheckReceipt": "D:\\test\\fde-wt-uilib\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.browser-check.json"
+    "receipt": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\receipts\\system-architecture.browser-check.json"
   },
   "update": {
-    "status": "current",
+    "status": "update_available",
     "installedVersion": "3.2.0",
-    "availableVersion": "3.2.0",
-    "releaseNotes": null,
-    "checkedAt": "2026-11-14T13:45:17.845Z",
+    "availableVersion": "3.3.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.3.0",
+    "severity": "normal",
+    "summary": "Adds Code Analysis & Architecture Diagnosis, Story walkthroughs and 1080p video, PR walkthroughs, automatic architecture placement, and lighter installs.",
+    "checkedAt": "2026-11-23T01:01:29.321Z",
     "source": "cache",
-    "noticeRequired": false,
-    "noticeText": null
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.2.0 → 3.3.0. A previous check at 2026-11-23T01:01:29.321Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.3.0. Would you like me to update Archify?",
+    "eventKey": "archify@sha256:00e4ff53267aee7dabf22ed333360cd3e380db20271a50264ae146ee25cf2538"
   },
   "visualReview": "not-requested",
-  "durationMs": 7009,
+  "durationMs": 10478,
   "browserCheck": {
     "requested": true,
     "ran": true

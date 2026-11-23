@@ -60,6 +60,7 @@ it("派单池页渲染白名单字段且不出现报价明细字段", async () =
   render(<DispatchPage tab="pool" onTabChange={() => {}} />)
   expect(await screen.findByText("PKG-AB12CD34-01")).toBeInTheDocument()
   expect(screen.getByText(/交付方席位 ¥8,000.00/)).toBeInTheDocument()
+  expect(screen.getByText(/金额为发布时估算，实际结算以到账金额和适用规则为准/)).toBeInTheDocument()
   // 展开详情
   await userEvent.click(screen.getByText("PKG-AB12CD34-01"))
   expect(await screen.findByText("口径条款逐项可判")).toBeInTheDocument()

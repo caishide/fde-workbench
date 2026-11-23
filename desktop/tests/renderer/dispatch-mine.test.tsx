@@ -229,6 +229,29 @@ it("我的结算页：只渲染本人席位金额与角色", async () => {
   expect(screen.getByText(/预扣税 ¥120.00/)).toBeInTheDocument()
 })
 
+it("我的结算页：显示五席新角色，隐藏计提基数和非本人预扣", async () => {
+  mocks.apiRequest.mockResolvedValue([
+    {
+      settlement_id: "s2",
+      package_code: "PKG-B1MINE-02",
+      settlement_key: "M2",
+      status: "accrued",
+      base_amount: null,
+      my_roles: ["lead", "county", "province"],
+      my_amount: 3500.01,
+      // 即使响应带了预扣，非交付席也不展示。
+      withholding_tax: 120,
+      acceptance_passed_at: null,
+      paid_at: null,
+    },
+  ])
+  render(<MySettlementsPage />)
+  expect(await screen.findByText("已计提 · 拉单方 + 市县级服务商 + 省级服务商")).toBeInTheDocument()
+  expect(screen.getByText("我的分成 ¥3,500.01")).toBeInTheDocument()
+  expect(screen.queryByText(/计提基数/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/预扣税 ¥/)).not.toBeInTheDocument()
+})
+
 it("派单池：claim 模式已发布包在详情展开后显示抢单按钮并发请求", async () => {
   mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string }) => {
     if (String(path) === "/api/v1/dispatch/packages") {

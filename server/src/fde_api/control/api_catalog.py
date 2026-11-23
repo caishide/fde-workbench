@@ -85,7 +85,7 @@ ENTRIES = [
     ("dispatch.offers_decline", "POST", "/api/v1/dispatch/offers/{offer_id}/decline", "拒单（§6.7 拒单权；原因枚举选填、只进留痕）", "version；可选 reason=档期冲突/能力不匹配/距离/其他"),
     ("dispatch.offers_mine", "GET", "/api/v1/dispatch/offers/mine", "我的 offer 收件箱（候选人=当前用户全量留痕；§6.2 窗口 deadline 现算；§4.8 释明只回本人）", ""),
     ("dispatch.package_offers_list", "GET", "/api/v1/dispatch/packages/{package_id}/offers", "包侧 offer 留痕（调度台运营视图：本轮谁被派/接了/拒了、确认窗 deadline 现算、rank 释明；平台侧）", ""),
-    ("dispatch.settlements_mine", "GET", "/api/v1/dispatch/settlements/mine", "我的席位结算（只含自己席位的角色与金额；他席存在与金额不出现；预扣税原样透出）", ""),
+    ("dispatch.settlements_mine", "GET", "/api/v1/dispatch/settlements/mine", "我的席位结算（本人席位与金额；预扣税仅交付席可见；仅历史四席保留计提基数）", ""),
     ("dispatch.packages_claim", "POST", "/api/v1/dispatch/packages/{package_id}/claim", "抢单登记（§6.4 城市开闸三条件 + 种子开关全过才允许）", ""),
     ("dispatch.packages_match", "POST", "/api/v1/dispatch/packages/{package_id}/match", "两段式撮合 Top3（Stage A 资格门 + 场景裁决 + Stage B；§4）", ""),
     ("dispatch.packages_match_ai", "POST", "/api/v1/dispatch/packages/{package_id}/match-ai", "AI 派单建议腿（返件式：规则腿与 AI 建议腿并列双来源、闸唯一；只返建议，不落库、不建 offer、不自动派单——采纳须走既有 offers/publish 人工通道且责任主体记人；同步模型调用消耗 AI 预算）", ""),

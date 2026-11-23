@@ -38,8 +38,9 @@ from fde_api.dispatch.models import (
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.solutions.models import ProjectSolution
+from fde_api.dispatch.settlements import estimate_five_seat_delivery, reconcile_published_b_receipts
 from fde_api.system_configuration import DISPATCH_CONSTANTS
-from fde_api.workbench.models import Project, ProjectModule, Quote
+from fde_api.workbench.models import Contract, Payment, Project, ProjectModule, Quote
 
 # §2.5 八态状态机：action → {from_status: to_status}。
 # publish 的来源含 withdrawn（撤回重发）/rejected（重派）/expired（人工介入
@@ -271,13 +272,20 @@ def publish_package(
     非 draft 来源 = round+1 新版本对（新 package_code + 新 snapshot_hash）。
     goal-d8：发布时平台侧定档订单难度（O-4 low/medium/high——start_run 按
     low→standard/medium→high 映射自动带入 run.difficulty，T4 免手报）。"""
-    package = session.get(DeliveryPackage, package_id)
-    if package is None:
+    project_id = session.scalar(select(DeliveryPackage.project_id).where(DeliveryPackage.id == package_id))
+    if project_id is None:
         raise DispatchServiceError("package_not_found", "交付包不存在。", 404)
     if actor.role not in ("admin", "project_lead"):
         raise DispatchServiceError(
             "verifier_role_required", "只有平台侧可发布交付包。", 403
         )
+    # 与收款及结算管理同序：先锁项目，再锁包并重读状态。
+    session.scalar(select(Project.id).where(Project.id == project_id).with_for_update(key_share=True))
+    package = session.scalar(select(DeliveryPackage).where(
+        DeliveryPackage.id == package_id,
+    ).with_for_update(key_share=True).execution_options(populate_existing=True))
+    if package is None:
+        raise DispatchServiceError("package_not_found", "交付包不存在。", 404)
     if difficulty is not None and difficulty not in ("low", "medium", "high"):
         raise DispatchServiceError(
             "invalid_request", "difficulty 必须是 low/medium/high。"
@@ -322,18 +330,31 @@ def publish_package(
     package.snapshot_hash = compute_snapshot_hash(
         _snapshot_payload(package, solution, project, quote, published_at=published_at)
     )
-    # §7.1/§9.2：交付方席位 40% 金额发布时物化（成交额口径=final_amount，
-    # 未回填时回落公式价上沿；禁 join 的代价是落库物化——goal-r3 留注⑥）
     base = quote.final_amount if quote.final_amount is not None else quote.quote_high
     if base is not None:
-        share = Decimal(str(DISPATCH_CONSTANTS["seat_shares"]["delivery"]))
-        package.delivery_seat_amount = (Decimal(str(base)) * share / 100).quantize(
-            Decimal("0.01")
+        # B 型包从已登记的 B 合同或收款计划识别，展示发布时估算，结算按实收。
+        b_order = package.sow_type == "b" or (
+            package.sow_type is None and (
+                session.scalar(select(Contract.id).where(
+                    Contract.project_id == project.id, Contract.sow_type == "b",
+                    Contract.signed_at.is_not(None),
+                ).limit(1)) is not None
+                or session.scalar(select(Payment.id).where(
+                    Payment.project_id == project.id, Payment.sow_type == "b",
+                ).limit(1)) is not None
+            )
         )
+        if b_order:
+            package.delivery_seat_amount = estimate_five_seat_delivery(session, Decimal(str(base)))
+        else:
+            share = Decimal(str(DISPATCH_CONSTANTS["seat_shares"]["delivery"]))
+            package.delivery_seat_amount = (Decimal(str(base)) * share / 100).quantize(Decimal("0.01"))
     package.dispatch_status = "published"
     if difficulty is not None:
         package.difficulty = difficulty
     session.flush()
+    if package.sow_type in (None, "b"):
+        reconcile_published_b_receipts(session, actor, package)
 
     for candidate_id in dict.fromkeys(candidate_user_ids):
         grant_package_access(

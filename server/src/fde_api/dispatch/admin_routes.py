@@ -29,14 +29,21 @@ from typing import Any
 
 from flask import Blueprint, g, jsonify, request
 
-from fde_api.auth.decorators import require_auth
+from fde_api.auth.decorators import require_auth, require_role
 from fde_api.auth.models import ROLE_ADMIN, User
 from fde_api.dispatch.errors import DispatchServiceError
+from fde_api.dispatch.profiles import can_manage_dispatch_profiles, enable_profile, register_profile
 from fde_api.dispatch.rules import (
     activate_due_versions,
     active_rule_version,
     create_rule_version,
     default_rule_snapshot,
+)
+from fde_api.dispatch.settlement_operations import (
+    SettlementAction,
+    list_project_settlements,
+    operate_project_settlement,
+    require_platform_settlement_admin,
 )
 from fde_api.extensions import db
 from fde_api.workbench.models import OperationEvent
@@ -165,3 +172,90 @@ def activate_rule_versions_route():
     """激活到点规则版本（admin，幂等；无到期版本零变更）。"""
     data = activate_rule_versions(actor=g.current_user)
     return jsonify({"data": data, "error": None})
+
+
+@admin_dispatch_blueprint.post("/profiles")
+@require_role(ROLE_ADMIN)
+def register_profile_route():
+    if not can_manage_dispatch_profiles(g.current_user):
+        raise _error("forbidden", "只有平台管理员可登记派单档案。", 403)
+    payload = request.get_json(silent=True)
+    if (
+        not isinstance(payload, dict)
+        or not {"user_id", "confirm_password"} <= set(payload)
+        or not set(payload) <= {"user_id", "home_city", "confirm_password"}
+    ):
+        raise _error("invalid_request", "请输入账号 ID、当前账号密码和可选的常驻城市。")
+    with db.session() as session, session.begin():
+        data = register_profile(
+            session,
+            actor=g.current_user,
+            user_id=payload["user_id"],
+            home_city=payload.get("home_city"),
+            confirm_password=payload["confirm_password"],
+        )
+    return jsonify({"data": data, "error": None}), 201 if data["changed"] else 200
+
+
+@admin_dispatch_blueprint.post("/profiles/<user_id>/enable")
+@require_role(ROLE_ADMIN)
+def enable_profile_route(user_id: str):
+    if not can_manage_dispatch_profiles(g.current_user):
+        raise _error("forbidden", "只有平台管理员可启用派单档案。", 403)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or set(payload) != {"confirm_password"}:
+        raise _error("invalid_request", "请求须且仅须包含 confirm_password。")
+    with db.session() as session, session.begin():
+        data = enable_profile(
+            session,
+            actor=g.current_user,
+            user_id=user_id,
+            confirm_password=payload["confirm_password"],
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@admin_dispatch_blueprint.get("/projects/<project_id>/settlements")
+@require_role(ROLE_ADMIN)
+def list_settlements_route(project_id: str):
+    require_platform_settlement_admin(g.current_user)
+    with db.session() as session:
+        data = list_project_settlements(session, project_id)
+    return jsonify({"data": data, "error": None})
+
+
+def _run_settlement_action(project_id: str, settlement_id: str, action: SettlementAction):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise _error("invalid_request", "请求体必须是 JSON 对象。")
+    with db.session() as session, session.begin():
+        data = operate_project_settlement(
+            session, actor=g.current_user, project_id=project_id, settlement_id=settlement_id,
+            action=action, payload=payload,
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@admin_dispatch_blueprint.post("/projects/<project_id>/settlements/<settlement_id>/allocate")
+@require_role(ROLE_ADMIN)
+def allocate_settlement_route(project_id: str, settlement_id: str):
+    return _run_settlement_action(project_id, settlement_id, "allocate")
+
+
+@admin_dispatch_blueprint.post("/projects/<project_id>/settlements/<settlement_id>/payable")
+@require_role(ROLE_ADMIN)
+def mark_settlement_payable_route(project_id: str, settlement_id: str):
+    return _run_settlement_action(project_id, settlement_id, "payable")
+
+
+@admin_dispatch_blueprint.post("/projects/<project_id>/settlements/<settlement_id>/paid")
+@require_role(ROLE_ADMIN)
+def record_settlement_paid_route(project_id: str, settlement_id: str):
+    """登记已完成的线下付款，保存凭证指针。"""
+    return _run_settlement_action(project_id, settlement_id, "paid")
+
+
+@admin_dispatch_blueprint.post("/projects/<project_id>/settlements/<settlement_id>/input-invoice")
+@require_role(ROLE_ADMIN)
+def record_settlement_input_invoice_route(project_id: str, settlement_id: str):
+    return _run_settlement_action(project_id, settlement_id, "input-invoice")

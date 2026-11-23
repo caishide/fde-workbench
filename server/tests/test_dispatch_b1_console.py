@@ -16,12 +16,16 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-import pytest
 from conftest import INITIAL_PASSWORD
 from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.auth.tokens import issue_access_token
-from fde_api.dispatch.models import DeliverySettlement, DispatchOffer, FdeProfile
+from fde_api.dispatch.models import (
+    DeliverySettlement,
+    DispatchOffer,
+    DispatchSettlementAllocation,
+    FdeProfile,
+)
 from fde_api.dispatch.packages import create_package, publish_package
 from fde_api.solutions.models import ProjectSolution
 from fde_api.workbench.models import (
@@ -287,6 +291,7 @@ def test_settlements_mine_only_own_seat_amount(console_context, db_session):
     assert entry["settlement_id"] == row.id
     assert entry["my_roles"] == ["platform"]
     assert entry["my_amount"] == 3500.0
+    assert entry["withholding_tax"] == 0.0
     # 隔离由显式 schema 保证：响应键集里没有任何他席金额字段，
     # 金额值只允许 base_amount / my_amount / withholding_tax 三个
     assert set(entry) == {
@@ -310,6 +315,7 @@ def test_settlements_mine_only_own_seat_amount(console_context, db_session):
     assert len(other) == 1
     assert other[0]["my_roles"] == ["delivery"]
     assert other[0]["my_amount"] == 4000.0
+    assert other[0]["withholding_tax"] == 120.0
 
     admin_rows = ctx["admin_client"].get("/api/v1/dispatch/settlements/mine").json["data"]
     assert admin_rows == []
@@ -323,6 +329,63 @@ def test_settlements_mine_multi_seat_sums(console_context, db_session):
     data = ctx["fde_client"].get("/api/v1/dispatch/settlements/mine").json["data"]
     assert data[0]["my_roles"] == ["region", "city"]
     assert data[0]["my_amount"] == 2500.0
+
+
+def test_settlements_mine_uses_five_seat_payees_and_withholds_only_for_delivery(
+    console_context, db_session
+):
+    ctx = console_context
+    row = _settlement(
+        db_session,
+        package=ctx["package"],
+        platform=ctx["admin"],
+        region=ctx["admin"],
+        delivery=ctx["fde"],
+    )
+    for seat, payee, shares, amount, reason in (
+        ("platform", None, None, "3700.00", None),
+        ("lead", ctx["fde"], 30, "2100.01", None),
+        ("delivery", ctx["stranger"], 50, "3499.99", None),
+        ("county", ctx["stranger"], 10, "700.00", None),
+        ("province", None, 10, "0.00", "no_province_partner"),
+    ):
+        db_session.add(
+            DispatchSettlementAllocation(
+                settlement_id=row.id,
+                seat_key=seat,
+                payee_user_id=payee.id if payee else None,
+                shares_in_pool=shares,
+                amount=Decimal(amount),
+                status="vacant" if reason else "paid",
+                reason_code=reason,
+            )
+        )
+    db_session.commit()
+
+    path = "/api/v1/dispatch/settlements/mine"
+    lead_response = ctx["fde_client"].get(path)
+    assert lead_response.status_code == 200
+    assert lead_response.json["data"] == [
+        {
+            "settlement_id": row.id,
+            "package_code": ctx["package"].package_code,
+            "settlement_key": row.settlement_key,
+            "status": "accrued",
+            "base_amount": None,
+            "my_roles": ["lead"],
+            "my_amount": 2100.01,
+            "withholding_tax": 0.0,
+            "acceptance_passed_at": None,
+            "paid_at": None,
+        }
+    ]
+    delivery_rows = ctx["stranger_client"].get(path).json["data"]
+    assert len(delivery_rows) == 1
+    assert delivery_rows[0]["settlement_id"] == row.id
+    assert delivery_rows[0]["my_roles"] == ["delivery", "county"]
+    assert delivery_rows[0]["my_amount"] == 4199.99
+    assert delivery_rows[0]["withholding_tax"] == 120.0
+    assert ctx["admin_client"].get(path).json["data"] == []
 
 
 # ---------------------------------------------------------------------------

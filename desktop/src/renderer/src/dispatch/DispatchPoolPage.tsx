@@ -155,7 +155,7 @@ export function DispatchPoolPage() {
         <div>
           <h1>派单池</h1>
           <p className="page-subtitle">
-            只显示被授权查看的交付包；字段为脱敏白名单，金额仅为交付方席位份额（显示义务）。
+            只显示你有权查看的交付包。交付方席位金额为发布时估算，实际结算以到账金额和适用规则为准。
           </p>
         </div>
         <button className="secondary-button" type="button" onClick={load}>

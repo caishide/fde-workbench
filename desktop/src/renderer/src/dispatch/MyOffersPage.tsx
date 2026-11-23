@@ -191,7 +191,7 @@ function OfferRow({ offer, onChanged }: { offer: MyOfferView; onChanged: () => v
               : ""}
         </span>
         <span className="dispatch-seat-amount">
-          交付方席位 {formatSeatAmount(pkg.delivery_seat_amount)}
+          交付方席位 {formatSeatAmount(pkg.delivery_seat_amount)}（发布时估算，按实收结算）
         </span>
       </div>
       <dl className="dispatch-package-detail">

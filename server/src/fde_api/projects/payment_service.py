@@ -22,9 +22,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from fde_api.auth.models import User
+from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access
@@ -240,8 +241,13 @@ def update_payment(
     session = db.session()
     try:
         with session.begin():
-            project = _load_project(session, actor, project_id, manage=True)
+            receipt_requested = "received_amount" in payload or "received_at" in payload
+            project = _load_project(
+                session, actor, project_id, manage=True,
+                lock=receipt_requested or "invoice_no" in payload,
+            )
             row = _load_payment(session, project.id, milestone_key)
+            previous_receipt = (row.received_amount, row.received_at)
             changes: dict[str, Any] = {}
             if "due_date" in payload:
                 row.due_date = _parse_date(payload.get("due_date"), "due_date")
@@ -252,7 +258,10 @@ def update_payment(
                     not isinstance(invoice_no, str) or not invoice_no.strip()
                 ):
                     raise PaymentServiceError("invalid_request", "invoice_no 必须是非空字符串。", 400)
-                row.invoice_no = invoice_no.strip() if isinstance(invoice_no, str) else None
+                new_invoice_no = invoice_no.strip() if isinstance(invoice_no, str) else None
+                if new_invoice_no != row.invoice_no:
+                    _assert_invoice_editable(session, project.id, milestone_key)
+                row.invoice_no = new_invoice_no
                 changes["invoice_no"] = row.invoice_no
             received_touched = False
             if "received_amount" in payload or "received_at" in payload:
@@ -268,9 +277,9 @@ def update_payment(
                     changes["received_amount"] = float(row.received_amount)
                     changes["received_at"] = row.received_at.isoformat()
                 elif received_at is not None:
-                    # 只补到账日（金额沿用计划额）
                     row.received_at = _parse_date(received_at, "received_at")
-                    row.received_amount = row.amount
+                    if row.received_amount is None:
+                        row.received_amount = row.amount
                     changes["received_at"] = row.received_at.isoformat()
                 received_touched = True
             if not changes:
@@ -281,9 +290,6 @@ def update_payment(
                 # 无交付包的项目纯 no-op（存量 A 组路径零感知，催款逻辑不动）。
                 from fde_api.dispatch.settlements import record_receipt_settlements
 
-                record_receipt_settlements(
-                    session, actor=actor, project=project, payment=row
-                )
                 # 补口：G8 已过门但尾款晚到——收款时补打验收时刻并推进计提
                 # （mark_acceptance_passed 幂等：只动 acceptance 仍为空的实收行）。
                 g8_passed = session.scalar(
@@ -293,8 +299,17 @@ def update_payment(
                         Gate.status == "passed",
                     )
                 )
+                record_receipt_settlements(
+                    session,
+                    actor=actor,
+                    project=project,
+                    payment=row,
+                    receipt_unchanged=previous_receipt == (row.received_amount, row.received_at),
+                )
                 if g8_passed is not None:
-                    mark_acceptance_passed(session, actor, project.id)
+                    mark_acceptance_passed(
+                        session, actor, project.id, confirm_password=payload.get("confirm_password")
+                    )
             record_event(
                 session,
                 actor,
@@ -303,8 +318,27 @@ def update_payment(
                 {"milestone_key": milestone_key, **changes},
             )
             return _serialize_payment(row, today=None)
+    except DispatchServiceError as error:
+        raise PaymentServiceError(error.code, error.message, error.status) from error
     finally:
         session.close()
+
+
+def _assert_invoice_editable(session: Session, project_id: str, milestone_key: str) -> None:
+    from fde_api.dispatch.models import DeliveryPackage, DeliverySettlement
+
+    locked = session.scalar(
+        select(DeliverySettlement.id)
+        .join(DeliveryPackage, DeliveryPackage.id == DeliverySettlement.package_id)
+        .where(
+            DeliveryPackage.project_id == project_id,
+            DeliverySettlement.settlement_key == milestone_key,
+            DeliverySettlement.status.in_(("payable", "paid")),
+        )
+        .limit(1)
+    )
+    if locked is not None:
+        raise PaymentServiceError("invoice_locked", "结算已转应付或记账，请先复核票据。", 409)
 
 
 def _delivery_payee_ids(session: Session, project: Project) -> set[str]:
@@ -342,7 +376,10 @@ def _delivery_payee_ids(session: Session, project: Project) -> set[str]:
     return payees
 
 
-def mark_acceptance_passed(session: Session, actor: User, project_id: str) -> dict[str, Any]:
+def mark_acceptance_passed(
+    session: Session, actor: User, project_id: str, *, confirm_password: object = None,
+    defer_vacancy: bool = False,
+) -> dict[str, Any]:
     """G8 过门联动（gate_service decide 事务内调用，P0-4）：验收通过时刻打标。
 
     只处理已实收行（received_at 非空）：acceptance_passed_at 是
@@ -379,7 +416,13 @@ def mark_acceptance_passed(session: Session, actor: User, project_id: str) -> di
         row.acceptance_passed_at = now
     from fde_api.dispatch.settlements import accrue_settlements_for_project
 
-    accrued = accrue_settlements_for_project(session, actor=actor, project_id=project_id)
+    try:
+        accrued = accrue_settlements_for_project(
+            session, actor=actor, project_id=project_id, confirm_password=confirm_password,
+            defer_vacancy=defer_vacancy,
+        )
+    except DispatchServiceError as error:
+        raise PaymentServiceError(error.code, error.message, error.status) from error
     if rows or accrued:
         record_event(
             session,
@@ -561,8 +604,18 @@ def _parse_date(value: object, field: str) -> date | None:
         raise PaymentServiceError("invalid_request", f"{field} 必须是 YYYY-MM-DD。", 400) from None
 
 
-def _load_project(session: Session, actor: User, project_id: str, *, manage: bool) -> Project:
-    project = session.get(Project, project_id)
+def _load_project(
+    session: Session, actor: User, project_id: str, *, manage: bool, lock: bool = False
+) -> Project:
+    if lock:
+        # 与 G8 拍板同序，先锁项目，再锁收款行。
+        project = session.scalar(
+            select(Project).where(Project.id == project_id)
+            .with_for_update(key_share=True).options(selectinload(Project.members))
+            .execution_options(populate_existing=True)
+        )
+    else:
+        project = session.get(Project, project_id)
     if project is None:
         raise PaymentServiceError("project_not_found", "项目不存在或已被删除。", 404)
     access = project_access(actor, project)

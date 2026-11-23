@@ -94,7 +94,7 @@ interface GatesView {
 type EvidenceItem = { label: string; source_uri: string; content_hash: string }
 type GateConfirmation =
   | { kind: "evidence"; gate: GateDto; items: EvidenceItem[] }
-  | { kind: "decision"; gate: GateDto; result: string; accepted_labels: string[]; decision?: string; note?: string }
+  | { kind: "decision"; gate: GateDto; result: string; accepted_labels: string[]; decision?: string; note?: string; confirm_password?: string }
 
 type WriteOutcome = "saved" | "rejected" | "recheck"
 
@@ -183,7 +183,7 @@ function isGatesView(value: unknown): value is GatesView {
 }
 
 export function GateBoard({ projectId, canManage }: GateBoardProps) {
-  const { apiRequest } = useAuth()
+  const { apiRequest, user } = useAuth()
   const [view, setView] = useState<GatesView | null>(null)
   const [options, setOptions] = useState<WorkbenchOptions>(FALLBACK_OPTIONS)
   const [loading, setLoading] = useState(true)
@@ -314,6 +314,7 @@ export function GateBoard({ projectId, canManage }: GateBoardProps) {
             gate={gate}
             canManage={canManage && supportsWrites && hasRevision(gate)}
             busy={busy || needsReload || Boolean(error)}
+            isAdmin={user?.role === "admin"}
             options={options}
             onWrite={write}
           />
@@ -328,6 +329,7 @@ interface GateCardProps {
   gate: GateDto
   canManage: boolean
   busy: boolean
+  isAdmin: boolean
   /** J1：门禁状态标签/样式由服务端选项表下发（含本地兜底） */
   options: WorkbenchOptions
   onWrite: (confirmation: GateConfirmation) => Promise<WriteOutcome>
@@ -337,8 +339,9 @@ function hasRevision(gate: GateDto): gate is GateDto & { revision: number } {
   return typeof gate.revision === "number" && Number.isSafeInteger(gate.revision) && gate.revision > 0
 }
 
-function GateCard({ gate, canManage, busy, options, onWrite }: GateCardProps) {
+function GateCard({ gate, canManage, busy, isAdmin, options, onWrite }: GateCardProps) {
   const [confirmation, setConfirmation] = useState<GateConfirmation | null>(null)
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [reviewGate, setReviewGate] = useState<GateDto | null>(null)
   const [mode, setMode] = useState<"idle" | "submit" | "decide">("idle")
   const [uris, setUris] = useState<Record<string, string>>({})
@@ -380,7 +383,11 @@ function GateCard({ gate, canManage, busy, options, onWrite }: GateCardProps) {
 
   async function confirm(): Promise<void> {
     if (!confirmation || busy || !canManage) return
-    const outcome = await onWrite(confirmation)
+    const request = confirmation.kind === "decision" && isG8 && isAdmin && confirmation.result === "pass" && confirmPassword
+      ? { ...confirmation, confirm_password: confirmPassword }
+      : confirmation
+    setConfirmPassword("")
+    const outcome = await onWrite(request)
     setConfirmation(null)
     if (outcome === "recheck") {
       setAccepted({})
@@ -656,12 +663,27 @@ function GateCard({ gate, canManage, busy, options, onWrite }: GateCardProps) {
               <p>裁定：{confirmation.result} {confirmation.decision}</p>
               <p>本次接受：{confirmation.result === "pass" ? confirmation.accepted_labels.join("、") || "无" : "无"}</p>
               {confirmation.note ? <p>说明：{confirmation.note}</p> : null}
+              {isG8 && isAdmin && confirmation.result === "pass" ? (
+                <label>
+                  五席有人工确认的空缺时，输入当前管理员密码
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={confirmPassword}
+                    disabled={busy}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </label>
+              ) : null}
             </>
           )}
           <button className="primary-button" type="button" disabled={busy} onClick={() => void confirm()}>
             {confirmation.kind === "evidence" ? "确认提交证据" : "确认人工拍板"}
           </button>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmation(null)}>取消确认</button>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => {
+            setConfirmPassword("")
+            setConfirmation(null)
+          }}>取消确认</button>
         </section>
       ) : null}
     </article>
