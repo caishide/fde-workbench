@@ -140,6 +140,8 @@ WP-2／WP-3／WP-5 全部交付＝**批次二全收口**。正式便携包 **r60
 
 **纪律**：未发信／未扣费／未签约／未开售卖闸（OWNER 授权面）；未碰其他会话工作树；`fde-wt-rubricv2-deploy` 树保留未删（仅挂载源迁回，其 `server/.env` 与主树键集逐项相同）。
 
+**合并后活体重部署回执（2026-11-24 06:32，PR #583 squash `5242076b` 合并后从 main 顶重做，本节随回执 PR 入库）**：并发线 #578（AF3-WP6 面板物化修复）在本轮部署与合并之间进 main ⇒ main 前进至 `4113375f`，#583 squash 后 main 顶＝**`5242076b`**（本地 main 已 ff，远端分支已删）。从合并后 main 顶重建三镜像并 recreate ⇒ **镜像 ID 换代**（api `d3988a7297ec`／worker `1747e81cd3bd`／scheduler `8e850594371e`——含 #578＋#583 两轮代码）；三验复跑**全绿**（url_map 572 non-static／蓝图 59；容器内 `alembic current`＝`f2a4b6c8d0e2 (head)`——#578/#583 均零迁移，upgrade head 幂等 no-op；三镜像 ID 与本树构建产物逐位一致）；migrations 挂载源＝`/mnt/d/test/fde-workbench/server/migrations`（主树）；qiflow-* 旁栈零 recreate（Up 4 days 原样）。**验收判据复测全过**：`ops/todos`＝401／`ops/briefs/generate`＝401／`admin/dispatch/profiles`＝401／ready-live 200。**部署态简报只读实测（含批次二改动）**：`compose_ops_brief()` 返回 `funnel_stratification=unstratified`、正文含「本口径未分层（缺真实／演练标记，见 M0 归档）」声明且**先于**计数行（`NOTICE_PRESENT=True`／`NOTICE_BEFORE_COUNTS=True`）、funnel＝交付包 4×accepted／派单 offer 4×accepted／区域伙伴 0／交付者档案 0、sha256 `f5bdac13ecf0f9f1…`——**M2 验收第 9 条的未分层声明已在运行态生效**。
+
 ### 任务 B｜M2 验收第 9 条：运营简报区分真实、模拟和演练数据（工程侧，先现测再定改不改码）
 
 **判定基准**：任务书 V1.0 §15 M2 验收第 9 条原文「运营简报区分真实、模拟和演练数据」。
