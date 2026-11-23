@@ -65,6 +65,7 @@ class RehearsalPlan:
     image_ids: Mapping[str, str]
     expected_storage_sha256: str
     expected_object_count: int
+    expected_watermark: int
     expected_marker_sha256: str
 
 
@@ -154,6 +155,8 @@ def _validate_plan(plan: object) -> tuple[RehearsalPlan, Path]:
     _hex(plan.expected_marker_sha256, DIGEST_RE, "expected_marker_sha256")
     if type(plan.expected_object_count) is not int or plan.expected_object_count <= 0:
         raise RehearsalPlanError("expected_object_count")
+    if type(plan.expected_watermark) is not int or plan.expected_watermark <= 0:
+        raise RehearsalPlanError("expected_watermark")
 
     root = _path(plan.rehearsal_root, "rehearsal_root", must_exist=True)
     bundle = _path(plan.bundle, "bundle", root=root, must_exist=True)
@@ -231,7 +234,7 @@ def _check_database(evidence: object, plan: RehearsalPlan) -> bool:
         return False
     if type(evidence["object_count"]) is not int or evidence["object_count"] != plan.expected_object_count:
         return False
-    return type(evidence["watermark"]) is int and evidence["watermark"] > 0
+    return type(evidence["watermark"]) is int and evidence["watermark"] == plan.expected_watermark
 
 
 def _check_storage(evidence: object, plan: RehearsalPlan) -> bool:
