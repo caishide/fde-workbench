@@ -7,9 +7,14 @@
 总部介入事项；数字全部数据库现算，零模型调用——运营值班员卡拍板定稿＝纯
 确定性聚合卡）。
 
+M2 验收第 9 条（运营简报区分真实、模拟和演练数据）：现测结论＝四段漏斗对象
+**无可靠分层依据** ⇒ 简报显式声明未分层并只交付可证数字（禁止编造分层），
+分层口径由本文件末尾四钉守死（声明钉／标签闭集钉／零编造静态钉／留痕钉）。
+
 造数纪律：凡钉「常量值」的断言一律字面造数（变异验证教训——用常量造数则
 常量变异时测试跟着漂移恒真）。
 """
+import ast
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
@@ -21,6 +26,8 @@ from fde_api.dispatch.models import FdeProfile
 from fde_api.meetings.models import ReviewMeetingMinutes
 from fde_api.ops_todos import (
     BRIEF_DUE_LIST_LIMIT,
+    BRIEF_FUNNEL_STRATIFICATION,
+    BRIEF_FUNNEL_STRATIFICATION_NOTICE,
     BRIEF_TODO_TOP_LIMIT,
     compose_ops_brief,
 )
@@ -35,8 +42,13 @@ RESPONSE_KEYS = {
     "todo_total",
     "due_total",
     "funnel",
+    "funnel_stratification",
     "generated_at",
 }
+
+#: 漏斗四段的展示标签闭集（零编造分层钉的锚；新增段必须同步改此处）。
+FUNNEL_LABELS = {"交付包", "派单 offer", "区域伙伴", "交付者档案"}
+
 
 
 def _partner(db_session, user, *, stage="city_observer"):
@@ -249,3 +261,97 @@ def test_todo_list_top_limit_truncation(ai_context, db_session):
     assert len(numbered) == 10 == BRIEF_TODO_TOP_LIMIT
     assert "（其余 2 项未逐条列出，计数已含）" in markdown
     assert BRIEF_DUE_LIST_LIMIT == 50  # 介入清单限额口径钉死
+
+
+# ------------------------------------------- M2 验收第 9 条：漏斗分层口径四钉
+# 判定基准（M2 验收第 9 条：运营简报区分真实、模拟和演练数据）＋现测结论
+# （四段对象无可靠分层依据 ⇒ 简报显式声明未分层，禁止编造分层）：
+#   ① 声明钉——正文含未分层声明字面串，且声明**先于**漏斗计数行；
+#   ② 标签闭集钉——漏斗段恰四行计数、标签恰为四段闭集（无分层标签）；
+#   ③ 零编造静态钉——模块不得引入任何标记判据（AST 判 import/字面量/属性）；
+#   ④ 留痕钉——生成事件带分层状态位（审计可追「这批计数未分层」）。
+OPS_TODOS_SRC = Path(__file__).resolve().parents[1] / "src" / "fde_api" / "ops_todos.py"
+
+#: 未分层声明的字面前缀（字面量而非被钉常量——用常量造数则常量变异恒真）。
+NOTICE_HEAD = "本口径未分层（缺真实／演练标记，见 M0 归档）"
+
+
+def _funnel_section(markdown: str) -> str:
+    return markdown.split("## 二、招商漏斗")[1].split("## 三、")[0]
+
+
+def test_brief_declares_funnel_not_stratified(ai_context, client, settings, db_session):
+    """① 声明钉：正文逐字含未分层声明，返回体分层状态位恒为未分层字面量。"""
+    users, _execute = ai_context
+    admin = users["admin"]
+    make_project(db_session, admin)
+    _partner(db_session, admin)
+    response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
+    assert response.status_code == 200
+    data = response.json["data"]
+    assert data["funnel_stratification"] == "unstratified"
+    assert BRIEF_FUNNEL_STRATIFICATION == "unstratified"
+    assert BRIEF_FUNNEL_STRATIFICATION_NOTICE.startswith(NOTICE_HEAD)
+    markdown = data["brief_markdown"]
+    assert NOTICE_HEAD in markdown
+    section = _funnel_section(markdown)
+    # 声明是漏斗段的限定前提 ⇒ 必须先于第一条计数行出现
+    assert section.index(NOTICE_HEAD) < section.index("- ")
+
+
+def test_funnel_section_has_no_fabricated_layers(ai_context, client, settings, db_session):
+    """② 标签闭集钉：漏斗段恰四行计数、标签恰为四段闭集——任何分层标签即红。"""
+    users, _execute = ai_context
+    admin = users["admin"]
+    make_project(db_session, admin)
+    _partner(db_session, admin)
+    response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
+    assert response.status_code == 200
+    data = response.json["data"]
+    section = _funnel_section(data["brief_markdown"])
+    count_lines = [line for line in section.splitlines() if line.startswith("- ")]
+    labels = {line[2:].split("：")[0] for line in count_lines}
+    assert labels == FUNNEL_LABELS, f"漏斗段标签越出四段闭集（疑成分层标签）：{labels}"
+    assert len(count_lines) == 4, f"漏斗段计数行数漂移：{count_lines}"
+    assert set(data["funnel"]) == {
+        "delivery_packages", "dispatch_offers", "regional_partners", "fde_profiles",
+    }
+
+
+def test_brief_module_has_no_marker_based_split():
+    """③ 零编造静态钉：模块不得引入标记判据（报价来源列等）切分计数。
+
+    四段对象无可靠分层依据；若按标记切「真实／模拟」，未标记的造蜂行会被误
+    报为真实 ⇒ 任何此类实现必须先改口径再改代码。
+    """
+    tree = ast.parse(OPS_TODOS_SRC.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            imported.update(
+                alias.asname or alias.name.split(".")[0] for alias in node.names
+            )
+    assert "Quote" not in imported, "简报模块不得引入报价模型（其来源列是唯一机器可读标记）"
+    literals = {
+        node.value for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert "simulation" not in literals, "简报模块不得出现仿真标记字面量"
+    attrs = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    assert "source" not in attrs, "简报模块不得按来源类标记字段切分计数"
+
+
+def test_event_records_unstratified_funnel_state(ai_context, client, settings, db_session):
+    """④ 留痕钉：生成事件带分层状态位——审计可追「这批计数未分层」。"""
+    users, _execute = ai_context
+    admin = users["admin"]
+    make_project(db_session, admin)
+    response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
+    assert response.status_code == 200
+    db_session.expire_all()
+    rows = db_session.query(OperationEvent) \
+        .filter_by(event_type="ops_brief_generated").all()
+    assert len(rows) == 1
+    assert rows[0].changes["funnel_stratification"] == "unstratified"
