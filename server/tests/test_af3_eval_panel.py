@@ -127,6 +127,15 @@ def _load_generator() -> Any:
 # 未跟踪文件 → 绑定期 dirty-tree 409）。
 _MATERIAL_ROOTS = ("ontology/", "transforms/", "rules/", "config/", "tests/")
 
+
+def _in_material_scope(rel: str) -> bool:
+    """相对路径是否落在物化域（五个允许根）内——**根目录自身也算域内**
+    （`ontology` 目录若本身是链接，写入会跟随它落到仓外）。"""
+    return any(
+        rel == root.rstrip("/") or rel.startswith(root)
+        for root in _MATERIAL_ROOTS
+    )
+
 # 三个 T4 失败种子（生成器超集里的「失败面」——只应出现在声明它的 spec 上）
 _SEED_FILES = frozenset({
     "ontology/broken-seed.yaml",
@@ -272,17 +281,30 @@ def _prune_to_spec(out: Path, keep: set[str]) -> None:
         rel = path.relative_to(out).as_posix()
         if rel == ".git" or rel.startswith(".git/"):
             continue
+        if path.is_symlink():
+            # 符号链接**先判**（`is_dir()` 会跟随链接——指向目录的链接会被误当目录放过；
+            # 指向文件的链接则落到下面 `is_dir()` 之后的分支，两者都漏检过）：
+            # 物化域内不得残留任何链接（写入会跟随链接落到仓外；文件集自检也看不见它
+            # ——`_materialized_files` 排除链接）。unlink 只解链接，不动链接目标。
+            if not _in_material_scope(rel):
+                continue  # 物化域外——保留
+            try:
+                path.unlink()
+            except OSError as exc:  # fail-closed：裁剪失败即显式报错，不静默留脏
+                raise RuntimeError(f"按 spec 裁剪符号链接失败：{rel}（{exc}）") from exc
+            continue
         if path.is_dir():
             continue
-        if not any(rel.startswith(root) for root in _MATERIAL_ROOTS):
+        if not _in_material_scope(rel):
             continue  # 物化域外——保留
         if rel not in keep:
             try:
-                path.unlink()  # 符号链接亦按「非清单项」删除（unlink 只解链接）
+                path.unlink()
             except OSError as exc:  # fail-closed：裁剪失败即显式报错，不静默留脏
                 raise RuntimeError(f"按 spec 裁剪失败：{rel}（{exc}）") from exc
     for path in sorted(
-        (p for p in out.rglob("*") if p.is_dir()),
+        # 排除符号链接（`is_dir()` 跟随链接——指向目录的链接会被误当目录，rmdir 会失败）
+        (p for p in out.rglob("*") if p.is_dir() and not p.is_symlink()),
         key=lambda p: len(p.parts),
         reverse=True,
     ):
@@ -327,23 +349,36 @@ def materialize_repo(base: Path, spec_name: str, specs: dict[str, Any]) -> Path:
     if manifest:
         # 契约基线清单须与生成器基线同源（生成器＝内容真身，契约＝集合真身）
         # ——否则裁剪后的仓与生成器语义漂移，且失败种子可能漏出。
-        baseline = set(_generator_baseline())
+        generator_baseline = _generator_baseline()
+        baseline = set(generator_baseline)
         if set(manifest) != baseline:
             raise RuntimeError(
                 "initial_repo 契约基线清单与生成器基线不一致："
                 f"多={sorted(set(manifest) - baseline)} 缺={sorted(baseline - set(manifest))}"
             )
-        # 内容比对（生成器＝基线内容真身；契约＝物化真身——内容漂移同样 fail-closed，
+        # 内容比对（生成器＝内容真身；契约＝物化真身——内容漂移同样 fail-closed，
         # 否则契约表一改，所有受控仓被静默改写而 CI 无告警）
         drift = sorted(
             rel for rel in baseline
-            if str(manifest.get(rel)) != str(_generator_baseline()[rel])
+            if str(manifest.get(rel)) != str(generator_baseline[rel])
         )
         if drift:
             raise RuntimeError(
                 f"initial_repo 契约基线内容与生成器基线不一致：{drift}"
             )
         _prune_to_spec(out, set(files))
+    # 种子覆盖内容亦须与生成器逐字一致（21 号 §2「比对两者，不一致即 fail-closed」
+    # 的另一半——此前只比基线：**seed 覆盖内容漂移会让种子仓不再红**，T4 族的
+    # red→green 轨迹面静默失效而 CI 无告警）。
+    generator_all = _generator_files()
+    seed_drift = sorted(
+        rel for rel, content in files.items()
+        if rel in generator_all and str(content) != str(generator_all[rel])
+    )
+    if seed_drift:
+        raise RuntimeError(
+            f"initial_repo 契约内容与生成器不一致（种子覆盖面）：{seed_drift}"
+        )
     for rel, content in files.items():
         target = out / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1192,6 +1227,44 @@ class TestRepoMaterialization:
         finally:
             outside.unlink(missing_ok=True)
 
+    def test_materialization_prunes_directory_symlinks_in_scope(
+        self, af3_panel_repo_base: Path
+    ) -> None:
+        """物化域内的**目录型**符号链接同样须裁剪（评审发现：``is_dir()`` 跟随
+        链接——指向目录的链接被误当目录放过，既不裁剪也不被文件集自检看见；
+        写入会跟随它落到仓外）。"""
+        repo = af3_panel_repo_base / "repo-symlink-dir-probe"
+        (repo / "ontology").mkdir(parents=True)
+        outside = af3_panel_repo_base / "outside-dir"
+        outside.mkdir()
+        (outside / "leaked.yaml").write_text("secret: true\n", encoding="utf-8")
+        link = repo / "ontology" / "escape-dir"
+        try:
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:  # Windows 无符号链接权限（Developer Mode 关）——跳过
+                pytest.skip(f"符号链接不可创建（平台权限）：{exc}")
+            _prune_to_spec(repo, {"ontology/equipment.yaml"})
+            assert not link.is_symlink(), "物化域内的目录型符号链接未被裁剪"
+            assert (outside / "leaked.yaml").exists(), "裁剪只解链接——仓外目录不得被删"
+        finally:
+            import shutil
+
+            shutil.rmtree(outside, ignore_errors=True)
+
+    def test_contract_seed_content_drift_is_rejected(
+        self, af3_panel_repo_base: Path
+    ) -> None:
+        """契约的**种子覆盖内容**亦须与生成器逐字一致（评审发现：此前只比基线
+        ——种子内容漂移会让种子仓不再红，T4 族 red→green 轨迹面静默失效）。"""
+        specs = _contract_specs()
+        specs["af3-seed-lint"] = {
+            "extends": "sample-baseline",
+            "overrides": {"ontology/broken-seed.yaml": "kind: ontology\nname: ok\n"},
+        }
+        with pytest.raises(RuntimeError, match="内容与生成器不一致"):
+            materialize_repo(af3_panel_repo_base, "af3-seed-lint", specs)
+
     def test_contract_loader_fails_closed_without_spec_table(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1222,7 +1295,13 @@ class TestRepoMaterialization:
 
     def test_seed_specs_fail_their_own_bundle(self, af3_panel_repo_base: Path) -> None:
         """每个种子 spec 必须在**自己那族** bundle 上红（失败面被静默改成无失败
-        ⇒ T4 族的 red→green 轨迹永不成立 ⇒ 整族扣分却无 CI 告警）。"""
+        ⇒ T4 族的 red→green 轨迹永不成立 ⇒ 整族扣分却无 CI 告警）。
+
+        **六个 spec 全覆盖**（评审发现：此前只钉了三个单种子 spec——``multi``／
+        ``multi2`` 是 T4-004／T4-006 的实际初始仓，未钉即该两件的轨迹面无防线）。
+        判定口径按 **bundle** 读（产品口径：``exit_code != 0 ⇒ red``）：坏 YAML 在
+        contract 模式下同样解析失败，故含 lint 种子的 spec 其 contract  bundle 亦红。
+        """
         import subprocess
 
         from fde_api.solution_repo.checkers import run as checkers_run
@@ -1234,16 +1313,37 @@ class TestRepoMaterialization:
             with contextlib.redirect_stdout(buffer):
                 return int(checkers_run(mode, repo))
 
-        lint_seed = materialize_repo(af3_panel_repo_base, "af3-seed-lint", specs)
-        assert _verdict("lint", lint_seed) == 1
-        contract_seed = materialize_repo(af3_panel_repo_base, "af3-seed-contract", specs)
-        assert _verdict("contract", contract_seed) == 1
-        unit_seed = materialize_repo(af3_panel_repo_base, "af3-seed-unit", specs)
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-p", "no:cacheprovider"],
-            cwd=unit_seed, capture_output=True, text=True, timeout=300,
-        )
-        assert proc.returncode != 0, "单测种子仓 unit_test 必须红（否则 T4 轨迹面失效）"
+        def _pytest(repo: Path, target: str) -> int:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pytest", target, "-q", "--tb=no", "-p", "no:cacheprovider"],
+                cwd=repo, capture_output=True, text=True, timeout=300,
+            )
+            return proc.returncode
+
+        def _bundles(repo: Path) -> dict[str, int]:
+            return {
+                "lint": _verdict("lint", repo),
+                "contract": _verdict("contract", repo),
+                "unit": _pytest(repo, "tests/"),
+                "transform": _pytest(repo, "tests/transforms/"),
+            }
+
+        # 期望＝该 spec 声明的种子族必红（transform 面无种子⇒恒绿）
+        expected_red: dict[str, set[str]] = {
+            "af3-seed-lint": {"lint", "contract"},      # 坏 YAML：lint 解析失败＋contract 解析失败
+            "af3-seed-unit": {"unit"},
+            "af3-seed-contract": {"contract"},
+            "af3-seed-multi": {"lint", "contract"},     # lint 种子＋contract 种子
+            "af3-seed-multi2": {"lint", "contract", "unit"},  # lint 种子＋unit 种子（坏 YAML 连带 contract）
+        }
+        for spec_name, red_families in expected_red.items():
+            repo = materialize_repo(af3_panel_repo_base, spec_name, specs)
+            got = _bundles(repo)
+            red = {family for family, code in got.items() if code != 0}
+            assert red == red_families, f"{spec_name} 失败面与声明不符：{got}"
+        # 基线仓四 bundle 全绿（失败面不得外溢）
+        baseline = materialize_repo(af3_panel_repo_base, "sample-baseline", specs)
+        assert set(_bundles(baseline).values()) == {0}, "基线仓必须四绿"
 
 
 class TestToolAdapter:
