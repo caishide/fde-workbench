@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useAuth } from "../auth/AuthProvider"
 import { PlatformGovernancePanel } from "./PlatformGovernancePanel"
+import { OpsBriefPanel } from "./OpsBriefPanel"
 
 type Values = Record<string, string | number | boolean | null>
 interface Configuration { values: Values; secrets_configured: Record<string, boolean>; version: number; bootstrap_fields: string[] }
@@ -68,6 +69,8 @@ export function SystemConfigurationPage() {
     </form>
     {/* 运行治理卡在 <form> 外下方：独立数据加载，失败不阻保存 */}
     <PlatformGovernancePanel />
+    {/* 运营待办与简报卡（M2 WP-5）：同样独立加载，失败不阻保存 */}
+    <OpsBriefPanel />
   </section>
 }
 
