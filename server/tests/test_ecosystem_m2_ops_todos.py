@@ -154,11 +154,27 @@ def test_route_not_in_ai_catalog():
         assert not row["path"].startswith("/api/v1/ops"), row["path"]
 
 
-def test_desktop_zero_reference():
-    """A8 延续：桌面端零引用本路由（WP-5 才挂呈现）。"""
+#: 桌面端引用运营路由的唯一许可面（M2 WP-5 呈现面板）。
+DESKTOP_OPS_PANEL = "desktop/src/renderer/src/system/OpsBriefPanel.tsx"
+
+
+def _desktop_files_referencing(literal: str) -> set[str]:
     desktop_src = Path(__file__).resolve().parents[2] / "desktop" / "src"
+    hits = set()
     for path in desktop_src.rglob("*.ts*"):
-        assert OPS_ROUTE not in path.read_text(encoding="utf-8", errors="ignore"), path
+        if literal in path.read_text(encoding="utf-8", errors="ignore"):
+            hits.add(path.relative_to(desktop_src.parents[1]).as_posix())
+    return hits
+
+
+def test_desktop_ops_route_reference_is_closed_to_presentation_panel():
+    """A8 换代钉（WP-5 落地后）：路由字面量**只许**出现在呈现面板单点。
+
+    批次二 WP-2 初版＝「桌面零引用」（WP-5 未做时的阶段性守卫，WP-5 挂面板
+    即按设计转红——CI 实录）。换代不删钉、不放宽：语义从「零处」收紧为
+    「引用闭集＝{呈现面板}」——守住「不在别处长出第二个调用点」。
+    """
+    assert _desktop_files_referencing(OPS_ROUTE) == {DESKTOP_OPS_PANEL}
 
 
 # ------------------------------------------------------- queue 归类闭集（V1.0 §4.3）

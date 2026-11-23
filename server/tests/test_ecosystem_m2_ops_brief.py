@@ -162,11 +162,16 @@ def test_send_email_business_caller_closure_unchanged():
     assert "ops_todos.py" not in hits
 
 
-def test_desktop_zero_reference_briefs():
-    """A8 延续：桌面端零引用简报路由（WP-5 才挂呈现）。"""
-    desktop_src = Path(__file__).resolve().parents[2] / "desktop" / "src"
-    for path in desktop_src.rglob("*.ts*"):
-        assert BRIEF_ROUTE not in path.read_text(encoding="utf-8", errors="ignore"), path
+def test_desktop_brief_route_reference_is_closed_to_presentation_panel():
+    """A8 换代钉（WP-5 落地后）：简报路由字面量只许出现在呈现面板单点。
+
+    与 test_ecosystem_m2_ops_todos 同款换代：零引用（阶段性守卫）→
+    引用闭集＝{呈现面板}。生成简报是 admin 写面动作，桌面侧调用点必须唯一
+    （不在别处长出第二个触发入口）。
+    """
+    from test_ecosystem_m2_ops_todos import DESKTOP_OPS_PANEL, _desktop_files_referencing
+
+    assert _desktop_files_referencing(BRIEF_ROUTE) == {DESKTOP_OPS_PANEL}
 
 
 # --------------------------------------------------------------- A6 留痕与只读面
