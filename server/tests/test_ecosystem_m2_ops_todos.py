@@ -131,14 +131,21 @@ def test_listing_has_no_write_side_effects(ai_context, client, settings, db_sess
 
 
 def test_module_source_is_read_only_and_truth_layer_free():
-    """A4/A6 静态钉：零写路径原语、零真相层 token、零发信通道引用。"""
+    """A4/A6 静态钉：零真相层 token、零发信通道、零写路径原语。
+
+    WP-3 换代：``record_event`` 从全禁改为**单点许可**——简报生成留痕是
+    模块内唯一合法事件写入（恰一次调用、事件名钉死）；待办视图路径零写
+    副作用由行为钉另行保证。
+    """
     source = (Path(__file__).resolve().parents[1] / "src" / "fde_api" / "ops_todos.py") \
         .read_text(encoding="utf-8")
     for token in ("D:\\test\\FDE", "D:/test/FDE", "fdeops", "openfde"):
         assert token not in source, f"不得触真相层：{token}"
-    for primitive in ("commit(", "session.add", ".delete(", "record_event",
-                      "send_email", "flush("):
-        assert primitive not in source, f"只读视图不得含写路径原语：{primitive}"
+    assert "send_email" not in source and "fde_api.mailing" not in source, "零发信通道"
+    for primitive in ("commit(", "session.add", ".delete(", "flush("):
+        assert primitive not in source, f"只读模块不得含写路径原语：{primitive}"
+    assert source.count("record_event(") == 1, "事件写入只许简报留痕单点"
+    assert '"ops_brief_generated"' in source, "事件名钉死"
 
 
 def test_route_not_in_ai_catalog():
