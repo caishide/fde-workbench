@@ -32,7 +32,9 @@ WP-3 运营简报（``POST /api/v1/ops/briefs/generate``）：**确定性聚合�
 简报本体不持久化——人工经既有文档/发信面处置；**系统内不存在简报直发
 通道**（``mailing.routes`` 设计声明：发送路径不设 HTTP 路由），A5 断言钉
 发信服务函数调用方闭集不变。漏斗口径＝交付包/派单 offer/区域伙伴/交付者
-档案四段只读计数（注册申请段留待需要时扩）。
+档案四段只读计数（注册申请段留待需要时扩）。**分层状态＝未分层**（M2 验收
+第 9 条：四段对象无真实／模拟／演练标记列，简报显式声明并只交付可证数字，
+详见 ``BRIEF_FUNNEL_STRATIFICATION`` 与 PROGRESS.md 任务 B 节）。
 """
 import hashlib
 from collections import defaultdict
@@ -306,6 +308,24 @@ _BRIEF_FUNNEL_LABELS: dict[str, str] = {
     "fde_profiles": "交付者档案",
 }
 
+#: 招商漏斗分层状态（M2 验收第 9 条：运营简报区分真实、模拟和演练数据）。
+#:
+#: 现测结论＝**无可靠分层依据**（2026-11-24 活库只读取证，命令与锚点见
+#: ``docs/ecosystem-v1/m2/PROGRESS.md`` 任务 B 节）：四段对象（交付包／派单
+#: offer／区域伙伴／交付者档案）在 schema 层均无「真实／模拟／演练」标记列；
+#: 全仓唯一机器可读的模拟标记是报价表的来源列，但只由派单仿真器写——E2E 机制
+#: 造蜂经真实建单 API 建报价时来源列恒为手工值 ⇒ 模拟与演练数据在 schema 层
+#: 与真实数据同形。按「禁止编造分层」纪律，本简报**只交付真实可证的数字**，
+#: 在正文显式声明未分层；「补分层标记」登记为待 OWNER／产品决策项。
+BRIEF_FUNNEL_STRATIFICATION = "unstratified"
+
+#: 正文里的未分层声明（字面串被机械钉钉死，防静默删除）。置于漏斗计数行
+#: **之前**——它是该段的限定前提，不是脚注。
+BRIEF_FUNNEL_STRATIFICATION_NOTICE = (
+    "本口径未分层（缺真实／演练标记，见 M0 归档）：以下四段为未分层的全量计数，"
+    "不可当作真实经营基线。"
+)
+
 
 def _funnel_counts(session) -> dict[str, dict[str, int]]:
     """四段只读计数（GROUP BY；零 DDL，全部命中既有状态机闭集列）。"""
@@ -365,6 +385,8 @@ def _render_brief_markdown(
     lines.append("")
     lines.append("## 二、招商漏斗")
     lines.append("")
+    lines.append(BRIEF_FUNNEL_STRATIFICATION_NOTICE)
+    lines.append("")
     for key in sorted(funnel):
         counts = funnel[key]
         rendered = " / ".join(f"{status} {count}" for status, count in sorted(counts.items()))
@@ -412,6 +434,7 @@ def compose_ops_brief(*, now: datetime | None = None) -> dict[str, Any]:
         "todo_total": len(items),
         "due_total": len(due_items),
         "funnel": funnel,
+        "funnel_stratification": BRIEF_FUNNEL_STRATIFICATION,
         "generated_at": current.isoformat(),
     }
 
@@ -435,6 +458,7 @@ def generate_ops_brief_route():
                 "todo_total": result["todo_total"],
                 "due_total": result["due_total"],
                 "funnel": result["funnel"],
+                "funnel_stratification": result["funnel_stratification"],
                 "brief_sha256": result["brief_sha256"],
             },
         )
