@@ -1,7 +1,7 @@
-"""运营待办只读聚合视图（Ecosystem OS M2 WP-2；立项书 v0.1 §五）。
+"""运营待办只读聚合视图＋运营简报（Ecosystem OS M2 WP-2/WP-3；立项书 v0.1 §五）。
 
 裁决落点（沿 ``expirations.py`` B#13-D 先例）：**服务层只读 union ＋
-admin-only 查询路由，零 DDL**。四域待办合并为一张六字段逻辑视图：
+admin-only 路由，零 DDL**。四域待办合并为一张六字段逻辑视图：
 ``domain`` / ``object_id`` / ``title`` / ``deadline_at`` / ``state`` /
 ``queue``——AI 自动化审批（pending）、AI API 确认（无结果）、派单响应
 （offered）、评审纪要待办（近窗封存）。
@@ -23,20 +23,32 @@ admin-only 查询路由，零 DDL**。四域待办合并为一张六字段逻辑
 变异敏感）；**差异＝本视图是「待发现」语义**——无响应窗口的 offer 与无
 期限的纪要待办仍入投影（``deadline_at`` 为 null、排序沉底、due 过滤跳过），
 而到期投影只收有期限项。
+
+WP-3 运营简报（``POST /api/v1/ops/briefs/generate``）：**确定性聚合、返件式
+零落库**——简报正文（Markdown）全部由数据库现算拼装（待办条目＋招商漏斗
+计数＋需总部介入事项），零模型调用零编造数字（数字溯源纪律；运营值班员卡
+拍板定稿＝纯确定性聚合卡 ``prompt_purposes: []``）。落一条
+``ops_brief_generated`` 事件（changes 只带计数与 sha256 指纹，不带正文），
+简报本体不持久化——人工经既有文档/发信面处置；**系统内不存在简报直发
+通道**（``mailing.routes`` 设计声明：发送路径不设 HTTP 路由），A5 断言钉
+发信服务函数调用方闭集不变。漏斗口径＝交付包/派单 offer/区域伙伴/交付者
+档案四段只读计数（注册申请段留待需要时扩）。
 """
+import hashlib
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from fde_api.agents.hq_cards import HUMAN_APPROVAL_QUEUE
 from fde_api.auth.decorators import require_auth
+from fde_api.commercial.models import RegionalPartner
 from fde_api.control import api_actions
 from fde_api.control.api_actions import _result
 from fde_api.control.models import AutomationApproval
-from fde_api.dispatch.models import DeliveryPackage, DispatchOffer
+from fde_api.dispatch.models import DeliveryPackage, DispatchOffer, FdeProfile
 from fde_api.dispatch.offer_service import offer_deadline
 from fde_api.errors import error_response
 from fde_api.expirations import CONFIRMATION_SCAN_LIMIT
@@ -68,6 +80,12 @@ DOMAIN_QUEUES: dict[str, str | None] = {
 
 #: 纪要待办投影状态词（源域无状态位，投影词表统一 ``open``）。
 MEETING_TODO_STATE = "open"
+
+#: 简报待办正文最多逐条列出的条数（其余以分域计数呈现，总量字段不受影响）。
+BRIEF_TODO_TOP_LIMIT = 10
+
+#: 「需总部介入」已到期清单最多逐条列出的条数。
+BRIEF_DUE_LIST_LIMIT = 50
 
 # 每域待办行的内部形态：(domain, object_id, deadline_at | None, state, title)
 _RawTodo = tuple[str, str, Any, str, str]
@@ -274,3 +292,150 @@ def list_ops_todos_route():
             return error_response("invalid_request", f"limit 须在 1..{MAX_LIMIT}。", 400)
     items = collect_ops_todos(domain=domain, due=due, limit=limit)
     return jsonify({"data": {"items": items, "total": len(items)}, "error": None})
+
+
+# ---------------------------------------------------------------------------
+# WP-3 运营简报（确定性聚合，返件式零落库，见模块头 WP-3 段）
+# ---------------------------------------------------------------------------
+
+#: 招商漏斗四段的展示标签（键即返回体 funnel 字段名；段内计数按状态名排序）。
+_BRIEF_FUNNEL_LABELS: dict[str, str] = {
+    "delivery_packages": "交付包",
+    "dispatch_offers": "派单 offer",
+    "regional_partners": "区域伙伴",
+    "fde_profiles": "交付者档案",
+}
+
+
+def _funnel_counts(session) -> dict[str, dict[str, int]]:
+    """四段只读计数（GROUP BY；零 DDL，全部命中既有状态机闭集列）。"""
+    return {
+        "delivery_packages": dict(
+            session.execute(
+                select(DeliveryPackage.dispatch_status, func.count())
+                .group_by(DeliveryPackage.dispatch_status)
+            ).all()
+        ),
+        "dispatch_offers": dict(
+            session.execute(
+                select(DispatchOffer.status, func.count()).group_by(DispatchOffer.status)
+            ).all()
+        ),
+        "regional_partners": dict(
+            session.execute(
+                select(RegionalPartner.stage, func.count()).group_by(RegionalPartner.stage)
+            ).all()
+        ),
+        "fde_profiles": dict(
+            session.execute(
+                select(FdeProfile.status, func.count()).group_by(FdeProfile.status)
+            ).all()
+        ),
+    }
+
+
+def _render_brief_markdown(
+    current: datetime,
+    items: list[dict[str, Any]],
+    due_items: list[dict[str, Any]],
+    funnel: dict[str, dict[str, int]],
+) -> str:
+    """确定性拼装简报正文（排序键全部显式；同一数据库状态 + 同一 now ⇒ 逐字节同文）。"""
+    by_domain: dict[str, int] = defaultdict(int)
+    for entry in items:
+        by_domain[entry["domain"]] += 1
+    lines = [f"# 运营简报 {current.date().isoformat()}", ""]
+    lines.append(f"## 一、运营待办（共 {len(items)} 项，已到期 {len(due_items)} 项）")
+    lines.append("")
+    for domain in sorted(by_domain):
+        lines.append(f"- {domain}：{by_domain[domain]} 项")
+    lines.append("")
+    top = items[:BRIEF_TODO_TOP_LIMIT]
+    if top:
+        lines.append(f"待办清单（按截止时间升序，前 {BRIEF_TODO_TOP_LIMIT} 条；无期限项沉底）：")
+        lines.append("")
+        for index, entry in enumerate(top, start=1):
+            deadline = entry["deadline_at"] or "无期限"
+            queue = entry["queue"] or "运营协调"
+            lines.append(
+                f"{index}. [{entry['domain']}｜{queue}] {entry['title']} — 截止 {deadline}"
+            )
+    if len(items) > len(top):
+        lines.append(f"（其余 {len(items) - len(top)} 项未逐条列出，计数已含）")
+    lines.append("")
+    lines.append("## 二、招商漏斗")
+    lines.append("")
+    for key in sorted(funnel):
+        counts = funnel[key]
+        rendered = " / ".join(f"{status} {count}" for status, count in sorted(counts.items()))
+        lines.append(f"- {_BRIEF_FUNNEL_LABELS.get(key, key)}：{rendered or '（空）'}")
+    lines.append("")
+    lines.append(f"## 三、需总部介入事项（已到期 {len(due_items)} 项）")
+    lines.append("")
+    for entry in due_items[:BRIEF_DUE_LIST_LIMIT]:
+        queue = entry["queue"] or "运营协调"
+        lines.append(
+            f"- [{entry['domain']}｜{queue}] {entry['title']} — 截止 {entry['deadline_at']}"
+        )
+    if len(due_items) > BRIEF_DUE_LIST_LIMIT:
+        lines.append(f"（其余 {len(due_items) - BRIEF_DUE_LIST_LIMIT} 项已到期未逐条列出）")
+    lines.append("")
+    lines.append(
+        "（本简报由系统确定性聚合生成：数字全部来自数据库现算，不含模型生成内容；"
+        "系统无简报直发通道，人工决策仍走既有审批/确认/响应闸。）"
+    )
+    return "\n".join(lines)
+
+
+def compose_ops_brief(*, now: datetime | None = None) -> dict[str, Any]:
+    """确定性聚合运营简报（只读；返件式零落库，正文不持久化）。
+
+    注入 ``now`` 供测试固定日期与到期边界。
+    """
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    items = collect_ops_todos(now=current, limit=MAX_LIMIT)
+    due_items = [
+        entry
+        for entry in items
+        if entry["deadline_at"] is not None
+        and datetime.fromisoformat(entry["deadline_at"]) <= current
+    ]
+    session = db.session()
+    try:
+        funnel = _funnel_counts(session)
+    finally:
+        session.close()
+    markdown = _render_brief_markdown(current, items, due_items, funnel)
+    return {
+        "brief_markdown": markdown,
+        "brief_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+        "todo_total": len(items),
+        "due_total": len(due_items),
+        "funnel": funnel,
+        "generated_at": current.isoformat(),
+    }
+
+
+@blueprint.post("/briefs/generate")
+@require_auth
+def generate_ops_brief_route():
+    if g.current_user.role != "admin":
+        return error_response("forbidden", "运营简报仅平台管理员可生成。", 403)
+    result = compose_ops_brief()
+    with db.session() as session, session.begin():
+        # projects.events 懒导入（跨包单向边，顶层 import 面最小化）。
+        from fde_api.projects.events import record_event
+
+        record_event(
+            session,
+            g.current_user,
+            "ops_brief_generated",
+            target=g.current_user,
+            changes={
+                "todo_total": result["todo_total"],
+                "due_total": result["due_total"],
+                "funnel": result["funnel"],
+                "brief_sha256": result["brief_sha256"],
+            },
+        )
+    return jsonify({"data": result, "error": None}), 200
