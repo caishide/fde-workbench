@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "397532b8-09ee-44c2-9245-fa99270df21d",
+  "receiptId": "a1f5ce4e-7b28-4e50-bae2-3254a50aea2e",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
-  "input": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
-  "output": "D:\\test\\fde-wt-ecosystem-m1-fix\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+  "input": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+  "output": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
   "specification": {
-    "sha256": "e3cfffa82ff073d142f84933405a3ac3d0be500b2552b36ec88447067485f54c",
-    "bytes": 12338
+    "sha256": "37ce64a194afed2c79b99ddded432e4649974fe8d9469a5db3fec494e7980df2",
+    "bytes": 13011
   },
   "artifact": {
-    "sha256": "a997fe55575a6dd8cbe409595c0ca26a24a2d9253a2f60d70459a0e44cb4e02e",
+    "sha256": "512afe3e79f38093887e18d084b8853a69b6433f3e52de0a16d11f128edee161",
     "bytes": 845372
   }
 }
