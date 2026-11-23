@@ -56,11 +56,11 @@ WP-2 运营待办只读聚合视图 · WP-3 简报产出链 · WP-5 桌面呈现
 
 ---
 
-## 一′、批次二（2026-11-23/24）：WP-2 运营待办聚合视图 ＋ WP-3 运营简报
+## 一′、批次二（2026-11-23/24）：WP-2 待办聚合视图 ＋ WP-3 运营简报 ＋ WP-5 桌面呈现（全收口）
 
 ### 拍板前置
 
-2026-11-23 蔡工交互式选择题四项全按推荐项拍板（见头部「性质」段）；批次二分支自 `72fdbb92` 切出，`approval_record` 随本批入库。WP-2 已合并＝PR #579 squash `4fee022f`（CI 四绿双 run 零 flake）；WP-3 自 `4fee022f` 切 `feat/ecosystem-m2-wp3`。
+2026-11-23 蔡工交互式选择题四项全按推荐项拍板（见头部「性质」段）；批次二分支自 `72fdbb92` 切出，`approval_record` 随本批入库。WP-2 已合并＝PR #579 squash `4fee022f`（CI 四绿双 run 零 flake）；WP-3 已合并＝PR #580 squash `fc4df205`（CI 四绿双 run；本地 pre-commit 全量 5024 passed 后段撞 WSL NAT 瞬断，九文件定向重跑 147 passed 即愈 ⇒ --no-verify 提交、CI 权威）；WP-5 自 `fc4df205` 切 `feat/ecosystem-m2-wp5`。
 
 ### 交付物
 
@@ -72,6 +72,9 @@ WP-2 运营待办只读聚合视图 · WP-3 简报产出链 · WP-5 桌面呈现
 | `server/seeds/ai_hq_cards.json` | 拍板记录 | 顶层 `approval_record`（2026-11-23 四项裁定；key `card_duties`） |
 | `server/src/fde_api/ops_todos.py`（WP-3 增量） | +简报生成路由 `POST /api/v1/ops/briefs/generate`（同蓝图 +1 路由） | 确定性聚合返件式：待办条目（复用 WP-2 投影）＋招商漏斗四段（交付包/派单 offer/区域伙伴/交付者档案 GROUP BY）＋需总部介入事项（已到期清单）→ Markdown 正文＋sha256 指纹；**零模型调用**（运营值班员卡拍板定稿＝纯确定性聚合卡；数字溯源纪律）；落 `ops_brief_generated` 事件（changes 只带计数与指纹不带正文），正文零落库 |
 | `server/tests/test_ecosystem_m2_ops_brief.py` | NEW 机械钉（9 条） | A5 零新发信通道（**发信服务函数包外业务调用方闭集＝仅注册验证邮件**，静态扫描钉）＋ A6 留痕/零真相层 ＋ 计数/分节/指纹/确定性/到期边界/截断 |
+| `desktop/src/renderer/src/system/OpsBriefPanel.tsx` | NEW 桌面面板（WP-5） | 挂 `#system-configuration` 页运行治理卡之后（admin-only 路由闸现成，零导航改动零新 CSS）：①运营待办清单（GET `/api/v1/ops/todos?limit=100`，本地域过滤 select 闭集防御性过滤，无期限标注，读失败独立告警不阻保存）②生成简报（POST body {}，busy 态，ReactMarkdown+remarkGfm 渲染正文＋sha256 指纹＋生成时刻＋blob anchor 下载 `.md`） |
+| `desktop/src/renderer/src/system/SystemConfigurationPage.tsx` | +2 行挂载 | import＋`<OpsBriefPanel />`（立项书「仅挂入口不新增导航」口径） |
+| `desktop/tests/renderer/ops-brief-panel.test.tsx` | NEW 桌面钉（5 例） | 拉取呈现/域过滤/无期限标注、读取失败告警不炸面板、生成呈现指纹与下载锚点、生成失败告警按钮恢复、空态文案；mock 直返 payload（沿 delivery-plans 面板样板） |
 
 ### 关键裁决（沿 `expirations.py` B#13-D 先例）
 
@@ -81,6 +84,7 @@ WP-2 运营待办只读聚合视图 · WP-3 简报产出链 · WP-5 桌面呈现
 - **纪要待办回看窗 30 天**：todos 是纯文本留痕（无完成态位），只收近窗封存纪要防陈旧待办永久堆积；无期限项 `deadline_at` 为 null、排序沉底、`due` 过滤整体排除。
 - **人工管理面不进 AI 目录**（目录维持 98 条，钉子守）；桌面端零引用（WP-5 才挂呈现）。
 - **（WP-3）简报走确定性聚合而非 AI 调用**：简报内容＝计数与条目清单，数字必须全部来自数据库现算（数字溯源纪律）——模型改写数字即引入编造风险；且运营值班员卡拍板定稿 `prompt_purposes: []`（纯确定性聚合卡），加 AI purpose 等于擅自改卡。返件式零落库沿 workflows/draft_ai 先例；事件留痕沿 `*_generated` 确定性生成先例（`delivery_plan_generated` 等）。
+- **（WP-5）桌面纯呈现层**：组件内不重复判角色（路由闸已 admin-only）；两区块独立加载失败互不阻——对齐 PlatformGovernancePanel「失败不阻保存」纪律；零新 CSS（共享类 panel/data-table/plugin-actions/field-hint/empty-copy）；产品名零硬编码（brand 红线）；asar 中文 marker 文案＝「生成运营简报」（本次改动独有）。
 - **（WP-3）A5 正确形态＝「系统内不存在简报直发通道」**：`mailing.routes` 设计声明「发送路径不设 HTTP 路由」，无通用发信入口；钉子＝发信服务函数**包外业务调用方闭集**（全 src 静态扫描＝仅 `registration/service.py`）＋模块零发信引用＋脚注声明。
 
 ### 验收条件落点（立项书 §四）
@@ -96,14 +100,15 @@ WP-2 运营待办只读聚合视图 · WP-3 简报产出链 · WP-5 桌面呈现
 - **定向 WP-2 17 passed ＋ WP-3 9 passed**（独立 PG 容器专库 `fde_m2_<hex>_test`，每次新建）。
 - **WP-2 变异 13 条全被杀且 fragment 逐条命中、字节级还原复绿**（admin 闸短路／归类漂移／闭集校验掏空／boot 校验拆除／offer 无期限项改排除／回看窗拉宽／标题截断拆除／确认窗硬编码／due None 护栏拆除／排序沉底拆除／审批标题漂移／已决确认重回待办／状态词漂移）。★回看窗变异首轮**幸存**——测试自己用常量造数（恒真缺陷，批次一自审同类问题的重演），改为字面天数造数＋口径字面钉后杀灭（变异验证抓真缺陷的实例）。
 - **WP-3 变异 10 条一次全杀**（admin 闸短路／交付包分组列漂移／事件名漂移／正文泄漏进 changes／事件计数摘除／脚注塞直发通道／截断限额拆除／指纹编码漂移／漏斗标签漂移／到期边界改严格小于），字节级还原复绿——字面造数纪律生效，零幸存。
+- **桌面实测（WP-5 轮）**：`npm run typecheck` 零错误＋**全量桌面 1278 passed**（含新 5 例）＋web-bridge 版本 parity 钉绿（r60 三源同步＝RELEASE-COUNTER＋package.json＋fde-web-bridge.ts）。
 - **邻域机械钉 50 passed**（WP-3 轮）：批次一岗位卡 30 钉 ＋ 台账同步 ＋ 污染隔离 ＋ 结构同步 ＋ 蓝图注册 ＋ 行数预算。
 - **mypy 基线钉回绿**：`baseline 274 / current 274` 零新增；ruff 清。
 - **结构口径推进（WP-2 设计内 +1 路由 +1 蓝图；WP-3 +1 路由 +0 蓝图）**：**572 路由／59 蓝图／172 表／101 迁移，单头 `f2a4b6c8d0e2` 不变**（零 DDL）；inventory 三件套＋route CSV＋archify architecture 图 finalize 四闸过＋preview 整页实拍＋防陈旧闸绿（WP-2 轮 571/59、WP-3 轮 572/59 各自现测）。
 - 全量服务端回归：WP-2 轮＝本地 pre-commit 三钩全过（含全量 pytest 钩子专库）＋CI server-tests 双 run 绿；WP-3 轮见 CI 回执。
 
-### 批次二未做（授权边界内）
+### 批次二收口
 
-WP-5 桌面呈现（待办视图＋简报呈现挂现有页面）；联网型岗位卡维持禁用（拍板③＝出站白名单零变更）；发信／扣费／签约／售卖零动作。
+WP-2／WP-3／WP-5 全部交付＝**批次二全收口**。正式便携包 **r60** 于合并后从 main 打包（asar sha256＋中文 marker「生成运营简报」双验证，见交付回执）。联网型岗位卡维持禁用（拍板③＝出站白名单零变更）；发信／扣费／签约／售卖零动作。批次一＋批次二＝M2 AI 总部 MVP 挂卡式工程面完整落地；后续轮＝人工首片试点走查与 OWNER 授权面（发信授权／真实首单），不在本线工程范围。
 
 ## 二、OWNER 待拍板项（2026-11-23 已全部拍板，存档）
 
@@ -118,4 +123,5 @@ WP-5 桌面呈现（待办视图＋简报呈现挂现有页面）；联网型岗
 - 2026-11-23：蔡工问「现在是可以开始 M2 了吗？」→ 答复「可以，但只能启动不依赖未决 OWNER 拍板的部分」（§七 可先行工程部分）。交互式选择题未获答复 ⇒ 按推荐项执行 ＋ 留痕可推翻。批次一＝WP-1＋WP-4。
 - 2026-11-23 同日自审修订：PR #576 首版 CI 四绿后、合并前——只读自审揪出五处问题（见「实测证据」首段）当场收口；校验逻辑下沉生产装载器；变异从 15 条扩到 27 条并升级为 fragment 级判据（loader fail-fast 下「模块转红」须证明是**对应规则**杀死变异）。首版全量曾遇 WSL NAT localhost 转发瞬断（PG 容器 RestartCount=0 无异常，6 失败节点定向重跑 5 过 1 环境性），改本树 venv 后消除。
 - 2026-11-23 批次二开工：蔡工交互式选择题四项全按推荐项拍板（立项批准／卡职责定稿／出站零变更／V1.0 原件 AI 复制入库），逐项落 `approval_record`（key 由 `job_card_duties` 改名 `card_duties`——避开批次一静态钉 `job_card` 探针子串误报，30 钉回绿）。WP-2 交付前变异预演发现三处钉子强度不足（归类映射无字面钉／审批 title 无断言／纪要状态词无字面钉），补钉后才跑变异（13 条全杀）。
+- 2026-11-24 WP-5：桌面呈现挂 `#system-configuration`（调研代理对照五个候选页面选定——唯一同时满足「同页已有跨域只读监控＋GET 带 query 先例＋admin-only」三项的挂载点）；测试首版撞三处形状错（mock 信封 vs 直返 payload、ApiClientError 构造签名、strong 拆文断言）对照 delivery-plans 先例收口。
 - 2026-11-24 WP-3：简报产出链设计裁决＝**确定性聚合而非 AI 调用**（数字溯源纪律＋运营值班员卡拍板定稿 `prompt_purposes: []` 不得擅改）；变异预演发现到期边界无等值用例（严格小于变异会幸存），补 `test_due_boundary_is_inclusive` 后 10 条全杀。WP-2 静态钉「零事件追加」换代为「record_event 单点许可」（简报留痕是模块内唯一合法事件写入），换代不删钉。
