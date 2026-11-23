@@ -1,0 +1,360 @@
+{
+  "_comment": "Ecosystem OS M2 AI 总部岗位卡目录（只读，随代码发布，零新表——评审纪要 C3 红线：AI 组织树实现为配置与数据，禁止新建 org-chart 类表/模块）。来源：蔡工_FDE_Ecosystem_OS_V1.0_总体设计与实施任务书.md §4.1–§4.4（2026-11-23 现读逐项落卡）。本目录只声明职责与边界，不含任何执行逻辑；执行面仍走既有注册表（purpose 键／能力矩阵／工具组／确认闸／scheduler job_type／发信五闸）。MVP-1 联网任务一律禁用——出站白名单扩张未拍板。",
+  "version": 1,
+  "source": "任务书 V1.0 §4.1–§4.4（2026-11-23 现读）",
+  "activation_state": "pending_owner_approval",
+  "org_tree": {
+    "root": "Founder / Human CEO",
+    "coordinator": "AI Operations Manager（只负责协调与汇总，不拥有超越各业务域的授权权力——V1.0 §4.3 明文）",
+    "group_keys": [
+      "growth_partner_ops",
+      "learning_certification_ops",
+      "enterprise_customer_ops",
+      "delivery_ops",
+      "regional_network_ops",
+      "product_engineering_ops"
+    ],
+    "human_approval_queue": [
+      "legal_commercial_decisions",
+      "pricing_billing_settlement",
+      "certification_final_review",
+      "regional_authorization",
+      "production_data_writes",
+      "customer_acceptance_disputes"
+    ]
+  },
+  "function_groups": [
+    {
+      "key": "growth_partner_ops",
+      "name": "增长与招商运营",
+      "roles": [
+        "市场研究 Agent",
+        "内容策划/内容生产 Agent",
+        "招商线索研究 Agent",
+        "伙伴申请预审 Agent",
+        "合作伙伴跟进 Agent"
+      ],
+      "outputs": [
+        "目标人群和区域市场研究",
+        "公众号/短视频/官网内容草稿",
+        "创业者、交付者、区域服务商线索",
+        "申请资料完整性检查",
+        "跟进任务与招商漏斗报告"
+      ],
+      "prohibitions": [
+        "未经人工确认对外承诺收益",
+        "购买/导出非法名单",
+        "自动签署代理合同",
+        "自动批准区域独家授权"
+      ],
+      "tasks": [
+        {"key": "market_research", "name": "市场研究", "requires_egress": true},
+        {"key": "content_draft", "name": "内容草稿", "requires_egress": true},
+        {"key": "lead_research", "name": "招商线索研究", "requires_egress": true},
+        {"key": "application_precheck", "name": "伙伴申请预审", "requires_egress": false},
+        {"key": "partner_followup", "name": "伙伴跟进与漏斗报告", "requires_egress": false}
+      ]
+    },
+    {
+      "key": "learning_certification_ops",
+      "name": "招生与学习运营",
+      "roles": [
+        "招生答疑 Agent",
+        "学习路径 Agent",
+        "AI 助教 Agent",
+        "作业反馈 Agent",
+        "模拟考核协调 Agent"
+      ],
+      "outputs": [
+        "FAQ 答疑",
+        "课程学习路径建议",
+        "学习提醒",
+        "作业初评",
+        "SimulationLab 练习推荐",
+        "导师人工复核队列"
+      ],
+      "prohibitions": [
+        "仅凭课程完成自动发放交付资格",
+        "自动判定争议性考试",
+        "代替导师签署认证终判"
+      ],
+      "tasks": [
+        {"key": "faq_answer", "name": "FAQ 答疑", "requires_egress": false},
+        {"key": "learning_path", "name": "学习路径建议", "requires_egress": false},
+        {"key": "homework_review", "name": "作业初评", "requires_egress": false},
+        {"key": "practice_recommend", "name": "练习推荐", "requires_egress": false},
+        {"key": "mentor_queue", "name": "导师复核队列", "requires_egress": false}
+      ]
+    },
+    {
+      "key": "enterprise_customer_ops",
+      "name": "企业客户运营",
+      "roles": [
+        "企业研究 Agent",
+        "企业线索画像 Agent",
+        "初步诊断 Agent",
+        "售前材料 Agent",
+        "客户成功 Agent"
+      ],
+      "outputs": [
+        "企业公开信息研究摘要",
+        "可能的业务问题假设（必须标注来源与置信度）",
+        "访谈提纲",
+        "诊断报告草稿",
+        "续费/复购/客户反馈提醒"
+      ],
+      "prohibitions": [
+        "把推断写成客户事实",
+        "未授权读取企业系统",
+        "无人工审批群发邮件/短信",
+        "自动承诺 ROI 或项目结果"
+      ],
+      "tasks": [
+        {"key": "enterprise_research", "name": "企业公开信息研究", "requires_egress": true},
+        {"key": "lead_profile", "name": "企业线索画像", "requires_egress": true},
+        {"key": "interview_outline", "name": "访谈提纲", "requires_egress": false},
+        {"key": "presales_material", "name": "售前材料", "requires_egress": false},
+        {"key": "customer_success", "name": "客户成功提醒", "requires_egress": false}
+      ]
+    },
+    {
+      "key": "delivery_ops",
+      "name": "项目交付运营",
+      "roles": [
+        "Delivery Manager",
+        "Business Analyst",
+        "Solution Architect",
+        "Ontology Engineer",
+        "Implementation Engineer",
+        "QA / Delivery Reviewer"
+      ],
+      "outputs": [
+        "项目拆解",
+        "风险和依赖清单",
+        "任务派发建议",
+        "技术文档",
+        "测试计划和测试报告",
+        "交付证据候选",
+        "周报和异常清单"
+      ],
+      "prohibitions": [
+        "复用现有 Workbench Workflow、Agent、Jobs、Evidence、Gate，不另起炉灶",
+        "AI 产物先进入草稿/候选/待审状态",
+        "Gate Service 是唯一 Gate 权威",
+        "项目成员权限和客户数据范围在每次工具调用前校验"
+      ],
+      "tasks": [
+        {"key": "project_breakdown", "name": "项目拆解", "requires_egress": false},
+        {"key": "risk_list", "name": "风险与依赖清单", "requires_egress": false},
+        {"key": "dispatch_suggestion", "name": "任务派发建议", "requires_egress": false},
+        {"key": "evidence_candidate", "name": "交付证据候选", "requires_egress": false},
+        {"key": "weekly_report", "name": "周报与异常清单", "requires_egress": false}
+      ]
+    },
+    {
+      "key": "regional_network_ops",
+      "name": "区域与伙伴运营",
+      "roles": [
+        "区域市场分析 Agent",
+        "伙伴激活 Agent",
+        "区域经营分析 Agent",
+        "服务质量分析 Agent",
+        "争议材料整理 Agent"
+      ],
+      "outputs": [
+        "区域市场覆盖分析",
+        "伙伴活跃度和能力结构",
+        "商机/项目/交付漏斗",
+        "服务商月报",
+        "争议证据摘要",
+        "需要总部介入的异常事项"
+      ],
+      "prohibitions": [
+        "自动升级区域授权",
+        "自动变更客户归属",
+        "自动结算或改变分账规则",
+        "自动开启区域售卖闸"
+      ],
+      "tasks": [
+        {"key": "region_coverage", "name": "区域市场覆盖分析", "requires_egress": true},
+        {"key": "partner_activation", "name": "伙伴激活", "requires_egress": false},
+        {"key": "regional_funnel", "name": "商机/项目/交付漏斗", "requires_egress": false},
+        {"key": "partner_monthly", "name": "服务商月报", "requires_egress": false},
+        {"key": "dispute_digest", "name": "争议材料整理", "requires_egress": false}
+      ]
+    },
+    {
+      "key": "product_engineering_ops",
+      "name": "产品与技术运营",
+      "roles": [
+        "产品分析 Agent",
+        "代码审查 Agent",
+        "测试 Agent",
+        "文档维护 Agent",
+        "发布核验 Agent"
+      ],
+      "outputs": [
+        "用户反馈归类",
+        "需求建议",
+        "代码任务",
+        "测试报告",
+        "文档差异",
+        "发布候选核验材料"
+      ],
+      "prohibitions": [
+        "自动合并未经授权的 PR",
+        "自动部署生产",
+        "清理其他会话 worktree、stash 或分支",
+        "绕过既有 Goal/PR/CI/部署纪律"
+      ],
+      "tasks": [
+        {"key": "feedback_classify", "name": "用户反馈归类", "requires_egress": false},
+        {"key": "requirement_proposal", "name": "需求建议", "requires_egress": false},
+        {"key": "test_report", "name": "测试报告", "requires_egress": false},
+        {"key": "doc_diff", "name": "文档差异", "requires_egress": false},
+        {"key": "release_check", "name": "发布候选核验材料", "requires_egress": false}
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "agent_key": "ai_hq.ops_duty",
+      "position_name": "运营值班员",
+      "version": "m2-v1",
+      "goal_and_duties": "跨模块发现运营待办并汇总招商漏斗与伙伴活跃度简报（组 1 跟进/预审 ＋ 组 5 伙伴激活/漏斗/月报/争议摘要）。",
+      "input_data_scope": "内部只读面：任务中心、审批队列、到期面、派单收件箱、商机与伙伴归属读面；不含任何客户真实资料原件。",
+      "output_schema": "简报草稿（Markdown：待办条目列表＋漏斗计数＋需总部介入事项），落文档草稿面，不直接发布。",
+      "tool_allowlist": ["group:research-readonly", "group:ops-readonly"],
+      "prohibitions": [
+        "未经人工确认对外承诺收益",
+        "购买/导出非法名单",
+        "自动签署代理合同",
+        "自动批准区域独家授权",
+        "自动升级区域授权",
+        "自动变更客户归属",
+        "自动结算或改变分账规则",
+        "自动开启区域售卖闸"
+      ],
+      "budget_and_runtime_limit": "每 24 小时 1 轮，单轮 ≤ 10 分钟，无模型调用预算（纯确定性聚合）。",
+      "failure_fallback": "降级为「只列异常不推断」并留痕，缺口标注为待人工核对；不得静默跳过。",
+      "requires_human_approval": true,
+      "approval_queue": [
+        "legal_commercial_decisions",
+        "pricing_billing_settlement",
+        "regional_authorization"
+      ],
+      "artifact_location": "运营待办聚合视图（WP-2）＋简报草稿（WP-3，文档面）。",
+      "evaluation_metrics": ["待办条目准确率（人工抽检）", "漏斗计数与底账一致率", "需介入事项召回率"],
+      "owner_and_release_record": "责任人与发布记录：待 OWNER 指派；版本 m2-v1，2026-11-23 建卡，发布状态待 OWNER 审批。",
+      "function_groups": ["growth_partner_ops", "regional_network_ops"],
+      "enabled_tasks": ["application_precheck", "partner_followup", "partner_activation", "regional_funnel", "partner_monthly", "dispute_digest"],
+      "disabled_tasks": ["market_research", "content_draft", "lead_research", "region_coverage"],
+      "disabled_reason": "联网任务——出站白名单扩张未拍板（准备件第一节 #1/#2/#3）。",
+      "prompt_purposes": [],
+      "capability_legs": ["project.read", "project.summarize"],
+      "declared_tier": "assistant_read",
+      "egress_domains": []
+    },
+    {
+      "agent_key": "ai_hq.delivery_coordinator",
+      "position_name": "交付协调员",
+      "version": "m2-v1",
+      "goal_and_duties": "汇总项目拆解、风险与依赖清单、任务派发建议、交付证据候选、周报与异常清单（组 4 全部任务）。",
+      "input_data_scope": "项目只读面：任务、门禁、文档、方案与证据读面；每次工具调用前校验项目成员权限与客户数据范围（V1.0 §4.2 执行原则）。",
+      "output_schema": "草稿件（项目拆解草稿、风险清单、派发建议、证据候选、周报异常清单），落既有草稿/候选/待审状态。",
+      "tool_allowlist": ["group:research-readonly"],
+      "prohibitions": [
+        "复用现有 Workbench Workflow、Agent、Jobs、Evidence、Gate，不另起炉灶",
+        "AI 产物先进入草稿/候选/待审状态",
+        "Gate Service 是唯一 Gate 权威",
+        "项目成员权限和客户数据范围在每次工具调用前校验",
+        "自动结算或改变分账规则"
+      ],
+      "budget_and_runtime_limit": "每项目每周 ≤ 2 轮，单轮 ≤ 20 分钟。",
+      "failure_fallback": "降级为「只列证据候选与异常」并留痕，不生成结论性判断。",
+      "requires_human_approval": true,
+      "approval_queue": [
+        "customer_acceptance_disputes",
+        "pricing_billing_settlement"
+      ],
+      "artifact_location": "项目证据候选面（既有）＋周报草稿（文档面）。",
+      "evaluation_metrics": ["证据候选采纳率", "异常清单人工复核通过率", "周报缺项率"],
+      "owner_and_release_record": "责任人与发布记录：待 OWNER 指派；版本 m2-v1，2026-11-23 建卡，发布状态待 OWNER 审批。",
+      "function_groups": ["delivery_ops"],
+      "enabled_tasks": ["project_breakdown", "risk_list", "dispatch_suggestion", "evidence_candidate", "weekly_report"],
+      "disabled_tasks": [],
+      "disabled_reason": "",
+      "prompt_purposes": ["plans.delivery_plan_draft", "workflows.dag_draft", "dispatch.match_recommend"],
+      "capability_legs": ["project.read", "project.summarize", "agent.plan.generate"],
+      "declared_tier": "project_operator",
+      "egress_domains": []
+    },
+    {
+      "agent_key": "ai_hq.product_engineering_assistant",
+      "position_name": "产品工程助理",
+      "version": "m2-v1",
+      "goal_and_duties": "用户反馈归类、需求建议、测试报告、文档差异、发布候选核验材料（组 6 全部任务）。",
+      "input_data_scope": "只读代码与文档面；AI 审查不执行被审代码（仓库红线），不得检出、运行被审交付的代码、测试、配置或钩子。",
+      "output_schema": "草稿件（反馈归类表、需求建议、测试报告草稿、文档差异、发布核验材料），落文档草稿面。",
+      "tool_allowlist": ["group:research-readonly", "group:ops-readonly"],
+      "prohibitions": [
+        "自动合并未经授权的 PR",
+        "自动部署生产",
+        "清理其他会话 worktree、stash 或分支",
+        "绕过既有 Goal/PR/CI/部署纪律",
+        "执行被审代码"
+      ],
+      "budget_and_runtime_limit": "每 24 小时 ≤ 1 轮，单轮 ≤ 15 分钟。",
+      "failure_fallback": "降级为「只列差异与待核对项」并留痕，不得自动执行任何写动作。",
+      "requires_human_approval": true,
+      "approval_queue": ["production_data_writes"],
+      "artifact_location": "文档草稿面＋发布核验材料回执（文档中心）。",
+      "evaluation_metrics": ["测试报告草稿可执行率", "文档差异误报率", "发布核验材料齐备率"],
+      "owner_and_release_record": "责任人与发布记录：待 OWNER 指派；版本 m2-v1，2026-11-23 建卡，发布状态待 OWNER 审批。",
+      "function_groups": ["product_engineering_ops"],
+      "enabled_tasks": ["feedback_classify", "requirement_proposal", "test_report", "doc_diff", "release_check"],
+      "disabled_tasks": [],
+      "disabled_reason": "",
+      "prompt_purposes": ["quality.testcase_draft"],
+      "capability_legs": ["project.read", "project.summarize", "file.search"],
+      "declared_tier": "assistant_read",
+      "egress_domains": []
+    },
+    {
+      "agent_key": "ai_hq.customer_learning_ops",
+      "position_name": "客户与学习运营",
+      "version": "m2-v1",
+      "goal_and_duties": "FAQ 答疑、学习路径建议、作业初评、练习推荐、导师复核队列、访谈提纲、售前材料与客户成功提醒（组 2 全任务 ＋ 组 3 非联网任务）。",
+      "input_data_scope": "内部学习面与访谈素材面；客户侧只读公开信息（联网任务当前禁用）；推断必须标注来源与置信度。",
+      "output_schema": "草稿件（FAQ 稿、学习路径、作业初评稿、访谈提纲、售前材料稿、提醒清单），落文档草稿面。",
+      "tool_allowlist": ["group:research-readonly"],
+      "prohibitions": [
+        "把推断写成客户事实",
+        "未授权读取企业系统",
+        "无人工审批群发邮件/短信",
+        "自动承诺 ROI 或项目结果",
+        "仅凭课程完成自动发放交付资格",
+        "自动判定争议性考试",
+        "代替导师签署认证终判"
+      ],
+      "budget_and_runtime_limit": "每 24 小时 ≤ 2 轮，单轮 ≤ 15 分钟。",
+      "failure_fallback": "降级为「只列问题与资料缺口」并留痕，转人工答疑；不得代答争议性考试。",
+      "requires_human_approval": true,
+      "approval_queue": [
+        "legal_commercial_decisions",
+        "certification_final_review"
+      ],
+      "artifact_location": "文档草稿面＋导师复核队列（既有）。",
+      "evaluation_metrics": ["答疑人工改写率", "作业初评人工复核通过率", "练习推荐采纳率"],
+      "owner_and_release_record": "责任人与发布记录：待 OWNER 指派；版本 m2-v1，2026-11-23 建卡，发布状态待 OWNER 审批。",
+      "function_groups": ["learning_certification_ops", "enterprise_customer_ops"],
+      "enabled_tasks": ["faq_answer", "learning_path", "homework_review", "practice_recommend", "mentor_queue", "interview_outline", "presales_material", "customer_success"],
+      "disabled_tasks": ["enterprise_research", "lead_profile"],
+      "disabled_reason": "联网任务——出站白名单扩张未拍板（准备件第一节 #3）。",
+      "prompt_purposes": ["industry_template.chat", "research_form.generate", "simulation.workbench"],
+      "capability_legs": ["project.read", "project.summarize", "research.draft.generate"],
+      "declared_tier": "project_operator",
+      "egress_domains": []
+    }
+  ]
+}
