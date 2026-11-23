@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Mapping
+from hashlib import sha256
+from typing import TYPE_CHECKING, Any, Mapping
 
-from sqlalchemy import and_, extract, func, or_, select
+from sqlalchemy import DateTime, Select, and_, func, literal, select, text
 from sqlalchemy.orm import Session
 
 from fde_api.auth.confirm_throttle import confirm_attempts_blocked, record_confirm_failure
@@ -29,12 +30,16 @@ from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import (
     DeliveryPackage,
     DeliverySettlement,
+    DispatchRuleVersion,
     DispatchSettlementAllocation,
 )
 from fde_api.dispatch.rules import active_rule_snapshot, active_rule_version
 from fde_api.projects.events import record_event
 from fde_api.system_configuration import DISPATCH_CONSTANTS
 from fde_api.workbench.models import Payment, Project
+
+if TYPE_CHECKING:
+    from fde_api.commercial.models import CommercialRevenueLedger
 
 TWO_PLACES = Decimal("0.01")
 SEAT_KEYS = ("platform", "region", "city", "delivery")
@@ -162,6 +167,14 @@ def _five_seat_shares(
     return platform_pct, shares
 
 
+def estimate_five_seat_delivery(session: Session, base: Decimal) -> Decimal | None:
+    version = active_rule_version(session)
+    if version is None or "five_seat" not in version.rule_snapshot:
+        return None
+    platform_pct, shares = _five_seat_shares(version.rule_snapshot)
+    return _money(base * Decimal(100 - platform_pct) * Decimal(shares["delivery"]) / 10_000)
+
+
 def _require_vacancy_confirmation(
     session: Session, actor: User, password: object
 ) -> None:
@@ -227,7 +240,7 @@ def allocate_five_seats(
         select(DeliverySettlement).where(
             DeliverySettlement.package_id == package.id,
             DeliverySettlement.settlement_key == payment.milestone_key,
-        )
+        ).with_for_update()
     )
     if settlement is None:
         raise DispatchServiceError(
@@ -511,14 +524,13 @@ def allocate_five_seats_with_lead_attribution(
     else:
         vacant.pop("lead", None)  # 归属确认后 lead 不接受空缺记法
         payees["lead"] = lead_payee
-    snapshot = active_rule_snapshot(session)
     version = active_rule_version(session)
     return allocate_five_seats(
         session,
         payment,
         package,
         actor=actor,
-        rule_snapshot=snapshot,
+        rule_snapshot=version.rule_snapshot if version is not None else None,
         seat_payees=payees,
         vacant_reasons=vacant,
         rule_version_id=version.id if version is not None else None,
@@ -563,7 +575,14 @@ def compute_withholding(
     混算，ADR-011 §4）；同一结算内兼任多席位由 ``_payee_settlement_base``
     在调用侧合计进 current_amount。
     """
-    now = now or datetime.now(timezone.utc)
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    # 计税年度与月份均按 UTC 验收时刻，只有无验收时间的存量行才回退建行时刻。
+    tax_time = func.coalesce(DeliverySettlement.acceptance_passed_at, DeliverySettlement.created_at)
+    timestamp_type = DateTime(timezone=True)
+    in_tax_year = (
+        tax_time >= literal(datetime(now.year, 1, 1, tzinfo=timezone.utc), type_=timestamp_type),
+        tax_time < literal(datetime(now.year + 1, 1, 1, tzinfo=timezone.utc), type_=timestamp_type),
+    )
     # 存量行（无五席位明细）按旧口径：seat_delivery_user_id 直接匹配（任务书
     # §7 数据兼容）；NOT EXISTS 排除有明细的行，防与新层聚合双计。
     legacy_alloc = (
@@ -575,13 +594,11 @@ def compute_withholding(
         select(
             DeliverySettlement.delivery_amount,
             DeliverySettlement.withholding_tax,
-            func.coalesce(
-                DeliverySettlement.acceptance_passed_at, DeliverySettlement.created_at
-            ),
+            tax_time,
         ).where(
             DeliverySettlement.seat_delivery_user_id == delivery_user_id,
             DeliverySettlement.status.in_(("accrued", "payable", "paid")),
-            extract("year", DeliverySettlement.created_at) == now.year,
+            *in_tax_year,
             ~legacy_alloc,
         )
     ).all()
@@ -590,9 +607,7 @@ def compute_withholding(
     seat_income = session.execute(
         select(
             DispatchSettlementAllocation.amount,
-            func.coalesce(
-                DeliverySettlement.acceptance_passed_at, DeliverySettlement.created_at
-            ),
+            tax_time,
         )
         .join(
             DeliverySettlement,
@@ -603,7 +618,7 @@ def compute_withholding(
             DispatchSettlementAllocation.status == "paid",
             DispatchSettlementAllocation.seat_key.in_(_PERSONAL_SEAT_KEYS),
             DeliverySettlement.status.in_(("accrued", "payable", "paid")),
-            extract("year", DeliverySettlement.created_at) == now.year,
+            *in_tax_year,
         )
     ).all()
     # 累计已预扣 = 存量行 withholding_tax ＋ 新层里该收款人作为**交付席位
@@ -621,7 +636,7 @@ def compute_withholding(
         )
         .where(
             DeliverySettlement.status.in_(("accrued", "payable", "paid")),
-            extract("year", DeliverySettlement.created_at) == now.year,
+            *in_tax_year,
         )
     ).all()
     cumulative_income = (
@@ -678,167 +693,310 @@ def _payee_settlement_base(
     return Decimal(total or 0)
 
 
+def _inherit_g4_allocation(
+    session: Session, *, actor: User, payment: Payment, package: DeliveryPackage,
+    settlement: DeliverySettlement, confirm_password: object, defer_vacancy: bool,
+) -> bool:
+    """沿用同一交付包的 G4 五席分配，按 G8 实收重新计算。"""
+    advance = session.scalar(
+        select(DeliverySettlement).where(
+            DeliverySettlement.package_id == package.id,
+            DeliverySettlement.settlement_key == "G4",
+        ).with_for_update()
+    )
+    if advance is None:
+        return package.quote_id is None
+    allocations = session.scalars(
+        select(DispatchSettlementAllocation).where(
+            DispatchSettlementAllocation.settlement_id == advance.id,
+        )
+    ).all()
+    if not allocations:
+        return package.quote_id is None  # 无报价关联的旧包可沿用四席。
+
+    prior = {row.seat_key: row for row in allocations}
+    version_ids = {row.rule_version_id for row in allocations}
+    version_id = next(iter(version_ids)) if len(version_ids) == 1 else None
+    version = session.get(DispatchRuleVersion, version_id) if version_id is not None else None
+    if (
+        set(prior) != set(FIVE_SEAT_KEYS)
+        or version is None
+        or advance.status not in ("accrued", "payable", "paid")
+        or advance.snapshot_hash != settlement.snapshot_hash
+        or settlement.snapshot_hash != package.snapshot_hash
+        or sum((row.amount for row in allocations), Decimal(0)) != advance.base_amount
+    ):
+        raise DispatchServiceError(
+            "late_receipt_allocation_conflict", "G4 五席明细、规则版本或交付包快照不一致，请复核后回填尾款。", 409
+        )
+    _, shares = _five_seat_shares(version.rule_snapshot)
+    if any(prior[seat].shares_in_pool != shares[seat] for seat in _POOL_SEAT_KEYS):
+        raise DispatchServiceError(
+            "late_receipt_allocation_conflict", "G4 五席份数与规则快照不一致，请复核后回填尾款。", 409
+        )
+    if settlement.status != "draft":
+        raise DispatchServiceError(
+            "allocation_settlement_state", "该尾款已计提，请先复核原结算。", 409
+        )
+
+    lead_payee, lead_vacant = resolve_lead_seat(session, package)
+    if (
+        prior["lead"].payee_user_id != lead_payee
+        or prior["lead"].reason_code != lead_vacant.get("lead")
+    ):
+        raise DispatchServiceError(
+            "late_receipt_allocation_conflict", "当前拉单归属与 G4 五席明细不一致，请复核后回填尾款。", 409
+        )
+    vacant_reasons = {seat: row.reason_code for seat, row in prior.items() if row.reason_code is not None}
+    if set(vacant_reasons) - set(lead_vacant):
+        if defer_vacancy and (actor.role != ROLE_ADMIN or actor.org_id is not None or not confirm_password):
+            return False
+        if actor.org_id is not None:
+            raise DispatchServiceError(
+                "allocation_vacancy_confirmation_required", "请由平台管理员确认分账空缺。", 403
+            )
+    allocate_five_seats(
+        session, payment, package, actor=actor,
+        rule_snapshot=version.rule_snapshot, rule_version_id=version.id,
+        seat_payees={seat: row.payee_user_id for seat, row in prior.items()},
+        vacant_reasons=vacant_reasons,
+        confirm_password=confirm_password, derived_vacant_seats=frozenset(lead_vacant),
+    )
+    record_event(
+        session, actor, "late_receipt_allocation_inherited", package,
+        {"settlement_id": settlement.id, "source_settlement_id": advance.id, "rule_version_id": version.id},
+    )
+    return True
+
+
 def record_receipt_settlements(
-    session: Session, *, actor: User, project: Project, payment: Payment
+    session: Session, *, actor: User, project: Project, payment: Payment,
+    receipt_unchanged: bool = False,
 ) -> int:
     """收款实收回填钩子（payment_service.update_payment 事务内调用）：
     为项目下已发布/已接的交付包 upsert 结算 draft 行（基数 = 实收）。
     无交付包 → 纯 no-op（存量 A 组路径零感知，催款逻辑不动）。"""
     if payment.received_amount is None:
         return 0
-    packages = session.scalars(
-        select(DeliveryPackage).where(
-            DeliveryPackage.project_id == project.id,
-            DeliveryPackage.dispatch_status.in_(("published", "offered", "assigned", "accepted")),
-        )
-    ).all()
-    created = 0
+    statement = select(DeliveryPackage).where(DeliveryPackage.project_id == project.id)
+    if payment.sow_type == "b":
+        # 先锁包再读取状态，覆盖收款与 draft 包首次发布并发的两种提交顺序。
+        statement = statement.order_by(DeliveryPackage.id).with_for_update(key_share=True)
+    else:
+        statement = statement.where(DeliveryPackage.dispatch_status.in_(_RECEIPT_PACKAGE_STATES))
+    packages = [
+        package for package in session.scalars(statement.execution_options(populate_existing=True))
+        if package.dispatch_status in _RECEIPT_PACKAGE_STATES
+    ]
     for package in packages:
-        shares = seat_shares_for(session, package)
-        amounts = split_four_seats(payment.received_amount, shares)
-        row = session.scalar(
-            select(DeliverySettlement).where(
-                DeliverySettlement.package_id == package.id,
-                DeliverySettlement.settlement_key == payment.milestone_key,
-            )
-        )
-        if row is None:
-            row = DeliverySettlement(
-                package_id=package.id,
-                snapshot_hash=package.snapshot_hash,
-                settlement_key=payment.milestone_key,
-                base_amount=payment.received_amount,
-                seat_delivery_user_id=package.seat_delivery,
-                platform_amount=amounts["platform"],
-                region_amount=amounts["region"],
-                city_amount=amounts["city"],
-                delivery_amount=amounts["delivery"],
-            )
-            session.add(row)
-            created += 1
-        else:
-            # 五席位明细在场 ⇒ 四总额列是明细派生的兼容镜像，绕层直写一律 409
-            # （刷新走 allocate_five_seats 重分配）。无明细的存量行按旧口径放行。
-            allocation_count = session.scalar(
-                select(func.count())
-                .select_from(DispatchSettlementAllocation)
-                .where(DispatchSettlementAllocation.settlement_id == row.id)
-            )
-            if allocation_count:
-                raise DispatchServiceError(
-                    "allocation_mirror_protected",
-                    "该结算已建五席位明细：总额列为明细派生镜像，禁止直写；"
-                    "请通过 allocate_five_seats 重新分配。",
-                    409,
-                )
-            row.base_amount = payment.received_amount
-            row.platform_amount = amounts["platform"]
-            row.region_amount = amounts["region"]
-            row.city_amount = amounts["city"]
-            row.delivery_amount = amounts["delivery"]
-            if row.seat_delivery_user_id is None and package.seat_delivery is not None:
-                row.seat_delivery_user_id = package.seat_delivery
-        session.flush()
-        record_event(
-            session,
-            actor,
-            "settlement_draft_recorded",
-            package,
-            {
-                "settlement_key": payment.milestone_key,
-                "base_amount": float(payment.received_amount),
-                "shares": shares,
-                "delivery_amount": float(amounts["delivery"]),
-                "status": row.status,
-            },
+        _record_package_receipt(
+            session, actor, package, payment, receipt_unchanged=receipt_unchanged,
         )
     return len(packages)
 
 
-def accrue_settlements_for_project(
-    session: Session, *, actor: User, project_id: str
-) -> int:
-    """G8 过门联动（gate_service decide 事务内调用）：把「实收 + 验收双满足」
-    的 draft 行推进 accrued，冗余 acceptance_passed_at 并计提当期预扣。"""
-    payments = {
-        row.milestone_key: row
-        for row in session.scalars(
-            select(Payment)
-            .where(
-                Payment.project_id == project_id,
-                Payment.received_amount.is_not(None),
-                Payment.acceptance_passed_at.is_not(None),
+_RECEIPT_PACKAGE_STATES = ("published", "offered", "assigned", "accepted")
+
+
+def reconcile_published_b_receipts(session: Session, actor: User, package: DeliveryPackage) -> None:
+    """发布事务持包行锁，只接回已到账的 B 型里程碑。"""
+    for payment in session.scalars(select(Payment).where(
+        Payment.project_id == package.project_id,
+        Payment.sow_type == "b",
+        Payment.milestone_key.in_(("G4", "G8")),
+        Payment.received_at.is_not(None),
+        Payment.received_amount.is_not(None),
+    ).order_by(Payment.milestone_key)):
+        _record_package_receipt(session, actor, package, payment, publishing=True)
+
+
+def _record_package_receipt(
+    session: Session, actor: User, package: DeliveryPackage, payment: Payment,
+    *, receipt_unchanged: bool = False, publishing: bool = False,
+) -> None:
+    amount = payment.received_amount
+    assert amount is not None
+    row = session.scalar(select(DeliverySettlement).where(
+        DeliverySettlement.package_id == package.id,
+        DeliverySettlement.settlement_key == payment.milestone_key,
+    ).with_for_update())
+    if row is not None:
+        if receipt_unchanged or (publishing and row.snapshot_hash == package.snapshot_hash):
+            return
+        if row.status != "draft":
+            # 计提及之后的结算是锁定事实：收款改额不得改写基数与四席镜像，
+            # 否则预扣停留在旧基数上且无重算机制（盲审 F-1 收口）。
+            raise DispatchServiceError(
+                "allocation_mirror_protected", "结算已锁定，请先复核原结算。", 409
             )
-            # 累计预扣按里程碑键序推进，计提顺序可复算（§7.4 审计口径）
-            .order_by(Payment.milestone_key)
+        # 五席明细在场时四列是兼容镜像，不允许通过收款或重发改写。
+        if session.scalar(select(DispatchSettlementAllocation.id).where(
+            DispatchSettlementAllocation.settlement_id == row.id,
+        ).limit(1)) is not None:
+            raise DispatchServiceError(
+                "allocation_mirror_protected", "该结算已有五席明细，请先复核原结算。", 409
+            )
+    else:
+        row = DeliverySettlement(
+            package_id=package.id,
+            snapshot_hash=package.snapshot_hash,
+            settlement_key=payment.milestone_key,
         )
+
+    shares = seat_shares_for(session, package)
+    amounts = split_four_seats(amount, shares)
+    if publishing:
+        row.snapshot_hash = package.snapshot_hash
+    row.base_amount = amount
+    row.platform_amount = amounts["platform"]
+    row.region_amount = amounts["region"]
+    row.city_amount = amounts["city"]
+    row.delivery_amount = amounts["delivery"]
+    if row.seat_delivery_user_id is None:
+        row.seat_delivery_user_id = package.seat_delivery
+    session.add(row)
+    session.flush()
+    record_event(session, actor, "settlement_draft_recorded", package, {
+        "settlement_key": payment.milestone_key,
+        "base_amount": float(amount),
+        "shares": shares,
+        "delivery_amount": float(amounts["delivery"]),
+        "status": row.status,
+    })
+
+
+def _lock_withholding_years(session: Session, payee_years: set[tuple[str, int]]) -> None:
+    """全批按实际 PostgreSQL 锁键排序。事务提交或回滚时统一释放。"""
+    lock_keys = {
+        int.from_bytes(
+            sha256(f"fde:dispatch:withholding:{year}:{payee}".encode()).digest()[:8],
+            "big", signed=True,
+        )
+        for payee, year in payee_years
     }
-    if not payments:
-        return 0
-    packages = session.scalars(
-        select(DeliveryPackage).where(DeliveryPackage.project_id == project_id)
-    ).all()
+    for key in sorted(lock_keys):
+        session.execute(text("SELECT pg_advisory_xact_lock(CAST(:key AS bigint))"), {"key": key})
+
+
+def _paid_personal_payees(session: Session, settlement_id: str) -> dict[str, str]:
+    return {
+        seat: payee
+        for seat, payee in session.execute(
+            select(DispatchSettlementAllocation.seat_key, DispatchSettlementAllocation.payee_user_id)
+            .where(
+                DispatchSettlementAllocation.settlement_id == settlement_id,
+                DispatchSettlementAllocation.status == "paid",
+                DispatchSettlementAllocation.seat_key.in_(_PERSONAL_SEAT_KEYS),
+            )
+        )
+        if payee is not None
+    }
+
+
+def accrue_settlements_for_project(
+    session: Session, *, actor: User, project_id: str, confirm_password: object = None,
+    defer_vacancy: bool = False, settlement_id: str | None = None,
+) -> int:
+    """收款且验收通过的草稿统一走计提，批量与单笔补计提共用年度锁。"""
+    statement = (
+        select(DeliveryPackage, DeliverySettlement, Payment)
+        .join(DeliverySettlement, DeliverySettlement.package_id == DeliveryPackage.id)
+        .join(Payment, and_(Payment.project_id == DeliveryPackage.project_id,
+                            Payment.milestone_key == DeliverySettlement.settlement_key))
+        .where(
+            DeliveryPackage.project_id == project_id,
+            Payment.received_amount.is_not(None),
+            Payment.acceptance_passed_at.is_not(None),
+            DeliverySettlement.status == "draft",
+        )
+        .order_by(DeliveryPackage.id, Payment.milestone_key)
+        .with_for_update(of=DeliverySettlement)
+        .execution_options(populate_existing=True)
+    )
+    if settlement_id is not None:
+        statement = statement.where(DeliverySettlement.id == settlement_id)
+
+    # 调用方先锁项目（及门禁/收款行）。年度锁前锁完本批结算和 G4 来源，
+    # 防止持年度锁后再等结算行。年度锁只保护跨项目的个人累计读取与计提写入。
+    pending: list[tuple[DeliveryPackage, DeliverySettlement, Payment, datetime, bool]] = []
+    payee_years: set[tuple[str, int]] = set()
+    for package, row, payment in session.execute(statement).all():
+        passed_at = payment.acceptance_passed_at
+        assert passed_at is not None
+        key = row.settlement_key
+        personal_payees = _paid_personal_payees(session, row.id)
+        inherit_g4 = False
+        if payment.sow_type == "b" and key in ("G4", "G8"):
+            details_count = session.scalar(
+                select(func.count()).select_from(DispatchSettlementAllocation).where(
+                    DispatchSettlementAllocation.settlement_id == row.id
+                )
+            )
+            if details_count:
+                assert_allocations_complete(session, row.id)
+            elif key == "G4" and package.quote_id is not None:
+                continue  # 有报价的 B 单等人工五席分配后补计提。
+            elif key == "G8":
+                inherit_g4 = True
+                advance_id = session.scalar(
+                    select(DeliverySettlement.id).where(
+                        DeliverySettlement.package_id == package.id,
+                        DeliverySettlement.settlement_key == "G4",
+                    ).with_for_update()
+                )
+                if advance_id is not None:
+                    # G4 可能在同批才变 accrued。先纳入将继承的个人席位，再按原顺序推进。
+                    personal_payees = _paid_personal_payees(session, advance_id)
+        year = passed_at.astimezone(timezone.utc).year
+        payee_years.update((payee, year) for payee in personal_payees.values())
+        fallback_payee = row.seat_delivery_user_id or package.seat_delivery or package.accepted_user_id
+        if fallback_payee is not None:
+            payee_years.add((fallback_payee, year))
+        pending.append((package, row, payment, passed_at, inherit_g4))
+
+    _lock_withholding_years(session, payee_years)
     accrued = 0
-    for package in packages:
-        for key, payment in payments.items():
-            row = session.scalar(
-                select(DeliverySettlement).where(
-                    DeliverySettlement.package_id == package.id,
-                    DeliverySettlement.settlement_key == key,
-                    DeliverySettlement.status == "draft",
-                )
+    for package, row, payment, passed_at, inherit_g4 in pending:
+        if inherit_g4 and not _inherit_g4_allocation(
+            session, actor=actor, payment=payment, package=package,
+            settlement=row, confirm_password=confirm_password, defer_vacancy=defer_vacancy,
+        ):
+            continue
+        delivery_payee = row.seat_delivery_user_id
+        if delivery_payee is None:
+            delivery_payee = (
+                _paid_personal_payees(session, row.id).get("delivery")
+                or package.seat_delivery
+                or package.accepted_user_id
             )
-            if row is None:
-                continue
-            passed_at = payment.acceptance_passed_at
-            if passed_at is None:
-                continue
-            # 先算后改：compute_withholding 内的 SELECT 会触发 autoflush，
-            # 若先把本行置 accrued，本行会混进「累计已计提」口径被双计。
-            delivery_payee = row.seat_delivery_user_id
-            if delivery_payee is None:
-                delivery_payee = (
-                    session.scalar(
-                        select(DispatchSettlementAllocation.payee_user_id).where(
-                            DispatchSettlementAllocation.settlement_id == row.id,
-                            DispatchSettlementAllocation.seat_key == "delivery",
-                            DispatchSettlementAllocation.status == "paid",
-                        )
-                    )
-                    or package.seat_delivery
-                    or package.accepted_user_id
-                )
-                if delivery_payee is not None:
-                    row.seat_delivery_user_id = delivery_payee
-            withholding = Decimal(0)
-            if delivery_payee is not None:
-                withholding = compute_withholding(
-                    session,
-                    delivery_user_id=delivery_payee,
-                    # T6 多收款主体：本结算内该收款人的个人席位合计（兼任
-                    # lead/county 一并进当期基数；存量行回退 delivery 列）。
-                    current_amount=_payee_settlement_base(
-                        session, row, delivery_payee
-                    ),
-                    now=passed_at,
-                )
-            row.acceptance_passed_at = passed_at
-            row.status = "accrued"
-            row.withholding_tax = withholding
-            accrued += 1
-            session.flush()
-            record_event(
+            row.seat_delivery_user_id = delivery_payee
+        withholding = Decimal(0)
+        if delivery_payee is not None:
+            # 年度锁之后另起读语句，READ COMMITTED 下能看见前一事务的提交。
+            # 本行仍为 draft，查询 autoflush 时也不会将本笔重复计入累计。
+            withholding = compute_withholding(
                 session,
-                actor,
-                "settlement_accrued",
-                package,
-                {
-                    "settlement_key": key,
-                    "base_amount": float(row.base_amount),
-                    "withholding_tax": float(row.withholding_tax),
-                    "acceptance_passed_at": passed_at.isoformat(),
-                },
+                delivery_user_id=delivery_payee,
+                current_amount=_payee_settlement_base(session, row, delivery_payee),
+                now=passed_at,
             )
+        row.acceptance_passed_at = passed_at
+        row.status = "accrued"
+        row.withholding_tax = withholding
+        accrued += 1
+        session.flush()
+        record_event(
+            session,
+            actor,
+            "settlement_accrued",
+            package,
+            {
+                "settlement_key": row.settlement_key,
+                "base_amount": float(row.base_amount),
+                "withholding_tax": float(row.withholding_tax),
+                "acceptance_passed_at": passed_at.isoformat(),
+            },
+        )
     return accrued
 
 
@@ -869,45 +1027,56 @@ def _linked_payment(session: Session, row: DeliverySettlement) -> Payment | None
     )
 
 
-def _require_input_invoices(session: Session, row: DeliverySettlement) -> None:
-    """T6 票税分流（ADR-011 §4）：机构主体（区域服务商＝province 席位）按项目
-    **向平台开进项票**——paid 的 province 席位必须先登记进项票凭证方可
-    payable。登记面＝G3 科目层 ``project_share`` 行（挂本结算＋source_uri/
-    content_hash 凭证指针＋指纹，红线原件不入库）；企业票（里程碑销项票）
-    校验不动（「不碰企业票」）。个人席位走预扣路径，本闸不咬（分流不得
-    混算）。"""
-    from fde_api.commercial.models import CommercialRevenueLedger
+def _province_invoice_allocations() -> Select[tuple[DispatchSettlementAllocation]]:
+    return select(DispatchSettlementAllocation).where(
+        DispatchSettlementAllocation.seat_key == "province",
+        DispatchSettlementAllocation.status == "paid",
+    )
 
-    institutional = session.scalars(
-        select(DispatchSettlementAllocation).where(
-            DispatchSettlementAllocation.settlement_id == row.id,
-            DispatchSettlementAllocation.seat_key == "province",
-            DispatchSettlementAllocation.status == "paid",
+
+def province_input_invoice_payee(session: Session, settlement_id: str) -> str | None:
+    return session.scalar(
+        _province_invoice_allocations()
+        .with_only_columns(DispatchSettlementAllocation.payee_user_id)
+        .where(DispatchSettlementAllocation.settlement_id == settlement_id)
+    )
+
+
+def province_input_invoice_entries() -> Select[tuple[CommercialRevenueLedger]]:
+    """供登记查重、列表及转应付共用。旧账允许以义务人字段匹配收款人。"""
+    from fde_api.commercial.models import CommercialRevenueLedger as Ledger
+
+    province = _province_invoice_allocations().subquery()
+    return (
+        select(Ledger)
+        .join(province, province.c.settlement_id == Ledger.delivery_settlement_id)
+        .join(User, User.id == Ledger.recorded_by_user_id)
+        .where(
+            Ledger.subject_type == "project_share",
+            Ledger.status != "voided",
+            Ledger.source_uri.is_not(None),
+            Ledger.content_hash.is_not(None),
+            func.coalesce(Ledger.payee_user_id, Ledger.subject_user_id) == province.c.payee_user_id,
+            # 存量科目没有登记时的 org 快照。按当前归属排除企业身份，不追溯账号的启停或角色变更。
+            User.org_id.is_(None),
         )
-    ).all()
-    for alloc in institutional:
-        entry = session.scalar(
-            select(CommercialRevenueLedger).where(
-                CommercialRevenueLedger.subject_type == "project_share",
-                CommercialRevenueLedger.delivery_settlement_id == row.id,
-                CommercialRevenueLedger.source_uri.is_not(None),
-                CommercialRevenueLedger.content_hash.is_not(None),
-                or_(
-                    CommercialRevenueLedger.payee_user_id == alloc.payee_user_id,
-                    and_(
-                        CommercialRevenueLedger.payee_user_id.is_(None),
-                        CommercialRevenueLedger.subject_user_id == alloc.payee_user_id,
-                    ),
-                ),
-            )
+    )
+
+
+def _require_input_invoices(session: Session, row: DeliverySettlement) -> None:
+    """T6：省级已分配席位转应付前须登记进项票（ADR-011 §4）。"""
+    from fde_api.commercial.models import CommercialRevenueLedger as Ledger
+
+    if province_input_invoice_payee(session, row.id) is None:
+        return
+    entry_exists = province_input_invoice_entries().where(Ledger.delivery_settlement_id == row.id).exists()
+    if not session.scalar(select(entry_exists)):
+        raise DispatchServiceError(
+            "input_invoice_required",
+            "发票前置校验未过：机构席位（区域服务商）尚未按项目登记进项票"
+            "（G3 project_share 科目行附凭证指针＋指纹）。",
+            422,
         )
-        if entry is None:
-            raise DispatchServiceError(
-                "input_invoice_required",
-                "发票前置校验未过：机构席位（区域服务商）尚未按项目登记进项票"
-                "（G3 project_share 科目行附凭证指针＋指纹）。",
-                422,
-            )
 
 
 def mark_payable(session: Session, *, actor: User, settlement_id: str) -> dict[str, Any]:

@@ -24,8 +24,9 @@ from sqlalchemy import select
 from fde_api.auth.models import User
 from fde_api.auth.passwords import hash_password
 from fde_api.commercial.ledger_service import record_revenue_entry
-from fde_api.commercial.models import RegionalPartner
+from fde_api.commercial.models import CommercialRevenueLedger, RegionalPartner
 from fde_api.commercial.regional_service import record_service_settlement
+from fde_api.commercial.service import CommercialServiceError
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import (
     DeliverySettlement,
@@ -38,6 +39,8 @@ from fde_api.dispatch.settlements import (
     mark_payable,
     record_receipt_settlements,
 )
+from fde_api.dispatch.settlement_operations import list_project_settlements
+from fde_api.orgs.models import Org
 from fde_api.projects.payment_service import mark_acceptance_passed
 from fde_api.workbench.models import Payment
 
@@ -311,6 +314,97 @@ def test_payable_requires_province_input_invoice(db_session):
     _province_ledger_entry(db_session, context, with_evidence=True)
     result = mark_payable(db_session, actor=admin, settlement_id=settlement.id)
     assert result["status"] == "payable"
+
+
+@pytest.fixture
+def accrued_province_case(db_session):
+    context = _ctx(db_session, received="120000.00", milestone="G3")
+    admin, package, settlement, payment, payees = context
+    _allocate(db_session, context, _payees_map(
+        payees["lead"], payees["delivery"], payees["county"], payees["province"],
+    ))
+    settlement.status = "accrued"
+    settlement.acceptance_passed_at = datetime.now(timezone.utc)
+    payment.invoice_no = "INV-T6-PROVINCE"
+    db_session.flush()
+    return admin, package, settlement, payees
+
+
+@pytest.fixture
+def enterprise_recorder(db_session):
+    org = Org(name="T6 synthetic enterprise", org_type="enterprise")
+    recorder = User(
+        username=f"t6.enterprise.{uuid4().hex[:8]}", display_name="T6 enterprise admin",
+        role="admin", password_hash=hash_password(INITIAL_PASSWORD),
+        must_change_password=False, is_active=True,
+    )
+    db_session.add_all([org, recorder])
+    db_session.flush()
+    recorder.org_id = org.id
+    db_session.flush()
+    return recorder
+
+
+def test_province_invoice_recording_requires_platform_identity(db_session, accrued_province_case, enterprise_recorder):
+    admin, package, settlement, payees = accrued_province_case
+    recorder = enterprise_recorder
+    evidence = {"source_uri": "fdeops://t6/input-invoice", "content_hash": "b" * 64}
+    fields = {
+        "subject_type": "project_share", "line_item": "platform_share",
+        "delivery_settlement_id": settlement.id, "confirm_password": INITIAL_PASSWORD,
+    }
+    with pytest.raises(CommercialServiceError) as exc_info:
+        record_revenue_entry(
+            db_session, actor=recorder, subject_user_id=payees["province"], **fields, **evidence,
+        )
+    assert (exc_info.value.status, exc_info.value.code) == (403, "commercial_admin_required")
+    assert db_session.scalar(select(CommercialRevenueLedger.id).where(
+        CommercialRevenueLedger.delivery_settlement_id == settlement.id,
+    )) is None
+
+    # 普通个人分成和不带凭证的省级账务保留旧权限。
+    record_revenue_entry(db_session, actor=recorder, payee_user_id=payees["delivery"], **fields, **evidence)
+    record_revenue_entry(db_session, actor=recorder, payee_user_id=payees["province"], **fields)
+    assert list_project_settlements(db_session, package.project_id)["settlements"][0][
+        "input_invoice_recorded"
+    ] is False
+
+    record_revenue_entry(db_session, actor=admin, subject_user_id=payees["province"], **fields, **evidence)
+    assert list_project_settlements(db_session, package.project_id)["settlements"][0][
+        "input_invoice_recorded"
+    ] is True
+    assert mark_payable(db_session, actor=admin, settlement_id=settlement.id)["status"] == "payable"
+
+
+def test_historical_province_invoice_is_consistent_with_payable(db_session, accrued_province_case, enterprise_recorder):
+    admin, package, settlement, payees = accrued_province_case
+    evidence = {"source_uri": "fdeops://t6/historical-invoice", "content_hash": "a" * 64}
+    for status, recorder in (("voided", admin), ("recorded", enterprise_recorder)):
+        db_session.add(CommercialRevenueLedger(
+            subject_type="project_share", line_item="platform_share", status=status,
+            subject_user_id=payees["province"], delivery_settlement_id=settlement.id,
+            amount=Decimal("8400.00"), recorded_by_user_id=recorder.id, **evidence,
+        ))
+    db_session.flush()
+    assert list_project_settlements(db_session, package.project_id)["settlements"][0][
+        "input_invoice_recorded"
+    ] is False
+    with pytest.raises(DispatchServiceError) as exc_info:
+        mark_payable(db_session, actor=admin, settlement_id=settlement.id)
+    assert (exc_info.value.status, exc_info.value.code) == (422, "input_invoice_required")
+
+    # 历史名目与 subject_user_id 回退均可用，重复有效旧账也只作存在判断。
+    for _ in range(2):
+        db_session.add(CommercialRevenueLedger(
+            subject_type="project_share", line_item="platform_share", status="reconciled",
+            subject_user_id=payees["province"], delivery_settlement_id=settlement.id,
+            amount=Decimal("8400.00"), recorded_by_user_id=admin.id, **evidence,
+        ))
+    db_session.flush()
+    assert list_project_settlements(db_session, package.project_id)["settlements"][0][
+        "input_invoice_recorded"
+    ] is True
+    assert mark_payable(db_session, actor=admin, settlement_id=settlement.id)["status"] == "payable"
 
 
 def test_payable_personal_seats_not_blocked_by_invoice_gate(db_session):

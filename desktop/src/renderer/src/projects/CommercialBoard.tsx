@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useAuth } from "../auth/AuthProvider"
 import { useAsyncAction } from "../common/useAsyncAction"
+import { SettlementAdminPanel } from "./SettlementAdminPanel"
 import {
   FALLBACK_OPTIONS,
   mergeOptions,
@@ -180,7 +181,9 @@ function errorText(caught: unknown): string {
 }
 
 export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) {
-  const { apiRequest } = useAuth()
+  const { apiRequest, user } = useAuth()
+  const isAdmin = user?.role === "admin"
+  const [settlementRefresh, setSettlementRefresh] = useState(0)
   const [quotes, setQuotes] = useState<QuoteDto[]>([])
   const [board, setBoard] = useState<PaymentBoardDto | null>(null)
   const [contracts, setContracts] = useState<ContractDto[]>([])
@@ -252,6 +255,11 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
     },
     [load],
   )
+
+  const recordReceipt = useCallback(async (milestone: string, body: object) => {
+    await apiRequest(`/api/v1/projects/${enc}/payments/${encodeURIComponent(milestone)}`, { method: "POST", body })
+    setSettlementRefresh((current) => current + 1)
+  }, [apiRequest, enc])
 
   const post = useCallback(
     (path: string, body: unknown): Promise<unknown> =>
@@ -363,7 +371,7 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
           </thead>
           <tbody>
             {(board?.payments ?? []).map((payment) => (
-              <PaymentRow key={payment.id} payment={payment} canManage={canManage} post={post} mutate={mutate} />
+              <PaymentRow key={payment.id} payment={payment} canManage={canManage} isAdmin={isAdmin} post={post} mutate={mutate} recordReceipt={recordReceipt} />
             ))}
             {(board?.payments ?? []).length === 0 ? (
               <tr>
@@ -375,6 +383,8 @@ export function CommercialBoard({ projectId, canManage }: CommercialBoardProps) 
           </tbody>
         </table>
       </section>
+
+      {isAdmin ? <SettlementAdminPanel key={projectId} projectId={projectId} refreshKey={settlementRefresh} /> : null}
 
       <section className="panel">
         <h3>合同台账（只存指针，PDF 在 fdeops）</h3>
@@ -818,17 +828,24 @@ function PlanForm({
 function PaymentRow({
   payment,
   canManage,
+  isAdmin,
   post,
   mutate,
+  recordReceipt,
 }: {
   payment: PaymentDto
   canManage: boolean
+  isAdmin: boolean
   post: Post
   mutate: Mutate
+  recordReceipt: (milestone: string, body: object) => Promise<void>
 }) {
   const [dueDate, setDueDate] = useState(payment.due_date ?? "")
   const [received, setReceived] = useState("")
   const [invoiceNo, setInvoiceNo] = useState(payment.invoice_no ?? "")
+  const [receiptPassword, setReceiptPassword] = useState("")
+  const canConfirmInheritance = isAdmin && payment.milestone_key === "G8"
+  const paymentPath = `/payments/${encodeURIComponent(payment.milestone_key)}`
   // S1/F1：设到期是本地写操作，护栏挂在实际渲染按钮的子组件作用域内。
   const action = useAsyncAction()
   const dunningClass =
@@ -886,24 +903,54 @@ function PaymentRow({
               </button>
               <input placeholder="实收金额" value={received} onChange={(e) => setReceived(e.target.value)} />
               <input placeholder="发票号" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
+              {canConfirmInheritance ? <label>
+                继承五席空缺时的当前密码（按需填写）
+                <input type="password" autoComplete="current-password" maxLength={1024}
+                  value={receiptPassword} disabled={action.isBusy}
+                  onChange={(event) => setReceiptPassword(event.target.value)} />
+              </label> : null}
               <button
                 type="button"
                 className="primary-button compact"
-                disabled={!received && !invoiceNo}
-                onClick={() =>
-                  void mutate(async () =>
-                    post(`/payments/${encodeURIComponent(payment.milestone_key)}`, {
-                      ...(received ? { received_amount: parsePositive(received, "实收金额") } : {}),
-                      ...(invoiceNo ? { invoice_no: invoiceNo } : {}),
-                    }),
-                  )
-                }
+                disabled={action.isBusy || (!received && !invoiceNo)}
+                onClick={() => void action.run("receipt", () => mutate(async () => {
+                  const body = {
+                    ...(received ? { received_amount: parsePositive(received, "实收金额") } : {}),
+                    ...(invoiceNo ? { invoice_no: invoiceNo } : {}),
+                    ...(canConfirmInheritance && received && receiptPassword ? { confirm_password: receiptPassword } : {}),
+                  }
+                  try {
+                    if (received) await recordReceipt(payment.milestone_key, body)
+                    else await post(paymentPath, body)
+                    setReceived("")
+                  } finally {
+                    setReceiptPassword("")
+                  }
+                }))}
               >
                 回填
               </button>
+              {canConfirmInheritance ? <button
+                type="button" className="secondary-button compact" disabled={action.isBusy}
+                onClick={() => {
+                  setReceived("")
+                  setInvoiceNo(payment.invoice_no ?? "")
+                  setReceiptPassword("")
+                }}
+              >取消尾款回填</button> : null}
             </>
           ) : (
-            <span className="supporting-copy">{payment.invoice_no ?? "已到账"}</span>
+            <>
+              <label>销项票号
+                <input value={invoiceNo} maxLength={60} disabled={action.isBusy}
+                  onChange={(event) => setInvoiceNo(event.target.value)} />
+              </label>
+              <button type="button" className="secondary-button compact"
+                disabled={action.isBusy || !invoiceNo.trim() || invoiceNo.trim() === payment.invoice_no}
+                onClick={() => void action.run("invoice", () => mutate(() => post(paymentPath, { invoice_no: invoiceNo.trim() })))}>
+                保存销项票号
+              </button>
+            </>
           )}
         </td>
       ) : null}

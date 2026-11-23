@@ -19,11 +19,21 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
-from fde_api.auth.models import ROLE_ADMIN, ROLE_PROJECT_LEAD, User
+from fde_api.auth.confirm_throttle import (
+    TOO_MANY_ATTEMPTS_CODE,
+    TOO_MANY_ATTEMPTS_MESSAGE,
+    confirm_attempts_blocked,
+    record_confirm_failure,
+)
+from fde_api.auth.limits import PASSWORD_MAX_LENGTH
+from fde_api.auth.models import ROLE_ADMIN, ROLE_FDE_ENGINEER, ROLE_PROJECT_LEAD, User
+from fde_api.auth.passwords import verify_password
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import DeliveryPackage, FdeLevelEvidence, FdeProfile
 from fde_api.meetings.models import ReviewMeetingMinutes
@@ -373,3 +383,155 @@ def create_profile(
     profile = FdeProfile(user_id=user_id, home_city=home_city)
     session.add(profile)
     return profile
+
+
+def can_manage_dispatch_profiles(actor: User) -> bool:
+    return actor.role == ROLE_ADMIN and actor.org_id is None
+
+
+def _confirm_profile_admin(session: Session, actor: User, password: object) -> User:
+    current = session.get(User, actor.id)
+    if (
+        current is None
+        or not can_manage_dispatch_profiles(current)
+        or not current.is_active
+        or current.must_change_password
+        or current.auth_version != actor.auth_version
+    ):
+        raise DispatchServiceError("forbidden", "只有平台管理员可管理派单档案。", 403)
+    if not isinstance(password, str) or not password or len(password) > PASSWORD_MAX_LENGTH:
+        raise DispatchServiceError("invalid_request", "请输入有效的当前账号密码。")
+    if confirm_attempts_blocked(actor.id):
+        raise DispatchServiceError(TOO_MANY_ATTEMPTS_CODE, TOO_MANY_ATTEMPTS_MESSAGE, 429)
+    if not verify_password(current.password_hash, password):
+        record_confirm_failure(actor.id)
+        raise DispatchServiceError("invalid_password", "当前账号密码不正确。", 403)
+    return current
+
+
+def dispatch_deliverer_filter() -> ColumnElement[bool]:
+    return and_(
+        User.role == ROLE_FDE_ENGINEER,
+        User.is_active.is_(True),
+        User.registration_state == "active",
+    )
+
+
+def _require_dispatch_deliverer(session: Session, user_id: str) -> User:
+    row = session.execute(
+        select(User, dispatch_deliverer_filter())
+        .where(User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if row is None:
+        raise DispatchServiceError("user_not_found", "交付者账号不存在。", 404)
+    target, eligible_account = row
+    if not eligible_account:
+        raise DispatchServiceError(
+            "delivery_identity_required", "操作仅面向已审核并启用的交付者账号。", 409
+        )
+    return target
+
+
+def register_profile(
+    session: Session,
+    *,
+    actor: User,
+    user_id: object,
+    home_city: object,
+    confirm_password: object,
+) -> dict[str, Any]:
+    """登记已审核交付者的档案，保留单独的启用步骤。"""
+    from fde_api.commercial.models import SEAT_SOURCES, CommercialEntitlement
+
+    current = _confirm_profile_admin(session, actor, confirm_password)
+    if not isinstance(user_id, str) or not user_id.strip() or len(user_id.strip()) > 36:
+        raise DispatchServiceError("invalid_request", "请输入有效的交付者账号 ID。")
+    user_id = user_id.strip()
+    if home_city is not None and (not isinstance(home_city, str) or len(home_city.strip()) > 32):
+        raise DispatchServiceError("invalid_request", "常驻城市须为 32 字以内的文本。")
+    city = (home_city.strip() or None) if isinstance(home_city, str) else None
+
+    # 和席位激活及启用保持同一锁序。权益行锁也串行化同账号首次建档。
+    entitlement = session.get(
+        CommercialEntitlement, user_id, with_for_update=True, populate_existing=True
+    )
+    target = _require_dispatch_deliverer(session, user_id)
+    if entitlement is None or entitlement.delivery_eligibility != "eligible":
+        raise DispatchServiceError("delivery_eligibility_required", "该用户尚无商业交付资格。", 409)
+    profile = session.get(FdeProfile, user_id, with_for_update=True, populate_existing=True)
+    changed = profile is None
+    if profile is None:
+        profile = create_profile(session, user_id=user_id, home_city=city)
+        now = datetime.now(timezone.utc)
+        seat_effective = (
+            entitlement.seat_status == "active"
+            and entitlement.seat_source in SEAT_SOURCES
+            and entitlement.seat_activated_at is not None
+            and entitlement.seat_activated_at <= now
+            and entitlement.seat_expires_at is not None
+            and entitlement.seat_expires_at > now
+        )
+        profile.status = "active" if seat_effective else "pending"
+        session.flush()
+        record_event(
+            session,
+            current,
+            "fde_profile_registered",
+            target,
+            {
+                "request_id": str(uuid4()),
+                "source": "dispatch_profiles",
+                "before": None,
+                "after": {
+                    "status": profile.status,
+                    "is_active": profile.is_active,
+                    "home_city": city,
+                },
+            },
+        )
+    return {
+        "user_id": user_id,
+        "home_city": profile.home_city,
+        "status": profile.status,
+        "is_active": profile.is_active,
+        "changed": changed,
+    }
+
+
+def enable_profile(
+    session: Session, *, actor: User, user_id: str, confirm_password: object
+) -> dict[str, Any]:
+    """Explicitly enable an existing profile, independently of commercial seat activation."""
+    from fde_api.commercial.models import CommercialEntitlement
+
+    current = _confirm_profile_admin(session, actor, confirm_password)
+    # 席位激活同样先锁商业权益再改档案。缺少权益行是拒绝条件，不在派单域补建。
+    entitlement = session.get(
+        CommercialEntitlement, user_id, with_for_update=True, populate_existing=True
+    )
+    target = _require_dispatch_deliverer(session, user_id)
+    profile = session.get(FdeProfile, user_id, with_for_update=True, populate_existing=True)
+    if profile is None:
+        raise DispatchServiceError("profile_not_found", "该用户尚无供给池档案。", 404)
+    if profile.status != "active":
+        raise DispatchServiceError("profile_not_active", "档案生命周期须为 active。", 409)
+    if entitlement is None or entitlement.delivery_eligibility != "eligible":
+        raise DispatchServiceError("delivery_eligibility_required", "该用户尚无商业交付资格。", 409)
+    changed = not profile.is_active
+    if changed:
+        profile.is_active = True
+        record_event(
+            session,
+            current,
+            "fde_profile_enabled",
+            target,
+            {
+                "request_id": str(uuid4()),
+                "source": "dispatch_profiles",
+                "before": {"is_active": False},
+                "after": {"is_active": True},
+            },
+        )
+    return {"user_id": user_id, "is_active": True, "changed": changed}

@@ -31,6 +31,7 @@ from fde_api.dispatch.models import (
     resolve_onsite_required,
 )
 from fde_api.dispatch.packages import transition_package
+from fde_api.dispatch.profiles import dispatch_deliverer_filter
 from fde_api.dispatch.rules import active_rule_version
 from fde_api.projects.events import record_event
 from fde_api.system_configuration import DISPATCH_CONSTANTS
@@ -182,7 +183,13 @@ def _stage_a(
     rejected: list[dict[str, Any]] = []
     b1_excluded = _declined_earlier_rounds(session, package)
     profiles = session.scalars(
-        select(FdeProfile).where(FdeProfile.status == "active", FdeProfile.is_active.is_(True))
+        select(FdeProfile)
+        .join(User, User.id == FdeProfile.user_id)
+        .where(
+            FdeProfile.status == "active",
+            FdeProfile.is_active.is_(True),
+            dispatch_deliverer_filter(),
+        )
     ).all()
     for profile in profiles:
         level = profile.level

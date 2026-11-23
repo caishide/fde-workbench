@@ -498,6 +498,32 @@ it("B#28: 拍板请求带上服务端回传的 expected_revision", async () => {
   expect(request?.[1].retryAfterAuthRefresh).not.toBe(true)
 })
 
+it("G8 管理员密码随正式确认提交，取消预览后清空", async () => {
+  const user = userEvent.setup()
+  const previousRole = mocks.user.role
+  mocks.user.role = "admin"
+  try {
+    mocks.apiRequest.mockResolvedValue(gateView({ gates: [decidableGate({ gate_key: "G8", revision: 7 })] }))
+    render(<GateBoard projectId="gate-project" canManage />)
+    await user.click(await screen.findByRole("button", { name: "人工核验拍板" }))
+    await user.click(screen.getByRole("checkbox"))
+    const preview = screen.getByRole("button", { name: /预览拍板/ })
+    await user.click(preview)
+    await user.type(screen.getByLabelText(/输入当前管理员密码/), "test-password")
+    await user.click(screen.getByRole("button", { name: "取消确认" }))
+    expect(decisionRequestBodies("G8")).toHaveLength(0)
+    await user.click(preview)
+    const password = screen.getByLabelText(/输入当前管理员密码/)
+    expect(password).toHaveValue("")
+    await user.type(password, "test-password")
+    await user.click(screen.getByRole("button", { name: "确认人工拍板" }))
+    await waitFor(() => expect(decisionRequestBodies("G8")).toHaveLength(1))
+    expect(decisionRequestBodies("G8")[0]).toMatchObject({ expected_revision: 7, confirm_password: "test-password" })
+  } finally {
+    mocks.user.role = previousRole
+  }
+})
+
 it("没有服务端保护能力时已有 revision 也只读", async () => {
   mocks.apiRequest.mockResolvedValue(gateView({
     write_preconditions: undefined,

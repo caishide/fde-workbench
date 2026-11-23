@@ -429,7 +429,7 @@ export function ConsolePage() {
                 {row.dispatch_round} 轮
               </span>
               <span className="dispatch-seat-amount">
-                交付方席位 {formatSeatAmount(row.delivery_seat_amount)}
+                交付方席位 {formatSeatAmount(row.delivery_seat_amount)}（发布时估算，按实收结算）
               </span>
             </button>
 

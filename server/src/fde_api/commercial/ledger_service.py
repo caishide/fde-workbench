@@ -57,7 +57,7 @@ from fde_api.dispatch.models import (
     DeliverySettlement,
     DispatchSettlementAllocation,
 )
-from fde_api.dispatch.settlements import seat_shares_for
+from fde_api.dispatch.settlements import province_input_invoice_payee, seat_shares_for
 from fde_api.projects.events import record_event
 from fde_api.workbench.models import Contract, Payment, Quote
 
@@ -73,7 +73,7 @@ def _require_admin(actor: User) -> None:
         raise _error("commercial_admin_required", "商业科目治理仅系统运维员可用。", 403)
 
 
-def _confirm_password(session: Session, actor: User, password: object) -> None:
+def _confirm_password(session: Session, actor: User, password: object) -> User:
     """单次显式授权：admin 写原语须携带当前账号密码（高风险写人工确认）。"""
     if not isinstance(password, str) or not password:
         raise _error("invalid_request", "confirm_password 必填（高风险写人工确认）。")
@@ -84,6 +84,7 @@ def _confirm_password(session: Session, actor: User, password: object) -> None:
     if current is None or not verify_password(current.password_hash, password):
         record_confirm_failure(actor.id)
         raise _error("invalid_password", "当前账号密码不正确。", 403)
+    return current
 
 
 def _require_sha256(value: object, field: str) -> str:
@@ -560,7 +561,7 @@ def record_revenue_entry(
     409 拒绝。
     """
     _require_admin(actor)
-    _confirm_password(session, actor, confirm_password)
+    current = _confirm_password(session, actor, confirm_password)
     if subject_type not in REVENUE_SUBJECT_TYPES:
         raise _error("invalid_subject_type", "subject_type 必须是 seat_fee/training_fee/project_share 之一。")
     if not isinstance(line_item, str):
@@ -610,6 +611,15 @@ def record_revenue_entry(
 
     uri = _optional_uri(source_uri, "source_uri")
     digest = _require_sha256(content_hash, "content_hash") if content_hash is not None else None
+    settlement_id = linked["delivery_settlement_id"]
+    ledger_payee = payee_user_id if isinstance(payee_user_id, str) else subject_user_id
+    if (
+        subject_type == "project_share" and settlement_id is not None
+        and uri is not None and digest is not None and isinstance(ledger_payee, str)
+        and not (current.is_active and current.role == ROLE_ADMIN and current.org_id is None)
+        and province_input_invoice_payee(session, settlement_id) == ledger_payee
+    ):
+        raise _error("commercial_admin_required", "仅平台系统运维员可登记省级进项票。", 403)
 
     basis: dict[str, Any] = {}
     seat_shares: dict[str, Any] | None = None

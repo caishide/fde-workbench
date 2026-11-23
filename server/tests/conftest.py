@@ -750,6 +750,7 @@ def db_session(app) -> Session:
         __import__("fde_api.dispatch.models", fromlist=["PackageAccess"]).PackageAccess,
         # goal-r6：disputes 引用包（FK RESTRICT），先于包清理。
         __import__("fde_api.dispatch.models", fromlist=["Dispute"]).Dispute,
+        __import__("fde_api.dispatch.models", fromlist=["DispatchSettlementAllocation"]).DispatchSettlementAllocation,
         __import__("fde_api.dispatch.models", fromlist=["DeliverySettlement"]).DeliverySettlement,
         __import__("fde_api.dispatch.models", fromlist=["DispatchOffer"]).DispatchOffer,
         __import__("fde_api.dispatch.models", fromlist=["DeliveryPackage"]).DeliveryPackage,

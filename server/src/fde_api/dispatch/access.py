@@ -222,7 +222,7 @@ def serialize_package_whitelist(
         "deadline": project.planned_end_date.isoformat()
         if project.planned_end_date
         else None,
-        # ---- 显示义务（§7.1）：交付方席位 40% 对应金额（发布时物化冻结）----
+        # ---- 显示义务（§7.1）：交付方席位估算金额（发布时物化）----
         "delivery_seat_amount": _decimal_or_none(package.delivery_seat_amount),
         # 状态面（非敏感，派单池可见性必需）
         "dispatch_status": package.dispatch_status,

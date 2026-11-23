@@ -386,70 +386,101 @@ def list_my_offers_route():
 @blueprint.get("/settlements/mine")
 @require_auth
 def list_my_settlements_route():
-    """我的席位结算（§7.2，接单工作台，B1）。
+    """只回本人收款席位。零明细时用旧四席归属，预扣仅归交付席。"""
+    from itertools import groupby
 
-    隔离纪律：只回当前用户占据席位的行，且只回**自己席位**的角色与金额——
-    其他席位的存在与金额不出现（§9.5 同源；工程师只看自己的分成）。
-    withholding_tax 原样透出、不算净额（预扣口径=B-③ 待法务确认，不发明）。
-    """
-    from fde_api.dispatch.models import DeliverySettlement
+    from sqlalchemy import and_, or_
+
+    from fde_api.dispatch.models import DeliverySettlement, DispatchSettlementAllocation
+    from fde_api.dispatch.settlements import FIVE_SEAT_KEYS
 
     me = g.current_user.id
-    session = db.session()
-    try:
+    allocation = DispatchSettlementAllocation
+    has_allocations = (
+        select(allocation.id)
+        .where(allocation.settlement_id == DeliverySettlement.id)
+        .correlate(DeliverySettlement)
+        .exists()
+    )
+    legacy_seat_is_mine = or_(
+        DeliverySettlement.seat_platform_user_id == me,
+        DeliverySettlement.seat_region_agent_user_id == me,
+        DeliverySettlement.seat_city_partner_user_id == me,
+        DeliverySettlement.seat_delivery_user_id == me,
+    )
+    with db.session() as session:
         rows = session.execute(
-            select(DeliverySettlement, DeliveryPackage.package_code)
-            .join(
-                DeliveryPackage,
-                DeliveryPackage.id == DeliverySettlement.package_id,
+            select(
+                DeliverySettlement,
+                DeliveryPackage.package_code,
+                allocation.seat_key,
+                allocation.amount,
+            )
+            .join(DeliveryPackage, DeliveryPackage.id == DeliverySettlement.package_id)
+            .outerjoin(
+                allocation,
+                and_(
+                    allocation.settlement_id == DeliverySettlement.id,
+                    allocation.payee_user_id == me,
+                    allocation.status == "paid",
+                ),
             )
             .where(
-                (DeliverySettlement.seat_platform_user_id == me)
-                | (DeliverySettlement.seat_region_agent_user_id == me)
-                | (DeliverySettlement.seat_city_partner_user_id == me)
-                | (DeliverySettlement.seat_delivery_user_id == me)
+                or_(
+                    allocation.id.is_not(None),
+                    and_(~has_allocations, legacy_seat_is_mine),
+                )
             )
-            .order_by(DeliverySettlement.created_at.desc())
+            .order_by(DeliverySettlement.created_at.desc(), DeliverySettlement.id)
         ).all()
         data = []
-        for settlement, package_code in rows:
-            my_roles: list[str] = []
-            my_amount = 0.0
-            for role, seat_user, amount in (
-                (
-                    "platform",
-                    settlement.seat_platform_user_id,
-                    settlement.platform_amount,
-                ),
-                (
-                    "region",
-                    settlement.seat_region_agent_user_id,
-                    settlement.region_amount,
-                ),
-                (
-                    "city",
-                    settlement.seat_city_partner_user_id,
-                    settlement.city_amount,
-                ),
-                (
-                    "delivery",
-                    settlement.seat_delivery_user_id,
-                    settlement.delivery_amount,
-                ),
-            ):
-                if seat_user == me:
-                    my_roles.append(role)
-                    my_amount += float(amount)
+        for _, group in groupby(rows, key=lambda row: row[0].id):
+            settlement, package_code, first_seat, first_amount = next(group)
+            if first_seat is not None:
+                my_shares = {first_seat: first_amount}
+                my_shares.update((seat, amount) for _, _, seat, amount in group)
+                my_roles = [role for role in FIVE_SEAT_KEYS if role in my_shares]
+            else:
+                # 只有整笔结算零明细时才使用兼容镜像。
+                my_shares = {
+                    role: amount
+                    for role, seat_user, amount in (
+                        (
+                            "platform",
+                            settlement.seat_platform_user_id,
+                            settlement.platform_amount,
+                        ),
+                        (
+                            "region",
+                            settlement.seat_region_agent_user_id,
+                            settlement.region_amount,
+                        ),
+                        (
+                            "city",
+                            settlement.seat_city_partner_user_id,
+                            settlement.city_amount,
+                        ),
+                        (
+                            "delivery",
+                            settlement.seat_delivery_user_id,
+                            settlement.delivery_amount,
+                        ),
+                    )
+                    if seat_user == me
+                }
+                my_roles = list(my_shares)
             data.append(
                 {
                     "settlement_id": settlement.id,
                     "package_code": package_code,
                     "settlement_key": settlement.settlement_key,
                     "status": settlement.status,
-                    "base_amount": float(settlement.base_amount),
+                    "base_amount": float(settlement.base_amount) if first_seat is None else None,
                     "my_roles": my_roles,
-                    "my_amount": round(my_amount, 2),
-                    "withholding_tax": float(settlement.withholding_tax),
+                    "my_amount": float(sum(my_shares.values(), Decimal(0))),
+                    "withholding_tax": (
+                        float(settlement.withholding_tax) if "delivery" in my_shares else 0.0
+                    ),
                     "acceptance_passed_at": settlement.acceptance_passed_at.isoformat()
                     if settlement.acceptance_passed_at
                     else None,
@@ -459,8 +490,6 @@ def list_my_settlements_route():
                 }
             )
         return jsonify({"data": data, "error": None})
-    finally:
-        session.close()
 
 
 @blueprint.get("/profiles/me")
@@ -499,6 +528,7 @@ def read_my_profile_route():
         data = {
             "level": profile.level,
             "status": profile.status,
+            "is_active": profile.is_active,
             "scores": {
                 "biz_cognition": profile.biz_cognition_score,
                 "scenario_eng": profile.scenario_eng_score,
@@ -657,10 +687,13 @@ def list_profiles_route():
     """能力档案 + 产能看板数据（P2-1/§3.2/§6.5；平台侧——档案含他人在途计数）。"""
     if g.current_user.role not in _PLATFORM_ROLES:
         return error_response("forbidden", "只有平台侧可查看供给池档案。", 403)
+    from fde_api.commercial.models import CommercialEntitlement
     from fde_api.dispatch.models import DispatchOffer, FdeProfile
+    from fde_api.dispatch.profiles import can_manage_dispatch_profiles, dispatch_deliverer_filter
     from fde_api.workbench.models import User as UserModel
     from sqlalchemy import func
 
+    can_manage = can_manage_dispatch_profiles(g.current_user)
     with db.session() as session:
         in_hand = dict(
             session.execute(
@@ -675,12 +708,23 @@ def list_profiles_route():
             ).all()
         )
         rows = session.execute(
-            select(FdeProfile, UserModel.username, UserModel.display_name)
+            select(
+                FdeProfile,
+                UserModel.username,
+                UserModel.display_name,
+                dispatch_deliverer_filter(),
+                select(CommercialEntitlement.user_id)
+                .where(
+                    CommercialEntitlement.user_id == FdeProfile.user_id,
+                    CommercialEntitlement.delivery_eligibility == "eligible",
+                )
+                .exists(),
+            )
             .join(UserModel, UserModel.id == FdeProfile.user_id)
             .order_by(FdeProfile.user_id)
         ).all()
         data = []
-        for profile, username, display_name in rows:
+        for profile, username, display_name, eligible_account, eligible in rows:
             cap = (
                 (profile.monthly_capacity_hours or 0)
                 // max(profile.avg_delivery_hours or 0, 1)
@@ -694,6 +738,14 @@ def list_profiles_route():
                     "display_name": display_name,
                     "level": profile.level,
                     "status": profile.status,
+                    "is_active": profile.is_active,
+                    "can_enable": (
+                        can_manage
+                        and profile.status == "active"
+                        and not profile.is_active
+                        and eligible
+                        and eligible_account
+                    ),
                     "scores": {
                         "biz_cognition": profile.biz_cognition_score,
                         "scenario_eng": profile.scenario_eng_score,
