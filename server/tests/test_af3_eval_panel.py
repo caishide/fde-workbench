@@ -158,7 +158,7 @@ def _contract_specs() -> dict[str, Any]:
     覆盖**，基线与种子内容均由生成器派生——不另抄第三份）。"""
     seeds = _generator_seeds()
     baseline = _generator_baseline()
-    return {
+    specs: dict[str, dict[str, Any]] = {
         "sample-baseline": {"files": dict(baseline)},
         "af3-seed-lint": {
             "extends": "sample-baseline",
@@ -187,6 +187,7 @@ def _contract_specs() -> dict[str, Any]:
             "overrides": {"ontology/broken-seed.yaml": seeds["ontology/broken-seed.yaml"]},
         },
     }
+    return specs
 
 
 def _norm_rel(rel: str) -> str:
@@ -1042,7 +1043,7 @@ class TestRepoMaterialization:
     def test_spec_without_manifest_keeps_generator_superset(self, af3_panel_repo_base: Path) -> None:
         """无契约清单（无任务集 env 的最小内联集）→ 不裁剪（生成器超集保留），
         既有 mock 语义不变（``test_baseline_and_seed_override`` 同源）。"""
-        specs = {
+        specs: dict[str, dict[str, Any]] = {
             "sample-baseline": {"files_note": "generator build"},
             "af3-seed-lint": {
                 "extends": "sample-baseline",
@@ -1100,7 +1101,7 @@ class TestRepoMaterialization:
             "a/one.yaml": "root",
             "a/two.yaml": "leaf",
         }
-        deep = {"s0": {"files": {"a/x.yaml": "v"}}}
+        deep: dict[str, dict[str, Any]] = {"s0": {"files": {"a/x.yaml": "v"}}}
         for level in range(1, 8):
             deep[f"s{level}"] = {"extends": f"s{level - 1}"}
         with pytest.raises(ValueError, match="too deep"):
