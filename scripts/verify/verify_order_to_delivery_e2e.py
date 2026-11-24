@@ -290,6 +290,8 @@ def main() -> None:
     status, data = data_of(call("POST", "/api/v1/dispatch/packages", admin_token, {
         "solution_id": sid, "quote_id": quote_id, "dispatch_mode": "assign",
         "onsite_required": True, "onsite_visits": 2,
+        # M2 验收第 9 条：机制验证造蜂显式声明 drill（声明义务在造蜂方）
+        "data_origin": "drill",
     }, base_url=args.base_url))
     pkg_id = (data or {}).get("id")
     step(12, "交付包建包", status == 201 and bool(pkg_id), f"code={(data or {}).get('package_code')}")

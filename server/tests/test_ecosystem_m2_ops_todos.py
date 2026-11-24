@@ -46,7 +46,7 @@ def _approval(db_session, project, user, *, expires_at, status="pending"):
 
 
 def _offer(db_session, project, candidate, *, mode="assign", offered_at,
-           response_window_hours=24, status="offered", round_no=1):
+           response_window_hours=24, status="offered", round_no=1, origin=None):
     solution = ProjectSolution(project_id=project.id, name="待办测试方案",
         owner_user_id=project.leader_user_id)
     db_session.add(solution)
@@ -54,7 +54,8 @@ def _offer(db_session, project, candidate, *, mode="assign", offered_at,
     package = DeliveryPackage(id=uuid4().hex, solution_id=solution.id,
         project_id=project.id, package_code="PKJ-" + uuid4().hex[:8].upper(),
         dispatch_status="offered", dispatch_round=round_no,
-        response_window_hours=response_window_hours)
+        response_window_hours=response_window_hours,
+        **({"data_origin": origin} if origin is not None else {}))
     db_session.add(package)
     db_session.flush()
     offer = DispatchOffer(package_id=package.id, dispatch_round=round_no,

@@ -30,6 +30,7 @@ from fde_api.dispatch.access import grant_package_access
 from fde_api.dispatch.channel_guard import ChannelGuardError, ensure_package_channel
 from fde_api.dispatch.errors import DispatchServiceError
 from fde_api.dispatch.models import (
+    DATA_ORIGINS,
     DeliveryPackage,
     DeliverySettlement,
     DispatchOffer,
@@ -188,15 +189,26 @@ def create_package(
     dispatch_mode: str = "assign",
     onsite_visits: int | None = None,
     onsite_required: bool | None = None,
+    data_origin: str = "real",
 ) -> DeliveryPackage:
     """draft 落库（§2.5 draft 行：方案+包/报价要素齐备才可建）。
 
     **F 线 T5**：`onsite_required` 接受显式值——``None``（缺省）＝ 未设置，
     读侧兜底按「FDE 交付项目默认到场型」判 True；``False`` ＝ **显式标记
     纯远程型**（唯一进入远程加权序的入口）。四关键词派生不再是默认判据。
+
+    **M2 验收第 9 条**：`data_origin` ＝ 行来源（``DATA_ORIGINS`` 闭集）——
+    缺省 ``real``；派单仿真器显式传 ``simulated``；演练/机制验证造蜂经创建
+    载荷显式传 ``drill``（声明义务在造蜂方，缺省即视为真实）。
     """
     if dispatch_mode not in ("assign", "claim"):
         raise DispatchServiceError("invalid_request", "dispatch_mode 必须是 assign/claim。")
+    if data_origin not in DATA_ORIGINS:
+        raise DispatchServiceError(
+            "invalid_request",
+            "data_origin 只接受 " + "/".join(DATA_ORIGINS) + "。",
+            400,
+        )
     if onsite_required is not None and type(onsite_required) is not bool:
         raise DispatchServiceError(
             "invalid_request", "onsite_required 必须是布尔值（缺省＝未设置）。"
@@ -233,6 +245,8 @@ def create_package(
         dispatch_mode=dispatch_mode,
         dispatch_status="draft",
         dispatch_round=1,
+        # M2 验收第 9 条：行来源（缺省 real；造蜂方显式声明 drill/simulated）
+        data_origin=data_origin,
         response_window_hours=DISPATCH_CONSTANTS["response_window_hours"],
         redispatch_radius_km=25,
         # §4.5（C4 判据）：required_level 由 Quote 系数推导落库；发布前可

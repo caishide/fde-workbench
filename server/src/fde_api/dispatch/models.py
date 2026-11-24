@@ -36,6 +36,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from fde_api.auth.models import UTCDateTime
 from fde_api.workbench.models import Base, TimestampMixin, VersionedMixin, new_uuid
 
+#: 行来源闭集（Ecosystem OS M2 验收第 9 条：运营简报区分真实、模拟和演练
+#: 数据；2026-11-24 OWNER 交互式拍板立项补标记）。 ``real`` ＝ 真实经营行
+#: （缺省）；``simulated`` ＝ 派单仿真器/训练场造的行；``drill`` ＝ 演练/
+#: 机制验证造蜂（E2E 贯通、P0 写入演练、GUI 回归等**经真实 API** 造的行——
+#: 由造蜂方在创建载荷显式声明）。派单 offer 不设本列：offer 严格从属于交付
+#: 包，来源经 ``package_id`` 传导（简报漏斗 join 包取 origin），两处独立可标
+#: 反而制造不一致面。
+DATA_ORIGINS = ("drill", "real", "simulated")
+
 
 class DeliveryPackage(Base, TimestampMixin):
     """交付包派单态（§2.1：方案正文留在 project_solutions，本表只存派单态）。"""
@@ -73,6 +82,11 @@ class DeliveryPackage(Base, TimestampMixin):
             "difficulty IS NULL OR difficulty IN ('low', 'medium', 'high')",
             name="ck_delivery_packages_difficulty",
         ),
+        # M2 验收第 9 条：行来源闭集（真实/模拟/演练；见模块头 DATA_ORIGINS）
+        CheckConstraint(
+            f"data_origin IN {DATA_ORIGINS!r}",
+            name="ck_delivery_packages_data_origin",
+        ),
         # §6.4 开闸统计口径按 published 包数计数，状态列单查
         Index("ix_delivery_packages_status", "dispatch_status"),
     )
@@ -96,6 +110,12 @@ class DeliveryPackage(Base, TimestampMixin):
     )
     dispatch_status: Mapped[str] = mapped_column(
         String(12), nullable=False, default="draft", server_default="draft"
+    )
+    # M2 验收第 9 条：行来源（缺省 real；仿真器显式写 simulated；造蜂方经
+    # 创建载荷显式声明 drill——缺省 real 即「未声明视为真实」，声明义务在
+    # 造蜂方，见 DATA_ORIGINS 注释）
+    data_origin: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="real", server_default="real"
     )
     dispatch_round: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
@@ -304,6 +324,11 @@ class FdeProfile(Base, TimestampMixin):
             "status IN ('pending', 'active', 'suspended')",
             name="ck_fde_profiles_status",
         ),
+        # M2 验收第 9 条：行来源闭集（真实注册 real／仿真器 simulated）
+        CheckConstraint(
+            f"data_origin IN {DATA_ORIGINS!r}",
+            name="ck_fde_profiles_data_origin",
+        ),
     )
 
     # 一人一档案（§8.2：PK user_id）
@@ -350,6 +375,10 @@ class FdeProfile(Base, TimestampMixin):
     # 供给池生命周期（§3.5）：pending（注册不占名额）→ active（参与匹配）→ suspended
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending", server_default="pending"
+    )
+    # M2 验收第 9 条：行来源（缺省 real＝真人自注册；仿真器造的档案显式写 simulated）
+    data_origin: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="real", server_default="real"
     )
 
 

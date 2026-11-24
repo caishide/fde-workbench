@@ -32,9 +32,11 @@ WP-3 运营简报（``POST /api/v1/ops/briefs/generate``）：**确定性聚合�
 简报本体不持久化——人工经既有文档/发信面处置；**系统内不存在简报直发
 通道**（``mailing.routes`` 设计声明：发送路径不设 HTTP 路由），A5 断言钉
 发信服务函数调用方闭集不变。漏斗口径＝交付包/派单 offer/区域伙伴/交付者
-档案四段只读计数（注册申请段留待需要时扩）。**分层状态＝未分层**（M2 验收
-第 9 条：四段对象无真实／模拟／演练标记列，简报显式声明并只交付可证数字，
-详见 ``BRIEF_FUNNEL_STRATIFICATION`` 与 PROGRESS.md 任务 B 节）。
+档案四段只读计数（注册申请段留待需要时扩）。**分层状态＝按来源分层**
+（M2 验收第 9 条：2026-11-24 OWNER 拍板立项补 ``data_origin`` 闭集列——
+三张主体表直接分组、offer 经包传导；漏斗返回体与事件带
+``funnel_stratification="by_data_origin"`` 状态位，详见
+``BRIEF_FUNNEL_STRATIFICATION`` 与 PROGRESS.md 批次四节）。
 """
 import hashlib
 from collections import defaultdict
@@ -310,55 +312,65 @@ _BRIEF_FUNNEL_LABELS: dict[str, str] = {
 
 #: 招商漏斗分层状态（M2 验收第 9 条：运营简报区分真实、模拟和演练数据）。
 #:
-#: 现测结论＝**无可靠分层依据**（2026-11-24 活库只读取证，命令与锚点见
-#: ``docs/ecosystem-v1/m2/PROGRESS.md`` 任务 B 节）：四段对象（交付包／派单
-#: offer／区域伙伴／交付者档案）在 schema 层均无「真实／模拟／演练」标记列；
-#: 全仓唯一机器可读的模拟标记是报价表的来源列，但只由派单仿真器写——E2E 机制
-#: 造蜂经真实建单 API 建报价时来源列恒为手工值 ⇒ 模拟与演练数据在 schema 层
-#: 与真实数据同形。按「禁止编造分层」纪律，本简报**只交付真实可证的数字**，
-#: 在正文显式声明未分层；「补分层标记」登记为待 OWNER／产品决策项。
-BRIEF_FUNNEL_STRATIFICATION = "unstratified"
-
-#: 正文里的未分层声明（字面串被机械钉钉死，防静默删除）。置于漏斗计数行
-#: **之前**——它是该段的限定前提，不是脚注。
-BRIEF_FUNNEL_STRATIFICATION_NOTICE = (
-    "本口径未分层（缺真实／演练标记，见 M0 归档）：以下四段为未分层的全量计数，"
-    "不可当作真实经营基线。"
-)
+#: 演进三步（2026-11-24）：①现测结论＝无可靠分层依据（四段表零标记列；唯一
+#: 机器可读标记是报价来源列，而 E2E 造蜂经真实建单 API 建报价时恒为手工值）
+#: ⇒ 简报显式声明「本口径未分层」并只交付可证数字；②OWNER 交互式拍板立项
+#: 补标记 ⇒ 三张主体表加 ``data_origin`` 闭集列（drill/real/simulated；offer
+#: 经包传导，不加列）；③本简报漏斗段换代为**按来源分层计数**，状态位升
+#: ``by_data_origin``。分层口径的单一权威＝ ``dispatch.models.DATA_ORIGINS``。
+BRIEF_FUNNEL_STRATIFICATION = "by_data_origin"
 
 
-def _funnel_counts(session) -> dict[str, dict[str, int]]:
-    """四段只读计数（GROUP BY；零 DDL，全部命中既有状态机闭集列）。"""
+def _funnel_counts(session) -> dict[str, dict[str, dict[str, int]]]:
+    """四段只读计数，按来源分层（M2 验收第 9 条；2026-11-24 OWNER 拍板立项落列）。
+
+    返回体形状＝ ``{段: {来源: {状态: 计数}}}``；交付包／区域伙伴／交付者
+    档案直接按本表 ``data_origin`` 分组；派单 offer 不设列——严格从属交付
+    包，join 包取 origin（两处独立可标反而制造不一致面）。零 DDL，全部命中
+    既有闭集列。
+    """
     return {
-        "delivery_packages": dict(
+        "delivery_packages": _nested_counts(
             session.execute(
-                select(DeliveryPackage.dispatch_status, func.count())
-                .group_by(DeliveryPackage.dispatch_status)
+                select(DeliveryPackage.data_origin, DeliveryPackage.dispatch_status, func.count())
+                .group_by(DeliveryPackage.data_origin, DeliveryPackage.dispatch_status)
             ).all()
         ),
-        "dispatch_offers": dict(
+        "dispatch_offers": _nested_counts(
             session.execute(
-                select(DispatchOffer.status, func.count()).group_by(DispatchOffer.status)
+                select(DeliveryPackage.data_origin, DispatchOffer.status, func.count())
+                .join(DeliveryPackage, DispatchOffer.package_id == DeliveryPackage.id)
+                .group_by(DeliveryPackage.data_origin, DispatchOffer.status)
             ).all()
         ),
-        "regional_partners": dict(
+        "regional_partners": _nested_counts(
             session.execute(
-                select(RegionalPartner.stage, func.count()).group_by(RegionalPartner.stage)
+                select(RegionalPartner.data_origin, RegionalPartner.stage, func.count())
+                .group_by(RegionalPartner.data_origin, RegionalPartner.stage)
             ).all()
         ),
-        "fde_profiles": dict(
+        "fde_profiles": _nested_counts(
             session.execute(
-                select(FdeProfile.status, func.count()).group_by(FdeProfile.status)
+                select(FdeProfile.data_origin, FdeProfile.status, func.count())
+                .group_by(FdeProfile.data_origin, FdeProfile.status)
             ).all()
         ),
     }
+
+
+def _nested_counts(rows) -> dict[str, dict[str, int]]:
+    """``(origin, status, count)`` 行集 → ``{origin: {status: count}}``（排序渲染前置）。"""
+    nested: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for origin, status, count in rows:
+        nested[origin][status] += count
+    return {origin: dict(statuses) for origin, statuses in nested.items()}
 
 
 def _render_brief_markdown(
     current: datetime,
     items: list[dict[str, Any]],
     due_items: list[dict[str, Any]],
-    funnel: dict[str, dict[str, int]],
+    funnel: dict[str, dict[str, dict[str, int]]],
 ) -> str:
     """确定性拼装简报正文（排序键全部显式；同一数据库状态 + 同一 now ⇒ 逐字节同文）。"""
     by_domain: dict[str, int] = defaultdict(int)
@@ -383,13 +395,14 @@ def _render_brief_markdown(
     if len(items) > len(top):
         lines.append(f"（其余 {len(items) - len(top)} 项未逐条列出，计数已含）")
     lines.append("")
-    lines.append("## 二、招商漏斗")
-    lines.append("")
-    lines.append(BRIEF_FUNNEL_STRATIFICATION_NOTICE)
+    lines.append("## 二、招商漏斗（按来源分层：drill 演练造蜂／real 真实经营／simulated 仿真）")
     lines.append("")
     for key in sorted(funnel):
-        counts = funnel[key]
-        rendered = " / ".join(f"{status} {count}" for status, count in sorted(counts.items()))
+        by_origin = funnel[key]
+        rendered = " / ".join(
+            f"{origin} {' '.join(f'{status} {count}' for status, count in sorted(statuses.items()))}"
+            for origin, statuses in sorted(by_origin.items())
+        )
         lines.append(f"- {_BRIEF_FUNNEL_LABELS.get(key, key)}：{rendered or '（空）'}")
     lines.append("")
     lines.append(f"## 三、需总部介入事项（已到期 {len(due_items)} 项）")

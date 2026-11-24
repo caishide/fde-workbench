@@ -268,6 +268,8 @@ def _seed_supply_pool(
         profile = FdeProfile(
             user_id=user.id,
             level=level,
+            # M2 验收第 9 条：仿真器造的档案显式标 simulated（漏斗分层依据）
+            data_origin="simulated",
             level_verified_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
             biz_cognition_score=3,
             scenario_eng_score=3,
@@ -407,6 +409,8 @@ def _synthetic_demand(
         solution_id=solution.id,
         quote_id=quote.id,
         dispatch_mode="assign",
+        # M2 验收第 9 条：仿真器造的包显式标 simulated（漏斗分层依据）
+        data_origin="simulated",
     )
     return project, package
 

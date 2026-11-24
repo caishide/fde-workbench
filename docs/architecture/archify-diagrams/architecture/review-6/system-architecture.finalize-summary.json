@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "e2d56068e7024011abc7ee45b3218bcba20332cc9b7ab6189f79c5dbcb7eea25",
+    "bytes": 13011
+  },
+  "artifact": {
+    "path": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "15d33ac064302b8d350f38ea40e627974b71be75314b3c5daa5a434c6a3a1227",
+    "bytes": 845372
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\review-6\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\review-6\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-ecosystem-m2\\docs\\architecture\\archify-diagrams\\architecture\\review-6\\system-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "update_available",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.3.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.3.0",
+    "severity": "normal",
+    "summary": "Adds Code Analysis & Architecture Diagnosis, Story walkthroughs and 1080p video, PR walkthroughs, automatic architecture placement, and lighter installs.",
+    "checkedAt": "2026-11-23T01:01:29.321Z",
+    "source": "cache",
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.2.0 → 3.3.0. A previous check at 2026-11-23T01:01:29.321Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.3.0. Would you like me to update Archify?",
+    "eventKey": "archify@sha256:00e4ff53267aee7dabf22ed333360cd3e380db20271a50264ae146ee25cf2538"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 17718,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "bridge-api",
+            "from": "bridge",
+            "to": "api",
+            "label": "POST 快照 · FDE_BRIDGE_TOKEN",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "bridge → api needs 3 bends: move node bridge or api so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

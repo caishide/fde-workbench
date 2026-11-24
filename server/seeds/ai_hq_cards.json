@@ -448,7 +448,8 @@
       "card_duties": "approved（四张 MVP 卡职责定稿；activation_state 待逐卡上线时激活）",
       "egress_allowlist": "unchanged（维持零变更；联网型任务继续禁用）",
       "m2_charter": "approved（批次二开工：WP-2 → WP-3 → WP-5）",
-      "activation_state": "unchanged（2026-11-24 交互式拍板：保持 pending_owner_approval。语义边界现测＝「该卡是否已上线」——本目录 2026-11-23 OWNER 裁定已明写「activation_state 待逐卡上线时激活」，四张 MVP 卡无任何运行时消费方、尚未上线；保持原态 ⇒ 出站纪律钉（联网任务全禁用＋零出站域＋必填 disabled_reason）原样在位，符合 2026-11-23 出站白名单零变更裁定；M2 MVP 功能不依赖卡片激活（WP-2/WP-3 为确定性只读面）。留痕可推翻：将来逐卡上线时由 OWNER 再拍板置 active，届时必须同步补等效出站钉。）"
+      "activation_state": "unchanged（2026-11-24 交互式拍板：保持 pending_owner_approval。语义边界现测＝「该卡是否已上线」——本目录 2026-11-23 OWNER 裁定已明写「activation_state 待逐卡上线时激活」，四张 MVP 卡无任何运行时消费方、尚未上线；保持原态 ⇒ 出站纪律钉（联网任务全禁用＋零出站域＋必填 disabled_reason）原样在位，符合 2026-11-23 出站白名单零变更裁定；M2 MVP 功能不依赖卡片激活（WP-2/WP-3 为确定性只读面）。留痕可推翻：将来逐卡上线时由 OWNER 再拍板置 active，届时必须同步补等效出站钉。）",
+      "egress_reaffirmed": "unchanged（2026-11-24 交互式再确认：出站白名单维持零变更，联网型任务继续禁用；四张 MVP 卡保持 pending_owner_approval。激活须先拍出站域名单并同步补等效出站钉——pending 态两条强制钉随状态切换失效。）"
     }
   }
 }

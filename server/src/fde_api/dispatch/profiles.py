@@ -380,7 +380,7 @@ def create_profile(
     existing = session.get(FdeProfile, user_id)
     if existing is not None:
         raise DispatchServiceError("profile_exists", "该用户已有供给池档案。", 409)
-    profile = FdeProfile(user_id=user_id, home_city=home_city)
+    profile = FdeProfile(user_id=user_id, home_city=home_city, data_origin="real")
     session.add(profile)
     return profile
 
