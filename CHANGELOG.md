@@ -2,6 +2,12 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 立项模板契约：无任务模块判 400 而非 503（2026-11-25）
+
+- **症状**：用行业模板（零售连锁／餐饮连锁／制造业——按设计只建模块与调研表、不建任务行）建项目时，报「Unable to create the project at this time.」（503），且原始异常被 `raise ... from None` 抹掉，调用方拿不到任何线索。该路径同时是 CI 偶发红的来源：`test_crv_batch_a.py::test_qr018_...` 的 `published_template` 夹具只按 `status == published` 取行，而库里有 4 个 published 版本（1 通用 + 3 行业），命中哪一行取决于数据库返回顺序 ⇒ 偶发红、偶发绿。
+- **产品侧修正**：模板形状校验前移并显式化——新增 `fde_api/templates/selection.py::select_modules_for_project`（从 `projects/service.py` 迁出并加一条校验），被选模块若不含任务行即判 **400 `template_module_without_tasks`**（错误消息指名具体模块），与服务层既有的 `module_not_in_template`（400）、`missing_required_module_dependency`（400）同类；不再落到兜底 `except Exception` 的 503。热点文件 `projects/service.py` 借迁出反而减 47 行（1944→1897，预算上限 1946）。
+- **测试侧修正**：`published_template` 夹具按 `template_key == GENERIC_TEMPLATE_KEY` 钉住唯一模板（与仓内其余 8 处夹具同款写法）；新增机械钉 6 例，其中一条静态扫描全仓 `published_template` 夹具——凡未钉 `template_key` 即红，防止「夹具无序选取＝隐式随机变量」复发。判定走 AST 层（查 `template_key` 属性节点）而非文本匹配，避免被夹具 docstring 的同名字样骗过。
+- 库存不变：573 条业务路由、59 个蓝图、172 张表、102 条迁移，迁移头 `b8d2f6a0c4e8`；零新路由、零新表、零迁移、零桌面改动。
 ## [未发布] — 开源项目接入试点①：anthropics/skills 宿主侧选装（2026-11-24）
 
 - 承开源项目清单（#586）启动首个接入试点：短名单第 7 项 anthropics/skills 按「宿主侧 Skill」形态完成接入——按避重复原则从其 19 项中选装 3 项（webapp-testing 网页验收／mcp-builder MCP 服务开发／frontend-design 界面设计），docx/pdf/pptx/xlsx/skill-creator 五项因环境已有官方插件版不重复装。

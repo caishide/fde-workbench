@@ -1107,3 +1107,10 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **D-6 备件**：NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试点走查手册（判停线／三方人选位待蔡工亲定／七步脚本）——只备件不代办。
 - **留账**：候选 3/4/6 未排期；候选 5 须先拍板导师角色落法（不新增角色枚举）；web 伙伴端公网 vhost＝宿主动作；SMTP 真发信轮已授权待蔡工亲填凭据。
 
+
+### T-ECO4 立项模板形状契约（模块无任务行判 400 而非 503）— **✅ 已实施（2026-11-25，分支 `fix/project-template-task-requirement`）**
+
+- **触发**：CI server-tests 偶发红（PR #592 首轮，1 failed / 5091 passed；同 SHA 另一 run 直接绿 ⇒ 非本次改动引入）。2026-11-25 实测定位根因（确定性复现，非猜测）：`published_template` 夹具只按 `status == published` 取行，库里有 4 个 published 版本（1 通用 + 3 行业模板），命中哪一行取决于数据库返回顺序 ⇒ 命中行业模板（每模块 0 任务行）时建项目落成 503 `project_creation_failed`（KeyError 被兜底 `except Exception` 吞掉，`from None` 又抹掉 traceback）。
+- **落地**：①产品侧——`fde_api/templates/selection.py` NEW（`select_modules_for_project`：从 `projects/service.py` 迁出模块选择逻辑 ＋ 新增「所选模块必须含任务行」校验，判 400 `template_module_without_tasks` 并指名模块）；`projects/service.py` 净减 47 行（1944→1897，预算 1946 未破）。②测试侧——`test_dispatch_p2_r9_p24.py` 的 `published_template` 按 `template_key == GENERIC_TEMPLATE_KEY` 钉住唯一模板（仓内其余 8 处夹具同款写法）；③机械钉 NEW `server/tests/test_project_template_task_contract.py` 6 例（含全仓夹具确定性静态扫描——判定走 **AST 层**查 `ast.Attribute(attr="template_key")` 节点，不用文本匹配：夹具 docstring 里若出现「template_key」字样，纯文本 grep 会把「已回退成无序选取」的夹具误判为合格〔本次变异验证实测踩过，M3 曾因此幸存〕），变异四条全杀＋字节还原复绿。
+- **口径**：零新路由、零新表、零迁移、零桌面改动；573 路由／59 蓝图／172 表／102 迁移单头 `b8d2f6a0c4e8` 不变。
+- **留账**：活体库当前只有通用模板（21 任务行）与「标准 FDE 项目」（14 任务行）两个 published 版本有任务行 ⇒ 该 503 路径在活体当前不可达（另有一个 0 模块 0 任务的 `regression-template` 残留版本，但 0 模块会先被 `module_not_in_template` 400 拦下）；行业模板只由测试库 `seed_workbench` 种入，活体 `load_seeds.py` 不种 ⇒ 无活体影响。**待后续拍板（不在本轮范围）**：桌面新建项目页的模板下拉拉取 `/api/v1/industry-templates`（非 admin 可见 published ＋ active 模板），故一旦行业模板进入活体库，用户可选中它并收到本轮的 400 `template_module_without_tasks`（比原 503 可读，但仍是「可选却不可用」）；两条候选后续修法：①建项目可选模板过滤为「含任务行的 published 版本」；②给行业模板补任务行（改 `seed_industry_templates` 的播种形状）。两者都改 seed 或桌面行为，**须 OWNER 拍板后另起一轮**，本轮不擅自扩范围。
