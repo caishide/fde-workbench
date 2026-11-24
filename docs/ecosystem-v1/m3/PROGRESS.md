@@ -1,6 +1,6 @@
 # Ecosystem OS M3 — 角色工作台与伙伴自助运营 · 实施进度
 
-**状态行**：**D-5 轮（候选 1＋2）实施完成（2026-11-24，分支 `feat/ecosystem-m3-partner-inbox`）**；候选 3–6 未排期（导师角色落法仍待拍板——矩阵 §7-2）。
+**状态行**：**D-5 轮（候选 1＋2）已合并并活体部署完成（2026-11-24，PR #590 squash `1d2da122`＝fork/main 顶）**；候选 3–6 未排期（导师角色落法仍待拍板——矩阵 §7-2）。
 
 ---
 
@@ -70,3 +70,20 @@ NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试�
 - 定向 68 passed（m3 7＋m2 ops 17＋brief 9＋cards 30）＋桌面定向 8 passed＋typecheck 零错＋mypy 274 零新增＋ruff 清。
 
 **流程教训（第二次同族）**：跨端引用面钉是「活清单」——每加一个桌面消费点都会转红，这是设计行为；新消费点的实施轮必须**同步登记闭集**并跑引用面扫描类钉（#581 教训的复利：本次在本地定向跑出，未进 CI）。
+
+## 三、合并与活体重部署回执（2026-11-24 晚）
+
+**合并**：PR **#590** squash `1d2da122`＝fork/main 顶（CI 四 job × 双 run 全绿；分支 `feat/ecosystem-m3-partner-inbox` 与隔离树 `fde-wt-ecosystem-m3` 已清；origin 上游零触碰）。
+
+**活体重部署三验全绿**（2026-11-24 晚，从 main 顶重建）：
+- 活体 `url_map` non-static＝**573**（572→573，本轮 +1 `GET /api/v1/ops/todos/mine`）／蓝图 59 ≡ inventory 口径真身；
+- 容器内 `alembic current`＝`b8d2f6a0c4e8 (head)`（本轮零迁移，升级 no-op）；
+- 三镜像 ID 逐位一致＝api `c0522cced0ef`·worker `c0522cced0ef`·scheduler `c0522cced0ef`（同一构建三次 tag，与 compose 同上下文构三镜像逐位等价）；migrations 挂载源＝主树 `/mnt/d/test/fde-workbench/server/migrations`；三容器 healthy。
+
+**部署态验收判据全过**（容器内 HTTP 探针）：`/api/v1/ops/todos` GET ⇒ 401／**`/api/v1/ops/todos/mine` GET ⇒ 401**（本轮新端点：路由在场＋鉴权闸生效）／`/api/v1/ops/briefs/generate` POST ⇒ 401／dispatch profiles 两入口 ⇒ 401／ready-live ⇒ 200。部署态简报分层探针（probe_brief_v3）＝`by_data_origin` 分层在位、`- 交付包：drill accepted 4`＋`- 派单 offer：drill accepted 4` 在场、来源 token 闭集、旧未分层声明退役、funnel 三层嵌套形状（批次四回执口径复测过）。
+
+**桌面交付物（DoD 补齐）**：正式便携包 **r61**（`蔡工FDE-0.3.0-便携版-r61`，asar sha256 `f3d88767b74fa30e1c0d805cf69d128f4b37d8099b19337c7cf5663b374b1e10`；`0.3.0-r61` 正向 1／`0.3.0-r60` 反向 0，python bytes.find＋GNU grep 双证；本轮 marker「伙伴运营」「临期待响应」「我的运营待办」「ops/todos/mine」全正向命中，r60 特征「生成运营简报」保留＝回归确认；EBUSY 句柄锁按 r51 先例以独立输出目录 `release-r61` 绕行；r60 包目录已被清理，反向验证以登记 sha256 `8f14fd87…` 差异替代逐字节比对）。三源 bump：RELEASE-COUNTER＝61＋`desktop/package.json`＋`fde-web-bridge.ts`。
+
+**部署排障留痕（PyPI/debian CDN 晚高峰拥塞家族）**：晚间部署窗口撞跨境 CDN 拥塞——`files.pythonhosted.org` 与 `deb.debian.org`（同为 fastly）实测 40–60 kB/s 且长连接**静默断连**（pip/apt 各挂死一次：进程零 TCP 零 CPU 不超时；首例 37 分钟「假挂真慢」被误杀，第二例由「日志停滞 5 分钟＋pip 零 TCP＋脚本仍在跑」三信号守望判中）。**处置＝构建期临时 shim Dockerfile**（不入仓，差异仅两处：apt 源 sed 至 aliyun＋`ENV PIP_INDEX_URL=aliyun pypi 镜像`；镜像实测 8.76 MB/s ≈ 200×），直构单镜像 tag×3 后走原链 recreate→alembic→三验→探针。**该 shim 属构建期偏差，运行时行为与原版 Dockerfile 产物一致；网络健康窗口可用原版 Dockerfile 重建收敛（可推翻）。**并发会话另有 `redeploy_m3.sh`（`.tmp-deploy/`，同提交同树）并行部署线，其 build 卡于同一步骤后随本线收敛；双线同树同提交＝内容收敛等价，最终态以本线三验为准。
+
+**COORDINATION**：并发会话（收口席）对本席 staged 快照完成核查＋钉换代收强（`DESKTOP_OPS_PANELS` 许可面闭集）并以同一 PR #590 合入，P1 四项拍板（M3 同轮开工批准／BLOCKED 清理／O-01 维持挂账／DIFF-09 维持待业务＋财务）随轮留痕（见「开工拍板与收口补录」节）。
