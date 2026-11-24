@@ -50,6 +50,11 @@ export interface MyProfileView {
 
 export const DECLINE_REASONS = ["档期冲突", "能力不匹配", "距离", "其他"] as const
 
+/** M3 候选 2（D-5① 拍板）：收件箱三态分流的「临期」视觉阈值（小时）。
+ *  纯展示分组——过期与否的判定权威仍是服务端状态机（offered→expired），
+ *  本阈值只影响分组呈现，不参与任何接单/拒单可行性判定（B1 纪律）。 */
+export const INBOX_SOON_WINDOW_HOURS = 2
+
 export const OFFER_STATUS_LABELS: Record<string, string> = {
   offered: "待响应",
   accepted: "已接单",
@@ -316,6 +321,35 @@ export function MyOffersPage() {
   }, [load])
 
   const pending = offers.filter((offer) => offer.status === "offered").length
+  // 三态分流（M3 候选 2）：待响应按「临期 / 未临期」呈现、已过期独立成组、
+  // 其余历史态（已接单/拒单/转单/中签他方）归「已处理」。过期判定权威＝
+  // 服务端状态机；临期只按 deadline 展示排序（B1：前端不做窗口判定）。
+  const nowMs = Date.now()
+  const soonMs = INBOX_SOON_WINDOW_HOURS * 3_600_000
+  const parseDeadline = (offer: MyOfferView): number | null => {
+    if (offer.status !== "offered" || !offer.deadline) return null
+    const ms = Date.parse(offer.deadline)
+    return Number.isNaN(ms) ? null : ms
+  }
+  const offered = offers.filter((offer) => offer.status === "offered")
+  const soon = offered.filter((offer) => {
+    const ms = parseDeadline(offer)
+    return ms !== null && ms - nowMs <= soonMs
+  })
+  const normal = offered.filter((offer) => {
+    const ms = parseDeadline(offer)
+    return ms === null || ms - nowMs > soonMs
+  })
+  const expired = offers.filter((offer) => offer.status === "expired")
+  const handled = offers.filter(
+    (offer) => offer.status !== "offered" && offer.status !== "expired"
+  )
+  const groups = [
+    { key: "soon", label: "临期待响应", items: soon },
+    { key: "normal", label: "待响应", items: normal },
+    { key: "expired", label: "已超时", items: expired },
+    { key: "handled", label: "已处理", items: handled },
+  ].filter((group) => group.items.length > 0)
 
   return (
     <section className="page" aria-label="我的接单">
@@ -345,11 +379,20 @@ export function MyOffersPage() {
           待响应 {pending} 条 / 共 {offers.length} 条
         </p>
       ) : null}
-      <ul className="dispatch-package-list">
-        {offers.map((offer) => (
-          <OfferRow key={offer.offer_id} offer={offer} onChanged={load} />
-        ))}
-      </ul>
+      {groups.length > 0 ? (
+        groups.map((group) => (
+          <section key={group.key} aria-label={group.label}>
+            <p className="muted">
+              {group.label} {group.items.length} 条
+            </p>
+            <ul className="dispatch-package-list">
+              {group.items.map((offer) => (
+                <OfferRow key={offer.offer_id} offer={offer} onChanged={load} />
+              ))}
+            </ul>
+          </section>
+        ))
+      ) : null}
     </section>
   )
 }

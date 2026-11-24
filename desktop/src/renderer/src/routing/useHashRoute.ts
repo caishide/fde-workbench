@@ -14,6 +14,7 @@ export type AppRoute =
   | { kind: "users" }
   | { kind: "system-configuration" }
   | { kind: "commercial-ops" }
+  | { kind: "partner-operations" }
   | { kind: "enterprise-register" }
   /** 获客诊断 T-14a：免注册访客界面（公开面；未登录也可进入）。 */
   | { kind: "public-diagnostics" }
@@ -73,6 +74,8 @@ export function parseHashRoute(hash: string): AppRoute {
   if (hash === "#users") return { kind: "users" }
   if (hash === "#system-configuration") return { kind: "system-configuration" }
   if (hash === "#commercial-ops") return { kind: "commercial-ops" }
+  // M3 候选 1（D-5①）：区域伙伴自助运营页（登录即可；服务端各端点按主体收敛）
+  if (hash === "#partner/operations") return { kind: "partner-operations" }
   if (hash === "#enterprise-register") return { kind: "enterprise-register" }
   // 获客诊断 T-14a 公开面：分享令牌字符集与长度上界同 token_urlsafe 形态
   // （非法形态不确认路由存在——回落 projects，与既有解析失败口径一致）。
@@ -178,6 +181,7 @@ export function routeHash(route: AppRoute): string {
     case "users": return "#users"
     case "system-configuration": return "#system-configuration"
     case "commercial-ops": return "#commercial-ops"
+    case "partner-operations": return "#partner/operations"
     case "enterprise-register": return "#enterprise-register"
     case "public-diagnostics": return "#diagnostics"
     case "public-diagnostics-sample": return "#diagnostics/sample"

@@ -184,9 +184,14 @@ def test_desktop_brief_route_reference_is_closed_to_presentation_panel():
     引用闭集＝{呈现面板}。生成简报是 admin 写面动作，桌面侧调用点必须唯一
     （不在别处长出第二个触发入口）。
     """
-    from test_ecosystem_m2_ops_todos import DESKTOP_OPS_PANEL, _desktop_files_referencing
+    from test_ecosystem_m2_ops_todos import DESKTOP_OPS_PANELS, _desktop_files_referencing
 
-    assert _desktop_files_referencing(BRIEF_ROUTE) == {DESKTOP_OPS_PANEL}
+    # 简报路由的许可面仍＝admin 呈现面板单点（M3 伙伴页只消费 /todos/mine，
+    # 不消费 briefs——若未来伙伴页要生成简报，必须显式扩本闭集）。
+    brief_panels = {panel for panel in DESKTOP_OPS_PANELS if "OpsBriefPanel" in panel}
+    assert _desktop_files_referencing(BRIEF_ROUTE) == brief_panels == {
+        "desktop/src/renderer/src/system/OpsBriefPanel.tsx"
+    }
 
 
 # --------------------------------------------------------------- A6 留痕与只读面

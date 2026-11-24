@@ -69,6 +69,7 @@ export function AppShell({
             <NavLink route={route} target={{ kind: "dispatch" }} label="派单池" icon={<GridIcon />} />
             <NavLink route={route} target={{ kind: "leads" }} label="线索池" icon={<FunnelIcon />} />
             <NavLink route={route} target={{ kind: "enterprise-space" }} label="企业空间" icon={<GaugeIcon />} />
+            <NavLink route={route} target={{ kind: "partner-operations" }} label="伙伴运营" icon={<FunnelIcon />} />
             {isDeliverySide ? (
               <NavLink route={route} target={{ kind: "simulation" }} label="模拟训练场" icon={<BoxesIcon />} />
             ) : null}

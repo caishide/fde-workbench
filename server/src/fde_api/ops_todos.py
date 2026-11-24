@@ -18,6 +18,15 @@ admin-only 路由，零 DDL**。四域待办合并为一张六字段逻辑视图
 人工审批）。闭集单一权威取 ``agents.hq_cards.HUMAN_APPROVAL_QUEUE``（批次
 一机械钉已钉死 seed ≡ 常量），映射值出闭集模块导入即炸（boot fail-fast）。
 
+主体收敛只读变体（M3 D-5①，``GET /api/v1/ops/todos/mine``）：登录用户看
+**自己名下**的未决事项——只跑 ``SUBJECT_SCOPED_DOMAINS`` 三域（审批＝我
+发起 ``requested_by_user_id``／AI 确认＝我发起待我确认
+``OperationEvent.actor_user_id``／offer＝我名下 ``candidate_user_id``，
+全部硬 FK），``meeting_todo`` **显式排除**（owner 是纪要内自由文本，无
+用户 FK，不可作主体口径——与「文本前缀不可作分层口径」同纪律）。零
+admin 门但每人只见自己的条目；四个 collector 的 ``actor_id`` 参数缺省
+None ＝ admin 全量视图原行为逐字节不变。
+
 与 ``expirations``（到期投影）的关系：三域谓词同源（审批 pending／确认无
 结果／offer offered），确认域共用同一窗口常量与扫描上限（模块属性访问，
 变异敏感）；**差异＝本视图是「待发现」语义**——无响应窗口的 offer 与无
@@ -41,10 +50,10 @@ WP-3 运营简报（``POST /api/v1/ops/briefs/generate``）：**确定性聚合�
 import hashlib
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 
 from fde_api.agents.hq_cards import HUMAN_APPROVAL_QUEUE
 from fde_api.auth.decorators import require_auth
@@ -85,6 +94,18 @@ DOMAIN_QUEUES: dict[str, str | None] = {
 #: 纪要待办投影状态词（源域无状态位，投影词表统一 ``open``）。
 MEETING_TODO_STATE = "open"
 
+#: 主体收敛只读变体（M3 D-5①，``GET /api/v1/ops/todos/mine``）的域闭集：
+#: 只收能按**硬 FK 主体列**收敛的三域——审批按 ``requested_by_user_id``、
+#: AI 确认按 ``OperationEvent.actor_user_id``（确认义务人＝发起人本人）、
+#: offer 按 ``candidate_user_id``。**``meeting_todo`` 显式排除**：其 owner
+#: 是纪要内自由文本，无用户 FK，不可作主体口径（与「文本前缀不可作分层
+#: 口径」同纪律）；admin 全量视图不受影响。
+SUBJECT_SCOPED_DOMAINS = (
+    "automation_approval",
+    "api_confirmation",
+    "dispatch_offer",
+)
+
 #: 简报待办正文最多逐条列出的条数（其余以分域计数呈现，总量字段不受影响）。
 BRIEF_TODO_TOP_LIMIT = 10
 
@@ -112,10 +133,17 @@ def validate_queue_mapping() -> None:
 validate_queue_mapping()
 
 
-def _approval_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
+def _approval_todos(
+    session, now: datetime, limit: int, actor_id: str | None = None
+) -> list[_RawTodo]:
     rows = session.scalars(
         select(AutomationApproval)
         .where(AutomationApproval.status == "pending")
+        .where(
+            AutomationApproval.requested_by_user_id == actor_id
+            if actor_id is not None
+            else true()
+        )
         .order_by(AutomationApproval.expires_at, AutomationApproval.id)
         .limit(limit)
     )
@@ -125,7 +153,9 @@ def _approval_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
     ]
 
 
-def _confirmation_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
+def _confirmation_todos(
+    session, now: datetime, limit: int, actor_id: str | None = None
+) -> list[_RawTodo]:
     # 与 expirations._confirmation_entries 同谓词同则（跨视图一致性有机械钉）：
     # 已有结果（finished/cancelled/started=uncertain 防重放态）的确认不再是待办。
     requested = session.scalars(
@@ -133,6 +163,11 @@ def _confirmation_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
         .where(
             OperationEvent.target_type == "ai_api_action",
             OperationEvent.event_type == "ai.api.requested",
+        )
+        .where(
+            OperationEvent.actor_user_id == actor_id
+            if actor_id is not None
+            else true()
         )
         .order_by(OperationEvent.created_at.desc(), OperationEvent.id.desc())
         .limit(CONFIRMATION_SCAN_LIMIT)
@@ -165,11 +200,18 @@ def _confirmation_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
     return entries
 
 
-def _offer_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
+def _offer_todos(
+    session, now: datetime, limit: int, actor_id: str | None = None
+) -> list[_RawTodo]:
     rows = session.execute(
         select(DispatchOffer, DeliveryPackage)
         .join(DeliveryPackage, DispatchOffer.package_id == DeliveryPackage.id)
         .where(DispatchOffer.status == "offered")
+        .where(
+            DispatchOffer.candidate_user_id == actor_id
+            if actor_id is not None
+            else true()
+        )
         .order_by(DispatchOffer.offered_at, DispatchOffer.id)
         .limit(limit)
     )
@@ -183,7 +225,11 @@ def _offer_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
     return entries
 
 
-def _meeting_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
+def _meeting_todos(
+    session, now: datetime, limit: int, actor_id: str | None = None
+) -> list[_RawTodo]:
+    # ``actor_id`` 仅为与 _COLLECTORS 签名统一而保留：主体收敛变体显式排除
+    # 本域（owner 是自由文本不可作主体口径），本函数不消费该参数。
     horizon = now - timedelta(days=MEETING_TODO_LOOKBACK_DAYS)
     rows = session.scalars(
         select(ReviewMeetingMinutes)
@@ -213,7 +259,11 @@ def _meeting_todos(session, now: datetime, limit: int) -> list[_RawTodo]:
     return entries
 
 
-_COLLECTORS = {
+#: 四域收集器（签名统一为 4 参——``actor_id=None`` 即 admin 全量视图的
+#: 原行为，零回归；主体收敛变体只调 ``SUBJECT_SCOPED_DOMAINS`` 内的三个）。
+_TodoCollector = Callable[[Any, datetime, int, str | None], list[_RawTodo]]
+
+_COLLECTORS: dict[str, _TodoCollector] = {
     "automation_approval": _approval_todos,
     "api_confirmation": _confirmation_todos,
     "dispatch_offer": _offer_todos,
@@ -225,6 +275,27 @@ _COLLECTORS = {
 _SORT_FLOOR = datetime.min
 
 
+def _project(raw: list[_RawTodo], limit: int) -> list[dict[str, Any]]:
+    """六字段投影（排序＋截断的单一权威——全量与主体收敛两视图共用）。
+
+    按「有期限在前按 deadline 升序、无期限沉底」稳定排序并截断。
+    """
+    raw.sort(key=lambda row: (row[2] is None, row[2] or _SORT_FLOOR, row[0], row[1]))
+    return [
+        {
+            "domain": name,
+            "object_id": object_id,
+            "title": title,
+            "deadline_at": deadline.astimezone(UTC).isoformat()
+            if deadline is not None
+            else None,
+            "state": state,
+            "queue": DOMAIN_QUEUES[name],
+        }
+        for name, object_id, deadline, state, title in raw[:limit]
+    ]
+
+
 def collect_ops_todos(
     *,
     now: datetime | None = None,
@@ -234,9 +305,8 @@ def collect_ops_todos(
 ) -> list[dict[str, Any]]:
     """只读 union：跨域运营待办投影（六字段；每域最多取 ``limit`` 行）。
 
-    合并后先做 due 过滤（无期限项不参与该语义，过滤即整体排除），再按
-    「有期限在前按 deadline 升序、无期限沉底」稳定排序并截断；注入 ``now``
-    供测试固定边界。
+    合并后先做 due 过滤（无期限项不参与该语义，过滤即整体排除），再经
+    ``_project`` 排序投影；注入 ``now`` 供测试固定边界。
     """
     current = (now or datetime.now(UTC)).astimezone(UTC)
     session = db.session()
@@ -244,23 +314,41 @@ def collect_ops_todos(
         collectors = _COLLECTORS.values() if domain is None else [_COLLECTORS[domain]]
         raw: list[_RawTodo] = []
         for collector in collectors:
-            raw.extend(collector(session, current, limit))
+            raw.extend(collector(session, current, limit, None))
         if due is not None:
             raw = [row for row in raw if row[2] is not None and (row[2] <= current) is due]
-        raw.sort(key=lambda row: (row[2] is None, row[2] or _SORT_FLOOR, row[0], row[1]))
-        return [
-            {
-                "domain": name,
-                "object_id": object_id,
-                "title": title,
-                "deadline_at": deadline.astimezone(UTC).isoformat()
-                if deadline is not None
-                else None,
-                "state": state,
-                "queue": DOMAIN_QUEUES[name],
-            }
-            for name, object_id, deadline, state, title in raw[:limit]
-        ]
+        return _project(raw, limit)
+    finally:
+        session.close()
+
+
+def collect_subject_ops_todos(
+    *,
+    actor_id: str,
+    now: datetime | None = None,
+    domain: str | None = None,
+    due: bool | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> list[dict[str, Any]]:
+    """主体收敛只读投影（M3 D-5① ``GET /api/v1/ops/todos/mine``）。
+
+    与 ``collect_ops_todos`` 同排序同形状，但只跑 ``SUBJECT_SCOPED_DOMAINS``
+    内的域、每个 collector 追加**硬 FK 主体过滤**（``actor_id``）；due 语义
+    与域/limit 校验由路由层沿用同一套规则。零写路径（A4 只读纪律同 WP-2）。
+    """
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    session = db.session()
+    try:
+        if domain is None:
+            collectors = [_COLLECTORS[name] for name in SUBJECT_SCOPED_DOMAINS]
+        else:
+            collectors = [_COLLECTORS[domain]]
+        raw: list[_RawTodo] = []
+        for collector in collectors:
+            raw.extend(collector(session, current, limit, actor_id))
+        if due is not None:
+            raw = [row for row in raw if row[2] is not None and (row[2] <= current) is due]
+        return _project(raw, limit)
     finally:
         session.close()
 
@@ -295,6 +383,47 @@ def list_ops_todos_route():
         if not 1 <= limit <= MAX_LIMIT:
             return error_response("invalid_request", f"limit 须在 1..{MAX_LIMIT}。", 400)
     items = collect_ops_todos(domain=domain, due=due, limit=limit)
+    return jsonify({"data": {"items": items, "total": len(items)}, "error": None})
+
+
+@blueprint.get("/todos/mine")
+@require_auth
+def list_my_ops_todos_route():
+    """主体收敛只读变体（M3 D-5①）：登录用户看自己名下的未决事项。
+
+    与 ``/todos``（admin 全量）同排序同形状；差异＝只跑
+    ``SUBJECT_SCOPED_DOMAINS`` 三域、每个 collector 追加硬 FK 主体过滤
+    （审批＝我发起／AI 确认＝我发起待我确认／offer＝我名下）。
+    ``meeting_todo`` 显式不在闭集（owner 自由文本不可作主体口径）。
+    零 admin 门——但每个人只能看见自己的条目，天然无越权面。
+    """
+    args = request.args
+    domain = args.get("domain")
+    if domain is not None and domain not in SUBJECT_SCOPED_DOMAINS:
+        return error_response(
+            "invalid_domain",
+            "domain 只接受 " + "/".join(SUBJECT_SCOPED_DOMAINS) + "。",
+            400,
+        )
+    due: bool | None = None
+    due_raw = args.get("due")
+    if due_raw is not None:
+        normalized = due_raw.lower()
+        if normalized not in {"true", "false"}:
+            return error_response("invalid_request", "due 只接受 true/false。", 400)
+        due = normalized == "true"
+    limit = DEFAULT_LIMIT
+    limit_raw = args.get("limit")
+    if limit_raw is not None:
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            return error_response("invalid_request", "limit 必须是整数。", 400)
+        if not 1 <= limit <= MAX_LIMIT:
+            return error_response("invalid_request", f"limit 须在 1..{MAX_LIMIT}。", 400)
+    items = collect_subject_ops_todos(
+        actor_id=g.current_user.id, domain=domain, due=due, limit=limit
+    )
     return jsonify({"data": {"items": items, "total": len(items)}, "error": None})
 
 
