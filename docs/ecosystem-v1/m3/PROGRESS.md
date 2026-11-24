@@ -43,7 +43,7 @@ NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试�
 
 | # | 事项 | 状态 |
 |---|---|---|
-| 1 | 候选 3（企业登录落点）／候选 4（我的商机页）／候选 6（学员训练入口） | 未排期（矩阵 §5 有估算） |
+| 1 | 候选 3（企业登录落点）／候选 4（我的商机页）／候选 6（学员训练入口） | 未排期（矩阵 §5 有估算）。**2026-11-25 OWNER 裁定：等 M1 人工待办第 1 条走查结果再定，现在不开候选 3–6 任何批次**；届时按实际卡点定范围与起草席 |
 | 2 | 候选 5 导师训练队列 | **须先拍板角色落法**（R1–R4＋兼任＋audit 席位只读的组合建议在矩阵 §7-2；不新增角色枚举） |
 | 3 | web 伙伴端公网 vhost | 宿主动作，与部署负责人对齐（矩阵 §7-4） |
 | 4 | SMTP 真发信轮 | **已授权待凭据**（蔡工亲手填部署态 `server/.env` 后 AI 验证＋真发测试邮件） |
@@ -85,5 +85,7 @@ NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试�
 **桌面交付物（DoD 补齐）**：正式便携包 **r61**（`蔡工FDE-0.3.0-便携版-r61`，asar sha256 `f3d88767b74fa30e1c0d805cf69d128f4b37d8099b19337c7cf5663b374b1e10`；`0.3.0-r61` 正向 1／`0.3.0-r60` 反向 0，python bytes.find＋GNU grep 双证；本轮 marker「伙伴运营」「临期待响应」「我的运营待办」「ops/todos/mine」全正向命中，r60 特征「生成运营简报」保留＝回归确认；EBUSY 句柄锁按 r51 先例以独立输出目录 `release-r61` 绕行；r60 包目录已被清理，反向验证以登记 sha256 `8f14fd87…` 差异替代逐字节比对）。三源 bump：RELEASE-COUNTER＝61＋`desktop/package.json`＋`fde-web-bridge.ts`。
 
 **部署排障留痕（PyPI/debian CDN 晚高峰拥塞家族）**：晚间部署窗口撞跨境 CDN 拥塞——`files.pythonhosted.org` 与 `deb.debian.org`（同为 fastly）实测 40–60 kB/s 且长连接**静默断连**（pip/apt 各挂死一次：进程零 TCP 零 CPU 不超时；首例 37 分钟「假挂真慢」被误杀，第二例由「日志停滞 5 分钟＋pip 零 TCP＋脚本仍在跑」三信号守望判中）。**处置＝构建期临时 shim Dockerfile**（不入仓，差异仅两处：apt 源 sed 至 aliyun＋`ENV PIP_INDEX_URL=aliyun pypi 镜像`；镜像实测 8.76 MB/s ≈ 200×），直构单镜像 tag×3 后走原链 recreate→alembic→三验→探针。**该 shim 属构建期偏差，运行时行为与原版 Dockerfile 产物一致；网络健康窗口可用原版 Dockerfile 重建收敛（可推翻）。**并发会话（收口席）的重复部署线（`redeploy_m3.sh`＋`server/wheels/` wheelhouse）与本线同时撞同款拥塞：其 compose build 卡死后改道 **Windows 宿主预下 68 wheels＋临时 Dockerfile `--no-index` 离线安装**，21:06:35 build＋recreate 完成＝活体被其等价镜像 `706940af2635` 覆盖（其重建时未知本线在途，非抢收口）；两轮构建同为 `1d2da122` 代码运行时等价（pip check 无损／lock missing NONE），两席各自三验＋HTTP 探针全绿。`.tmp-deploy/` 与 `server/wheels/` 留痕归收口席处置。
+
+**收口席补注（2026-11-25）**：`.tmp-deploy/` 与 `server/wheels/` 已于 11-24 清除。活体镜像 `706940af2635` 经 `docker history` 实查，相对仓版 Dockerfile 少一步 `pip install --upgrade pip`、多一层 94.1MB 的 wheels，且无构建提交标签；上段所称「等价」指依赖集合与 `requirements.lock` 一致（容器内 `pip check` 通过），不指逐层相同。下次因 `server/` 改动按仓版 Dockerfile 重建即收敛。
 
 **COORDINATION**：并发会话（收口席）对本席 staged 快照完成核查＋钉换代收强（`DESKTOP_OPS_PANELS` 许可面闭集）并以同一 PR #590 合入，P1 四项拍板（M3 同轮开工批准／BLOCKED 清理／O-01 维持挂账／DIFF-09 维持待业务＋财务）随轮留痕（见「开工拍板与收口补录」节）。
