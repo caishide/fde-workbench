@@ -2,9 +2,9 @@
  "route_count": 572,
  "blueprint_count": 59,
  "table_count": 172,
- "revision_count": 101,
+ "revision_count": 102,
  "heads": [
-  "f2a4b6c8d0e2"
+  "b8d2f6a0c4e8"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -265,6 +265,12 @@
    "add_column_tables": [
     "delivery_packages"
    ]
+  },
+  "b8d2f6a0c4e8": {
+   "file": "b8d2f6a0c4e8_funnel_data_origin.py",
+   "down_revision": "f2a4b6c8d0e2",
+   "create_tables": [],
+   "add_column_tables": []
   },
   "b8d3f1a5c7e2": {
    "file": "b8d3f1a5c7e2_v3_ontology_relation_types.py",

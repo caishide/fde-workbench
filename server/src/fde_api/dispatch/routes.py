@@ -113,6 +113,10 @@ def create_package_route():
         return error_response(
             "invalid_request", "onsite_required 必须是布尔值（缺省＝未设置）。", 400
         )
+    # M2 验收第 9 条：行来源显式载荷 —— 缺省 real；演练/机制验证造蜂（E2E
+    # 贯通、P0 演练、GUI 回归）必须显式传 drill，声明义务在造蜂方。闭集校验
+    # 在服务层（create_package），这里只透传。
+    data_origin = str(payload.get("data_origin") or "real")
     session = db.session()
     try:
         with session.begin():
@@ -124,6 +128,7 @@ def create_package_route():
                 dispatch_mode=str(payload.get("dispatch_mode") or "assign"),
                 onsite_visits=onsite_visits,
                 onsite_required=onsite_required,
+                data_origin=data_origin,
             )
             result = _whitelist_payload(session, package)
         return jsonify({"data": result, "error": None}), 201

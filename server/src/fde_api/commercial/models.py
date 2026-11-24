@@ -45,6 +45,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from fde_api.auth.models import UTCDateTime, UTC_TIMESTAMP_SQL
+from fde_api.dispatch.models import DATA_ORIGINS
 from fde_api.workbench.models import Base, TimestampMixin, new_uuid
 
 # 值域闭集（R 系命名纪律：ADR-006——不出现 L 开头角色枚举值）
@@ -1113,6 +1114,11 @@ class RegionalPartner(Base, TimestampMixin):
             f"stage IN {REGIONAL_PARTNER_STAGES!r}",
             name="ck_regional_partners_stage",
         ),
+        # M2 验收第 9 条：行来源闭集（唯一创建路径＝当事人自证申请 ⇒ real）
+        CheckConstraint(
+            f"data_origin IN {DATA_ORIGINS!r}",
+            name="ck_regional_partners_data_origin",
+        ),
         # 前两阶段**不得授予独家区域权**（任务书 §9：结构性 CHECK，非判据）
         CheckConstraint(
             "stage NOT IN ('city_observer', 'city_service') OR exclusive_territory = FALSE",
@@ -1144,6 +1150,10 @@ class RegionalPartner(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(String(500))
     stage: Mapped[str] = mapped_column(
         String(20), nullable=False, default="city_observer", server_default="city_observer"
+    )
+    # M2 验收第 9 条：行来源（缺省 real；唯一创建路径＝当事人自证申请）
+    data_origin: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="real", server_default="real"
     )
     # ── 申请（当事人自证，免费）──
     applicant_user_id: Mapped[str] = mapped_column(

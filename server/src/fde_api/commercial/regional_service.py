@@ -307,6 +307,8 @@ def apply_city_observer(
         note=clean_note,
         stage="city_observer",
         applicant_user_id=actor.id,
+        # M2 验收第 9 条：当事人自证申请＝真实经营行（显式声明，缺省相同）
+        data_origin="real",
     )
     session.add(row)
     session.flush()

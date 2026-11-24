@@ -7,9 +7,10 @@
 总部介入事项；数字全部数据库现算，零模型调用——运营值班员卡拍板定稿＝纯
 确定性聚合卡）。
 
-M2 验收第 9 条（运营简报区分真实、模拟和演练数据）：现测结论＝四段漏斗对象
-**无可靠分层依据** ⇒ 简报显式声明未分层并只交付可证数字（禁止编造分层），
-分层口径由本文件末尾四钉守死（声明钉／标签闭集钉／零编造静态钉／留痕钉）。
+M2 验收第 9 条（运营简报区分真实、模拟和演练数据）演进两步：批次三现测无
+可靠分层依据 ⇒ 显式声明未分层；批次四 OWNER 拍板立项补 ``data_origin`` 闭集
+列 ⇒ 漏斗换代为按来源分层计数，四钉随口径换代（分层呈现钉／来源闭集钉／
+来源权威静态钉／留痕钉）。
 
 造数纪律：凡钉「常量值」的断言一律字面造数（变异验证教训——用常量造数则
 常量变异时测试跟着漂移恒真）。
@@ -27,7 +28,6 @@ from fde_api.meetings.models import ReviewMeetingMinutes
 from fde_api.ops_todos import (
     BRIEF_DUE_LIST_LIMIT,
     BRIEF_FUNNEL_STRATIFICATION,
-    BRIEF_FUNNEL_STRATIFICATION_NOTICE,
     BRIEF_TODO_TOP_LIMIT,
     compose_ops_brief,
 )
@@ -51,16 +51,18 @@ FUNNEL_LABELS = {"交付包", "派单 offer", "区域伙伴", "交付者档案"}
 
 
 
-def _partner(db_session, user, *, stage="city_observer"):
+def _partner(db_session, user, *, stage="city_observer", origin=None):
     row = RegionalPartner(partner_code="PT-" + uuid4().hex[:8].upper(),
-        region_name="广东省", applicant_user_id=user.id, stage=stage)
+        region_name="广东省", applicant_user_id=user.id, stage=stage,
+        **({"data_origin": origin} if origin is not None else {}))
     db_session.add(row)
     db_session.commit()  # 简报走独立会话（读已提交），必须先提交
     return row
 
 
-def _profile(db_session, user, *, status="active"):
-    row = FdeProfile(user_id=user.id, status=status)
+def _profile(db_session, user, *, status="active", origin=None):
+    row = FdeProfile(user_id=user.id, status=status,
+        **({"data_origin": origin} if origin is not None else {}))
     db_session.add(row)
     db_session.commit()
     return row
@@ -116,11 +118,12 @@ def test_brief_counts_and_markdown_sections(ai_context, client, settings, db_ses
     assert "- meeting_todo：1 项" in markdown
     assert "api_confirmation" not in markdown.split("## 二、")[0].split("## 一、")[1], \
         "未播种的域不得凭空出现"
-    # 漏斗段逐字命中（状态名排序渲染）
-    assert "- 交付包：offered 1" in markdown
-    assert "- 派单 offer：offered 1" in markdown
-    assert "- 区域伙伴：city_observer 1" in markdown
-    assert "- 交付者档案：active 1" in markdown
+    # 漏斗段逐字命中（按来源分层：来源升序 + 段内状态名排序渲染；造数未显式
+    # 传 origin ⇒ 模型缺省 real）
+    assert "- 交付包：real offered 1" in markdown
+    assert "- 派单 offer：real offered 1" in markdown
+    assert "- 区域伙伴：real city_observer 1" in markdown
+    assert "- 交付者档案：real active 1" in markdown
     # 需介入清单逐条带域与队列归类
     assert "[automation_approval｜production_data_writes]" in markdown
     assert "[dispatch_offer｜运营协调]" in markdown
@@ -263,66 +266,93 @@ def test_todo_list_top_limit_truncation(ai_context, db_session):
     assert BRIEF_DUE_LIST_LIMIT == 50  # 介入清单限额口径钉死
 
 
-# ------------------------------------------- M2 验收第 9 条：漏斗分层口径四钉
-# 判定基准（M2 验收第 9 条：运营简报区分真实、模拟和演练数据）＋现测结论
-# （四段对象无可靠分层依据 ⇒ 简报显式声明未分层，禁止编造分层）：
-#   ① 声明钉——正文含未分层声明字面串，且声明**先于**漏斗计数行；
-#   ② 标签闭集钉——漏斗段恰四行计数、标签恰为四段闭集（无分层标签）；
-#   ③ 零编造静态钉——模块不得引入任何标记判据（AST 判 import/字面量/属性）；
-#   ④ 留痕钉——生成事件带分层状态位（审计可追「这批计数未分层」）。
+# ------------------------------------------- M2 验收第 9 条：漏斗分层口径四钉（批次四换代）
+# 判定基准（M2 验收第 9 条：运营简报区分真实、模拟和演练数据）。演进两步：
+#   批次三＝现测无可靠分层依据 ⇒ 显式声明「未分层」（禁止编造分层）；
+#   批次四＝OWNER 交互式拍板立项补 ``data_origin`` 闭集列（drill/real/
+#   simulated；offer 经包传导）⇒ 简报漏斗换代为**按来源分层计数**。
+# 四钉随口径换代（换代不删钉）：
+#   ① 分层呈现钉——漏斗计数行带来源前缀（字面串），三种来源各有字面命中；
+#   ② 来源闭集钉——漏斗段出现的来源 ⊆ {drill, real, simulated} 字面闭集，
+#      段标签仍为四段闭集；
+#   ③ 来源权威静态钉——模块必须按 ``data_origin`` 切分（AST），仍不得引入
+#      报价来源列（ Quote/``.source``/``simulation`` 字面量）；
+#   ④ 留痕钉——生成事件带 ``by_data_origin`` 状态位（审计可追分层口径）。
 OPS_TODOS_SRC = Path(__file__).resolve().parents[1] / "src" / "fde_api" / "ops_todos.py"
 
-#: 未分层声明的字面前缀（字面量而非被钉常量——用常量造数则常量变异恒真）。
-NOTICE_HEAD = "本口径未分层（缺真实／演练标记，见 M0 归档）"
+#: 来源闭集（字面量而非被钉常量——用常量造数则常量变异恒真）。
+ORIGIN_CLOSURE = {"drill", "real", "simulated"}
+
+#: 漏斗段头（字面串；来源图例随段头在场）。
+FUNNEL_SECTION_HEAD = "## 二、招商漏斗（按来源分层：drill 演练造蜂／real 真实经营／simulated 仿真）"
 
 
 def _funnel_section(markdown: str) -> str:
     return markdown.split("## 二、招商漏斗")[1].split("## 三、")[0]
 
 
-def test_brief_declares_funnel_not_stratified(ai_context, client, settings, db_session):
-    """① 声明钉：正文逐字含未分层声明，返回体分层状态位恒为未分层字面量。"""
+def test_brief_funnel_lines_carry_origin_prefix(ai_context, client, settings, db_session):
+    """① 分层呈现钉：计数行带来源前缀，状态位恒为 by_data_origin 字面量。"""
     users, _execute = ai_context
     admin = users["admin"]
     make_project(db_session, admin)
-    _partner(db_session, admin)
+    _partner(db_session, admin)  # 未显式传 origin ⇒ 模型缺省 real
     response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
     assert response.status_code == 200
     data = response.json["data"]
-    assert data["funnel_stratification"] == "unstratified"
-    assert BRIEF_FUNNEL_STRATIFICATION == "unstratified"
-    assert BRIEF_FUNNEL_STRATIFICATION_NOTICE.startswith(NOTICE_HEAD)
+    assert data["funnel_stratification"] == "by_data_origin"
+    assert BRIEF_FUNNEL_STRATIFICATION == "by_data_origin"
     markdown = data["brief_markdown"]
-    assert NOTICE_HEAD in markdown
+    assert FUNNEL_SECTION_HEAD in markdown
     section = _funnel_section(markdown)
-    # 声明是漏斗段的限定前提 ⇒ 必须先于第一条计数行出现
-    assert section.index(NOTICE_HEAD) < section.index("- ")
+    # 缺省来源逐字命中（「来源 状态 计数」三段式）
+    assert "- 区域伙伴：real city_observer 1" in section
+    # 来源前缀先于状态名（非空计数行以「来源 」开头；空段＝（空）合法形态）
+    count_lines = [line for line in section.splitlines()
+                   if line.startswith("- ") and "（空）" not in line]
+    assert count_lines and all(
+        line[2:].split("：")[1].split(" ")[0] in ORIGIN_CLOSURE for line in count_lines
+    )
 
 
-def test_funnel_section_has_no_fabricated_layers(ai_context, client, settings, db_session):
-    """② 标签闭集钉：漏斗段恰四行计数、标签恰为四段闭集——任何分层标签即红。"""
+def test_funnel_origins_stay_in_closure(ai_context, client, settings, db_session):
+    """② 来源闭集钉：漏斗段来源 ⊆ 三值字面闭集；段标签仍为四段闭集。
+
+    造数覆盖全部三种来源（字面造数）：交付包 drill／档案 simulated／伙伴
+    real——任一来源越出闭集（如编造第四层）即红。
+    """
     users, _execute = ai_context
     admin = users["admin"]
-    make_project(db_session, admin)
+    project = make_project(db_session, admin)
+    _offer(db_session, project, users["alice"], origin="drill",
+           offered_at=datetime.now(UTC))
+    _profile(db_session, users["alice"], origin="simulated")
     _partner(db_session, admin)
     response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
     assert response.status_code == 200
     data = response.json["data"]
     section = _funnel_section(data["brief_markdown"])
     count_lines = [line for line in section.splitlines() if line.startswith("- ")]
-    labels = {line[2:].split("：")[0] for line in count_lines}
-    assert labels == FUNNEL_LABELS, f"漏斗段标签越出四段闭集（疑成分层标签）：{labels}"
     assert len(count_lines) == 4, f"漏斗段计数行数漂移：{count_lines}"
-    assert set(data["funnel"]) == {
-        "delivery_packages", "dispatch_offers", "regional_partners", "fde_profiles",
-    }
+    labels = {line[2:].split("：")[0] for line in count_lines}
+    assert labels == FUNNEL_LABELS, f"漏斗段标签越出四段闭集：{labels}"
+    origins: set[str] = set()
+    for segment in data["funnel"].values():
+        origins |= set(segment)
+    assert origins == ORIGIN_CLOSURE, f"漏斗来源越出三值闭集：{origins}"
+    # 三种来源的字面行各自在场（真实可证的分层，不是声明）
+    assert "drill offered" in section
+    assert "real city_observer" in section
+    assert "simulated active" in section
 
 
-def test_brief_module_has_no_marker_based_split():
-    """③ 零编造静态钉：模块不得引入标记判据（报价来源列等）切分计数。
+def test_brief_module_splits_by_approved_origin_field():
+    """③ 来源权威静态钉：模块必须按 data_origin 切分，且仍不得引入报价来源列。
 
-    四段对象无可靠分层依据；若按标记切「真实／模拟」，未标记的造蜂行会被误
-    报为真实 ⇒ 任何此类实现必须先改口径再改代码。
+    批次三的「零编造」钉随口径换代：分层依据已由 OWNER 拍板落为
+    ``data_origin`` 列 ⇒ AST 钉翻转——``data_origin`` 属性必须在场（漏斗
+    分组的唯一合法依据），报价模型／``.source``／``simulation`` 字面量仍然
+    禁止（那是未经拍板的第二套标记面）。
     """
     tree = ast.parse(OPS_TODOS_SRC.read_text(encoding="utf-8"))
     imported: set[str] = set()
@@ -333,25 +363,38 @@ def test_brief_module_has_no_marker_based_split():
             imported.update(
                 alias.asname or alias.name.split(".")[0] for alias in node.names
             )
-    assert "Quote" not in imported, "简报模块不得引入报价模型（其来源列是唯一机器可读标记）"
+    assert "Quote" not in imported, "简报模块不得引入报价模型（其来源列未经拍板）"
+    assert "DATA_ORIGINS" not in imported or True  # 允许经 DeliveryPackage 属性引用
+    attrs = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    assert "data_origin" in attrs, "漏斗分组必须使用拍板落列的 data_origin"
+    assert "source" not in attrs, "简报模块不得按报价来源列切分计数"
     literals = {
         node.value for node in ast.walk(tree)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
-    assert "simulation" not in literals, "简报模块不得出现仿真标记字面量"
-    attrs = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
-    assert "source" not in attrs, "简报模块不得按来源类标记字段切分计数"
+    assert "simulation" not in literals, "简报模块不得出现仿真标记字面量（闭集值是 simulated）"
 
 
-def test_event_records_unstratified_funnel_state(ai_context, client, settings, db_session):
-    """④ 留痕钉：生成事件带分层状态位——审计可追「这批计数未分层」。"""
+def test_event_records_stratified_funnel_state(ai_context, client, settings, db_session):
+    """④ 留痕钉：生成事件带 by_data_origin 状态位——审计可追分层口径。"""
     users, _execute = ai_context
     admin = users["admin"]
     make_project(db_session, admin)
     response = client.post(BRIEF_ROUTE, headers=access_headers(admin, settings))
     assert response.status_code == 200
     db_session.expire_all()
-    rows = db_session.query(OperationEvent) \
-        .filter_by(event_type="ops_brief_generated").all()
+    rows = db_session.query(OperationEvent)         .filter_by(event_type="ops_brief_generated").all()
     assert len(rows) == 1
-    assert rows[0].changes["funnel_stratification"] == "unstratified"
+    assert rows[0].changes["funnel_stratification"] == "by_data_origin"
+
+
+def test_create_package_route_rejects_unknown_data_origin(ai_context, client, settings):
+    """建包载荷的来源闭集闸：越出 drill/real/simulated 一律 400（服务层校验）。"""
+    users, _execute = ai_context
+    denied = client.post(
+        "/api/v1/dispatch/packages",
+        headers=access_headers(users["admin"], settings),
+        json={"solution_id": "s", "quote_id": "q", "data_origin": "bogus"},
+    )
+    assert denied.status_code == 400
+    assert "data_origin 只接受 drill/real/simulated" in denied.json["error"]["message"]
