@@ -30,6 +30,7 @@ from fde_api.templates.service import (
     TemplateServiceError,
     read_published_template_snapshot,
 )
+from fde_api.templates.selection import select_modules_for_project
 from fde_api.workbench.models import (
     ModuleCatalog,
     Project,
@@ -128,7 +129,7 @@ def create_project(*, actor: User, input: Mapping[str, Any]) -> dict[str, Any]:
             else:
                 snapshot = _normalize_project_snapshot(session, values["project_snapshot"], values["creation_source"])
                 research_snapshot = {"forms": []}
-            selected_modules = _selected_snapshot_modules(
+            selected_modules = select_modules_for_project(
                 snapshot, values["module_keys"]
             )
             project = Project(
@@ -1416,54 +1417,6 @@ def _find_project_member(project: Project, identifier: str) -> ProjectMember | N
         ),
         None,
     )
-
-
-def _selected_snapshot_modules(
-    snapshot: Mapping[str, Any], module_keys: Sequence[str]
-) -> list[dict[str, Any]]:
-    modules_by_key = {module["module_key"]: module for module in snapshot["modules"]}
-    missing = set(module_keys) - modules_by_key.keys()
-    if missing:
-        raise ProjectServiceError(
-            "module_not_in_template",
-            "Every selected module must belong to the template version.",
-            400,
-        )
-    selected = sorted(
-        (modules_by_key[key] for key in module_keys),
-        key=lambda module: (module["sort_order"], module["id"]),
-    )
-    selected_task_keys = {
-        task["task_key"] for module in selected for task in module["tasks"]
-    }
-    task_module_by_key = {
-        task["task_key"]: module["module_key"]
-        for module in snapshot["modules"]
-        for task in module["tasks"]
-    }
-    missing_dependencies = sorted(
-        (
-            task_module_by_key[dependency_key],
-            dependency_key,
-            module["module_key"],
-            task["task_key"],
-        )
-        for module in selected
-        for task in module["tasks"]
-        for dependency_key in task["dependency_keys"]
-        if dependency_key not in selected_task_keys
-    )
-    if missing_dependencies:
-        predecessor_module, predecessor_task, successor_module, successor_task = (
-            missing_dependencies[0]
-        )
-        raise ProjectServiceError(
-            "missing_required_module_dependency",
-            f"Module '{successor_module}' task '{successor_task}' requires "
-            f"module '{predecessor_module}' task '{predecessor_task}'.",
-            400,
-        )
-    return selected
 
 
 def _insert_project_modules(

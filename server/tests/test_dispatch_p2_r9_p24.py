@@ -26,12 +26,13 @@ from fde_api.projects.quote_service import QuoteServiceError, create_quote
 from fde_api.projects.service import ProjectServiceError, create_project
 from fde_api.solutions.models import ProjectSolution
 from fde_api.workbench.models import (
+    IndustryTemplate,
     IndustryTemplateVersion,
     OperationEvent,
     Project,
     Quote,
 )
-from fde_api.workbench.seed import seed_workbench
+from fde_api.workbench.seed import GENERIC_TEMPLATE_KEY, seed_workbench
 
 from conftest import INITIAL_PASSWORD
 
@@ -51,11 +52,24 @@ def _user(username: str, role: str = "admin") -> User:
 
 @pytest.fixture
 def published_template(db_session):
+    """通用模板（``GENERIC_TEMPLATE_KEY``）的已发布版本——**必须钉住唯一模板**。
+
+    `seed_workbench` 会同时发布四个版本：通用模板（每模块带任务行）＋三个行业模板
+    （零售连锁／餐饮连锁／制造业，**每模块 0 任务行**——`seed_industry_templates`
+    按设计只建模块与调研表）。若这里只按 `status == "published"` 取行，命中哪一行
+    取决于 PG 返回顺序 ⇒ 偶发选中行业模板时建项目会撞 503 project_creation_failed
+    （`test_crv_batch_a.py::test_qr018_...` 的 CI 偶发红即此因，2026-11-25 实测定位）。
+
+    因此按 template_key 钉死到通用模板（仓内其他 `published_template` 夹具同款写法）。
+    """
     seed_workbench(db_session)
     db_session.commit()
     return db_session.scalar(
-        select(IndustryTemplateVersion).where(
-            IndustryTemplateVersion.status == "published"
+        select(IndustryTemplateVersion)
+        .join(IndustryTemplate)
+        .where(
+            IndustryTemplateVersion.status == "published",
+            IndustryTemplate.template_key == GENERIC_TEMPLATE_KEY,
         )
     )
 
