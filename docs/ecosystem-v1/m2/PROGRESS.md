@@ -268,6 +268,13 @@ V1.1 修订六（2026-11-22 拍板 Q3）＝**伙伴端 web 优先**（基于既�
 
 新增路由闸测试：建包载荷来源越出闭集 ⇒ 400「data_origin 只接受 drill/real/simulated」。
 
+### 批次四收口（同日合并＋重部署＋部署态分层实测全绿）
+
+- **钩子拦截留痕**：首次提交被 pre-commit 全量 pytest **正确拦下**——`tests/test_migrations.py` 三钉（单头钉／已知集覆盖钉／测试库 schema=head 钉）报「唯一 head `b8d2f6a0c4e8` ≠ HEAD_REVISION `f2a4b6c8d0e2`」，属新增迁移后 `HEAD_REVISION` 常量未换代（机械闸按设计工作，非代码缺陷）。修复＝常量换代＋已知迁移计数 101→102；定向复跑迁移钉套件 **32 passed**（含迁移端到端升库验证）。生产代码零改动，七连变异证据仍有效。
+- **PR #587 squash `11464d77`** ＝ fork/main 顶；CI **四 job × 双 run 全绿**（desktop 2m37s/2m47s／secrets-scan 12s/17s／pseudonymization 46s/55s／server-tests 15m41s/20m59s）；本地 main ff、worktree 与本地/远端分支全清。
+- **合并后从 main 顶重部署**：重建三镜像＋recreate api/worker/scheduler（redis 未动 Up 4 days）→ 容器内 `alembic upgrade head` **真实执行** `f2a4b6c8d0e2 -> b8d2f6a0c4e8`（三表加列＋CHECK＋**存量交付包 drill 回填落库**）→ **三验全绿**：url_map **572** non-static ≡ inventory／容器内 `alembic current`＝`b8d2f6a0c4e8 (head)`／三镜像逐位一致 api `41335762f199`·worker `6d3ce39a7be7`·scheduler `839395693472`＋migrations 挂载源回归主树。**HTTP 验收判据复测（容器内 127.0.0.1:8010，不经宿主 NAT）**：`ops/todos` GET＝401／`ops/briefs/generate` POST＝401／`dispatch/profiles` GET＝401／`admin/dispatch/profiles` POST＝401（鉴权闸四面全拦，比批次三的 401×3 多一面）＋`health/ready`·`health/live` 200×2——★宿主侧 WSL NAT localhost 瞬断家族复发（`curl` 全 000；同时宿主侧首版判据还写错了端口 8081，真身＝8010），改走容器内探测等价完成；★探针首版两处路径/方法误设（`/ready` 404／profiles GET 405）对照 url_map 真身修正后全过——验收判据引用前先 `url_map` 现测，不凭记忆写路径。
+- **部署态分层探针（只读）全过**：`funnel_stratification = by_data_origin` 运行态生效；漏斗呈现 **`- 交付包：drill accepted 4`**（回填验证达成）＋ `- 派单 offer：drill accepted 4`（经包传导实证）；空段呈现 `（空）`；批次三「未分层声明」已退役；返回体 funnel 三层嵌套形状 `{段:{来源:{状态:计数}}}`；来源 token 全落三值闭集。★**探针判定式两处 False 属探针自身缺陷如实登记**（`S2_LEGEND_PRESENT`＝判据写 `startswith("## 二、")` 而 section 从 split 后一位起算差前缀，图例实际在段头〔`S2_LEGEND_IN_HEAD = True`〕；`S3_ORIGIN_PREFIXED`＝判据未豁免空段 `（空）` 行——与本地分层钉曾犯的空段坑同族）——**实质判据（图例在段头／有数行全带来源前缀／drill accepted 4 命中／闭集／声明退役／嵌套形状）全过**，与本地钉「空段豁免」教训同族复发（第二次，探针侧）。
+
 ## 二、OWNER 待拍板项（2026-11-23 已全部拍板，存档）
 
 | # | 事项 | 输入物 | 时点 | 终态 |
@@ -285,7 +292,7 @@ V1.1 修订六（2026-11-22 拍板 Q3）＝**伙伴端 web 优先**（基于既�
 - 2026-11-24 WP-5：桌面呈现挂 `#system-configuration`（调研代理对照五个候选页面选定——唯一同时满足「同页已有跨域只读监控＋GET 带 query 先例＋admin-only」三项的挂载点）；测试首版撞三处形状错（mock 信封 vs 直返 payload、ApiClientError 构造签名、strong 拆文断言）对照 delivery-plans 先例收口。
 - 2026-11-24 WP-3：简报产出链设计裁决＝**确定性聚合而非 AI 调用**（数字溯源纪律＋运营值班员卡拍板定稿 `prompt_purposes: []` 不得擅改）；变异预演发现到期边界无等值用例（严格小于变异会幸存），补 `test_due_boundary_is_inclusive` 后 10 条全杀。WP-2 静态钉「零事件追加」换代为「record_event 单点许可」（简报留痕是模块内唯一合法事件写入），换代不删钉。
 - 2026-11-24 **批次三开工（新会话 goal 提示词 v1.0）**：基线复现 HEAD `5a0a0b41`／八棵工作树／活体 ready-live 200 且 M1-M2 接口 404。任务 A 活体部署：接管检查器先过（并揪出活体 migrations 挂载源仍指 `fde-wt-rubricv2-deploy`）→ 本树重建三镜像 → recreate（redis 与 qiflow-* 旁栈零 recreate）→ 容器内 upgrade 补跑五条 → 三验全绿（url_map 572／alembic `f2a4b6c8d0e2 (head)`／三镜像逐位一致）→ 验收判据 `ops/todos`＝401、`ops/briefs/generate`＝401、`admin/dispatch/profiles`＝401、ready/live 200 全部达成。★**迁移挂载源随 recreate 自动迁回本树**（compose 相对路径解析随工作目录），但仍须人工核对——旧树若被删除会连带容器挂载失效，删树前必须确认挂载源已迁走。
-- 2026-11-24 **任务 B 现测结论登记**：M2 验收第 9 条「运营简报区分真实、模拟和演练数据」——现测＝**无可靠分层依据**（四段表零标记列；唯一机器可读标记是报价来源列，而 E2E 造蜂经真实建单 API 建报价时硬编码 `source="manual"` ⇒ 模拟/演练数据与真实数据 schema 同形；活库四段 100% 是机制造蜂数据却无字段可证；文本约定标记不可作口径）⇒ 按 goal 提示词第二分支「禁止编造分层」处置：简报显式标注未分层 ＋ 只交付可证数字 ＋ 「补分层标记」进待决表 D-1。**不因「看起来能分层」而分层**——用 `project_code`／`enterprise_code` 文本前缀做口径＝把可复现的自由文本当契约。
+- 2026-11-24 **批次四收口（PR #587 squash `11464d77`）**：钩子拦截家族新成员＝`test_migrations.py` HEAD_REVISION 三钉拦下常量未换代（修复后 32 passed）；CI 四 job 双 run 全绿；合并后 main 顶重部署＋容器内 upgrade 真实执行（drill 回填落库）＋三验全绿＋**部署态分层探针过**（`- 交付包：drill accepted 4` 运行态在场＝M2 验收第 9 条以落库口径闭合：真实/模拟/演练三值闭集列＋简报按来源分层）。M2 批次一～四全收口；余下＝D-5 轮（M3 候选 1＋2：区域伙伴自助运营页＋派单收件箱三态分流）＋D-3 签署面（DIFF-09 实签仍待业务＋财务）＋D-6 人工侧（真实试点场次与三方人选——AI 只备件不代办）。
 - 2026-11-24 **任务 C 拍板**：交互式选择题（推荐项前置）获选「保持 `pending_owner_approval`」⇒ 零代码改动，裁定追加进 `approval_record.rulings.activation_state`。★技术问题的答案改变了结论：`activation_state` 无运行时消费方，其唯一后果是出站纪律；而语义边界两读中 **seed 的 OWNER 裁定（「待逐卡上线时激活」）优先于模块 docstring（「拍板落地后」）** ⇒ 保持原态同时满足拍板②（职责已批准）与拍板③（出站零变更）。**教训：状态位的语义边界要问「谁写的裁定」，不是读实现注释**——注释是实现者的解释，裁定才是授权来源。
 - 2026-11-24 **任务 D 只准备件**：薄切片观察表字段、DIFF-09 签署样单六要点、OWNER 四项授权逐条列举，全部落本文件；**本轮零代做**（未接触人选／未签约／未收费／未发信）。
 - 2026-11-24 **同日交互式拍板四项（推荐项全获选）＋批次四开工**：D-1＝①立项加枚举列（本节）；D-5＝①M3 候选 1＋2 范围（下一轮）；D-3＝①DIFF-09 方向预拍板「披露改写」（签署仍待业务＋财务，AI 不代签）；D-2＝①维持禁用（seed ruling 再确认追记）。D-4 维持逐场授权纪律不预授；D-6 维持人工待办。★拍板回写随批次四 PR（台账三同步钉），不落独立台账轮。★archify finalize 首两连败＝Chrome 退出慢于 archify 等待窗（temp-cleanup-incomplete；残留 profile 目录）⇒ 精准清残留（只清 archify 专属目录，不群杀进程）后第三过——四闸 pass＋preview 整页实拍。
