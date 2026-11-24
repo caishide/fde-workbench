@@ -1,6 +1,6 @@
 # M0 安全与授权矩阵
 
-收割源为 [AGENTS.md](../../AGENTS.md)、[多客户商业化进度与验收](../commercialization/phase-status.md)、[商业化缺口登记](../commercialization/00-gap-register.md)、任务书 §14 及现有测试。表中测试用于定位既有防御性回归。本轮核对文本与配置约束，实际试点执行由对应负责人授权。
+收割源为 [AGENTS.md](../../../AGENTS.md)、[多客户商业化进度与验收](../../commercialization/phase-status.md)、[商业化缺口登记](../../commercialization/00-gap-register.md)、任务书 §14 及现有测试。表中测试用于定位既有防御性回归。本轮核对文本与配置约束，实际试点执行由对应负责人授权。
 
 | 边界 | 允许方与限制 | 测试与检查入口 | 遗留 |
 |---|---|---|---|
@@ -12,7 +12,7 @@
 | 宿主通道与出站 | 仅限已授权的单个 run 和代号化数据。生产白名单扩张由蔡工批准 | `test_host_egress_proxy.py`、`test_agent_traceability.py`、AGENTS 出站红线 | M2 逐项登记用途、目的域、数据与责任人 |
 | 证据、门禁和封包 | 原件本地保管，登记指针和 sha256。人工验收，受控变更及留痕 | `test_handover_packages.py`、贯通报告及桌面写安全验收 | 真单需取得人工裁定和回款证据 |
 | 诊断评测污染 | 答案与生成器、检索和知识种子隔离，展示例外须标记并隔离路径 | `test_diagnostic_eval_contamination.py` | M2 接线前确认语料边界和数据留存 |
-| 正式签约、扣费与结算 | 业务、财务及法务分别按既有闸审批。收款回填和已付销账只证明记录状态，实际资金动作以逐笔授权与凭证为准 | `test_dispatch_five_seat_baseline.py`、`test_f_line_t6_tax_invoice_reconciliation.py`、[ADR-007](../commercialization/decisions/ADR-007-human-confirmation-default.md)、ADR-011、GAP-12 | 签约前对齐 DIFF-09，区域正式售卖前补签并批准开闸 |
+| 正式签约、扣费与结算 | 业务、财务及法务分别按既有闸审批。收款回填和已付销账只证明记录状态，实际资金动作以逐笔授权与凭证为准 | `test_dispatch_five_seat_baseline.py`、`test_f_line_t6_tax_invoice_reconciliation.py`、[ADR-007](../../commercialization/decisions/ADR-007-human-confirmation-default.md)、ADR-011、GAP-12 | 签约前对齐 DIFF-09，区域正式售卖前补签并批准开闸 |
 | AI run 发起和外部影响 | 人提交并确认受控动作，AI 仅提议与生成候选 | `test_ai_run_proposal.py`、`control/api_catalog.py` | M2 新岗位逐项审查 API、数据范围、预算与权限 |
 
 ## M2 外部接触预审

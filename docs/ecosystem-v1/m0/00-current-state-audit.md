@@ -1,6 +1,6 @@
 # Ecosystem OS M0 现状审计
 
-2026-11-23（UTC+8）。依据《EcosystemOS_M0立项书_收割式_v1.0》及任务书 v1.1a。证据源为 [AGENTS.md](../../AGENTS.md)、[商业化阶段状态](../commercialization/phase-status.md)、[V3.1 阶段状态](../v3.1/phase-status.md)、[V3.2 G8 验收](../v3.2/V3.2_G8_端到端验收报告.md)、Workbench 固定提交和 Fde-Ontology `CURRENT.md`。旧快照的结构数字属 C 类，历史回执属 B 类。本次直接读取的 Git、静态代码及只读数据库聚合分别登记。
+2026-11-23（UTC+8）。依据《EcosystemOS_M0立项书_收割式_v1.0》及任务书 v1.1a。证据源为 [AGENTS.md](../../../AGENTS.md)、[商业化阶段状态](../../commercialization/phase-status.md)、[V3.1 阶段状态](../../v3.1/phase-status.md)、[V3.2 G8 验收](../../v3.2/V3.2_G8_端到端验收报告.md)、Workbench 固定提交和 Fde-Ontology `CURRENT.md`。旧快照的结构数字属 C 类，历史回执属 B 类。本次直接读取的 Git、静态代码及只读数据库聚合分别登记。
 
 | 现状 | M0 裁决 | 处理 |
 |---|---|---|

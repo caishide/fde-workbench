@@ -1,6 +1,6 @@
 # M0 现行业务流程
 
-收割来源为[接单到交付贯通验收报告](../audit/贯通验收报告-接单到交付-2026-11-17.md)、[贯通脚本](../../scripts/verify/verify_order_to_delivery_e2e.py)、[商业阶段状态](../commercialization/phase-status.md)与 ADR-011。本轮查阅历史验收和脚本，未执行包含写入的贯通脚本。
+收割来源为[接单到交付贯通验收报告](../../audit/贯通验收报告-接单到交付-2026-11-17.md)、[贯通脚本](../../../scripts/verify/verify_order_to_delivery_e2e.py)、[商业阶段状态](../../commercialization/phase-status.md)与 ADR-011。本轮查阅历史验收和脚本，未执行包含写入的贯通脚本。
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ flowchart LR
 | 任务、门禁、封包及登记 | 11-17 贯通报告与 §7 补验覆盖项目到 `delivered`；11-20 历史回执登记 27 PASS / 2 SKIP / 0 FAIL，按非首单路径运行 | 企业实际验收、手机端操作及换人执行回执 |
 | 真收款、计提、税票与应付款 | F 线 T0–T8 阶段状态、ADR-011、`test_f_line_t6_tax_invoice_reconciliation.py`。贯通报告 §7-C 仅通过结算负例，将真实结算留给 F 线 | 样单贯穿合同、实收、科目、五席位明细、税票及应付款。首签前关闭 DIFF-09 |
 
-`project_share` 科目行引用既有交付结算，五席位明细按收款主体归集。商机结算登记校验科目行与撮合包一致，并拒绝复用已用于其他商机的科目行。仓内批 D 正例使用合成夹具，证明登记约束；实际收款、应付款、打款与入账仍需同一笔样单的凭证。[科目层](../../server/src/fde_api/commercial/ledger_service.py#L630) · [专项回归](../../server/tests/test_crv_batch_d.py#L200)
+`project_share` 科目行引用既有交付结算，五席位明细按收款主体归集。商机结算登记校验科目行与撮合包一致，并拒绝复用已用于其他商机的科目行。仓内批 D 正例使用合成夹具，证明登记约束；实际收款、应付款、打款与入账仍需同一笔样单的凭证。[科目层](../../../server/src/fde_api/commercial/ledger_service.py#L630) · [专项回归](../../../server/tests/test_crv_batch_d.py#L200)
 
 历史 somwyn 结项记录显示 C 款 ¥3,300 里程碑触发，采用记账模式。本轮经营验收仍缺实际到账凭证的授权核对及异人复跑证据。证据原件由本地真相层管理。11-20 复跑数字引自当日历史回执登记，仓内 11-17 报告及验证脚本各自保留独立证据范围。
 

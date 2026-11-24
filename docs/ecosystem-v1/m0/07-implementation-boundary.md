@@ -1,6 +1,6 @@
 # M0 执行边界核对表
 
-收割源为 [AGENTS.md](../../AGENTS.md)、[CONTRIBUTING.md](../../CONTRIBUTING.md)、[README.md](../../README.md)、PartyMode 纪要 §二 E、任务书 §14/§19 和 [02 并发地图](02-git-worktree-concurrency-map.md)。M0 授权仅覆盖只读证据和本目录文档。
+收割源为 [AGENTS.md](../../../AGENTS.md)、[CONTRIBUTING.md](../../../CONTRIBUTING.md)、[README.md](../../../README.md)、PartyMode 纪要 §二 E、任务书 §14/§19 和 [02 并发地图](02-git-worktree-concurrency-map.md)。M0 授权仅覆盖只读证据和本目录文档。
 
 | 检查点 | 执行断言 | 证据或前置条件 |
 |---|---|---|

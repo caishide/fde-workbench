@@ -2,7 +2,7 @@
 
 ## 结构现测
 
-Workbench 基线 `723479009d1b1f0c63744790ad3be3ed02bebbe1`，现测日 2026-11-23（UTC+8）。收割源为 [结构 JSON](../audit/v3-workbench-inventory.json)、[路由 CSV](../audit/v3-route-inventory.csv)、[数据表 CSV](../audit/v3-database-inventory.csv)、[蓝图注册表](../../server/src/fde_api/app.py#L29) 和 [API Catalog](../../server/src/fde_api/control/api_catalog.py)。
+Workbench 基线 `723479009d1b1f0c63744790ad3be3ed02bebbe1`，现测日 2026-11-23（UTC+8）。收割源为 [结构 JSON](../../audit/v3-workbench-inventory.json)、[路由 CSV](../../audit/v3-route-inventory.csv)、[数据表 CSV](../../audit/v3-database-inventory.csv)、[蓝图注册表](../../../server/src/fde_api/app.py#L29) 和 [API Catalog](../../../server/src/fde_api/control/api_catalog.py)。
 
 | 结构面 | 数量或版本 | 当日检查 |
 |---|---|---|

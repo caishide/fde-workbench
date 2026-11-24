@@ -1,6 +1,6 @@
 # M0 十三域复用与缺口矩阵
 
-以 V1.0 §15 M0.2 为准，将 `registration/users/orgs` 拆为「注册」及「主体与组织」，得到十三域。§13.1 的详细数据、路由及界面映射另见 [05](05-api-data-model-inventory.md)。收割源为 [商业阶段状态](../commercialization/phase-status.md)、[路由清单](../audit/v3-route-inventory.csv)、[表清单](../audit/v3-database-inventory.csv)和 Workbench `72347900` 源码。下表测试文件为复核指针，历史工程回执按原日期使用。
+以 V1.0 §15 M0.2 为准，将 `registration/users/orgs` 拆为「注册」及「主体与组织」，得到十三域。§13.1 的详细数据、路由及界面映射另见 [05](05-api-data-model-inventory.md)。收割源为 [商业阶段状态](../../commercialization/phase-status.md)、[路由清单](../../audit/v3-route-inventory.csv)、[表清单](../../audit/v3-database-inventory.csv)和 Workbench `72347900` 源码。下表测试文件为复核指针，历史工程回执按原日期使用。
 
 | 域 | 裁决 | 复用证据和验证锚点 | 扩展或新增边界 |
 |---|---|---|---|
