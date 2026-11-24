@@ -32,6 +32,7 @@ import { LcscToolPage } from "./extensions/LcscToolPage"
 import { LcscComparePage } from "./extensions/LcscComparePage"
 import { SystemConfigurationPage } from "./system/SystemConfigurationPage"
 import { CommercialOpsPage } from "./commercial/CommercialOpsPage"
+import { PartnerOperationsPage } from "./commercial/PartnerOperationsPage"
 import { EnterpriseRegisterPage } from "./commercial/EnterpriseRegisterPage"
 import { EnterpriseSpacePage } from "./commercial/EnterpriseSpacePage"
 import { PublicDiagnosticPage } from "./diagnostics/PublicDiagnosticPage"
@@ -111,6 +112,7 @@ function RoutePage({ route }: { route: AppRoute }) {
   if (route.kind === "users") return <UsersPage />
   if (route.kind === "system-configuration") return <SystemConfigurationPage />
   if (route.kind === "commercial-ops") return <CommercialOpsPage />
+  if (route.kind === "partner-operations") return <PartnerOperationsPage />
   if (route.kind === "enterprise-register") return <EnterpriseRegisterPage />
   if (route.kind === "public-diagnostics") return <PublicDiagnosticPage />
   if (route.kind === "public-diagnostics-sample") return <PublicDiagnosticSamplePage />

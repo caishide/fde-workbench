@@ -155,8 +155,12 @@ def test_route_not_in_ai_catalog():
         assert not row["path"].startswith("/api/v1/ops"), row["path"]
 
 
-#: 桌面端引用运营路由的唯一许可面（M2 WP-5 呈现面板）。
-DESKTOP_OPS_PANEL = "desktop/src/renderer/src/system/OpsBriefPanel.tsx"
+#: 桌面端引用运营路由的**许可面闭集**（每个新消费点必须显式登记）：
+#: M2 WP-5 admin 呈现面板 ＋ M3 D-5① 伙伴自助运营页（/todos/mine 变体）。
+DESKTOP_OPS_PANELS = frozenset({
+    "desktop/src/renderer/src/system/OpsBriefPanel.tsx",
+    "desktop/src/renderer/src/commercial/PartnerOperationsPage.tsx",
+})
 
 
 def _desktop_files_referencing(literal: str) -> set[str]:
@@ -168,14 +172,16 @@ def _desktop_files_referencing(literal: str) -> set[str]:
     return hits
 
 
-def test_desktop_ops_route_reference_is_closed_to_presentation_panel():
-    """A8 换代钉（WP-5 落地后）：路由字面量**只许**出现在呈现面板单点。
+def test_desktop_ops_route_reference_is_closed_to_presentation_panels():
+    """A8 换代钉（M3 D-5① 再换代）：路由字面量只许出现在**许可面闭集**内。
 
-    批次二 WP-2 初版＝「桌面零引用」（WP-5 未做时的阶段性守卫，WP-5 挂面板
-    即按设计转红——CI 实录）。换代不删钉、不放宽：语义从「零处」收紧为
-    「引用闭集＝{呈现面板}」——守住「不在别处长出第二个调用点」。
+    换代史：WP-2 初版「桌面零引用」（阶段性守卫）→ WP-5「闭集＝{呈现面板}」
+    （首个消费点登记）→ M3「闭集＝{admin 面板, 伙伴面板}」（第二消费点
+    PartnerOperationsPage 消费 /todos/mine 变体，含 /todos 子串——CI 前本地
+    定向跑出，同 #581 家族）。每次新消费点必须**显式登记进本闭集**，守住
+    「不在别处长出未登记的调用点」。
     """
-    assert _desktop_files_referencing(OPS_ROUTE) == {DESKTOP_OPS_PANEL}
+    assert _desktop_files_referencing(OPS_ROUTE) == DESKTOP_OPS_PANELS
 
 
 # ------------------------------------------------------- queue 归类闭集（V1.0 §4.3）
