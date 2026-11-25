@@ -88,4 +88,6 @@ NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试�
 
 **收口席补注（2026-11-25）**：`.tmp-deploy/` 与 `server/wheels/` 已于 11-24 清除。活体镜像 `706940af2635` 经 `docker history` 实查，相对仓版 Dockerfile 少一步 `pip install --upgrade pip`、多一层 94.1MB 的 wheels，且无构建提交标签；上段所称「等价」指依赖集合与 `requirements.lock` 一致（容器内 `pip check` 通过），不指逐层相同。下次因 `server/` 改动按仓版 Dockerfile 重建即收敛。
 
+**收敛复测补注（本席，2026-11-25 非高峰窗口；OWNER 指令「仍拥塞则停手留痕不硬跑」）**：PyPI 直连三采样判决**仍拥塞，健康窗口未至**——宿主侧 `--max-time 25` 精测 **127 kB/s**（同款 4.7MB 轮 25s 未拉完）；WSL 侧 15s/20s 两探亦未拉完，且 20s 探的前置元数据请求先静默挂起约 3 分钟（同款静默断连签名）；同刻镜像对照 aliyun 5.2／tuna 4.5 MB/s 健康（直连差约 40×）⇒ 按家族判据「宿主同慢＝上游拥塞」判定上游仍未恢复。**本轮零构建零 recreate，活体零触碰**；shim 收敛重建继续留待健康窗口（复测配方＝直连 20–25s `--max-time` 单轮精测＋镜像同轮对照，判停线＝直连低于镜像一个量级；后续仍按本段原案：健康窗口一条原版 `docker compose build` 即收敛）。
+
 **COORDINATION**：并发会话（收口席）对本席 staged 快照完成核查＋钉换代收强（`DESKTOP_OPS_PANELS` 许可面闭集）并以同一 PR #590 合入，P1 四项拍板（M3 同轮开工批准／BLOCKED 清理／O-01 维持挂账／DIFF-09 维持待业务＋财务）随轮留痕（见「开工拍板与收口补录」节）。
