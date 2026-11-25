@@ -52,3 +52,14 @@
 - 专库 18 项覆盖注册 2 项、商机归属 5 项、v100 种入 1 项、五席分配 4 项、票据与科目 3 项、结算关联 1 项、区域售卖关闸 2 项。
 - 专库补验 4 项覆盖同主体发放幂等、诊断六项完结条件、重复注册额度复用及第二账号不能重开额度。
 - 按仓库测试隔离要求设置回环 `FDE_TEST_DATABASE_URL`，在 `server/` 下用 Python 运行 `pytest -q` 和表中对应节点。架构图检查使用 `python -I -X utf8 scripts/audit/check_archify_diagram_freshness.py`。
+
+## 活库身份对清注记（2026-11-25，回执定稿前补）
+
+协调席通报「M0/M1 读到的活库（`e2b4d6f8a0c2`，96 迁移）与 API 容器实际服务的库（`b8d2f6a0c4e8`，102 单头）相差 6 条迁移，疑似两个实例」。经只读探针五轮实测，**结论为同一实例、时点不同，不存在第二个生产库**：
+
+- **路径同一**：宿主 `127.0.0.1:15432` 的转发容器 `fde-pg-forward`（socat）目标为 `tcp:twenty-db:5432`；API 容器 `FDE_DATABASE_URL` 为 `postgresql+psycopg://…@twenty-db:5432/fde_workbench`——两条路径指向同一实例 `qiflow-twenty-db`（`automation_qiflow-net`，172.18.0.3）同名库。
+- **读数推进可追**：M0/M1 现测日 2026-11-23 读得 `e2b4d6f8a0c2` 为当日时点值；2026-11-24 工程线两次部署在同一库补跑五条迁移至 `f2a4b6c8d0e2`（101）、再升至 `b8d2f6a0c4e8`（102 单头，drill 回填）。差 6 条与部署时间线逐位吻合。
+- **2026-11-25 复测**：API 容器内 `alembic current` ＝ `b8d2f6a0c4e8 (head)`；15432 等价路径 `SELECT version_num` 同值，`delivery_packages` 中 `data_origin='drill'` 计数 4 行（11-24 回填指纹）在位。
+- **时点表述勘误**：上文「本机只读复检」段（readiness 200、542 条含静态路由、迁移版本 `e2b4d6f8a0c2`、镜像 `sha256:b4cb6a53…`）与「距固定基线五条迁移」均为 2026-11-23 时点值。2026-11-25 现值＝活体 573 non-static 路由（main 顶 `00fba33c`）、迁移 `b8d2f6a0c4e8` ＝ 代码 head（**未部署迁移 0 条**）、活体镜像现值 `706940af2635`（镜像 ID 属时点值，以 `docker inspect` 为准）。
+- **干扰项排除**：本机另有宿主 `55432` 的 M1 本地 CI 隔离库（容器 `fde-m1-ci-2351-pg`，`fde`/`fde_workbench_test`，无 `alembic_version` 表）与宿主 `16379` 的 Redis 转发，均非生产面，勿与活库混淆。
+- 留痕：文档中心 `90_诊断留痕/2026-11-25-db-identity/`（五轮只读探针脚本）。本注记为追加式，上文原段不改。
