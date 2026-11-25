@@ -31,3 +31,13 @@
 **基线前进（正文不改）**：审计基线 `72347900` → 入库日 main `31ad8e56`，结构口径 563→573 路由、58→59 蓝图、表 172 不变、101→102 迁移单头 `b8d2f6a0c4e8`。引用者以 `docs/audit/v3-workbench-inventory.json` 当日现测为准。
 
 **06 号待决表中已有后续裁决的行**（原表不改，以既有记录为准）：M1 准入，见上；AI 总部联网和岗位卡，OWNER 裁定见 `server/seeds/ai_hq_cards.json` 的 `approval_record` 与 [M2 进度](../m2/PROGRESS.md)；伙伴端和薄切片候选，伙伴运营页已交付（#590，见 [M3 进度](../m3/PROGRESS.md)），人选待确认。
+
+## 活库身份对清勘误（2026-11-25，追加注记）
+
+协调席通报 M0/M1 读得的活库头（`e2b4d6f8a0c2`，96 迁移）与工程线 2026-11-24 部署后的库头（`b8d2f6a0c4e8`，102 单头）相差 6 条，要求 M1 回执定稿前对清。只读探针实测结论：**生产库唯一，无第二实例**。
+
+- [05 号](05-api-data-model-inventory.md)「本机活库迁移头 `e2b4d6f8a0c2`」与其后「代码头至活库之间包含 5 条迁移」均为 **2026-11-23 时点值**：宿主 15432 转发路径（`fde-pg-forward` socat → `twenty-db:5432`）与 API 容器 `FDE_DATABASE_URL`（`@twenty-db:5432/fde_workbench`）指向同一实例 `qiflow-twenty-db/fde_workbench`；该库于 2026-11-24 由工程线两次部署推进 96→101（`f2a4b6c8d0e2`）→102（`b8d2f6a0c4e8`，drill 回填落库）。差 6 条与部署时间线逐位吻合，非两个实例。
+- **2026-11-25 复测**：API 容器内 `alembic current` ＝ `b8d2f6a0c4e8 (head)`；15432 等价路径同值，`delivery_packages` 中 `data_origin='drill'` 4 行在位。**「5 条迁移未部署」现值＝0 条**（库头＝代码 head）。
+- 05 号自注「容器内 `alembic current` 与活体部署三验未执行」在写作时点属实，现已由工程线部署与本次复测闭合。
+- 干扰项排除：宿主 `55432` 为 M1 本地 CI 隔离库（`fde-m1-ci-2351-pg`，`fde`/`fde_workbench_test`，无 `alembic_version` 表），非生产面。
+- 留痕：文档中心 `90_诊断留痕/2026-11-25-db-identity/`（五轮只读探针脚本）；[M1 回执同款注记](../m1/PROGRESS.md)。原件正文不改。
