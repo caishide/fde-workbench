@@ -1,6 +1,6 @@
 # Ecosystem OS M3 — 角色工作台与伙伴自助运营 · 实施进度
 
-**状态行**：**D-5 轮（候选 1＋2）已合并并活体部署完成（2026-11-24，PR #590 squash `1d2da122`＝fork/main 顶）**；候选 3–6 未排期（导师角色落法仍待拍板——矩阵 §7-2）。
+**状态行**：**D-5 轮（候选 1＋2）已合并并活体部署完成（2026-11-24，PR #590 squash `1d2da122`＝fork/main 顶；2026-11-26 构建期偏差收敛归零，活体自 main 顶 `828d283d` 以仓内原版 Dockerfile 重建）**；候选 3–6 未排期（导师角色落法仍待拍板——矩阵 §7-2）。
 
 ---
 
@@ -89,5 +89,7 @@ NEW `docs/ecosystem-v1/m3/02-human-pilot-walkthrough-kit.md`＝人工首片试�
 **收口席补注（2026-11-25）**：`.tmp-deploy/` 与 `server/wheels/` 已于 11-24 清除。活体镜像 `706940af2635` 经 `docker history` 实查，相对仓版 Dockerfile 少一步 `pip install --upgrade pip`、多一层 94.1MB 的 wheels，且无构建提交标签；上段所称「等价」指依赖集合与 `requirements.lock` 一致（容器内 `pip check` 通过），不指逐层相同。下次因 `server/` 改动按仓版 Dockerfile 重建即收敛。
 
 **收敛复测补注（本席，2026-11-25 非高峰窗口；OWNER 指令「仍拥塞则停手留痕不硬跑」）**：PyPI 直连三采样判决**仍拥塞，健康窗口未至**——宿主侧 `--max-time 25` 精测 **127 kB/s**（同款 4.7MB 轮 25s 未拉完）；WSL 侧 15s/20s 两探亦未拉完，且 20s 探的前置元数据请求先静默挂起约 3 分钟（同款静默断连签名）；同刻镜像对照 aliyun 5.2／tuna 4.5 MB/s 健康（直连差约 40×）⇒ 按家族判据「宿主同慢＝上游拥塞」判定上游仍未恢复。**本轮零构建零 recreate，活体零触碰**；shim 收敛重建继续留待健康窗口（复测配方＝直连 20–25s `--max-time` 单轮精测＋镜像同轮对照，判停线＝直连低于镜像一个量级；后续仍按本段原案：健康窗口一条原版 `docker compose build` 即收敛）。
+
+**收敛归零回执（2026-11-26 健康窗口，协调席通报口径三点执行）**：①判停线自测**过**——直连 2.41 MB/s（4.7MB 轮 1.97s 完）vs 同刻镜像 aliyun 11.3／tuna 10.5 MB/s（同量级，差 4–5 倍 ≪ 判停线一个量级；比 11-25 拥塞带 127 kB/s 改善约 20 倍）⇒ 动手；②仓内**原版 Dockerfile** 从 main 顶 `828d283d` compose build 三镜像 **94 秒完成 rc=0 零 stall**（三信号守望在场全程未触发）；③镜像内 lock 一致性（recreate 前一次性容器，不碰活体）＝pip check 无损／lock 67 包 **MISSING=NONE**（extra 仅 fde-api 本体＋pip＋psycopg-binary，与既有等价构建同轮廓）／关键导入过＋`fde_api.templates.selection` 在场（**#593 服务端修复随轮进活体**）且镜像内 url_map 已＝573；④recreate→healthy（~15s）→`alembic upgrade head` **no-op**（本轮零迁移）→三验全绿＝url_map **573** non-static／蓝图 59／容器内 `alembic current`＝`b8d2f6a0c4e8 (head)`／三镜像逐位 MATCH＝**api `4dfe181143f2`·worker `6691ec8acb71`·scheduler `05c3fdaacbf1`**（现值）／migrations 挂载源＝主树；⑤HTTP 判据全过＝todos 401／todos/mine 401／briefs/generate 401／dispatch profiles **GET 两入口**（`/api/v1/dispatch/profiles`＋`/me`）401／ready-live 200（注记：`/api/v1/admin/dispatch/profiles` 为 POST-only 面，GET 得 405＝路由在场方法不符，判据口径是两个 GET 入口）；⑥部署态分层简报探针全过＝`- 交付包：drill accepted 4`＋`- 派单 offer：drill accepted 4` 在场、来源 token 闭集、funnel 三层嵌套形状。**构建期偏差（aliyun shim 两行偏差＋收口席 wheels 层）自此双双退役归零；活体代码基线 `1d2da122`→`828d283d`（#594–#596 纯 docs/scripts 不进镜像）；桌面零改动，r61 不重打包；零发信零扣费零签约零售卖闸变更。可选项 `FDE_REGISTRATION_IP_DAILY_LIMIT=10`（#596 挂账）未经蔡工明示保留未落。**
 
 **COORDINATION**：并发会话（收口席）对本席 staged 快照完成核查＋钉换代收强（`DESKTOP_OPS_PANELS` 许可面闭集）并以同一 PR #590 合入，P1 四项拍板（M3 同轮开工批准／BLOCKED 清理／O-01 维持挂账／DIFF-09 维持待业务＋财务）随轮留痕（见「开工拍板与收口补录」节）。

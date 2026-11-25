@@ -30,6 +30,7 @@
 - 质量证据：服务端新增 7 条机械钉且四条变异全部命中后还原复绿；桌面新增 3 例测试、全量 1281 例通过；类型基线零新增。
 - 桌面构建版本 r61，正式便携包已随本轮制作（`蔡工FDE-0.3.0-便携版-r61`，asar sha256 `f3d88767b74fa30e1c0d805cf69d128f4b37d8099b19337c7cf5663b374b1e10`；中文 marker「伙伴运营」正向命中，`0.3.0-r61` 正向 1／`0.3.0-r60` 反向 0，python bytes.find＋GNU grep 双证；r60 特征「生成运营简报」保留＝回归确认；EBUSY 句柄锁按 r51 先例以独立输出目录 `release-r61` 绕行）。
 - 部署面 shim 收敛复测（2026-11-25 非高峰窗口）：PyPI 直连三采样仍处拥塞带（宿主 25s 精测 127 kB/s、同款 4.7MB 轮未拉完；WSL 侧 15s/20s 两探亦未完且元数据请求先静默挂起约 3 分钟；同刻镜像对照 aliyun 5.2／tuna 4.5 MB/s 健康，差约 40×）⇒ 判定健康窗口未至，构建期偏差（apt 源 sed＋PIP_INDEX_URL 两处）继续留待健康窗口用原版 Dockerfile 重建收敛；本轮零构建零 recreate，活体零触碰。
+- shim 收敛归零（2026-11-26 健康窗口）：判停线自测过（直连 2.41 MB/s vs 镜像 10.5–11.3 MB/s 同量级）后，以仓内**原版 Dockerfile** 从 main 顶重建三镜像 94 秒完成、零 stall；镜像内 lock 一致性全绿（pip check 无损／lock 67 包 MISSING=NONE／关键导入含 `templates.selection`）并 recreate 切换，三验＋HTTP 判据（todos 401／todos/mine 401／briefs 401／dispatch profiles GET 两入口 401／ready-live 200）＋部署态分层简报探针全过；构建期偏差（aliyun shim／wheels 层）双双退役，活体代码基线 `1d2da122`→`828d283d`（#593 服务端修复随轮生效；#594–#596 纯 docs/scripts 不进镜像）；桌面零改动，r61 不重打包。
 
 ## [未发布] — FDE 交付高价值开源项目清单 v1（2026-11-24）
 
