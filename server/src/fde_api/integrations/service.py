@@ -44,6 +44,7 @@ from fde_api.integrations.ontology_client import (
     OntologyClient,
     OntologyClientError,
     OntologyConflict,
+    OntologySnapshotIntegrityError,
     OntologyUnavailable,
 )
 from fde_api.projects.events import record_event
@@ -230,6 +231,15 @@ def _verified_snapshot(
             "ontology runtime conflict during I5 verification",
             status=502,
             code="runtime_conflict",
+        ) from exc
+    except OntologySnapshotIntegrityError as exc:
+        # S-13 fail-closed：快照 ETag 缺失/与文档重算不符——绝不消费可疑快照，
+        # 管理面 502。S-07/Vex M6 条件(a)：完整性细节（锚值/原因码/拓扑）不进文案，
+        # 只走异常链（服务端日志可见）。
+        raise BindingError(
+            "ontology snapshot integrity verification failed",
+            status=502,
+            code="snapshot_integrity",
         ) from exc
     except OntologyClientError as exc:
         # S-07/Vex M6 条件(a)：同上，5xx 状态码与路径不进管理面文案

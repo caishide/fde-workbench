@@ -2,6 +2,15 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — S-13 快照 ETag 校验补接线：声明兑现为 fail-closed 实现（2026-11-26）
+
+- **缺口**：`integrations/ontology_client.py` 的 `get_version_snapshot` docstring 写「一律读快照并校验 ETag」，但 `_request` 丢弃全部响应头（只回填 `_status`），`integrations/service.py` 的 `_verified_snapshot` 亦无完整性校验——声明强于实现（m1/VALIDATION §发布与快照 于回环场次登记「当前客户端只返回 JSON 和状态码，试点若要求客户端主动校验 ETag，需另补接线」）。
+- **补接线（三处，零迁移零路由零表）**：①client 新增 `OntologySnapshotIntegrityError`（reason 三向闭集：`etag_missing`／`etag_mismatch`／`snapshot_not_object`）＋ `canonical_json_sha256`（与 ontology-service/fingerprints.canonical 同款规范化——runtime 侧约定「Workbench 侧 client 用同一规则，复核才有意义」）＋共享校验器 `verify_snapshot_integrity`；`_request` 增 `want_etag` 参数回填响应 `ETag` 头（缺省 False，其余调用方零变化），`get_version_snapshot` 对 200 响应强制「ETag 头 ≡ 快照文档规范化重算」fail-closed，传输锚不外泄；②`ontology_mock` 同步执行同一校验（锚＝包装体 `etag` 字段，与 HTTP 世界的 ETag 头同一角色）；③`_verified_snapshot` 将完整性失败映射为管理面 **502 `snapshot_integrity`**（S-07/Vex M6 条件(a)：原因码/锚值/拓扑不进文案，只走异常链）。
+- **绑定面发布回执哈希**：`project_ontology_bindings` 未持发布回执哈希列（现状无此数据），「若持有则一并比对」不适用；现行对拍面＝响应 ETag 头 ⇔ 快照文档规范化重算（runtime 置 `ETag=snapshot_sha256`）。
+- **机械钉 14 例**（`test_ontology_snapshot_integrity.py`）：client/mock 两世界三向 fail-closed＋非 200 不校验＋其余调用方零变化＋mock 种子自洽与包装体形状稳定＋两世界 canonical 规则漂移钉＋管理面 502 映射与 S-07 文案钉＋「声明强于实现」AST 防回退钉；变异三连（缺头/错值/缺字段）fragment 级全杀＋字节级还原复绿。邻域 13 套件 113 passed（80 skipped 均既有环境性面）；mypy 基线 274 零新增；ruff 绿。
+- **本地双仓 HTTP 回环复验 PASS**（`scripts/verify/verify_ontology_snapshot_etag.py` 入库）：内置 stub 三向＋真 ontology-service（演练库副本追平迁移头，uvicorn 回环）——版本 2.0.0 的响应 ETag 头 ≡ 版本表 `snapshot_sha256` ≡ 客户端规范化重算（`54444779…`），新校验路径通过；★演练配方注意＝签名上下文头 nonce 单次有效，raw 请求须每请求独立签名（复用即 403 replayed）。留痕＝文档中心 `90_诊断留痕/2026-11-26-ontology-etag/`。
+- 库存不变：573 条业务路由、59 蓝图、172 表、102 迁移单头 `b8d2f6a0c4e8`。**合并后活体将滞后本服务端修复一个 PR（按协调席指令不自行重建，随下次部署轮自然收敛）。**
+
 ## [未发布] — M1 现行基线复证：合成账号端到端八环 PASS＋定向套件全绿（2026-11-25）
 
 - **背景**：M1 验收回执主体基于 2026-11-23 基线；此后主线并入 20 个 PR（含 `data_origin` 列迁移与立项模板形状契约）。按协调席要求（M1 结论作为真实签约依据前），在现行基线 `8534e1f6` 复证：**合成账号端到端八环全 PASS**（隔离栈：独立容器＋独立库＋独立 Redis＋假 SMTP 真 STARTTLS，源码挂载 main——探活/注册/收信/取令牌/邮箱验证/登录/建项目/读回逐环贴输出），M1 定向套件 11 文件 **191 passed＋13 passed**（2 例环境性失败＝容器缺 `docs/` 挂载，补挂后全绿）。

@@ -22,6 +22,7 @@ from fde_api.integrations.ontology_client import (
     OntologyClientError,
     OntologyConflict,
     OntologyUnavailable,
+    verify_snapshot_integrity,
 )
 
 def canonical_json_sha256(obj: object) -> str:
@@ -703,6 +704,10 @@ class MockOntologyAdapter:
         ver = self._versions.get((ontology_id, version_id))
         if ver is None:
             return {"code": "not_found", "message": "version not found", "_status": 404}
+        # S-13 与 client 世界同步校验 ETag（2026-11-26 补接线）：锚＝记录内 etag
+        # 字段（同一角色＝HTTP 世界的 ETag 响应头），重算＝快照文档——缺字段/
+        # 错值一律 OntologySnapshotIntegrityError fail-closed，与真实链路同语义。
+        verify_snapshot_integrity(ver.get("etag"), ver.get("snapshot"))
         return {
             "id": ver["id"],
             "ontology_id": ver["ontology_id"],
