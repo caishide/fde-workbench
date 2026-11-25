@@ -56,6 +56,51 @@ class OntologyAuthError(OntologyClientError):
         self.body = body
 
 
+class OntologySnapshotIntegrityError(OntologyClientError):
+    """S-13 快照完整性校验失败——fail-closed，绝不消费可疑快照。
+
+    ``reason`` 三向闭集：``etag_missing``（锚缺失：HTTP ETag 头未回 /
+    mock 记录 etag 字段缺失）、``etag_mismatch``（锚 ≠ 快照文档规范化重算）、
+    ``snapshot_not_object``（快照文档非对象）。原因值机器可读，调用方映射
+    管理面文案时不得携带（S-07/Vex M6 条件(a)）。
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"ontology snapshot integrity check failed: {reason}")
+        self.reason = reason
+
+
+def canonical_json_sha256(obj: object) -> str:
+    """与 ontology-service/fingerprints.canonical 同款规范化 SHA-256（64 位 hex）。
+
+    runtime 侧明文约定「Workbench 侧 client 用同一规则，复核才有意义」——
+    本函数是 Workbench 侧重算的单一权威（mock 的同名函数经漂移钉与她对齐）。
+    """
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+
+
+def verify_snapshot_integrity(anchor_etag: object, document: object) -> None:
+    """S-13 版本固定读取的完整性校验（client 与 mock 两世界共用，三向 fail-closed）。
+
+    - ``anchor_etag``：完整性锚——HTTP 世界＝响应 ``ETag`` 头（runtime 置
+      ``ETag=snapshot_sha256``），mock 世界＝包装体 ``etag`` 字段（同一角色）；
+    - ``document``：快照文档本体（剥离 ``_`` 前缀传输键后的响应体 / mock 记录的
+      ``snapshot``）。
+
+    缺锚（缺头/缺字段）、文档非对象（缺字段）、锚 ≠ ``canonical_json_sha256(文档)``
+    （错值）任一命中即抛 :class:`OntologySnapshotIntegrityError`——「声明读快照
+    必校验 ETag」自本函数起为真实现（m1/VALIDATION §发布与快照 登记缺口的补接线）。
+    """
+    if not isinstance(anchor_etag, str) or not anchor_etag:
+        raise OntologySnapshotIntegrityError("etag_missing")
+    if not isinstance(document, dict):
+        raise OntologySnapshotIntegrityError("snapshot_not_object")
+    if canonical_json_sha256(document) != anchor_etag:
+        raise OntologySnapshotIntegrityError("etag_mismatch")
+
+
 def _b64e(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
@@ -191,6 +236,7 @@ class OntologyClient:
         idem: str | None = None,
         json_body: dict[str, Any] | list[dict[str, Any]] | None = None,
         params: dict[str, Any] | None = None,
+        want_etag: bool = False,
     ) -> dict[str, Any]:
         self._breaker_check()
         url = f"{self.base_url}{path}"
@@ -221,6 +267,11 @@ class OntologyClient:
             if resp.status_code in (401, 403):
                 raise OntologyAuthError(body)
             body["_status"] = resp.status_code
+            if want_etag:
+                # S-13：快照读取需要响应 ETag 头——此前 _request 丢弃全部响应头，
+                # 「读快照并校验 ETag」声明强于实现（m1/VALIDATION §发布与快照 登记
+                # 缺口）；requests 头大小写不敏感，缺头回 None 由校验层 fail-closed。
+                body["_etag"] = resp.headers.get("ETag")
             return body
 
         try:
@@ -341,11 +392,24 @@ class OntologyClient:
     def get_version_snapshot(
         self, *, actor_id: str, org_id: str, project_id: str, ontology_id: str, version_id: str
     ) -> dict[str, Any]:
-        """S-13 版本固定读取：Agent/Workflow 一律读快照并校验 ETag。"""
-        return self._request(
+        """S-13 版本固定读取：Agent/Workflow 一律读快照并校验 ETag。
+
+        校验即实实现（2026-11-26 补接线）：200 响应须携带 ``ETag`` 头且与快照
+        文档（剥离 ``_`` 前缀传输键）的规范化重算逐位一致，否则
+        :class:`OntologySnapshotIntegrityError` fail-closed——宁可拒读，不消费
+        被篡改/谎报哈希的快照。非 200（404 等）不走校验，交由调用方按既有
+        ``_status`` 语义处置。校验通过的传输锚 ``_etag`` 不外泄（返回体仅含
+        契约键 + ``_status``）。
+        """
+        body = self._request(
             "GET", f"/api/v1/ontologies/{ontology_id}/versions/{version_id}/snapshot",
-            actor_id=actor_id, org_id=org_id, project_id=project_id,
+            actor_id=actor_id, org_id=org_id, project_id=project_id, want_etag=True,
         )
+        if body.get("_status") == 200:
+            document = {k: v for k, v in body.items() if not k.startswith("_")}
+            verify_snapshot_integrity(body.get("_etag"), document)
+            body.pop("_etag", None)
+        return body
 
     # ---- M3 数据接地与血缘只读方法（契约 §7 增量方法）----
 
