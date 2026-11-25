@@ -121,7 +121,9 @@ docker compose up -d
 ```bash
 docker compose exec api alembic upgrade head
 docker compose exec api flask --app fde_api.wsgi:app bootstrap-open-source
-# 可选：灌入门禁清单 / 收款里程碑 / SOP 种子数据
+# 必需：灌入门禁清单 / 收款里程碑 / SOP 种子数据（建项目硬前置——projects.sop_phase
+# 外键指向 sop_nodes，不灌则建项目 IntegrityError→409 project_conflict；
+# 2026-11-25 M1 复证实录）
 docker compose exec api python load_seeds.py
 # 可选：灌入平台工作流模板三套（V3.1 P0-4；幂等，依赖 bootstrap 已灌的公共技能）
 docker compose exec api flask --app fde_api.wsgi:app seed-workflow-templates

@@ -2,6 +2,13 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — M1 现行基线复证：合成账号端到端八环 PASS＋定向套件全绿（2026-11-25）
+
+- **背景**：M1 验收回执主体基于 2026-11-23 基线；此后主线并入 20 个 PR（含 `data_origin` 列迁移与立项模板形状契约）。按协调席要求（M1 结论作为真实签约依据前），在现行基线 `8534e1f6` 复证：**合成账号端到端八环全 PASS**（隔离栈：独立容器＋独立库＋独立 Redis＋假 SMTP 真 STARTTLS，源码挂载 main——探活/注册/收信/取令牌/邮箱验证/登录/建项目/读回逐环贴输出），M1 定向套件 11 文件 **191 passed＋13 passed**（2 例环境性失败＝容器缺 `docs/` 挂载，补挂后全绿）。
+- **部署文档升格**：README 种子步骤 `python load_seeds.py` 由「可选」改为**「必需」**——`projects.sop_phase` 外键指向 `sop_nodes`，全新部署漏灌此种子时建项目 IntegrityError→409 `project_conflict`（且被路由层转码无日志，2026-11-25 隔离栈实录定位）；换机/远端重建漏此步会静默破坏建项目链路。
+- **复证脚本随基线演进**：`verify_registration_trial.py` 默认 `--module-key` 由已退役的 `sop_presale` 改为 `pre_diagnosis`（现行 module_catalog 九键之一），help 注明退役缘由。
+- 零产品代码、零迁移、零路由、零桌面；M1 回执补章与活库身份对清勘误（同日 #595）落 `docs/ecosystem-v1/m1/`、`m0/`。库存不变：573 条业务路由、59 蓝图、172 表、102 迁移单头 `b8d2f6a0c4e8`。
+
 ## [未发布] — 立项模板契约：无任务模块判 400 而非 503（2026-11-25）
 
 - **症状**：用行业模板（零售连锁／餐饮连锁／制造业——按设计只建模块与调研表、不建任务行）建项目时，报「Unable to create the project at this time.」（503），且原始异常被 `raise ... from None` 抹掉，调用方拿不到任何线索。该路径同时是 CI 偶发红的来源：`test_crv_batch_a.py::test_qr018_...` 的 `published_template` 夹具只按 `status == published` 取行，而库里有 4 个 published 版本（1 通用 + 3 行业），命中哪一行取决于数据库返回顺序 ⇒ 偶发红、偶发绿。
