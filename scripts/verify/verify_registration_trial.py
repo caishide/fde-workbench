@@ -159,8 +159,9 @@ def main() -> int:
     parser.add_argument("--mail-timeout", type=float, default=60.0)
     parser.add_argument(
         "--module-key",
-        default="sop_presale",
-        help="建项目用的模块键（module_catalog 四段固定模块之一；需已跑种子）",
+        default="pre_diagnosis",
+        help="建项目用的模块键（须在现行 module_catalog 且已跑种子；"
+        "旧默认 sop_presale 已随目录演进退役——2026-11-25 M1 复证实录）",
     )
     parser.add_argument("--skip-write", action="store_true")
     args = parser.parse_args()

@@ -63,3 +63,15 @@
 - **时点表述勘误**：上文「本机只读复检」段（readiness 200、542 条含静态路由、迁移版本 `e2b4d6f8a0c2`、镜像 `sha256:b4cb6a53…`）与「距固定基线五条迁移」均为 2026-11-23 时点值。2026-11-25 现值＝活体 573 non-static 路由（main 顶 `00fba33c`）、迁移 `b8d2f6a0c4e8` ＝ 代码 head（**未部署迁移 0 条**）、活体镜像现值 `706940af2635`（镜像 ID 属时点值，以 `docker inspect` 为准）。
 - **干扰项排除**：本机另有宿主 `55432` 的 M1 本地 CI 隔离库（容器 `fde-m1-ci-2351-pg`，`fde`/`fde_workbench_test`，无 `alembic_version` 表）与宿主 `16379` 的 Redis 转发，均非生产面，勿与活库混淆。
 - 留痕：文档中心 `90_诊断留痕/2026-11-25-db-identity/`（五轮只读探针脚本）。本注记为追加式，上文原段不改。
+
+## 现行基线复证与部署态现值（2026-11-25，回执定稿补章）
+
+本回执主体验证的基线为 2026-11-23（`b790a563`）。此后主线并入 #576–#595（M2 全批次、M3 D-5 轮、`data_origin` 三值列迁移 `b8d2f6a0c4e8`、立项模板形状契约 #593 等）。应协调席要求（M1 结论作为真实签约依据前），在现行基线 `8534e1f6` 完成复证，**零真实发信、零扣费、零签约、零售卖放行；活体只读**。
+
+**① 合成账号端到端（隔离栈，八环全 PASS）**：API 容器（镜像为运行时载体，源码挂载 main `8534e1f6`）＋独立库 `fde_workbench_m1_e2e_test`＋独立 Redis＋本地假 SMTP（STARTTLS 真握手），与主栈零互锁。链路：探活 200 → 注册 201（`pending_email`，`verification_email=sent`）→ 收验证邮件（假 SMTP 落盘 714 字节）→ 取令牌（43 字符）→ 邮箱验证 200（`active`/enterprise）→ 登录 200（`project_lead`）→ 建项目 201（`07b5964a-…`）→ 读回 200 ⇒ 全链 PASS。复证中修三件复证资产（产品码零改动）：a) 隔离库初始化＝迁移＋`bootstrap-open-source`＋**`load_seeds.py`**——后者 README 原标「可选」，实为建项目硬前置（`projects.sop_phase='S3'` 外键 `fk_projects_sop_phase_sop_nodes` 在 `sop_nodes` 空表时 IntegrityError→409，且被路由层转码无日志；以隔离库 SQL 日志定位），README 已升格为「必需」；b) `verify_registration_trial.py` 默认 `--module-key sop_presale` 已不在现行模块目录，本轮传 `--module-key pre_diagnosis`，脚本默认值已随轮更正；c) 合成主体代号经仓内 `normalize_subject_key` 同款 mod-31 算法生成。
+
+**② M1 定向套件复跑（现行基线，镜像运行器＋隔离库）**：VALIDATION 引用锚 11 文件——**191 passed**；2 例环境性失败（`test_m7_opportunity_data_ownership` 读仓根 `docs/` 规则文档，容器未挂载）补挂后该文件 **13 passed** 全绿闭合。运行器注意：conftest 安全合同要求测试库 host 回环（容器名 `twenty-db` 被 `Refusing to run tests against host` 正确拦截），经 `127.0.0.1:15432`（socat 转发同一实例的隔离库）满足。
+
+**③ 部署态现值（2026-11-25 现测，活体只读）**：ready=200／live=200；活体 url_map 573 non-static；容器内 `alembic current`＝`b8d2f6a0c4e8 (head)`＝代码 head（未部署迁移 0 条，见上节对清）；活体镜像 `706940af2635`（时点值）；注册闸 `POST /api/v1/auth/register/enterprise`＝**404**（三条件缺二：`FDE_REGISTRATION_ENABLED` 未设＝默认 False、发信通道未启用——真凭据为 OWNER 待办）；`FDE_REGISTRATION_IP_DAILY_LIMIT` 部署态未设＝代码缺省 20/日/IP（2026-11-17 拍板试点实数 10 尚未落部署配置——**挂账提醒**）；`dispatch_rule_versions` 顶行 `v100 active`；`delivery_packages` 中 `data_origin='drill'` 4 行（11-24 回填）在位。
+
+**与主体验证的关系**：本补章不改变主体结论与试点待验清单；人工待办维持未勾（部署负责人登记、DIFF-09 签署、真实人选场次等仍归人工）。留痕：文档中心 `90_诊断留痕/2026-11-25-m1-revalidation/`（隔离栈脚本＋pytest 原始输出）。
