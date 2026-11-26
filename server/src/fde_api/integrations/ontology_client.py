@@ -19,6 +19,7 @@ import json
 import secrets
 import time
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 import requests
@@ -113,19 +114,25 @@ def build_context_header(
     *,
     ts: int | None = None,
     nonce: str | None = None,
+    roles: Sequence[str] | None = None,
 ) -> str:
-    """与 runtime 侧参考实现同规格（base64url(json)+HMAC-SHA256）。"""
-    payload = json.dumps(
-        {
-            "actor_id": actor_id,
-            "org_id": org_id,
-            "project_id": project_id,
-            "ts": int(ts if ts is not None else time.time()),
-            "nonce": nonce or secrets.token_hex(8),
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    """与 runtime 侧参考实现同规格（base64url(json)+HMAC-SHA256）。
+
+    M7（S-21）：可选 ``roles``（角色声明数组）——进 HMAC 覆盖面，runtime 据此校验
+    「投票角色 ∈ 签名声明角色」。规格与 runtime ``context.build_context_header``
+    同源：去重排序后写入；``roles=None`` 时载荷与 M7 之前**逐字节一致**（老调用方
+    零改造，签名不可用性风险为零）。
+    """
+    claims: dict[str, Any] = {
+        "actor_id": actor_id,
+        "org_id": org_id,
+        "project_id": project_id,
+        "ts": int(ts if ts is not None else time.time()),
+        "nonce": nonce or secrets.token_hex(8),
+    }
+    if roles is not None:
+        claims["roles"] = sorted({str(role) for role in roles})
+    payload = json.dumps(claims, sort_keys=True, separators=(",", ":"))
     raw = _b64e(payload.encode())
     sig = _b64e(hmac.new(signing_key.encode(), raw.encode(), hashlib.sha256).digest())
     return f"{raw}.{sig}"
@@ -211,10 +218,19 @@ class OntologyClient:
 
     # ---- 核心请求（私有）----
 
-    def _headers(self, actor_id: str, org_id: str, project_id: str, idem: str | None) -> dict[str, str]:
+    def _headers(
+        self,
+        actor_id: str,
+        org_id: str,
+        project_id: str,
+        idem: str | None,
+        roles: Sequence[str] | None = None,
+    ) -> dict[str, str]:
         headers = {
             "X-API-Key": self.api_key,
-            "X-FDE-Context": build_context_header(actor_id, org_id, project_id, self.signing_key),
+            "X-FDE-Context": build_context_header(
+                actor_id, org_id, project_id, self.signing_key, roles=roles
+            ),
             "Content-Type": "application/json",
         }
         if idem:
@@ -237,10 +253,11 @@ class OntologyClient:
         json_body: dict[str, Any] | list[dict[str, Any]] | None = None,
         params: dict[str, Any] | None = None,
         want_etag: bool = False,
+        roles: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         self._breaker_check()
         url = f"{self.base_url}{path}"
-        headers = self._headers(actor_id, org_id, project_id, idem)
+        headers = self._headers(actor_id, org_id, project_id, idem, roles=roles)
 
         def send() -> dict[str, Any]:
             try:
@@ -363,7 +380,14 @@ class OntologyClient:
     def approve_change_set(
         self, *, actor_id: str, org_id: str, project_id: str, change_set_id: str,
         role: str, decision: str, comment: str = "", annotation_evidence_id: str | None = None,
+        roles: Sequence[str] | None = None,
     ) -> dict[str, Any]:
+        """审批票（变更集）。
+
+        M7（S-21）：``roles`` = 该身份的**签名角色声明**（由 Workbench 侧授权数据
+        派生，非请求体自报）——进 X-FDE-Context 的 HMAC 覆盖面，runtime 据此校验
+        「投票角色 ∈ 声明角色」与「三必签角色异人」。
+        """
         payload: dict[str, Any] = {"role": role, "decision": decision, "comment": comment}
         if annotation_evidence_id:
             payload["annotation_evidence_id"] = annotation_evidence_id
@@ -374,6 +398,7 @@ class OntologyClient:
         return self._request(
             "POST", f"/api/v1/change-sets/{change_set_id}/approvals",
             actor_id=actor_id, org_id=org_id, project_id=project_id, idem=idem, json_body=payload,
+            roles=roles,
         )
 
     def publish(
@@ -633,8 +658,12 @@ class OntologyClient:
         role: str,
         decision: str,
         comment: str | None = None,
+        roles: Sequence[str] | None = None,
     ) -> dict[str, Any]:
-        """D28 / 红线 6：审批子表（I4 自批由 runtime 403 强制；rejected 即终态）。"""
+        """D28 / 红线 6：审批子表（I4 自批由 runtime 403 强制；rejected 即终态）。
+
+        M7（S-21）：``roles`` = 签名角色声明（同 approve_change_set）。
+        """
         payload: dict[str, Any] = {"role": role, "decision": decision}
         if comment:
             payload["comment"] = comment
@@ -646,6 +675,7 @@ class OntologyClient:
             project_id=project_id,
             idem=uuid.uuid4().hex,
             json_body=payload,
+            roles=roles,
         )
 
     def get_action_request(

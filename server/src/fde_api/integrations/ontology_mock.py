@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -420,6 +421,7 @@ class MockOntologyAdapter:
         role: str,
         decision: str,
         comment: str | None = None,
+        roles: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         self._maybe_fault()
         req = self._action_requests.get(request_id)
@@ -436,6 +438,14 @@ class MockOntologyAdapter:
                 "_status": 403,
                 "code": "forbidden",
                 "message": "requester cannot approve own action request (I4)",
+            }
+        # M7（S-21）：角色声明校验——与 runtime 同语义（投票角色须属签名声明角色）。
+        # mock 世界不验签，故按传入 roles 判定；roles=None = 未声明（与 runtime off 档一致，不拦）。
+        if roles is not None and role not in set(roles):
+            return {
+                "_status": 403,
+                "code": "forbidden",
+                "message": f"role {role!r} is not granted to the actor by the signed context (S-21)",
             }
         if role not in ("business_owner", "model_consultant", "data_owner", "risk"):
             return {"_status": 422, "code": "validation_failed", "message": "invalid role"}
@@ -630,11 +640,19 @@ class MockOntologyAdapter:
         decision: str,
         comment: str = "",
         annotation_evidence_id: str | None = None,
+        roles: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         self._maybe_fault()
         cs = self._change_sets.get(change_set_id)
         if cs is None:
             return {"code": "not_found", "message": "change set not found", "_status": 404}
+        # M7（S-21）：角色声明校验（与 runtime 同语义；roles=None = 未声明，不拦）
+        if roles is not None and role not in set(roles):
+            return {
+                "code": "forbidden",
+                "message": f"role {role!r} is not granted to the actor by the signed context (S-21)",
+                "_status": 403,
+            }
         cs["approvals"][role] = {
             "actor_id": actor_id,
             "decision": decision,

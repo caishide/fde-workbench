@@ -37,7 +37,11 @@ from fde_api.auth.models import Base, User
 from fde_api.config import Settings
 from fde_api.extensions import db
 from fde_api.integrations import service as binding_service
-from fde_api.integrations.models import ACTIVE_MARKER, ProjectOntologyBinding
+from fde_api.integrations.models import (
+    ACTIVE_MARKER,
+    ProjectOntologyBinding,
+    ProjectOntologyRole,
+)
 from fde_api.integrations.ontology_client import OntologyClient, OntologyConflict
 from fde_api.integrations.ontology_mock import MockOntologyAdapter
 from fde_api.workbench.models import Project, ProjectMember
@@ -296,6 +300,7 @@ def m4_binding_app(tmp_path: Path) -> Iterator[Flask]:
             "project_members",
             "project_ontology_bindings",
             "ontology_binding_upgrades",
+            "project_ontology_roles",  # M7/S-21：审批角色真身（Workbench 侧授予）
             "operation_events",
         )
     ]
@@ -446,7 +451,17 @@ def test_binding_m4_proxies_enforce_pinned_version_and_org(
             active_marker=ACTIVE_MARKER,
             bound_by_user_id="user-a",
         )
-        session.add_all([user_a, user_b, proj_a, member_a, binding])
+        # M7/S-21：授予 business_owner——否则 Workbench 侧角色闸先 403，
+        # 下方要证明的 runtime I4 自批 403 就到不了（本用例证的是 runtime 的 I4）
+        role_grant = ProjectOntologyRole(
+            id="por-alpha-1",
+            org_id="org-alpha",
+            project_id="proj-alpha",
+            user_id="user-a",
+            role="business_owner",
+            granted_by_user_id="user-a",
+        )
+        session.add_all([user_a, user_b, proj_a, member_a, binding, role_grant])
         session.commit()
         token_a = _issue_token(user_a, settings)
         token_b = _issue_token(user_b, settings)
@@ -489,13 +504,16 @@ def test_binding_m4_proxies_enforce_pinned_version_and_org(
     request_id = r_propose.get_json()["data"]["id"]
 
     # 3) 审批代理：代理把调用方身份映射为 runtime requested_by——同一用户经代理
-    #    审批自己的提议 = I4 自批，runtime 403 原样透传（他人审批须换用户调用）
+    #    审批自己的提议 = I4 自批，runtime 403 原样透传（他人审批须换用户调用）。
+    #    M7/S-21：user-a 已被授予 business_owner，故 Workbench 侧角色闸放行，
+    #    403 必须来自 runtime 的 I4（code=forbidden）而非本地角色闸（role_not_granted）。
     r_self = client.post(
         f"/api/v1/projects/proj-alpha/ontology-bindings/bind-alpha-1/action-requests/{request_id}/approvals",
         headers={"Authorization": f"Bearer {token_a}"},
         json={"role": "business_owner", "decision": "approved"},
     )
     assert r_self.status_code == 403, r_self.get_json()
+    assert r_self.get_json()["error"]["code"] == "forbidden", r_self.get_json()
 
     # 4) 跨租户 User B 探测一律 404（S-01 零存在性泄露）
     r_cross = client.post(
@@ -598,7 +616,17 @@ def test_auth_error_with_forbidden_code_translates_to_403_not_502(m4_binding_app
             active_marker=ACTIVE_MARKER,
             bound_by_user_id="u-forbidden",
         )
-        session.add_all([user, proj, member, binding])
+        # M7/S-21：授予 business_owner——否则 Workbench 侧角色闸（role_not_granted）
+        # 会先 403，runtime 的 forbidden 翻译路径就测不到（本用例证的是翻译语义）
+        role_grant = ProjectOntologyRole(
+            id="por-fb-1",
+            org_id="org-alpha",
+            project_id="proj-forbidden",
+            user_id="u-forbidden",
+            role="business_owner",
+            granted_by_user_id="u-forbidden",
+        )
+        session.add_all([user, proj, member, binding, role_grant])
         session.commit()
 
         with pytest.raises(svc.BindingError) as raised:

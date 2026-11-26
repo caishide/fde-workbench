@@ -97,6 +97,64 @@ class ProjectOntologyBinding(Base, TimestampMixin, VersionedMixin):
         }
 
 
+class ProjectOntologyRole(Base, TimestampMixin):
+    """项目级本体审批角色授予（M7 / S-21）——Workbench 侧的角色真身。
+
+    runtime 的审批角色此前**取自请求体自报**：服务端只验「提议人 ≠ 复核人」与
+    「每角色一票」，一个非提议人可连投三票把变更集批掉（M7 决策单第 2 条）。
+    M7 起角色的真身落本表：谁被授予了哪些本体审批角色（project_id × user_id ×
+    role），服务层据此派生签名声明（进 X-FDE-Context 的 roles，进 HMAC 覆盖面），
+    runtime 再校验「投票角色 ∈ 声明角色」。
+
+    约束：
+    - role 闭集四值（与 runtime approvals.role CHECK 同源）；
+    - uq(project_id, user_id, role)：同一人同一角色不重复授予；
+    - org_id = 项目归属（projects.org_id），与绑定同源（D10 段 2 口径）；
+    - granted_by_user_id 留痕：谁授的（授权责任可追溯）。
+    """
+
+    __tablename__ = "project_ontology_roles"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('business_owner', 'model_consultant', 'data_owner', 'risk')",
+            name="ck_project_ontology_roles_role",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "user_id",
+            "role",
+            name="uq_project_ontology_roles_project_user_role",
+        ),
+        Index("ix_project_ontology_roles_project", "project_id"),
+        Index("ix_project_ontology_roles_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    org_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    granted_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "org_id": self.org_id,
+            "project_id": self.project_id,
+            "user_id": self.user_id,
+            "role": self.role,
+            "granted_by_user_id": self.granted_by_user_id,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
+        }
+
+
 class OntologyBindingUpgrade(Base, TimestampMixin):
     """升级留痕（§5.2："版本升级必须有差异审查和批准"+"保留历史绑定和执行时使用的版本"）。"""
 

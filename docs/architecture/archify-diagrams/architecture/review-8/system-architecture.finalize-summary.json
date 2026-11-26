@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\test\\fde-wt-v33m7-roles\\docs\\architecture\\archify-diagrams\\architecture\\candidate.json",
+    "sha256": "89fc9501073db3cc0b295dd14651ae013cb9933f4bd4f410b3a5865021d9998a",
+    "bytes": 13011
+  },
+  "artifact": {
+    "path": "D:\\test\\fde-wt-v33m7-roles\\docs\\architecture\\archify-diagrams\\architecture\\system-architecture.html",
+    "sha256": "a7c3d334a657af0b1116af43bd85e7b70ea181d0c40c138aaced75256ff6c892",
+    "bytes": 845372
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\test\\fde-wt-v33m7-roles\\docs\\architecture\\archify-diagrams\\architecture\\review-8\\system-architecture.finalize.json",
+    "summaryReceipt": "D:\\test\\fde-wt-v33m7-roles\\docs\\architecture\\archify-diagrams\\architecture\\review-8\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\test\\fde-wt-v33m7-roles\\docs\\architecture\\archify-diagrams\\architecture\\review-8\\system-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "update_available",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.3.2",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.3.2",
+    "severity": "normal",
+    "summary": "Includes archify-pr in default installs, adds offline in-page update notices with Agent prompts, speeds slow update checks, and polishes PR diagrams.",
+    "checkedAt": "2026-11-26T15:36:33.113Z",
+    "source": "network",
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.2.0 → 3.3.2. A newer release is available. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.3.2. Would you like me to update Archify?",
+    "eventKey": "archify@sha256:932d915f83fdbf44796cc6b20b085455a763491306e1b8dee92047e11dddc0ea"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5805,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "bridge-api",
+            "from": "bridge",
+            "to": "api",
+            "label": "POST 快照 · FDE_BRIDGE_TOKEN",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "bridge → api needs 3 bends: move node bridge or api so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}
