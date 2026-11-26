@@ -321,12 +321,20 @@ async function listPublishedTemplates(
   })
   return all
     .filter((item) => item.status === "published")
+    .filter(hasTaskRows)
     .sort((left, right) => {
       const publishedOrder = (right.published_at ?? "").localeCompare(left.published_at ?? "")
       if (publishedOrder !== 0) return publishedOrder
       const versionOrder = right.version_number - left.version_number
       return versionOrder || left.template_name.localeCompare(right.template_name, "zh-CN")
     })
+}
+
+/** T-ECO4 修法 A（OWNER 2026-11-26 拍板）：可立项模板＝含任务行的 published 版本。
+ * 行业模板按播种形状只有模块与调研表（tasks 全空），选中即被服务端
+ * 400 template_module_without_tasks 拦下——在可选下拉源头就不呈现。 */
+function hasTaskRows(version: TemplateVersionDto): boolean {
+  return version.modules.some((module) => module.tasks.length > 0)
 }
 
 export async function listEligibleLeaders(

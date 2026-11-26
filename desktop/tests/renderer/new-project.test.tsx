@@ -369,6 +369,36 @@ describe("四步项目创建向导", () => {
     expect(within(select).queryByRole("option", { name: /v4/ })).not.toBeInTheDocument()
   })
 
+  it("无任务行的已发布行业模板不进可选下拉也不默认选中（T-ECO4 修法 A）", async () => {
+    // 行业模板按播种形状只有模块与调研表（tasks 全空）：若不过滤，它会按
+    // published_at 排序占据默认选中位，用户下一步即被服务端 400
+    // template_module_without_tasks 拦下——「可选却不可用」。
+    const industryTemplate: TemplateVersionDto = {
+      ...templateV1,
+      template_name: "零售连锁行业模板",
+      version_id: "industry-v9",
+      version_number: 9,
+      published_at: "2026-11-26T08:00:00+00:00",
+      modules: templateV1.modules.map((module) => ({ ...module, tasks: [] })),
+    }
+    const apiRequest = vi.fn((path: string, options?: { method?: string }) => {
+      if (path === "/api/v1/industry-templates?page=1&page_size=100") {
+        return Promise.resolve(apiOk(page([industryTemplate, templateV2])))
+      }
+      return defaultApi(path, options)
+    })
+    renderNewProject(apiRequest)
+    const user = userEvent.setup()
+    await completeBasics(user)
+
+    const select = await screen.findByLabelText("行业模板版本")
+    expect(select).toHaveValue(templateV2.version_id)
+    expect(within(select).getByRole("option", { name: "通用企业 AI 落地模板 v2" })).toBeVisible()
+    expect(within(select).queryByRole("option", { name: /零售连锁行业模板/ })).not.toBeInTheDocument()
+    // 详情请求只发可立项版本——行业模板连选中态都不进入
+    expect(apiRequest.mock.calls.some(([path]) => String(path).includes("industry-v9"))).toBe(false)
+  })
+
   it("创建失败后保留四步全部输入与选择", async () => {
     const apiRequest = vi.fn((path: string, options?: { method?: string }) => {
       if (path === "/api/v1/projects" && options?.method === "POST") {
