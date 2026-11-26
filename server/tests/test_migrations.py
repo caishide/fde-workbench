@@ -132,7 +132,8 @@ GATES_JSON_SHA256 = "f52afe884af8026eef28af66abdae0d2c8f7b07a25d100bf0a647276b51
 # AF3-WP3：repo_ci_runs 固定 CI 执行行（e0c2e4a6b8d0；挂 c9e1f3a5b7d9）
 # AF3-WP4：repo_corrections 修复闭环轨迹表（f2a4b6c8d0e2；挂 e0c2e4a6b8d0）
 # EcosystemOS M2 批次四：漏斗 data_origin 三表闭集列＋存量回填（b8d2f6a0c4e8；挂 f2a4b6c8d0e2）
-HEAD_REVISION = "b8d2f6a0c4e8"
+# M7/S-21：本体审批角色授予表 project_ontology_roles（c1a4e7b3d9f2；挂 b8d2f6a0c4e8）
+HEAD_REVISION = "c1a4e7b3d9f2"
 
 PLAINTEXT_ENTERPRISE_COLUMNS = (
     "enterprise_name",
@@ -1256,7 +1257,8 @@ def test_known_alembic_revisions_covers_current_head(test_settings):
     # + AF3-WP3（repo_ci_runs e0c2e4a6b8d0）之后 = 100
     # + AF3-WP4（repo_corrections f2a4b6c8d0e2）之后 = 101
     # + EcosystemOS M2 批次四（funnel data_origin b8d2f6a0c4e8）之后 = 102
-    assert len(known) == 102
+    # + M7/S-21（本体审批角色授予 c1a4e7b3d9f2）之后 = 103
+    assert len(known) == 103
     # 链内任意已落戳都在集内（下探历史抽样：共享老 revision + M6-WP0 缝合
     # 新入的 fork 支链头——钉「支链确实入了集」而非只靠聚合值）
     for historical in ("b5d9e3f7a1c6", "c9e3a7d1b5f8", "ebb003a5c3a8", "a9f3e5c7b1d2"):

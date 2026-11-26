@@ -28,10 +28,13 @@ from fde_api.integrations.service import (
     execute_binding_action,
     get_binding_action,
     get_binding_lineage,
+    grant_ontology_roles,
     issue_trustboard_delivery_link,
     list_bindings,
+    list_ontology_roles,
     propose_binding_action,
     propose_upgrade,
+    revoke_ontology_role,
     run_binding_logic,
 )
 
@@ -232,7 +235,11 @@ def propose_binding_action_route(project_id: str, binding_id: str, action_key: s
 )
 @require_auth
 def approve_binding_action_route(project_id: str, binding_id: str, request_id: str):
-    """D28 / 条 6：审批子表代理（I4 自批 403 由 runtime 强制）。"""
+    """D28 / 条 6：审批子表代理（I4 自批 403 由 runtime 强制）。
+
+    M7 / S-21：投票角色须属该身份在本项目的授予角色集合（否则 403 role_not_granted，
+    由 Workbench 侧授权数据判定，不再是请求体自报）。
+    """
     try:
         result = approve_binding_action(
             actor=g.current_user,
@@ -244,6 +251,49 @@ def approve_binding_action_route(project_id: str, binding_id: str, request_id: s
     except BindingError as exc:
         return _binding_error(exc)
     return jsonify({"data": result, "error": None})
+
+
+# ---- M7 / S-21：本体审批角色授予（角色真身在 Workbench 侧） ----
+
+
+@ontology_bindings_blueprint.get("/<project_id>/ontology-roles")
+@require_auth
+def list_ontology_roles_route(project_id: str):
+    """列出项目上的本体审批角色授予（读面，项目访问权闸；不存在/无权 → 404）。"""
+    try:
+        rows = list_ontology_roles(actor=g.current_user, project_id=project_id)
+    except BindingError as exc:
+        return _binding_error(exc)
+    return jsonify({"data": rows, "error": None})
+
+
+@ontology_bindings_blueprint.post("/<project_id>/ontology-roles")
+@require_role("admin", "project_lead")
+def grant_ontology_roles_route(project_id: str):
+    """授予本体审批角色（管理面：admin / project_lead）。
+
+    授权责任落库（granted_by_user_id）——「谁能以业务负责人身份投票」必须有据可查。
+    """
+    try:
+        rows = grant_ontology_roles(
+            actor=g.current_user, project_id=project_id, payload=_json_object()
+        )
+    except BindingError as exc:
+        return _binding_error(exc)
+    return jsonify({"data": rows, "error": None}), 201
+
+
+@ontology_bindings_blueprint.delete("/<project_id>/ontology-roles/<user_id>/<role>")
+@require_role("admin", "project_lead")
+def revoke_ontology_role_route(project_id: str, user_id: str, role: str):
+    """撤销一条本体审批角色授予（管理面：admin / project_lead）。"""
+    try:
+        snapshot = revoke_ontology_role(
+            actor=g.current_user, project_id=project_id, user_id=user_id, role=role
+        )
+    except BindingError as exc:
+        return _binding_error(exc)
+    return jsonify({"data": snapshot, "error": None})
 
 
 @ontology_bindings_blueprint.get(

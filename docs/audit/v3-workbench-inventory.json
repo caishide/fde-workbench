@@ -1,10 +1,10 @@
 {
- "route_count": 573,
+ "route_count": 576,
  "blueprint_count": 59,
- "table_count": 172,
- "revision_count": 102,
+ "table_count": 173,
+ "revision_count": 103,
  "heads": [
-  "b8d2f6a0c4e8"
+  "c1a4e7b3d9f2"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -313,6 +313,14 @@
    "add_column_tables": [
     "agent_artifacts"
    ]
+  },
+  "c1a4e7b3d9f2": {
+   "file": "c1a4e7b3d9f2_m7_project_ontology_roles.py",
+   "down_revision": "b8d2f6a0c4e8",
+   "create_tables": [
+    "project_ontology_roles"
+   ],
+   "add_column_tables": []
   },
   "c1d4e7f9a2b3": {
    "file": "c1d4e7f9a2b3_m5_org_member_invitations.py",

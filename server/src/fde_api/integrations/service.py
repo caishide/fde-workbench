@@ -38,6 +38,7 @@ from fde_api.integrations.models import (
     ACTIVE_MARKER,
     OntologyBindingUpgrade,
     ProjectOntologyBinding,
+    ProjectOntologyRole,
 )
 from fde_api.integrations.ontology_client import (
     OntologyAuthError,
@@ -740,7 +741,14 @@ def approve_binding_action(
     request_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """D28 / 条 6：审批代理（I4 自批语义由 runtime 强制；requested_by 即调用方映射）。"""
+    """D28 / 条 6：审批代理（I4 自批语义由 runtime 强制；requested_by 即调用方映射）。
+
+    M7 / S-21：``role`` 不再是「请求体自报即认」——先按 project_ontology_roles
+    核该身份在本项目上被授予的角色集合，请求角色 ∉ 授予集合 ⇒ 403（fail-closed，
+    发生在任何出站调用之前）；放行时把**授予集合**签进 X-FDE-Context 的 roles
+    声明（进 HMAC 覆盖面），runtime 侧再校验「投票角色 ∈ 声明角色」与「三必签
+    角色异人」。两侧都认同一份授权事实——角色真身只在 Workbench 一处。
+    """
     ensure_enabled()
     session = db.session()
     org_id, binding = _load_active_binding_for_project(session, actor, project_id, binding_id)
@@ -749,6 +757,13 @@ def approve_binding_action(
     decision = str(payload.get("decision", ""))
     if not role or not decision:
         raise BindingError("role and decision are required", status=400, code="invalid_request")
+    granted = granted_ontology_roles(session, project_id=project_id, user_id=str(actor.id))
+    if role not in granted:
+        raise BindingError(
+            f"role {role!r} is not granted to this actor on project {project_id}",
+            status=403,
+            code="role_not_granted",
+        )
     comment = payload.get("comment")
     return _translate_runtime_call(
         lambda: client.approve_action(
@@ -760,6 +775,7 @@ def approve_binding_action(
             role=role,
             decision=decision,
             comment=str(comment) if isinstance(comment, str) and comment else None,
+            roles=granted,
         )
     )
 
@@ -912,3 +928,143 @@ def issue_trustboard_delivery_link(*, actor: User, project_id: str) -> dict[str,
         raise BindingError(
             "delivery link issuance failed", status=500, code="delivery_link_failed"
         ) from exc
+
+
+# ---- M7 / S-21：本体审批角色的真身（project_ontology_roles） ----
+#
+# runtime 的审批角色此前取自请求体自报（一个非提议人可连投三票）。M7 起角色
+# 的真身落本表：谁被授予了哪些本体审批角色。派生出的授予集合签进
+# X-FDE-Context 的 roles（进 HMAC 覆盖面），runtime 据此校验投票角色。
+#
+# 授权责任：授予/撤销走管理面（路由层 admin / project_lead 闸）；读取与派生
+# 走项目访问权（W-C/S-01：不存在或无权 → 404，不泄露存在性）。
+
+ONTOLOGY_APPROVAL_ROLES = ("business_owner", "model_consultant", "data_owner", "risk")
+
+
+def granted_ontology_roles(session: Any, *, project_id: str, user_id: str) -> tuple[str, ...]:
+    """派生该身份在本项目上被授予的本体审批角色（去重排序，空集合=无授权）。
+
+    fail-closed 的关键：返回空集合时 runtime 在 signed_roles 档一律 403
+    （"signed context declares no roles"）——「没授予」不可被读成「默认有」。
+    """
+    rows = session.scalars(
+        select(ProjectOntologyRole.role).where(
+            ProjectOntologyRole.project_id == project_id,
+            ProjectOntologyRole.user_id == user_id,
+        )
+    ).all()
+    return tuple(sorted({str(role) for role in rows}))
+
+
+def list_ontology_roles(*, actor: User, project_id: str) -> list[dict[str, Any]]:
+    """列出项目上的本体审批角色授予（读面，项目访问权闸）。"""
+    ensure_enabled()
+    session = db.session()
+    _load_accessible_project(session, actor, project_id)
+    rows = session.scalars(
+        select(ProjectOntologyRole)
+        .where(ProjectOntologyRole.project_id == project_id)
+        .order_by(ProjectOntologyRole.created_at)
+    ).all()
+    return [row.snapshot() for row in rows]
+
+
+def grant_ontology_roles(
+    *, actor: User, project_id: str, payload: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """授予本体审批角色（管理面；路由层限 admin / project_lead）。
+
+    幂等：同一 (project, user, role) 重复授予返回既有行（不新增、不报错）；
+    目标用户必须是项目可见成员（否则该授权无意义）。
+    """
+    ensure_enabled()
+    user_id = str(payload.get("user_id", "")).strip()
+    raw_roles = payload.get("roles")
+    if not user_id:
+        raise BindingError("user_id is required", code="invalid_request")
+    if isinstance(raw_roles, str):
+        raw_roles = [raw_roles]
+    if not isinstance(raw_roles, list) or not raw_roles:
+        raise BindingError("roles must be a non-empty list", code="invalid_request")
+    normalized: list[str] = []
+    for raw in raw_roles:
+        role = str(raw).strip()
+        if role not in ONTOLOGY_APPROVAL_ROLES:
+            raise BindingError(
+                f"role must be one of {ONTOLOGY_APPROVAL_ROLES}", code="invalid_request"
+            )
+        if role not in normalized:
+            normalized.append(role)
+    session = db.session()
+    try:
+        with session.begin():
+            project = _load_accessible_project(session, actor, project_id)
+            org_id = _project_org(project)
+            target = session.get(User, user_id)
+            if target is None:
+                raise BindingError("user not found", status=404, code="not_found")
+            if not project_access(target, project).can_view:
+                raise BindingError("user is not a member of this project", code="invalid_request")
+            granted: list[ProjectOntologyRole] = []
+            for role in normalized:
+                existing = session.scalars(
+                    select(ProjectOntologyRole).where(
+                        ProjectOntologyRole.project_id == project_id,
+                        ProjectOntologyRole.user_id == user_id,
+                        ProjectOntologyRole.role == role,
+                    )
+                ).first()
+                if existing is not None:
+                    granted.append(existing)
+                    continue
+                row = ProjectOntologyRole(
+                    org_id=org_id,
+                    project_id=project_id,
+                    user_id=user_id,
+                    role=role,
+                    granted_by_user_id=str(actor.id),
+                )
+                session.add(row)
+                granted.append(row)
+            session.flush()
+            return [row.snapshot() for row in granted]
+    except BindingError:
+        raise
+    except IntegrityError as exc:
+        raise BindingError(
+            "ontology role already granted", status=409, code="base_conflict"
+        ) from exc
+
+
+def revoke_ontology_role(
+    *, actor: User, project_id: str, user_id: str, role: str
+) -> dict[str, Any]:
+    """撤销一条本体审批角色授予（管理面；不存在的授予 → 404，不泄露存在性）。"""
+    ensure_enabled()
+    normalized = str(role).strip()
+    if normalized not in ONTOLOGY_APPROVAL_ROLES:
+        raise BindingError(
+            f"role must be one of {ONTOLOGY_APPROVAL_ROLES}", code="invalid_request"
+        )
+    session = db.session()
+    try:
+        with session.begin():
+            _load_accessible_project(session, actor, project_id)
+            row = session.scalars(
+                select(ProjectOntologyRole).where(
+                    ProjectOntologyRole.project_id == project_id,
+                    ProjectOntologyRole.user_id == user_id,
+                    ProjectOntologyRole.role == normalized,
+                )
+            ).first()
+            if row is None:
+                raise BindingError("ontology role grant not found", status=404, code="not_found")
+            snapshot = row.snapshot()
+            session.delete(row)
+            session.flush()
+            return snapshot
+    except BindingError:
+        raise
+    except IntegrityError as exc:
+        raise BindingError("ontology role revoke failed", status=409, code="base_conflict") from exc
