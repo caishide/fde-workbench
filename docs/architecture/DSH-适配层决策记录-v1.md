@@ -30,10 +30,28 @@
 
 ## 4. 上游基线锁定法（FF 可抄实现，采纳为接入前置规范）
 
-- **lock 八字段**：`repository / commit / release / tag / previousCommit / previousRelease / checkout / lockedAt`（FF `upstream/deepseek-harness.lock.json` 样例：commit `687f282e…` / release `0.2.1-rc.2` / lockedAt 2026-10-23）。
+> **证据口径**：原评估＝本地快照 `06434f4c`（2026-10-23，未联网）；2026-11-26 增补＝联网现测上游 HEAD `34882b1f`（2026-11-21），源 `https://api.github.com/repos/fufankeji/FF-FDE-Delivery-Workbench/git/trees/34882b1f...` 与 `raw.githubusercontent.com/.../upstream/deepseek-harness.lock.json`。**本地快照不得外推上游现状**；两口径并置，不互相覆盖。
+
+- **lock 八字段**：`repository / commit / release / tag / previousCommit / previousRelease / checkout / lockedAt`。
+  - 原评估快照：`687f282e…` / `0.2.1-rc.2` / tag `dsh-v0.2.1-rc.2` / lockedAt 2026-10-23。
+  - **2026-11-26 联网现测**：`9c2670d3bce5275e0d1610272958121af87787bb` / `0.2.2-rc.5` / tag `dsh-v0.2.2-rc.5` / previous `ddac9676…`（`0.2.2-rc.2`）/ lockedAt 2026-11-21。八字段格式**未变**，仅值换代；仍不自动跟随 master。
 - **升级 = 三方合并**：旧官方树 + 当前下游树 + 新官方树；**不覆盖目录、不 `git pull upstream master`**。
 - **developer preview 纪律**：必须固定版本，不自动跟随 master；会话逐代迁移验证；**回退须同时回退数据副本**（运行期版本随 run 冻结在 `automation_task_runs.dsh_runtime_version`，破坏性变更会污染溯源）。
 - **部署隔离**（FF 语义采纳）：`DSH_HOME` 独立隔离启动为硬门禁；默认仅本机监听。
+
+### 4.1 2026-11-26 联网复核：升级实战证据（只取事实与抽象，不复现其文档结构）
+
+| 环节 | 现测事实 | 我方采纳口径 |
+|---|---|---|
+| 换代路径 | `0.2.1-rc.2` → `0.2.2-rc.2` → `0.2.2-rc.5`；自原快照起 9 commits，Git tree 比对 10946 个 blob 变化，其中 10896 在 vendored 官方树 | 走一步一验，不跨版跳跃；升级前先记录旧树/下游树/新树三方基线 |
+| 合并裁决 | `0.2.2-rc.2` 升级记 129 个交叠路径、61 个实际冲突逐项裁决；合并后检查标记残留、`git diff --check` | 升级清单须能回答「每个冲突谁裁决」，禁止覆盖目录式升级 |
+| 构建与回归 | 构建 11/11；20 个定向文件首轮 176 例，修复后通过；UI 快照按已确认变更更新 | 不把「修测试让它绿」当兼容证明；变更须有新行为证据 |
+| 数据逐代验证 | 复制 250 文件/20,307,965 字节 + 14 份代际文件，hash+mtime 校验原件未变；11 个 v4 Session 用新版后端只读打开；训练库 `PRAGMA quick_check = ok` | 与我方「回退须同时回退数据副本」同向，升级前做只读逐代回放并留原件摘要 |
+| 访问面 | 匿名 401 / 授权 200 / 异源 403；Boot Manifest 核对在线版本；授权链接不出日志 | 沿用我方现有鉴权纪律，升级后复核一次而非沿用旧结论 |
+| **未验证项单列** | 真实模型调用、全量 Web E2E、Windows/Linux 新机部署、完整人工视觉验收均未执行；技术启动不等于产品验收，任务保持 in-progress | **写入 `docs/verification/证据模板-v1.md`：未验证项必须单列，不得并入「已通过」，不得写「全绿」** |
+| 回退 | 升级前代码检查点与旧数据副本保留；授权参数脱敏；回退步骤随升级说明落盘 | 无回退副本不得升级 |
+
+**边界更新**：上游 HEAD 顶层仍**无 LICENSE**（仅 vendored DSH 子目录 MIT），`SAFETY.zh.md` 仍在 ⇒ 「只译抽象、不复制正文／结构化表达」与「不装 DSH」裁决不变。§2 的 `fde-dsh-v1` 端点零命中结论基于 `0.2.1-rc.2` 本地快照；新版 vendored 树已变动 10896 blob，**启用前必须重测，不得外推**。
 
 ## 5. 安全前置（接入前必须全过，缺一不立项）
 
