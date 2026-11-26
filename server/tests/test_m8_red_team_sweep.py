@@ -1265,7 +1265,8 @@ def test_m8_sweep_registry_count_and_semantic_baseline():
     ④ 阳性对照可行者若仍被排除，必须是「角色面」唯一形态（org 隔离不适用）。
     """
     assert len(ROUTES) == 60, ("爬扫面条数基线被改动：", len(ROUTES))
-    assert len(_EXCLUSION_RECORDS) == 78, (
+    # 78 → 79：M7/S-21 新增本体审批角色授予只读面（GET /projects/<id>/ontology-roles）
+    assert len(_EXCLUSION_RECORDS) == 79, (
         "排除登记条数基线被改动：",
         len(_EXCLUSION_RECORDS),
     )
