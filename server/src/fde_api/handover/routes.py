@@ -132,4 +132,5 @@ def deliver_package(package_id):
         package_id=package_id,
         payload=request.get_json(silent=True) if request.get_data() else {},
         preconditions_required=current_app.config["SETTINGS"].ux_write_preconditions_required,
+        asset_bundle_gate_required=current_app.config["SETTINGS"].asset_bundle_gate_required,
     ))

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     refresh_token_days: int = 30
     # Only an approved, time-bounded migration may accept legacy requests without conditions.
     ux_write_preconditions_required: bool = True
+    # B1 结项资产闸（2026-11-28）：交付登记须携带 asset_bundle 三件指针＋
+    # result_contract 结果合同回指（沿 ux-p0 兼容语义：只对完全省略的旧请求放行）。
+    asset_bundle_gate_required: bool = True
     # 发布回退窗口：暂停三条确认快照写入（门禁证据/门禁裁定/交付登记）。
     # 命中即拒且不落业务成功事件；服务端单点收口覆盖桌面直连、脚本与网页代理。
     ux_write_paused: bool = False

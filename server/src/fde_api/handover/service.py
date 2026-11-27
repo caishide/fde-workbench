@@ -23,13 +23,25 @@ from fde_api.projects.events import record_event
 from fde_api.projects.permissions import project_access, visible_project_ids
 from fde_api.handover.models import ITEM_TYPES, HandoverPackage, HandoverPackageItem
 from fde_api.ux_write_gate import PAUSED_CODE, PAUSED_MESSAGE, writes_paused
-from fde_api.workbench.models import Project, User
+from fde_api.workbench.models import Gate, Project, User
 
 MAX_LABEL_CHARS = 200
 MAX_ITEMS = 200
 MAX_DISPLAY_NAME = 255
 _LIST_LIMIT_DEFAULT = 50
 _LIST_LIMIT_MAX = 200
+
+# B1 结项资产闸（FDU 对照拍板 E-1，2026-11-28）：登记 payload 携带「可复用
+# 资产包」三件指针（件 1 复盘／件 2 交接／件 3 可复用方法——S13 既产物
+# retrospective/handoff/patterns 取指针，键集即 sop_nodes.json S13 artifact
+# 字面闭集；件 4 工位清单件走交付包发布快照新字段，不在本闸）。四件套字段
+# 定义为我方独立设计，与外部材料零对照关系。红线：三件全是指针，原件留
+# 项目工作目录；空包不放行（缺任一件即 422，宁可拒登不制造形式合规）。
+ASSET_BUNDLE_KEYS = ("retrospective", "handoff", "patterns")
+MAX_ASSET_URI_CHARS = 500  # 对齐 ProjectEvidence.source_uri 同款约定
+# B9-a 结果合同回指：G4（试点签约门）证据清单项字面（seed 数据引用，
+# server/seeds/gates.json G4 evidence_checklist）。
+RESULT_CONTRACT_LABEL = "结果合同页"
 
 
 class HandoverServiceError(Exception):
@@ -593,8 +605,20 @@ def unseal_package(*, actor: User, package_id: str) -> dict[str, Any]:
         return _serialize_package(package, detail=True, session=session)
 
 
-def deliver_package(*, actor: User, package_id: str, payload: Any, preconditions_required: bool = True) -> dict[str, Any]:
-    """交付登记（admin 专属）：只有用户确认的封存批次可以进入终态。"""
+def deliver_package(
+    *,
+    actor: User,
+    package_id: str,
+    payload: Any,
+    preconditions_required: bool = True,
+    asset_bundle_gate_required: bool = True,
+) -> dict[str, Any]:
+    """交付登记（admin 专属）：只有用户确认的封存批次可以进入终态。
+
+    B1 结项资产闸＋B9-a 结果合同回指（2026-11-28）：payload 须携带
+    `asset_bundle` 三件指针与 `result_contract` 回指；兼容语义沿 ux-p0
+    先例——只对完全省略键的旧请求按部署开关放行，携带即严格校验。
+    """
     session = _session()
     with session.begin():
         _, project = _load_package_for(session, actor, package_id, manage=True)
@@ -608,6 +632,9 @@ def deliver_package(*, actor: User, package_id: str, payload: Any, preconditions
         if package.status != "sealed":
             raise _error("package_not_sealed", "只有已封存包可登记交付。请重新读取交付包。", 409)
         skipped = _require_delivery_snapshot(package, payload, required=preconditions_required)
+        asset_bundle, result_contract, skipped_bundle = _require_asset_bundle_and_result_contract(
+            session, project, payload, required=asset_bundle_gate_required
+        )
         package.status = "delivered"
         package.delivered_by_user_id = actor.id
         package.delivered_at = datetime.now(UTC)
@@ -618,10 +645,20 @@ def deliver_package(*, actor: User, package_id: str, payload: Any, preconditions
                 "manifest_sha256": package.manifest_sha256,
                 "unsealed_count": package.unsealed_count,
             })
+        if skipped_bundle:
+            # 兼容期放行省略资产闸的登记同样留痕（missing 列出放行了哪些键）。
+            record_event(session, actor, "handover_asset_bundle_skipped", project, {
+                "package_id": package.id,
+                "missing": skipped_bundle,
+            })
         record_event(session, actor, "handover_package_delivered", project, {
             "package_id": package.id,
             "manifest_sha256": package.manifest_sha256,
             "unsealed_count": package.unsealed_count,
+            # B1/B9-a：结项出口留痕（指针，原件留项目工作目录）。兼容期省略
+            # 时为 None——复盘读数据此区分「带了资产包」与「兼容期放行」。
+            "asset_bundle": asset_bundle,
+            "result_contract": result_contract,
         })
         return _serialize_package(package, detail=True, session=session)
 
@@ -643,6 +680,105 @@ def _require_delivery_snapshot(package: HandoverPackage, payload: Any, *, requir
     if digest != package.manifest_sha256 or count != package.unsealed_count:
         raise _error("handover_snapshot_conflict", "封存批次已变化，本次未登记。请重新读取并确认交付包。", 409)
     return False
+
+
+def _validated_asset_pointer(value: Any) -> dict[str, str]:
+    """单件指针形状：{source_uri, sha256}（键集闭合）；返回归一化两键。"""
+    if not isinstance(value, dict) or set(value.keys()) != {"source_uri", "sha256"}:
+        raise _error(
+            "invalid_asset_bundle",
+            "资产指针必须恰含 source_uri 与 sha256 两键。",
+            422,
+        )
+    source_uri = value["source_uri"]
+    if not isinstance(source_uri, str) or not source_uri.strip() or len(source_uri) > MAX_ASSET_URI_CHARS:
+        raise _error(
+            "invalid_asset_bundle",
+            f"source_uri 必须是 1–{MAX_ASSET_URI_CHARS} 字符的字符串。",
+            422,
+        )
+    sha256 = value["sha256"]
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
+        raise _error("invalid_asset_bundle", "sha256 必须是 64 位十六进制指纹。", 422)
+    return {"source_uri": source_uri, "sha256": sha256.lower()}
+
+
+def _result_contract_evidence_hashes(session: Any, project_id: str) -> list[str]:
+    """项目 G4 门禁清单项「结果合同页」中已确认（accepted）证据的指纹集。
+
+    无 G4 行 / 无该清单项 / 项未 accepted → 空集（调用方放行——结果合同
+    未走试点门禁线的项目不因缺 G4 证据被拦，回指留痕可推翻）。
+    """
+    gate = session.scalar(select(Gate).where(Gate.project_id == project_id, Gate.gate_key == "G4"))
+    if gate is None:
+        return []
+    hashes: list[str] = []
+    for item in gate.evidence_checklist or []:
+        if (
+            item.get("label") == RESULT_CONTRACT_LABEL
+            and item.get("claim_status") == "accepted"
+            and isinstance(item.get("content_hash"), str)
+        ):
+            hashes.append(item["content_hash"].lower())
+    return hashes
+
+
+def _require_asset_bundle_and_result_contract(
+    session: Any, project: Project, payload: Any, *, required: bool
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[str]]:
+    """B1 结项资产闸＋B9-a 结果合同回指（同端点一次过闸，E-1/Yui 定案）。
+
+    返回 (asset_bundle, result_contract, skipped_missing)。skipped_missing
+    非空表示兼容期放行了省略键的旧请求（调用方须留痕）；键在场则一律
+    严格校验，与部署开关无关。
+    """
+    if not isinstance(payload, dict):
+        raise _error("invalid_request", "请求内容必须为 JSON 对象。", 400)
+    skipped_missing: list[str] = []
+
+    if "asset_bundle" in payload:
+        raw_bundle = payload["asset_bundle"]
+        if not isinstance(raw_bundle, dict) or set(raw_bundle.keys()) != set(ASSET_BUNDLE_KEYS):
+            raise _error(
+                "invalid_asset_bundle",
+                f"asset_bundle 必须恰含 {'、'.join(ASSET_BUNDLE_KEYS)} 三件（空包不放行）。",
+                422,
+            )
+        asset_bundle = {key: _validated_asset_pointer(raw_bundle[key]) for key in ASSET_BUNDLE_KEYS}
+    else:
+        if required:
+            raise _error(
+                "asset_bundle_required",
+                "交付登记需要结项资产包（复盘/交接/可复用方法三件指针）。请升级客户端后重新登记。",
+                428,
+            )
+        skipped_missing.append("asset_bundle")
+        asset_bundle = None
+
+    evidence_hashes = _result_contract_evidence_hashes(session, project.id)
+    if "result_contract" in payload:
+        result_contract = _validated_asset_pointer(payload["result_contract"])
+        if evidence_hashes and result_contract["sha256"] not in evidence_hashes:
+            raise _error(
+                "result_contract_mismatch",
+                "result_contract 指纹与 G4 门禁在案的「结果合同页」证据不一致。",
+                409,
+            )
+    else:
+        # 有源必回指：G4 已 accepted「结果合同页」在案 ⇒ 键不得省略；
+        # 无源可指（项目未走试点门禁线）⇒ 省略放行（delivered 事件
+        # result_contract=null 如实留痕，复盘读数可区分）。
+        if evidence_hashes:
+            if required:
+                raise _error(
+                    "result_contract_required",
+                    "项目 G4 门禁在案「结果合同页」证据，交付登记必须回指它。请升级客户端后重新登记。",
+                    428,
+                )
+            skipped_missing.append("result_contract")
+        result_contract = None
+
+    return asset_bundle, result_contract, skipped_missing
 
 
 def available_artifacts(*, actor: User, project_id: str, item_type: str = "artifact") -> dict[str, Any]:

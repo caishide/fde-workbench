@@ -94,6 +94,30 @@ const ITEM_TYPE_LABEL: Record<string, string> = {
   file: "文件",
 }
 
+// B1 结项资产闸＋B9-a 结果合同回指（2026-11-28，拍板 E-1）：交付登记须携带
+// asset_bundle 三件指针（S13 既产物 retrospective/handoff/patterns——候选从
+// 既有挑选面投影选，零手填面）与 result_contract（G4「结果合同页」证据回指，
+// 从门禁读面自动带出）。空包不放行：三件未选齐不提交。
+type AssetSlot = "retrospective" | "handoff" | "patterns"
+const ASSET_SLOTS: AssetSlot[] = ["retrospective", "handoff", "patterns"]
+const ASSET_SLOT_LABEL: Record<AssetSlot, string> = {
+  retrospective: "复盘件（S13 retrospective）",
+  handoff: "交接件（S13 handoff）",
+  patterns: "可复用方法件（S13 patterns 候选）",
+}
+const RESULT_CONTRACT_LABEL = "结果合同页"
+
+interface AssetCandidate {
+  storage_ref: string
+  sha256: string
+  caption: string
+}
+
+interface AssetContractPointer {
+  source_uri: string
+  sha256: string
+}
+
 interface PickerArtifactDto {
   artifact_id: string
   run_id: string | null
@@ -212,6 +236,14 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
   const [detail, setDetail] = useState<PackageDetailDto | null>(null)
   // 挑选面响应序号：快速连点类型钮时弃过期响应（慢响应后到会覆盖新类型行）
   const pickerSeqRef = useRef(0)
+  // B1/B9-a 登记四件套态：候选池（三类投影合并）、三件选中（slot→storage_ref）、
+  // result_contract 从 G4 清单自动带出（无在案时 null＝按无在案口径登记）。
+  const [assetCandidates, setAssetCandidates] = useState<AssetCandidate[] | null>(null)
+  const [assetCandidatesTruncated, setAssetCandidatesTruncated] = useState(false)
+  const [assetCandidatesFailed, setAssetCandidatesFailed] = useState(false)
+  const [deliveryAssets, setDeliveryAssets] = useState<Record<AssetSlot, string> | null>(null)
+  const [resultContract, setResultContract] = useState<AssetContractPointer | null>(null)
+  const assetSeqRef = useRef(0)
 
   const reload = useCallback(async () => {
     const seq = ++listSeqRef.current
@@ -255,6 +287,76 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
   useEffect(() => {
     void loadPicker(pickerType)
   }, [loadPicker, pickerType])
+
+  // B1/B9-a 登记四件套数据拉取：候选池＝三类挑选面投影合并（三件各选其一，
+  // 零手填面）；result_contract＝G4 清单项「结果合同页」已 accepted 证据自动
+  // 带出（无在案时 null＝按无源口径登记，服务端放行并留痕）。读面失败静默
+  // 降级——辅助读数不阻断登记主流程（同 SolutionHealthChip 纪律）。
+  const loadDeliveryAssets = useCallback(async (seq: number) => {
+    setAssetCandidates(null)
+    setAssetCandidatesFailed(false)
+    try {
+      const results = await Promise.all(
+        PICKER_TYPES.map((type) =>
+          apiRequest<PickerDto>(
+            `/api/v1/handover-packages/artifacts?project_id=${encodeURIComponent(projectId)}&type=${type}`,
+            { method: "GET" },
+          ),
+        ),
+      )
+      if (seq !== assetSeqRef.current) return
+      const rows: AssetCandidate[] = []
+      let truncated = false
+      PICKER_TYPES.forEach((type, index) => {
+        if (results[index].truncated) truncated = true
+        for (const row of results[index].items) {
+          rows.push({
+            storage_ref: row.storage_ref,
+            sha256: row.sha256,
+            caption: `${ITEM_TYPE_LABEL[type]} · ${row.kind} · ${row.sha256.slice(0, 12)}…`,
+          })
+        }
+      })
+      setAssetCandidates(rows)
+      setAssetCandidatesTruncated(truncated)
+    } catch {
+      if (seq === assetSeqRef.current) setAssetCandidatesFailed(true)
+    }
+  }, [apiRequest, projectId])
+
+  const loadResultContract = useCallback(async (seq: number) => {
+    setResultContract(null)
+    try {
+      const payload = await apiRequest<unknown>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/gates`,
+        { method: "GET" },
+      )
+      if (seq !== assetSeqRef.current) return
+      const gates = (payload as { gates?: unknown } | null)?.gates
+      if (!Array.isArray(gates)) return
+      for (const gate of gates) {
+        if (!gate || typeof gate !== "object") continue
+        const row = gate as Record<string, unknown>
+        if (row.gate_key !== "G4" || !Array.isArray(row.checklist)) continue
+        for (const raw of row.checklist) {
+          if (!raw || typeof raw !== "object") continue
+          const item = raw as Record<string, unknown>
+          if (
+            item.label === RESULT_CONTRACT_LABEL &&
+            item.claim_status === "accepted" &&
+            typeof item.source_uri === "string" &&
+            typeof item.content_hash === "string" &&
+            /^[0-9a-f]{64}$/.test(item.content_hash)
+          ) {
+            setResultContract({ source_uri: item.source_uri, sha256: item.content_hash })
+            return
+          }
+        }
+      }
+    } catch {
+      // 门禁读面失败：resultContract 留 null（无源口径登记）
+    }
+  }, [apiRequest, projectId])
 
   const switchPickerType = (type: PickerKind) => {
     if (type === pickerType) return
@@ -348,6 +450,11 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
         id: data.id, label: data.label ?? data.id, itemCount: data.items.length,
         sealedAt: data.sealed_at, digest: data.manifest_sha256, unsealedCount: data.unsealed_count,
       })
+      // 登记弹层打开即拉四件套：三件候选池＋G4 结果合同回指（seq 守卫弃过期响应）。
+      const assetSeq = ++assetSeqRef.current
+      setDeliveryAssets(null)
+      void loadDeliveryAssets(assetSeq)
+      void loadResultContract(assetSeq)
     } catch (caught) {
       setError(`读取确认信息失败，未提交登记。${errorMessage(caught)}`)
     } finally {
@@ -391,6 +498,21 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
 
   const confirmDelivery = async () => {
     if (!canManage || !isAdmin || !delivery || busyId || deliveryBusyRef.current || pendingReadbacks.has(delivery.id)) return
+    if (!deliveryAssets || !assetCandidates || ASSET_SLOTS.some((slot) => !deliveryAssets[slot])) {
+      // 空包不放行：三件未选齐不发请求（服务端同口径 428/422）。
+      setError("结项资产包三件（复盘/交接/可复用方法）未选齐，未提交登记。")
+      return
+    }
+    const byRef = new Map(assetCandidates.map((row) => [row.storage_ref, row]))
+    const pointers = ASSET_SLOTS.map((slot) => {
+      const row = byRef.get(deliveryAssets[slot])
+      return row ? ([slot, { source_uri: row.storage_ref, sha256: row.sha256 }] as const) : null
+    })
+    if (pointers.some((entry) => entry === null)) {
+      setError("所选资产指针已不在候选池中（候选可能已刷新），未提交登记。请重开弹层重新选择。")
+      return
+    }
+    const assetBundle = Object.fromEntries(pointers as Array<[AssetSlot, AssetContractPointer]>) as Record<AssetSlot, AssetContractPointer>
     const snapshot = delivery
     deliveryBusyRef.current = true
     setDeliveryBusy(true)
@@ -399,7 +521,18 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
       const data = await apiRequest<PackageDetailDto>(`/api/v1/handover-packages/${encodeURIComponent(snapshot.id)}/deliver`, {
         method: "POST",
         retryAfterAuthRefresh: false,
-        body: { expected_manifest_sha256: snapshot.digest, expected_unsealed_count: snapshot.unsealedCount },
+        body: {
+          expected_manifest_sha256: snapshot.digest,
+          expected_unsealed_count: snapshot.unsealedCount,
+          asset_bundle: {
+            retrospective: assetBundle.retrospective,
+            handoff: assetBundle.handoff,
+            patterns: assetBundle.patterns,
+          },
+          // G4 已 accepted「结果合同页」在案时自动带出；无源可指时不带键
+          // （服务端按无源口径放行留痕）。
+          ...(resultContract ? { result_contract: resultContract } : {}),
+        },
       })
       if (data.project_id !== projectId || data.status !== "delivered" || !matchesBatch(data, snapshot)) {
         throw new Error("无法确认登记回执")
@@ -530,6 +663,57 @@ function ProjectHandoverPackagesPanel({ projectId, canManage, isAdmin }: Handove
               <dt>解封次数</dt><dd>{delivery.unsealedCount}</dd>
               <dt>封存摘要（SHA-256）</dt><dd><code style={{ overflowWrap: "anywhere" }}>{delivery.digest}</code></dd>
             </dl>
+            <div role="group" aria-label="结项资产包（登记随件留痕）" style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              <p className="field-hint" style={{ margin: 0 }}>
+                结项资产包三件（指针＋指纹随登记留痕，原件留项目工作目录）。空包不放行。
+              </p>
+              {assetCandidatesFailed ? (
+                <p className="form-error" role="alert">资产候选读取失败——请重开弹层重试；登记未提交。</p>
+              ) : null}
+              {assetCandidates !== null && assetCandidates.length === 0 ? (
+                <p role="status">项目暂无候选资产（产物/文档/文件版本）——三件无从选起，登记将被服务端拒绝。</p>
+              ) : null}
+              {assetCandidates !== null && assetCandidatesTruncated ? (
+                <p role="status">候选仅显示部分结果。</p>
+              ) : null}
+              {assetCandidates !== null && assetCandidates.length > 0
+                ? ASSET_SLOTS.map((slot) => (
+                  <div className="field" key={slot}>
+                    <label htmlFor={`asset-slot-${slot}`}>
+                      <span>{ASSET_SLOT_LABEL[slot]}</span>
+                    </label>
+                    <select
+                      id={`asset-slot-${slot}`}
+                      value={deliveryAssets?.[slot] ?? ""}
+                      onChange={(event) =>
+                        setDeliveryAssets((prev) => ({
+                          retrospective: prev?.retrospective ?? "",
+                          handoff: prev?.handoff ?? "",
+                          patterns: prev?.patterns ?? "",
+                          [slot]: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">— 选择资产 —</option>
+                      {assetCandidates.map((row) => (
+                        <option key={row.storage_ref} value={row.storage_ref}>
+                          {row.caption}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))
+                : null}
+              {resultContract ? (
+                <p className="field-hint" style={{ margin: 0 }} role="status">
+                  结果合同回指（自动带出，G4「结果合同页」已确认证据）：<code style={{ overflowWrap: "anywhere" }}>{resultContract.source_uri}</code> · {resultContract.sha256.slice(0, 12)}…
+                </p>
+              ) : (
+                <p className="field-hint" style={{ margin: 0 }} role="status">
+                  未发现 G4 已确认的「结果合同页」证据——按无源口径登记（服务端放行并留痕）。
+                </p>
+              )}
+            </div>
           </Modal>
         ) : null}
         {formOpen && canManage ? (

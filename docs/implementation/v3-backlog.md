@@ -1132,7 +1132,7 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **geo-optimizer 跑分复核回写（2026-11-26 第四轮追加）**：geo-optimizer-skill v4.30.1（MIT，rubric v5 九类 100 分）三家复扫；产物＝仓外真相层 `GEO优化器跑分诊断-20261126.md`，写回计划书 §8.7＋§9。排序与第三轮一致（XT-HB 62＞XT-HK 58＞XT-FH 40，全 foundation 档）。★XT-HB Applebot 连接层拦截（TCP 重置、六 UA 对照、两家 Applebot 200 ⇒ 独有；连接层非 robots.txt ⇒ 「robots.txt 合规≠实际可达」方法论）；★XT-HK Sitemap 声明写在 Baiduspider 组内（位置不合法，通用解析器读不到，回填首轮精度）；品牌名不统一获第三方量化（identity 1/5×2）；schema 0/14×3＋ai_discovery 0/3×3＋G-DATES/G-BYLINE 全不合格为共同零分项；XT-HB content 14/14＋技术信任 5/5 满分、负分 −5（含 hydrogen 密度 11.1% 堆砌判定）；XT-FH brand_entity 0/12＋信任栈 0/5＋无 viewport＋无 canonical；XT-HK 备案号隐藏文本＋知识页衰减 1,095 天。工具误报三例核伪留痕；geo fix 仅预览零写入；复测口径 rubric v5 跨版本不可直比。**库存不变**：573 路由／59 蓝图／172 表／102 迁移单头 `b8d2f6a0c4e8`；零代码零迁移零路由零桌面。
 - **第五拍：委托方口径回写（2026-11-26 晚追加）**：①XT-HK 亚马逊＝自营＋供货并存（委托方口径）——与第四行「公开面可归因自营店 A 级否定」并存不矛盾 ⇒ **自营店公开面不可归因＝新发现**（与主体零公开连接、官网/社媒零互链）；对外报告问题 3 改写为「请给自营店铺链接或店名」；②品牌归一锚点委托方倾向公司中文名对应拼音（本人不确定待企业确认）＋Amazon 无关同名拼音品牌（削皮器）撞名警示入报告问题 1；③拍板＝geo fix 正式包暂缓、先发三份诊断报告与问题清单（预览留仓外 D:/tmp、零修复文件落盘）。真相层：平台铺面补充调研回填注记＋XT-HK 调研附录 A11＋横向对照 §四行 9/10＋§十＋复核记录第五拍。**本拍零 GET 零写操作**。**库存不变**：573 路由／59 蓝图／172 表／102 迁移单头 `b8d2f6a0c4e8`；零代码零迁移零路由零桌面。
 
-### T-FDU1 IBM FDU 对照借鉴线（B3-1 产能证据链先行）— **✅ 已实施（2026-11-27，分支 `feat/fdu-b1b3-capacity-evidence`；PR/CI 待跑）**
+### T-FDU1 IBM FDU 对照借鉴线（B3-1 产能证据链先行）— **✅ 已实施（B3-1 2026-11-27＋B1/B9-a 2026-11-28 两轮；#605 已合并 CI 四绿）**
 
 #### ✅ 实施轮（2026-11-27，B3-1）
 
@@ -1142,4 +1142,14 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **证据**：NEW `test_dispatch_capacity_evidence.py` 19 例＋变异三连全杀（M1 bool 闸／M2 sha 长度〔唯一锚含 uri>500〕／M3 事件名漂移）＋字节还原 sha256 逐位验证；邻域 enable＋p0_r2 49 passed；ruff 绿；mypy 基线 274/274 零新增（worktree venv 重建后真跑，首轮 current=0 假绿＝缺 mypy 已排除）；行数预算＋蓝图钉 6 passed；`test_migrations.py` 三钉换代。
 - **口径推进（+1 路由 +1 迁移）**＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**（inventory＋route CSV＋archify candidate 现算刷新，防陈旧闸绿）。零桌面零迁移外结构。
 - **本轮遗留（下轮收尾）**：①archify finalize 整页重生成＋preview 实拍（candidate.json 数字已对齐、checker 绿，图面渲染滞后一拍）；②B1 四件套字段定义＋结项资产闸（handover 前置闸族）；③B9-a 改码（结果合同回指）与 B2 交付工位；④推送 fork＋PR＋CI 四绿。
+
+#### ✅ 实施轮（2026-11-28，B1 结项资产闸＋B9-a 结果合同回指——PR #605 合并后同日开工）
+
+- **收口记录**：上轮遗留 ①archify review-9 finalize 四闸全过＋preview 整页实拍（1440×2173）随 PR **#605** squash `2708df8b` 合并（CI 四 job 双 run 全绿，含共建计划 v1.1 §6.1bis）；④推送＋CI 四绿完成。②③本批落地。
+- **拍板依据**：九席 party 评审会末 E 批（2026-11-28）——**E-1** 件 1–3 走交付登记 `asset_bundle` 指针键＋件 4 走发布快照新字段＋`DOCUMENT_TYPE_KEYS` 一键不加；评审 P0 兼容面沿 ux-p0 先例；Yui 席 B1/B9-a/B6 同端点三前置一轮过闸（B6 未拍板本轮不含）。
+- **本批落地（B1 闸＋B9-a 回指，零迁移零路由零表）**：①`handover/service.py` NEW `_require_asset_bundle_and_result_contract`：`asset_bundle` 三键闭集＝S13 既产物 `retrospective/handoff/patterns`（各 `{source_uri ≤500, sha256 64hex}`，空包不放行 422 `invalid_asset_bundle`，缺失 428 `asset_bundle_required`）；②B9-a「有源必回指」＝G4 已 accepted「结果合同页」在案 ⇒ `result_contract` 必带且指纹命中（409 `result_contract_mismatch`／缺 428 `result_contract_required`），无源可指省略放行——delivered 事件两键如实落 None/指针，复盘读数可区分「带了/兼容放行/无源」；③兼容沿 ux-p0：完全省略键按 `Settings.asset_bundle_gate_required`（默认严格，env `FDE_ASSET_BUNDLE_GATE_REQUIRED`）放行＋`handover_asset_bundle_skipped` 留痕；④件 4 载体＝`_snapshot_payload` 对表修订 +1 键 `workbench_manifest`（两实键行上真身可确定性重建＋四空数组键＝B2 装配落点，键集一次定型）——快照即时计算＋hash 冻结＝零 DDL 实现「随包冻结」；⑤桌面登记弹层四件套区块（三件候选池选择零手填＋G4 证据自动带出＋三件未选齐前端挡提交）＋E2E 贯通脚本 S30 换代（`verify_ux_write_matrix.py` strict-probe 腿零改动——闸顺序封存批次确认在前）。
+- **证据**：NEW `test_handover_asset_bundle.py` 26 例＋既有 `test_handover_packages.py` 19 例换代＋**变异四连全杀**（428 闸/键集闭合/指纹归一/G4 回指——CRLF 多行锚按实际行尾匹配）＋字节还原自证；dispatch 快照侧 29 例无回归；桌面定向 20 例（18 换代＋2 新）＋typecheck 零错；ruff 绿；mypy 274/274 零新增。
+- **口径不变**：577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`。
+- **防自证敞口登记（E-3）**：asset_bundle 指针为登记人自报，池子 ≤1 时核验人可即申报人——维持现状＋敞口登记，池子 >2 后加核验人分离闸。
+- **下轮**：B2 交付工位（依赖件 4 快照字段——本轮已落载体与装配落点，B2 填装配公式与随交接迁移读面）；G8 重评机械闸另轮（E-4③）。
 
