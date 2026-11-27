@@ -369,6 +369,17 @@ class FdeProfile(Base, TimestampMixin):
     # 自动计算，不允许手工设置（§4.2 A4 / BP 规则五）
     monthly_capacity_hours: Mapped[int | None] = mapped_column(Integer)
     avg_delivery_hours: Mapped[int | None] = mapped_column(Integer)
+    # B3-1（FDU 对照分析 D-1 拍板）：产能/单均工时的核验证据链——与等级核验
+    # 同规格（只存 source_uri 指针 + sha256 指纹，不存本体；核验人 = 平台
+    # 管理员）。真实档案产能字段的唯一合法写入口 =
+    # ``profiles.record_capacity_evidence``（此前仅仿真器写入；register
+    # 路由负例明确拒收产能字段覆盖）。
+    capacity_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    capacity_evidence_uri: Mapped[str | None] = mapped_column(String(500))
+    capacity_evidence_sha256: Mapped[str | None] = mapped_column(String(64))
+    capacity_verified_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

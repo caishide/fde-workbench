@@ -763,6 +763,13 @@ def list_profiles_route():
                     "geo_fence_km": profile.geo_fence_km,
                     "monthly_capacity_hours": profile.monthly_capacity_hours,
                     "avg_delivery_hours": profile.avg_delivery_hours,
+                    "capacity_verified_at": (
+                        profile.capacity_verified_at.isoformat()
+                        if profile.capacity_verified_at
+                        else None
+                    ),
+                    "capacity_evidence_uri": profile.capacity_evidence_uri,
+                    "capacity_evidence_sha256": profile.capacity_evidence_sha256,
                     "in_hand": in_hand.get(profile.user_id, 0),
                     "capacity_cap": cap,
                 }

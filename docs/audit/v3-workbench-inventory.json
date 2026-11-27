@@ -1,10 +1,10 @@
 {
- "route_count": 576,
+ "route_count": 577,
  "blueprint_count": 59,
  "table_count": 173,
- "revision_count": 103,
+ "revision_count": 104,
  "heads": [
-  "c1a4e7b3d9f2"
+  "f6e9c3a1d7b4"
  ],
  "roots": [
   "ebb003a5c3a8"
@@ -955,6 +955,14 @@
    "create_tables": [],
    "add_column_tables": [
     "agent_runs"
+   ]
+  },
+  "f6e9c3a1d7b4": {
+   "file": "f6e9c3a1d7b4_dispatch_capacity_evidence.py",
+   "down_revision": "c1a4e7b3d9f2",
+   "create_tables": [],
+   "add_column_tables": [
+    "fde_profiles"
    ]
   },
   "f7a2c9e4b1d3": {
