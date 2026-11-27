@@ -11,7 +11,7 @@
 - **证据**：NEW `server/tests/test_dispatch_workbench_manifest.py` 10 例（种子闭集九键／公式活性〔新交付段节点自动入列、横切线不入列〕／行业模板 active 过滤＋异行业排除＋排序／评测集两跳〔命中/异行业不命中/混合命中〕／industry 缺失两 refs 空／岗位卡恒空／确定性重建＋modules 排序／payload 覆盖 manifest〔hash 覆盖证明〕／白名单读面同源／routes 单点接线）；B1 三钉换代不删钉（键集钉接 session、确定性重建换代为公式输出、静态消费钉换代）；`test_dispatch_p0_r3.py` 白名单键集钉换代（+1 键 `workbench_manifest`＋manifest 六键子钉）与快照冻结直调点换代；**变异五连全杀**（M1 包前段排除摘除／M2 active 过滤摘除／M3 两跳交集摘除／M4 行业过滤失效／M5 读面键摘除）＋字节级还原 sha256 逐位验证；dispatch 域 280 passed；架构纯净度＋行数预算＋迁移头＋台账＋蓝图静态钉 45 passed（`dispatch→simulation` 单向顶层 import 边——simulation/models 零仓内依赖，纯净度闸只封双向环）；桌面定向 8 例（5 换代＋3 新例）＋**全量 1286 passed**＋typecheck 零错；ruff 绿；mypy 基线 274/274 零新增。
 - **口径不变**：零迁移零路由零表零蓝图＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**。
 - **台账**：backlog `### T-FDU1` 追加 B2 实施小节（本节随轮）；G8 重评机械闸（E-4③）为下轮另轮。
-- **桌面交付物挂账**：涉桌面改动 ⇒ 合并后重打包便携版 r63（owner＝合并轮，消解条件＝打包完成并 asar 双证）。
+- **便携版**：**r63**（asar sha256 `502efbe180910f29c7e7cd20c5d0c08f08fff02b0ab17cf943b7887c0329cfd3`，打包源＝#607 合并后 main `3b2f78a9`＋r63 三源 bump；grep -a 与 python bytes.find 双证——marker「岗位卡待 OWNER 激活」「工位清单」正向命中、`0.3.0-r63` 正向 1、新包内 `0.3.0-r62` 反向零命中、旧 r62 包对 r63 串反向零命中；RELEASE-COUNTER=63 三源同步〔desktop/package.json＋fde-web-bridge.ts〕，主树 `release/蔡工FDE-0.3.0-便携版-r63` 归档）。
 
 ## [未发布] — 结项资产闸 B1＋结果合同回指 B9-a（FDU 对照拍板 E-1 定案，2026-11-28）
 
