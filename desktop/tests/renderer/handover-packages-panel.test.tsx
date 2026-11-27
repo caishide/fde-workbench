@@ -67,6 +67,19 @@ function mockGet(url: string): unknown {
     if (url.endsWith("type=file")) return { items: [availableFile], truncated: false }
     return { items: [reviewedArtifact], truncated: false }
   }
+  // B9-a 结果合同回指读面：G4 清单项「结果合同页」已 accepted（自动带出路径）
+  if (url === "/api/v1/projects/project-1/gates") {
+    return {
+      project_id: "project-1",
+      sop_phase: "S5",
+      gates: [{
+        gate_key: "G4",
+        checklist: [
+          { label: "结果合同页", claim_status: "accepted", source_uri: "fdeops/case/结果合同页-v1.md", content_hash: "e".repeat(64) },
+        ],
+      }],
+    }
+  }
   if (url === `/api/v1/handover-packages/${draftPackage.id}`) {
     return {
       ...draftPackage,
@@ -285,6 +298,44 @@ async function openDelivery() {
   return screen.findByRole("dialog", { name: "确认交付登记" })
 }
 
+// B1/B9-a（2026-11-28）：登记弹层须先完成资产包三件选择（空包不放行）。
+// 候选池＝三类投影合并（artifact/document/file 各一行），三件错开选。
+async function selectAssetBundle(dialog: HTMLElement) {
+  const picks: Array<[RegExp, number]> = [
+    [/复盘件/, 0],
+    [/交接件/, 1],
+    [/可复用方法件/, 2],
+  ]
+  for (const [pattern, index] of picks) {
+    const selectEl = (await within(dialog).findByLabelText(pattern)) as HTMLSelectElement
+    const option = Array.from(selectEl.options).filter((opt) => opt.value !== "")[index]
+    fireEvent.change(selectEl, { target: { value: option.value } })
+  }
+}
+
+it("登记弹层呈现资产包三件选择与结果合同自动带出", async () => {
+  mockDelivery(() => sealedDetail)
+  renderPanel(true, true)
+  const dialog = await openDelivery()
+  expect(await within(dialog).findByLabelText(/复盘件/)).toBeInTheDocument()
+  expect(within(dialog).getByLabelText(/交接件/)).toBeInTheDocument()
+  expect(within(dialog).getByLabelText(/可复用方法件/)).toBeInTheDocument()
+  // G4「结果合同页」已 accepted ⇒ 自动带出（不要求手填）
+  expect(await within(dialog).findByText(/结果合同回指（自动带出/)).toBeVisible()
+})
+
+it("资产包三件未选齐不发登记请求（空包不放行）", async () => {
+  const write = mockDelivery(() => sealedDetail, vi.fn(() => ({ ...sealedDetail, status: "delivered" })))
+  renderPanel(true, true)
+  const dialog = await openDelivery()
+  // 只选一件（复盘件），另两件空——确认被前端挡住
+  const retrospective = (await within(dialog).findByLabelText(/复盘件/)) as HTMLSelectElement
+  fireEvent.change(retrospective, { target: { value: "run-1/output/change.diff" } })
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
+  expect(await screen.findByText(/三件（复盘\/交接\/可复用方法）未选齐/)).toBeVisible()
+  expect(write).not.toHaveBeenCalled()
+})
+
 it("冻结详情中的完整摘要和解封次数，仅确认后发送原批次", async () => {
   const returned = { ...sealedDetail }
   const write = mockDelivery(() => returned, vi.fn(() => ({ ...sealedDetail, status: "delivered" })))
@@ -296,11 +347,21 @@ it("冻结详情中的完整摘要和解封次数，仅确认后发送原批次"
   expect(write).not.toHaveBeenCalled()
   returned.manifest_sha256 = "0".repeat(64)
   returned.unsealed_count += 1
+  await selectAssetBundle(dialog)
   fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
   expect(await screen.findByText(/本次登记成功/)).toBeVisible()
   expect(mocks.apiRequest).toHaveBeenCalledWith(`${detailPath}/deliver`, {
     method: "POST", retryAfterAuthRefresh: false,
-    body: { expected_manifest_sha256: sealedDetail.manifest_sha256, expected_unsealed_count: 2 },
+    body: {
+      expected_manifest_sha256: sealedDetail.manifest_sha256,
+      expected_unsealed_count: 2,
+      asset_bundle: {
+        retrospective: { source_uri: "run-1/output/change.diff", sha256: "b".repeat(64) },
+        handoff: { source_uri: "document-version:docv-1", sha256: "c".repeat(64) },
+        patterns: { source_uri: "docs/spec.pdf", sha256: "d".repeat(64) },
+      },
+      result_contract: { source_uri: "fdeops/case/结果合同页-v1.md", sha256: "e".repeat(64) },
+    },
   })
   expect(write).toHaveBeenCalledTimes(1)
 })
@@ -327,7 +388,9 @@ it("封存批次冲突后关闭旧确认，等待用户重新确认", async () =
     throw new ApiClientError({ code: "handover_snapshot_conflict", message: "封存批次已变化，本次未登记。" }, 409)
   }))
   renderPanel(true, true)
-  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+  const dialog = await openDelivery()
+  await selectAssetBundle(dialog)
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
   expect(await screen.findByText(/本次未登记/)).toBeVisible()
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   expect(screen.getByRole("button", { name: "交付登记" })).toBeEnabled()
@@ -346,7 +409,9 @@ it("登记超时自动回读，回读失败可手动再查，不会重发登记"
     throw new ApiClientError({ code: "request_timeout", message: "超时" })
   }))
   renderPanel(true, true)
-  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+  const dialog = await openDelivery()
+  await selectAssetBundle(dialog)
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
   expect(await screen.findByText(/登记结果未知，暂无法回读/)).toBeVisible()
   expect(screen.getByRole("button", { name: "交付登记" })).toBeDisabled()
   fireEvent.click(screen.getByRole("button", { name: "查询登记状态" }))
@@ -366,7 +431,9 @@ it("登记超时后同批次仍封存则持续待核对，稍后读到已登记�
     throw new ApiClientError({ code: "request_timeout", message: "超时" })
   }))
   renderPanel(true, true)
-  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+  const dialog = await openDelivery()
+  await selectAssetBundle(dialog)
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
 
   const query = await screen.findByRole("button", { name: "查询登记状态" })
   expect(screen.getByRole("button", { name: "交付登记" })).toBeDisabled()
@@ -400,7 +467,9 @@ it("待核对状态提供显式解除占用，解除后可重新确认但不自�
     throw new ApiClientError({ code: "request_timeout", message: "超时" })
   }))
   renderPanel(true, true)
-  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+  const dialog = await openDelivery()
+  await selectAssetBundle(dialog)
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
 
   expect(await screen.findByRole("button", { name: "查询登记状态" })).toBeEnabled()
   expect(screen.getByRole("button", { name: "交付登记" })).toBeDisabled()
@@ -424,7 +493,9 @@ it("回读确认解封次数变化后解除待核对，重新登记须再次人�
     throw new ApiClientError({ code: "request_timeout", message: "超时" })
   }))
   renderPanel(true, true)
-  fireEvent.click(within(await openDelivery()).getByRole("button", { name: "确认登记" }))
+  const dialog = await openDelivery()
+  await selectAssetBundle(dialog)
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认登记" }))
   expect(await screen.findByText(/回读发现封存批次已变化/)).toBeVisible()
   await waitFor(() => expect(screen.getByRole("button", { name: "交付登记" })).toBeEnabled())
   expect(screen.getByRole("button", { name: "解封" })).toBeEnabled()

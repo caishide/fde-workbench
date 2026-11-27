@@ -474,6 +474,27 @@ def main() -> None:
                                 admin_token, body={
                                     "expected_manifest_sha256": manifest,
                                     "expected_unsealed_count": count,
+                                    # B1 结项资产闸＋B9-a 回指（2026-11-28）：登记新常态
+                                    # 三件套指针＋结果合同回指。合成指针（本脚本全部
+                                    # 数据为合成代号件，机制验证不涉真实证据）。
+                                    "asset_bundle": {
+                                        "retrospective": {
+                                            "source_uri": "verify-e2e://order-to-delivery/retrospective",
+                                            "sha256": "0" * 64,
+                                        },
+                                        "handoff": {
+                                            "source_uri": "verify-e2e://order-to-delivery/handoff",
+                                            "sha256": "0" * 64,
+                                        },
+                                        "patterns": {
+                                            "source_uri": "verify-e2e://order-to-delivery/patterns",
+                                            "sha256": "0" * 64,
+                                        },
+                                    },
+                                    "result_contract": {
+                                        "source_uri": "verify-e2e://order-to-delivery/result-contract",
+                                        "sha256": "0" * 64,
+                                    },
                                 }, base_url=args.base_url))
     data = data or {}
     step(30, "交付登记（终态）", status == 200 and data.get("status") == "delivered"

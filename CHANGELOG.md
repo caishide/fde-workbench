@@ -2,6 +2,16 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 结项资产闸 B1＋结果合同回指 B9-a（FDU 对照拍板 E-1 定案，2026-11-28）
+
+- **背景与拍板**：FDU×Sovereign AI 双轴分析（文档中心 05_AI方案，不入 Git）识别「沉淀可复用资产缺出口与计量」（B1）与「结果合同代码层零回指」（B9-a）——方法论层 S13 已定义复盘/交接/patterns 三既产物、S4 已有结果合同且是 G4 证据清单项（`server/seeds/gates.json`），但交付登记（`deliver_package`）对两者零回指。九席 party 评审 P0 指出件 4 载体斜杠两可＋存量在途包兼容面未算；会末拍板 **E-1**：件 1–3 走交付登记 `asset_bundle` 指针键＋件 4 走交付包发布快照新字段＋`DOCUMENT_TYPE_KEYS` 一键不加；评审 Yui 席定案 **B1 闸与 B9-a 同端点一轮一次过闸**（交付登记三套前置同款 428/422/409 闸）。
+- **落地（零迁移零路由零表）**：①`handover/service.py` NEW `_require_asset_bundle_and_result_contract`（挂在既有 `_require_delivery_snapshot` 之后、`writes_paused` 授权闸之后）：`asset_bundle` 三键闭集＝S13 既产物 `retrospective/handoff/patterns`（各 `{source_uri ≤500, sha256 64hex}`，**空包不放行**——缺件/多件/形状非法 422 `invalid_asset_bundle`），缺失 428 `asset_bundle_required`；②B9-a「**有源必回指**」：项目 G4 已 accepted「结果合同页」证据在案 ⇒ `result_contract` 必须携带且指纹命中（不命中 409 `result_contract_mismatch`、缺失 428 `result_contract_required`），无源可指（未走试点门禁线）⇒ 省略放行——delivered 事件 `asset_bundle`/`result_contract` 两键如实落 None 或指针，复盘读数可区分「带了/兼容放行/无源」三态；③兼容语义沿 ux-p0 先例（完全省略键的旧请求按部署开关放行＋`handover_asset_bundle_skipped` 事件留痕 `missing` 列表，携带即严格）——NEW Settings 键 `asset_bundle_gate_required`（默认严格；env `FDE_ASSET_BUNDLE_GATE_REQUIRED`，`.env.example` 注释态登记）；④件 4 载体（E-1）：`dispatch/packages.py::_snapshot_payload` 对表修订 **+1 键 `workbench_manifest`**（两实键来自行上既有真身可确定性重建；四空数组键＝B2 交付工位装配落点，键集一次定型）——快照载荷为即时计算、hash 冻结发布时刻装配输出，**零 DDL 即「随包冻结」**；⑤NEW 装配函数 `_workbench_manifest`（纯函数，输入只有行上持久化字段）。
+- **桌面（登记弹层四件套区块，零手填面）**：`HandoverPackagesPanel.tsx` 登记确认弹层新增三件资产选择器（候选池＝三类挑选面投影合并，逐件错开选择）＋G4「结果合同页」已 accepted 证据自动带出（读面失败静默降级为无源口径）；三件未选齐前端挡提交（与服务端空包不放行同口径）；提交体携带 `asset_bundle` 三键＋`result_contract`（有源时）。E2E 贯通脚本 S30 同步换代（合成指针机制验证）；`verify_ux_write_matrix.py` strict-probe 腿零改动（闸顺序＝封存批次确认先于资产闸，原 428 `write_preconditions_required` 判据不变）。
+- **证据**：NEW `server/tests/test_handover_asset_bundle.py` 26 例（428 双码/422 键集闭合与指针形状 13 组参数化/大写指纹归一落事件/G4 三态〔mismatch 409·match 200·claimed 无在案放行〕/有源必回指 428＋无源放行/兼容留痕 missing 精确断言/快照键集钉 27 键闭集＋装配确定性静态钉）；既有 `test_handover_packages.py` 19 例换代（`_delivery_conditions` helper 升级为新常态载荷＋两个兼容测试补开关）；**变异四连全杀**（M1 428 闸摘除/M2 键集闭合放宽/M3 指纹归一摘除/M4 G4 回指比对摘除——CRLF 文件多行锚按实际行尾匹配）＋字节级还原 sha256 逐位验证；dispatch 快照侧 29 例无回归（publish receipts hash 断言现算现取不锁值）；桌面定向 20 例（18 既有换代＋2 新例：四件套呈现＋空包不放行挡提交）＋typecheck 零错；ruff 绿；mypy 基线 274/274 零新增。
+- **口径不变**：零迁移零路由零表零蓝图＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**。
+- **台账**：backlog `### T-FDU1` 追加 B1/B9-a 实施轮小节（本节随轮）；B2 交付工位（依赖件 4 快照字段，本轮只落载体与装配落点）与 G8 重评机械闸（E-4③）为下轮。
+- **防自证敞口登记（E-3）**：asset_bundle 指针为登记人自报（admin 登记），池子 ≤1 时核验人可即申报人——代码维持现状＋敞口显式登记（与 ADR-004 风险接受裁决同构），池子 >2 后再加核验人分离闸。
+
 ## [未发布] — 产能/单均工时核验证据链（B3-1，FDU 对照 D-1 拍板首批开工项，2026-11-27）
 
 - **背景与拍板**：IBM「前置部署单元（FDU）」机制对照分析（文档中心 05_AI方案，不入 Git）识别出「提效自证」前置缺口——`fde_profiles.monthly_capacity_hours` / `avg_delivery_hours` 是撮合 A4 产能上限的算法输入（`matching._capacity_cap`），但真实档案此前**零合法写路径**（唯一写入方＝派单仿真器；register 路由以负例明确拒收产能字段覆盖），提效与复用计量无从谈起。OWNER 2026-11-27 交互式四项拍板（全落推荐项，D-1～D-4）：开工三项高优中先行本项（B3-1）＋B9-a 只核不改码（核实结论：结果合同是 G4 证据清单项 `gates.json:102`，G8 拍板与交付登记代码层零回指）；年度复检维持暂缓；岗位卡维持 pending；O-4 维持禁止。

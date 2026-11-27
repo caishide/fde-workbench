@@ -88,7 +88,15 @@ def _snapshot_payload(
     *,
     published_at: datetime,
 ) -> dict[str, Any]:
-    """§2.3 快照字段清单（逐字段对表，勿增删）。"""
+    """§2.3 快照字段清单（逐字段对表，勿增删）。
+
+    对表修订记录（拍板 E-1，2026-11-28）：+1 键 `workbench_manifest`——B1
+    四件套的件 4「工位清单件」载体（FDU 对照评审 P0：件 4 载体斜杠两可由本
+    字段定案）。两实键来自行上既有真身（可从行数据确定性重建——hash 冻结
+    的是发布时刻装配输出，换手复用按行重建）；四空数组键为 B2 交付工位装配
+    落点（SOP 段/行业模板/评测集/岗位卡指针，B2 轮填装配公式），键集一次
+    定型、测试钉锁。
+    """
     return {
         "package_id": package.id,
         "solution_id": solution.id,
@@ -116,6 +124,21 @@ def _snapshot_payload(
         "seat_consult": package.seat_consult,
         "seat_qa": package.seat_qa,
         "published_at": published_at.astimezone(timezone.utc).isoformat(),
+        "workbench_manifest": _workbench_manifest(package),
+    }
+
+
+def _workbench_manifest(package: DeliveryPackage) -> dict[str, Any]:
+    """件 4 工位清单件（E-1 载体）。纯函数：输入只有行上持久化字段 ⇒ 任何
+    持有交付包行的一方都能确定性重建同一清单，不依赖发布时的临时状态。"""
+    return {
+        "required_modules": sorted(package.required_modules or []),
+        "required_industry": package.required_industry,
+        # B2 装配落点（逐项指向既有单一真身，零新常量零新真身——B2 轮填充）：
+        "sop_node_keys": [],
+        "industry_template_refs": [],
+        "eval_suite_refs": [],
+        "hq_card_keys": [],
     }
 
 

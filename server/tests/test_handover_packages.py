@@ -201,9 +201,18 @@ def test_fingerprint_drift_rejected_at_seal(db_session, d4_client, d4_settings) 
 
 
 def _delivery_conditions(snapshot: dict) -> dict:
+    """交付登记新常态载荷（B1 闸＋B9-a 回指开启后的最小合法形状）：
+    封存批次确认 ＋ asset_bundle 三件指针 ＋ result_contract 回指。
+    测试项目无 G4 在案证据 ⇒ result_contract 走「无在案放行」分支。"""
     return {
         "expected_manifest_sha256": snapshot["manifest_sha256"],
         "expected_unsealed_count": snapshot["unsealed_count"],
+        "asset_bundle": {
+            "retrospective": {"source_uri": "fdeops/somwyn/复盘-20261128.md", "sha256": "a" * 64},
+            "handoff": {"source_uri": "fdeops/somwyn/交接说明-v1.md", "sha256": "b" * 64},
+            "patterns": {"source_uri": "openfde/assets/patterns-candidates.md", "sha256": "c" * 64},
+        },
+        "result_contract": {"source_uri": "fdeops/somwyn/结果合同页-v1.md", "sha256": "d" * 64},
     }
 
 
@@ -247,6 +256,7 @@ def test_reseal_same_digest_invalidates_old_confirmation(delivery_case, db_sessi
 def test_compatibility_only_allows_absent_conditions(delivery_case, d4_app, monkeypatch) -> None:
     leader, admin, path = delivery_case
     monkeypatch.setattr(d4_app.config["SETTINGS"], "ux_write_preconditions_required", False)
+    monkeypatch.setattr(d4_app.config["SETTINGS"], "asset_bundle_gate_required", False)
     sealed = leader.post(f"{path}/seal").get_json()["data"]
     assert admin.get(path).get_json()["data"]["write_preconditions"] == "v1"
     assert admin.post(f"{path}/deliver", json={"expected_unsealed_count": 0}).status_code == 422
@@ -261,11 +271,19 @@ def test_compatibility_records_a_trace_when_conditions_are_absent(
     """兼容期放行必须留痕：否则该终态与「确认过」在审计里不可区分。"""
     leader, admin, path = delivery_case
     monkeypatch.setattr(d4_app.config["SETTINGS"], "ux_write_preconditions_required", False)
+    monkeypatch.setattr(d4_app.config["SETTINGS"], "asset_bundle_gate_required", False)
     package_id = path.rsplit("/", 1)[-1]
     leader.post(f"{path}/seal")
     assert admin.post(f"{path}/deliver").status_code == 200
     skipped = db_session.query(OperationEvent).filter_by(event_type="handover_precondition_skipped").one()
     assert skipped.changes["package_id"] == package_id
+    # B1 闸同款兼容留痕：asset_bundle_skipped 事件在场，missing 列出放行的键。
+    # 本项目无 G4 在案证据 ⇒ result_contract 属「无源可指」放行，不进 missing。
+    bundle_skipped = db_session.query(OperationEvent).filter_by(
+        event_type="handover_asset_bundle_skipped"
+    ).one()
+    assert bundle_skipped.changes["package_id"] == package_id
+    assert bundle_skipped.changes["missing"] == ["asset_bundle"]
     assert db_session.query(OperationEvent).filter_by(event_type="handover_package_delivered").count() == 1
 
 
