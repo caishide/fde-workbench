@@ -308,11 +308,12 @@ def test_compat_carried_keys_still_strict(delivery_case, d4_app, monkeypatch) ->
 # ---------------------------------------------------------------------------
 
 
-def test_snapshot_payload_key_set_pinned() -> None:
+def test_snapshot_payload_key_set_pinned(db_session) -> None:
     """§2.3 快照字段清单键集钉（此前无测试硬钉——E-1 对表修订同时补闸）。
 
     27 键闭集 = 既有 26 键 + workbench_manifest（拍板 E-1 对表修订记录）。
     任何再增删必须先改本钉并同步修订 packages.py docstring 的对表记录。
+    B2 换代（2026-11-28）：_snapshot_payload 接 session（装配公式查真身表）。
     """
     from datetime import UTC, datetime
 
@@ -320,7 +321,7 @@ def test_snapshot_payload_key_set_pinned() -> None:
     from fde_api.workbench.models import Project, Quote
 
     payload = _snapshot_payload(
-        DeliveryPackage(), ProjectSolution(), Project(), Quote(),
+        db_session, DeliveryPackage(), ProjectSolution(), Project(), Quote(),
         published_at=datetime(2026, 11, 28, tzinfo=UTC),
     )
     assert frozenset(payload.keys()) == frozenset({
@@ -338,19 +339,25 @@ def test_snapshot_payload_key_set_pinned() -> None:
     }
 
 
-def test_workbench_manifest_deterministic_rebuild() -> None:
-    """纯函数装配：同一行数据两次装配逐位一致（换手可从行重建同一清单）。"""
+def test_workbench_manifest_deterministic_rebuild(db_session) -> None:
+    """同一库态两次装配逐位一致（换手重建同一清单）。
+
+    B2 换代（2026-11-28）：装配公式查真身表——SOP 段键来自 conftest 灌入的
+    种子闭集（S5–S13 九键）；本例行业 "manufacturing" 无行业模板与场景行
+    ⇒ 两 refs 空、岗位卡恒空。逐位确定性见 test_dispatch_workbench_manifest。
+    """
     left = DeliveryPackage()
     left.required_modules = ["m3", "m1"]
     left.required_industry = "manufacturing"
     right = DeliveryPackage()
     right.required_modules = ["m1", "m3"]
     right.required_industry = "manufacturing"
-    assert _workbench_manifest(left) == _workbench_manifest(right)
-    assert _workbench_manifest(left) == {
+    assert _workbench_manifest(db_session, left) == _workbench_manifest(db_session, right)
+    assert _workbench_manifest(db_session, left) == {
         "required_modules": ["m1", "m3"],
         "required_industry": "manufacturing",
-        "sop_node_keys": [],
+        # 种子闭集（交付段∪交付后段 − 包前段 S3/S4），sorted 字典序：
+        "sop_node_keys": ["S10", "S11", "S12", "S13", "S5", "S6", "S7", "S8", "S9"],
         "industry_template_refs": [],
         "eval_suite_refs": [],
         "hq_card_keys": [],
@@ -362,4 +369,4 @@ def test_snapshot_payload_consumes_workbench_manifest() -> None:
     import inspect
 
     source = inspect.getsource(_snapshot_payload)
-    assert '"workbench_manifest": _workbench_manifest(package)' in source
+    assert '"workbench_manifest": _workbench_manifest(session, package)' in source

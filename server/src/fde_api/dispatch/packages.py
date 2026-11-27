@@ -40,8 +40,17 @@ from fde_api.extensions import db
 from fde_api.projects.events import record_event
 from fde_api.solutions.models import ProjectSolution
 from fde_api.dispatch.settlements import estimate_five_seat_delivery, reconcile_published_b_receipts
+from fde_api.simulation.models import RegressionSuite, SimulationScenario
 from fde_api.system_configuration import DISPATCH_CONSTANTS
-from fde_api.workbench.models import Contract, Payment, Project, ProjectModule, Quote
+from fde_api.workbench.models import (
+    Contract,
+    IndustryTemplate,
+    Payment,
+    Project,
+    ProjectModule,
+    Quote,
+    SopNode,
+)
 
 # §2.5 八态状态机：action → {from_status: to_status}。
 # publish 的来源含 withdrawn（撤回重发）/rejected（重派）/expired（人工介入
@@ -81,6 +90,7 @@ def compute_snapshot_hash(payload: Mapping[str, Any]) -> str:
 
 
 def _snapshot_payload(
+    session: Session,
     package: DeliveryPackage,
     solution: ProjectSolution,
     project: Project,
@@ -93,9 +103,9 @@ def _snapshot_payload(
     对表修订记录（拍板 E-1，2026-11-28）：+1 键 `workbench_manifest`——B1
     四件套的件 4「工位清单件」载体（FDU 对照评审 P0：件 4 载体斜杠两可由本
     字段定案）。两实键来自行上既有真身（可从行数据确定性重建——hash 冻结
-    的是发布时刻装配输出，换手复用按行重建）；四空数组键为 B2 交付工位装配
-    落点（SOP 段/行业模板/评测集/岗位卡指针，B2 轮填装配公式），键集一次
-    定型、测试钉锁。
+    的是发布时刻装配输出，换手复用按行重建）；四装配键已由 B2 交付工位装配
+    公式填充（见 ``_workbench_manifest``：SOP 段/行业模板/评测集按真身表
+    现算、岗位卡恒空待激活），键集一次定型、测试钉锁。
     """
     return {
         "package_id": package.id,
@@ -124,20 +134,71 @@ def _snapshot_payload(
         "seat_consult": package.seat_consult,
         "seat_qa": package.seat_qa,
         "published_at": published_at.astimezone(timezone.utc).isoformat(),
-        "workbench_manifest": _workbench_manifest(package),
+        "workbench_manifest": _workbench_manifest(session, package),
     }
 
 
-def _workbench_manifest(package: DeliveryPackage) -> dict[str, Any]:
-    """件 4 工位清单件（E-1 载体）。纯函数：输入只有行上持久化字段 ⇒ 任何
-    持有交付包行的一方都能确定性重建同一清单，不依赖发布时的临时状态。"""
+# B2 装配公式①参数：交付工位覆盖的 SOP 段——按段过滤而非手抄键清单，
+# 与种子真身零重复（新增交付段/交付后段节点自动入列）。
+_MANIFEST_SOP_SEGMENTS = ("交付段", "交付后段")
+# 装配公式①锚：S3 深度诊断／S4 提案签约在交付包建立前完成（发布前置＝
+# 报价 finalized），不属于接手工位——S5 启动建档起才是包生命周期起点。
+_MANIFEST_PREPACKAGE_NODE_KEYS = frozenset({"S3", "S4"})
+
+
+def _workbench_manifest(session: Session, package: DeliveryPackage) -> dict[str, Any]:
+    """件 4 工位清单件（E-1 载体；B2 装配公式，2026-11-28）。
+
+    装配语义＝「存公式不存指针」（评审 Wildcard 席②）：清单各键由真身表
+    **现算**——真身漂移在换手重建时与发布时刻冻结的 ``snapshot_hash``
+    失配当场炸出来（Yui 席「死链清单」风险的机械化消解）。真身逐项：
+
+    ① SOP 段＝``sop_nodes.segment`` ∈ 交付段∪交付后段，排除包前段 S3/S4；
+    ② 行业模板＝``industry_templates.industry_name == required_industry``
+      且 ``status='active'`` 的 ``template_key``（required_industry 值域
+      即本表——来自 project.source_template_version.industry_name）；
+    ③ 评测集＝``regression_suites`` 两跳：套件 ``scenario_ids_json`` 与
+      该行业 ``simulation_scenarios`` 场景集有交集的套件名（表上唯一）；
+    ④ 岗位卡＝恒空：四卡 ``activation_state='pending_owner_approval'``，
+      pending 不装配不制造形式合规（M2 拍板），激活后另拍适配规则。
+    """
+    industry = package.required_industry
+    sop_node_keys = sorted(
+        node_key
+        for node_key in session.scalars(
+            select(SopNode.node_key).where(SopNode.segment.in_(_MANIFEST_SOP_SEGMENTS))
+        )
+        if node_key not in _MANIFEST_PREPACKAGE_NODE_KEYS
+    )
+    industry_template_refs: list[str] = []
+    eval_suite_refs: list[str] = []
+    if industry:
+        industry_template_refs = sorted(
+            session.scalars(
+                select(IndustryTemplate.template_key).where(
+                    IndustryTemplate.industry_name == industry,
+                    IndustryTemplate.status == "active",
+                )
+            )
+        )
+        scenario_ids = set(
+            session.scalars(
+                select(SimulationScenario.id).where(SimulationScenario.industry == industry)
+            )
+        )
+        if scenario_ids:
+            eval_suite_refs = sorted(
+                suite.name
+                for suite in session.scalars(select(RegressionSuite))
+                if scenario_ids.intersection(suite.scenario_ids_json or [])
+            )
     return {
         "required_modules": sorted(package.required_modules or []),
         "required_industry": package.required_industry,
-        # B2 装配落点（逐项指向既有单一真身，零新常量零新真身——B2 轮填充）：
-        "sop_node_keys": [],
-        "industry_template_refs": [],
-        "eval_suite_refs": [],
+        "sop_node_keys": sop_node_keys,
+        "industry_template_refs": industry_template_refs,
+        "eval_suite_refs": eval_suite_refs,
+        # ④ 岗位卡恒空（见 docstring）；键集与 B1 定型一致，测试钉锁。
         "hq_card_keys": [],
     }
 
@@ -365,7 +426,9 @@ def publish_package(
     package.required_modules = module_ids
     package.required_industry = industry
     package.snapshot_hash = compute_snapshot_hash(
-        _snapshot_payload(package, solution, project, quote, published_at=published_at)
+        _snapshot_payload(
+            session, package, solution, project, quote, published_at=published_at
+        )
     )
     base = quote.final_amount if quote.final_amount is not None else quote.quote_high
     if base is not None:

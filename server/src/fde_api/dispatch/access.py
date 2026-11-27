@@ -192,14 +192,19 @@ def serialize_package_whitelist(
     *,
     solution: ProjectSolution,
     project: Project,
+    workbench_manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    """§9.2 字段白名单 12 项 + 交付方席位金额（显示义务）+ 资源 id（支撑列）。
+    """§9.2 字段白名单 12 项 + 交付方席位金额（显示义务）+ 资源 id（支撑列）
+    + 工位清单件（B2 对表扩项，2026-11-28）。
 
     显式 schema 直出：新增 ORM 字段**不会**自动进响应（纪律②）。
     客户标识只有代号（client_code=enterprise_code）与城市段（client_city=
     代号第三段），客户真名永不出现（红线）。金额字段只允许 delivery_seat_amount。
     id 是资源标识非内容字段（B1 接单工作台：授权方对包行动——抢单/接包——
     必须持有目标 id；不含任何业务内容，不扩白名单语义）。
+    workbench_manifest（B2 件 4）：调用方经 ``packages._workbench_manifest``
+    现算传入（本函数保持纯投影、零会话依赖）——随交接迁移的装配公式输出，
+    只含 SOP 节点键/模板键/套件名等操作指针，无客户身份无金额无证据原件。
     """
     segments = (project.enterprise_code or "").split("·")
     return {
@@ -239,4 +244,7 @@ def serialize_package_whitelist(
         # goal-d9（桌面化）：接单人资源 id（声明按钮门控=本人或 admin；
         # 沿「id 是资源标识非内容字段」先例，不含业务内容）
         "accepted_user_id": package.accepted_user_id,
+        # ---- B2 件 4 工位清单件（对表扩项，2026-11-28）：随交接迁移的
+        # 装配公式输出（E-1 快照 +1 键的同源读面）----
+        "workbench_manifest": workbench_manifest,
     }

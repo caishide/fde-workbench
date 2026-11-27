@@ -2,6 +2,17 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — B2 交付工位装配：随包走的工位清单公式（FDU 对照 B2，2026-11-28）
+
+- **背景与拍板**：FDU 对照分析识别「上下文装配缺随包走的工位」（B2）——SOP 段/行业模板/评测集/岗位卡散在各自模块且不随交付包冻结、不随交接迁移。B1 轮（E-1 定案）已落件 4 载体：发布快照 +1 键 `workbench_manifest`（键集一次定型，四键留作装配落点）。评审 Wildcard 席②拍定装配语义＝**「不存指针存取用公式」**：清单由真身表现算而非存死链指针——真身漂移在换手重建时与发布冻结的 `snapshot_hash` 失配当场炸出来（机械化消解 Yui 席「快照冻结、真身漂移 ⇒ 死链清单」风险）。
+- **真身现测更正**：行业模板真身＝workbench 侧 `industry_templates`（分析文档 §零件在位「行业模板（modules/tasks）」所指；`document_templates` 为系统级面——种子 `industry_name=SYSTEM_INDUSTRY("通用")`，与行业无关）；`required_industry` 值域即来自 `project.source_template_version.industry_name`，两域咬合。
+- **落地（零迁移零路由零表，公式四键）**：①`dispatch/packages.py::_workbench_manifest(session, package)` 装配公式填充——**① SOP 段**＝`sop_nodes.segment ∈ (交付段, 交付后段)` 排除包前段 `{S3, S4}`（发布前置＝报价 finalized，S5 启动建档起才是接手工位）⇒ 种子 16 键下闭集 S5–S13 九键；按段过滤不手抄键清单，真身漂移（新增交付段节点）自动入列；**② 行业模板**＝`industry_templates.industry_name == required_industry ∧ status='active'` 的 `template_key` 排序列表；**③ 评测集**＝两跳：套件 `scenario_ids_json` 与该行业 `simulation_scenarios` 场景集有交集的套件名（表上唯一约束）排序列表；**④ 岗位卡恒空**——四卡 `activation_state='pending_owner_approval'`，pending 不装配不制造形式合规（M2 拍板），激活后另拍适配规则；②`_snapshot_payload` 接 `session`（发布时现算，hash 冻结装配输出），`publish_package` 调用点同步；③**读面对表扩项**：`dispatch/access.py::serialize_package_whitelist` + `workbench_manifest` 键（§9.2 白名单显式 schema 直出纪律下的 deliberate 扩项，docstring 记录对表依据；`routes._whitelist_payload` 单点现算传入，serializer 保持纯投影零会话依赖）——随交接迁移的读面即接单人打开派单池所见的同一份清单。
+- **桌面（派单池工位清单区块）**：`DispatchPoolPage.tsx` NEW `WorkbenchManifestView` 类型＋`isWorkbenchManifest` 守卫＋展开详情「工位清单」区块（SOP 交付段逐键／必要模块＋行业／行业模板与评测集计数／岗位卡状态如实呈现）；旧服务端缺键时整块不渲染（宽松降级零影响）。
+- **证据**：NEW `server/tests/test_dispatch_workbench_manifest.py` 10 例（种子闭集九键／公式活性〔新交付段节点自动入列、横切线不入列〕／行业模板 active 过滤＋异行业排除＋排序／评测集两跳〔命中/异行业不命中/混合命中〕／industry 缺失两 refs 空／岗位卡恒空／确定性重建＋modules 排序／payload 覆盖 manifest〔hash 覆盖证明〕／白名单读面同源／routes 单点接线）；B1 三钉换代不删钉（键集钉接 session、确定性重建换代为公式输出、静态消费钉换代）；`test_dispatch_p0_r3.py` 白名单键集钉换代（+1 键 `workbench_manifest`＋manifest 六键子钉）与快照冻结直调点换代；**变异五连全杀**（M1 包前段排除摘除／M2 active 过滤摘除／M3 两跳交集摘除／M4 行业过滤失效／M5 读面键摘除）＋字节级还原 sha256 逐位验证；dispatch 域 280 passed；架构纯净度＋行数预算＋迁移头＋台账＋蓝图静态钉 45 passed（`dispatch→simulation` 单向顶层 import 边——simulation/models 零仓内依赖，纯净度闸只封双向环）；桌面定向 8 例（5 换代＋3 新例）＋**全量 1286 passed**＋typecheck 零错；ruff 绿；mypy 基线 274/274 零新增。
+- **口径不变**：零迁移零路由零表零蓝图＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**。
+- **台账**：backlog `### T-FDU1` 追加 B2 实施小节（本节随轮）；G8 重评机械闸（E-4③）为下轮另轮。
+- **桌面交付物挂账**：涉桌面改动 ⇒ 合并后重打包便携版 r63（owner＝合并轮，消解条件＝打包完成并 asar 双证）。
+
 ## [未发布] — 结项资产闸 B1＋结果合同回指 B9-a（FDU 对照拍板 E-1 定案，2026-11-28）
 
 - **背景与拍板**：FDU×Sovereign AI 双轴分析（文档中心 05_AI方案，不入 Git）识别「沉淀可复用资产缺出口与计量」（B1）与「结果合同代码层零回指」（B9-a）——方法论层 S13 已定义复盘/交接/patterns 三既产物、S4 已有结果合同且是 G4 证据清单项（`server/seeds/gates.json`），但交付登记（`deliver_package`）对两者零回指。九席 party 评审 P0 指出件 4 载体斜杠两可＋存量在途包兼容面未算；会末拍板 **E-1**：件 1–3 走交付登记 `asset_bundle` 指针键＋件 4 走交付包发布快照新字段＋`DOCUMENT_TYPE_KEYS` 一键不加；评审 Yui 席定案 **B1 闸与 B9-a 同端点一轮一次过闸**（交付登记三套前置同款 428/422/409 闸）。

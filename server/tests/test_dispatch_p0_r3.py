@@ -203,7 +203,8 @@ def test_snapshot_frozen_after_publish(db_session):
     from datetime import datetime, timezone
 
     payload = _snapshot_payload(
-        package, solution, project, quote, published_at=datetime.now(timezone.utc)
+        db_session, package, solution, project, quote,
+        published_at=datetime.now(timezone.utc),
     )
     assert compute_snapshot_hash(payload) != frozen_hash
 
@@ -425,7 +426,7 @@ def test_cross_principal_access_denied(api_context, method, path_template):
 
 
 def test_package_response_field_whitelist(api_context):
-    """§9.5 基线②：白名单 12 项 + 席位金额 + id 支撑列；无报价明细、无客户真名字段。"""
+    """§9.5 基线②：白名单 12 项 + 席位金额 + id 支撑列 + 工位清单件；无报价明细、无客户真名字段。"""
     detail = api_context["fde_client"].get(
         f"/api/v1/dispatch/packages/{api_context['package'].id}"
     )
@@ -457,6 +458,17 @@ def test_package_response_field_whitelist(api_context):
         "difficulty",
         # goal-d9（桌面化）：接单人资源 id（声明按钮门控，资源 id 先例）
         "accepted_user_id",
+        # B2 件 4 工位清单件（对表扩项，2026-11-28）：装配公式输出随白名单迁移
+        "workbench_manifest",
+    }
+    # 工位清单只含操作指针（键集闭集）；SOP 段键来自种子真身
+    assert set(payload["workbench_manifest"]) == {
+        "required_modules",
+        "required_industry",
+        "sop_node_keys",
+        "industry_template_refs",
+        "eval_suite_refs",
+        "hq_card_keys",
     }
     # 金额字段只允许 delivery_seat_amount（=final_amount×40%，发布物化）
     assert payload["delivery_seat_amount"] == 8000.0
