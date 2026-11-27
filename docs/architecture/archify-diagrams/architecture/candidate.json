@@ -10,7 +10,7 @@
    "url": "https://github.com/gxfde/fde-workbench.git",
    "provider": "github",
    "link_mode": "local-only",
-   "revision": "f7dd5c6a9cafe201d4236ba5e745ea0fbac5f8c5"
+   "revision": "a3cd4ab00105ffdaada0d77366da58a5d384b537"
   },
   "views": [
    {
@@ -173,7 +173,7 @@
    "id": "api",
    "type": "backend",
    "label": "Flask API (fde_api)",
-   "sublabel": "127.0.0.1:8010 · 59 蓝图 · 576 路由",
+   "sublabel": "127.0.0.1:8010 · 59 蓝图 · 577 路由",
    "tag": "v0.3.0",
    "sources": [
     {
@@ -298,7 +298,7 @@
    "id": "db",
    "type": "database",
    "label": "PostgreSQL 16",
-   "sublabel": "twenty-db:5432/fde_workbench · 173 表 · 103 迁移",
+   "sublabel": "twenty-db:5432/fde_workbench · 173 表 · 104 迁移",
    "tag": "WSL 既有实例",
    "sources": [
     {

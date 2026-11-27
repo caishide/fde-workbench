@@ -32,7 +32,12 @@ from flask import Blueprint, g, jsonify, request
 from fde_api.auth.decorators import require_auth, require_role
 from fde_api.auth.models import ROLE_ADMIN, User
 from fde_api.dispatch.errors import DispatchServiceError
-from fde_api.dispatch.profiles import can_manage_dispatch_profiles, enable_profile, register_profile
+from fde_api.dispatch.profiles import (
+    can_manage_dispatch_profiles,
+    enable_profile,
+    record_capacity_evidence,
+    register_profile,
+)
 from fde_api.dispatch.rules import (
     activate_due_versions,
     active_rule_version,
@@ -210,6 +215,39 @@ def enable_profile_route(user_id: str):
             session,
             actor=g.current_user,
             user_id=user_id,
+            confirm_password=payload["confirm_password"],
+        )
+    return jsonify({"data": data, "error": None})
+
+
+@admin_dispatch_blueprint.post("/profiles/<user_id>/capacity-evidence")
+@require_role(ROLE_ADMIN)
+def record_capacity_evidence_route(user_id: str):
+    """产能/单均工时核验（B3-1）：A4 产能上限算法输入的唯一合法写入口。"""
+    if not can_manage_dispatch_profiles(g.current_user):
+        raise _error("forbidden", "只有平台管理员可核验派单产能。", 403)
+    payload = request.get_json(silent=True)
+    required = {
+        "monthly_capacity_hours",
+        "avg_delivery_hours",
+        "source_uri",
+        "source_sha256",
+        "confirm_password",
+    }
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise _error(
+            "invalid_request",
+            "请求须且仅须包含产能两项、证据指针与 confirm_password。",
+        )
+    with db.session() as session, session.begin():
+        data = record_capacity_evidence(
+            session,
+            actor=g.current_user,
+            user_id=user_id,
+            monthly_capacity_hours=payload["monthly_capacity_hours"],
+            avg_delivery_hours=payload["avg_delivery_hours"],
+            source_uri=payload["source_uri"],
+            source_sha256=payload["source_sha256"],
             confirm_password=payload["confirm_password"],
         )
     return jsonify({"data": data, "error": None})

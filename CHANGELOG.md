@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — 产能/单均工时核验证据链（B3-1，FDU 对照 D-1 拍板首批开工项，2026-11-27）
+
+- **背景与拍板**：IBM「前置部署单元（FDU）」机制对照分析（文档中心 05_AI方案，不入 Git）识别出「提效自证」前置缺口——`fde_profiles.monthly_capacity_hours` / `avg_delivery_hours` 是撮合 A4 产能上限的算法输入（`matching._capacity_cap`），但真实档案此前**零合法写路径**（唯一写入方＝派单仿真器；register 路由以负例明确拒收产能字段覆盖），提效与复用计量无从谈起。OWNER 2026-11-27 交互式四项拍板（全落推荐项，D-1～D-4）：开工三项高优中先行本项（B3-1）＋B9-a 只核不改码（核实结论：结果合同是 G4 证据清单项 `gates.json:102`，G8 拍板与交付登记代码层零回指）；年度复检维持暂缓；岗位卡维持 pending；O-4 维持禁止。
+- **落地（+1 迁移 +1 路由，零新表）**：①迁移 `f6e9c3a1d7b4`（挂 `c1a4e7b3d9f2` 之后保单头）：`fde_profiles` 加四列——`capacity_verified_at` / `capacity_evidence_uri`（≤500）/ `capacity_evidence_sha256`（64 位）/ `capacity_verified_by_user_id`（FK users SET NULL），additive-only 存量行逐位零变更；②NEW 服务函数 `profiles.record_capacity_evidence`：admin＋平台身份＋密码三重闸（register/enable 同款 `_confirm_profile_admin`）、两值必须 ≥1 整数（bool 显式拒绝；「产能未申报按 0＝不可接单」语义保留给未核验态）、依据单据只存 `source_uri` 指针 + sha256 指纹（红线：不存本体）、锁序 user 行→profile 行（不触碰商业权益）、重复核验合法（verified_at 前移、事件照记）；③NEW 路由 `POST /api/v1/admin/dispatch/profiles/<user_id>/capacity-evidence`（载荷键闭集，沿家族风格；治理面不进 api_catalog）；④admin 档案列表行暴露核验三字段（`capacity_verified_at`/`capacity_evidence_uri`/`capacity_evidence_sha256`），`/profiles/me` 读面零变化。
+- **证据**：NEW `server/tests/test_dispatch_capacity_evidence.py` 19 例（happy path＋审计事件 before/after＋A4 cap=2 联动＋大写指纹归一＋三重闸 403 矩阵〔project_lead／org 内 admin／错密码〕＋12 组非法载荷 400 零落库零事件＋档案缺失 404＋非交付者 409＋seat none 可核验）；**变异三连全杀**（M1 bool 闸摘除／M2 sha256 长度校验摘除〔唯一锚含 uri>500 行〕／M3 事件名漂移）＋字节级还原 sha256 逐位验证；邻域回归 `test_dispatch_profile_enable.py`＋`test_dispatch_p0_r2.py` 49 passed；`test_migrations.py` HEAD_REVISION 三钉换代（`f6e9c3a1d7b4`，104 单头）；ruff 绿；mypy 基线 274/274 零新增（worktree venv 按 lock 重建＋editable 安装＋补装锁定版 mypy 2.4.1 后真跑，首轮 current=0 假绿已排除）；行数预算＋蓝图注册表钉 6 passed。
+- **口径推进（+1 路由 +1 迁移）**＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**（`extract_workbench_inventory.py` 现算刷新 inventory＋route CSV 578 行；archify candidate.json 数字已对齐＋`check_archify_diagram_freshness` 绿——整页 finalize 重生成与 preview 实拍为本轮遗留待补项）。零桌面改动（不触发重打包）。
+- **台账**：backlog NEW `### T-FDU1`（✅ 已实施，本节随轮）；台账三同步钉随轮自查。
+
 ## [未发布] — 桌面立项模板下拉过滤：可选即可用（T-ECO4 修法 A，2026-11-26）
 
 - **背景与拍板**：行业模板按播种形状只有模块与调研表（任务行全空），却出现在桌面新建项目页「行业模板版本」下拉中——用户选中后建项目被服务端 400 `template_module_without_tasks` 拦下（#593 已把原 503 转为指名模块的可读 400），构成「可选却不可用」。OWNER 2026-11-26 交互式拍板修法 A：**建项目可选模板过滤为「含任务行的 published 版本」**（另一候选「给行业模板补任务行改播种形状」未获选择，行业模板后续如需开放立项另行设计任务行再走独立轮）。

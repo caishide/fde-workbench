@@ -535,3 +535,102 @@ def enable_profile(
             },
         )
     return {"user_id": user_id, "is_active": True, "changed": changed}
+
+
+def record_capacity_evidence(
+    session: Session,
+    *,
+    actor: User,
+    user_id: object,
+    monthly_capacity_hours: object,
+    avg_delivery_hours: object,
+    source_uri: object,
+    source_sha256: object,
+    confirm_password: object,
+) -> dict[str, Any]:
+    """产能/单均工时的核验写入口（B3-1：与等级核验同规格的证据链）。
+
+    平台管理员 + 密码双闸（register/enable 同款 ``_confirm_profile_admin``）；
+    依据单据只存 source_uri 指针 + sha256 指纹（红线：不存本体）。两值是
+    撮合 A4 产能上限的算法输入（``matching._capacity_cap``），故必须为
+    ≥1 的整数——「产能未申报按 0＝不可接单」的语义保留给未核验态，核验
+    写入不允许 0。重复核验（同值重录）合法：verified_at 前移、事件照记
+    （重核本身就是审计事实）。
+    """
+    current = _confirm_profile_admin(session, actor, confirm_password)
+    if not isinstance(user_id, str) or not user_id.strip() or len(user_id.strip()) > 36:
+        raise DispatchServiceError("invalid_request", "请输入有效的交付者账号 ID。")
+    user_id = user_id.strip()
+    if (
+        not isinstance(monthly_capacity_hours, int)
+        or isinstance(monthly_capacity_hours, bool)
+        or monthly_capacity_hours < 1
+    ):
+        raise DispatchServiceError("invalid_request", "月产能小时数必须是 ≥1 的整数。")
+    if (
+        not isinstance(avg_delivery_hours, int)
+        or isinstance(avg_delivery_hours, bool)
+        or avg_delivery_hours < 1
+    ):
+        raise DispatchServiceError("invalid_request", "单均交付小时数必须是 ≥1 的整数。")
+    monthly_hours: int = monthly_capacity_hours
+    avg_hours: int = avg_delivery_hours
+    if (
+        not isinstance(source_uri, str)
+        or not source_uri.strip()
+        or len(source_uri) > 500
+    ):
+        raise DispatchServiceError("invalid_request", "source_uri 必须是 ≤500 字的非空指针。")
+    if (
+        not isinstance(source_sha256, str)
+        or len(source_sha256) != 64
+        or not all(c in "0123456789abcdef" for c in source_sha256.lower())
+    ):
+        raise DispatchServiceError(
+            "invalid_request", "source_sha256 必须是 64 位十六进制指纹。"
+        )
+    # 锁序与 register/enable 同向（user 行 → profile 行）；本写面不触碰
+    # 商业权益，故不取权益行锁。
+    target = _require_dispatch_deliverer(session, user_id)
+    profile = session.get(FdeProfile, user_id, with_for_update=True, populate_existing=True)
+    if profile is None:
+        raise DispatchServiceError("profile_not_found", "该用户尚无供给池档案。", 404)
+    before = {
+        "monthly_capacity_hours": profile.monthly_capacity_hours,
+        "avg_delivery_hours": profile.avg_delivery_hours,
+    }
+    profile.monthly_capacity_hours = monthly_hours
+    profile.avg_delivery_hours = avg_hours
+    profile.capacity_evidence_uri = source_uri
+    profile.capacity_evidence_sha256 = source_sha256.lower()
+    profile.capacity_verified_by_user_id = actor.id
+    profile.capacity_verified_at = datetime.now(timezone.utc)
+    session.flush()
+    record_event(
+        session,
+        current,
+        "fde_capacity_evidence_recorded",
+        target,
+        {
+            "request_id": str(uuid4()),
+            "source": "dispatch_capacity_evidence",
+            "before": before,
+            "after": {
+                "monthly_capacity_hours": monthly_hours,
+                "avg_delivery_hours": avg_hours,
+                "source_uri": source_uri,
+                "source_sha256": source_sha256.lower(),
+            },
+        },
+    )
+    changed = (
+        before["monthly_capacity_hours"] != monthly_hours
+        or before["avg_delivery_hours"] != avg_hours
+    )
+    return {
+        "user_id": profile.user_id,
+        "monthly_capacity_hours": monthly_hours,
+        "avg_delivery_hours": avg_hours,
+        "capacity_verified_at": profile.capacity_verified_at.isoformat(),
+        "changed": changed,
+    }
