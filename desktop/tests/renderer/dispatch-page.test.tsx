@@ -13,8 +13,24 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../src/renderer/src/auth/AuthProvider", () => ({ useAuth: () => mocks }))
 
 import { DispatchPage } from "../../src/renderer/src/dispatch/DispatchPage"
-import { formatSeatAmount, isPackageView } from "../../src/renderer/src/dispatch/DispatchPoolPage"
+import {
+  formatSeatAmount,
+  isPackageView,
+  isWorkbenchManifest,
+} from "../../src/renderer/src/dispatch/DispatchPoolPage"
 import { snapshotValue } from "../../src/renderer/src/dispatch/RuleVersionsPage"
+
+function workbenchManifest(): Record<string, unknown> {
+  // B2 件 4 工位清单件：形状与服务端 `_workbench_manifest` 键集一致
+  return {
+    required_modules: ["m1", "m2"],
+    required_industry: "制造",
+    sop_node_keys: ["S10", "S11", "S12", "S13", "S5", "S6", "S7", "S8", "S9"],
+    industry_template_refs: [],
+    eval_suite_refs: [],
+    hq_card_keys: [],
+  }
+}
 
 function packageRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -37,6 +53,7 @@ function packageRow(overrides: Record<string, unknown> = {}): Record<string, unk
     dispatch_mode: "assign",
     response_window_hours: 24,
     published_at: "2026-10-31T00:00:00+00:00",
+    workbench_manifest: workbenchManifest(),
     ...overrides,
   }
 }
@@ -65,10 +82,44 @@ it("派单池页渲染白名单字段且不出现报价明细字段", async () =
   await userEvent.click(screen.getByText("PKG-AB12CD34-01"))
   expect(await screen.findByText("口径条款逐项可判")).toBeInTheDocument()
   expect(screen.getByText("r7 企业·制造·苏州")).toBeInTheDocument()
+  // B2 件 4 工位清单件渲染（装配公式输出随包迁移）
+  expect(screen.getByText(/工位清单/)).toBeInTheDocument()
+  expect(screen.getByText(/SOP 交付段：S10、S11、S12、S13、S5、S6、S7、S8、S9/)).toBeInTheDocument()
+  expect(screen.getByText(/必要模块：m1、m2 · 行业：制造/)).toBeInTheDocument()
+  expect(screen.getByText(/行业模板：0 项 · 评测集：0 套/)).toBeInTheDocument()
+  expect(screen.getByText(/岗位卡：未装配（岗位卡待 OWNER 激活）/)).toBeInTheDocument()
   const bodyText = document.body.textContent || ""
   expect(bodyText).not.toContain("final_amount")
   expect(bodyText).not.toContain("b_layer_score")
   expect(bodyText).not.toContain("received_amount")
+})
+
+it("派单池旧服务端缺工位清单键时整块不渲染（宽松降级）", async () => {
+  mocks.apiRequest.mockImplementation(async (path: string) => {
+    if (String(path) === "/api/v1/dispatch/packages") {
+      return [packageRow({ workbench_manifest: null })]
+    }
+    return []
+  })
+  render(<DispatchPage tab="pool" onTabChange={() => {}} />)
+  await userEvent.click(await screen.findByText("PKG-AB12CD34-01"))
+  expect(await screen.findByText("口径条款逐项可判")).toBeInTheDocument()
+  expect(screen.queryByText("工位清单")).not.toBeInTheDocument()
+})
+
+it("isWorkbenchManifest 守卫：缺键/非数组拒绝、全数组键接受", () => {
+  expect(isWorkbenchManifest(null)).toBe(false)
+  expect(isWorkbenchManifest({})).toBe(false)
+  expect(isWorkbenchManifest({ sop_node_keys: "S5" })).toBe(false)
+  expect(
+    isWorkbenchManifest({
+      required_modules: [],
+      sop_node_keys: [],
+      industry_template_refs: [],
+      eval_suite_refs: [],
+      hq_card_keys: [],
+    })
+  ).toBe(true)
 })
 
 it("派单池空态与错误路径", async () => {

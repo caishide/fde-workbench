@@ -31,6 +31,31 @@ export interface DispatchPackageView {
   agent_assisted: boolean
   difficulty: string | null
   accepted_user_id: string | null
+  /** B2 件 4 工位清单件（随包迁移的装配公式输出）；旧服务端缺键＝null。 */
+  workbench_manifest: WorkbenchManifestView | null
+}
+
+/** B2 件 4：工位清单（装配公式输出，键集与服务端 `_workbench_manifest`
+ *  一致——SOP 段/行业模板/评测集/岗位卡四键为公式装配，前两键为行上真身）。 */
+export interface WorkbenchManifestView {
+  required_modules: string[]
+  required_industry: string | null
+  sop_node_keys: string[]
+  industry_template_refs: string[]
+  eval_suite_refs: string[]
+  hq_card_keys: string[]
+}
+
+export function isWorkbenchManifest(value: unknown): value is WorkbenchManifestView {
+  if (typeof value !== "object" || value === null) return false
+  const row = value as Record<string, unknown>
+  return (
+    Array.isArray(row.required_modules) &&
+    Array.isArray(row.sop_node_keys) &&
+    Array.isArray(row.industry_template_refs) &&
+    Array.isArray(row.eval_suite_refs) &&
+    Array.isArray(row.hq_card_keys)
+  )
 }
 
 export const DIFFICULTY_LABELS: Record<string, string> = {
@@ -228,6 +253,36 @@ export function DispatchPoolPage() {
                 </dd>
                 <dt>智能体协同</dt>
                 <dd>{row.agent_assisted ? "已声明（启用评审门与溯源联动）" : "未声明（纯人工交付）"}</dd>
+                {isWorkbenchManifest(row.workbench_manifest) ? (
+                  <>
+                    {/* B2 件 4 工位清单件：随包迁移的装配公式输出（旧服务端
+                        缺键时整块不渲染——宽松降级零影响）。 */}
+                    <dt>工位清单</dt>
+                    <dd>
+                      <div>
+                        SOP 交付段：
+                        {row.workbench_manifest.sop_node_keys.join("、") || "（无）"}
+                      </div>
+                      <div>
+                        必要模块：
+                        {row.workbench_manifest.required_modules.join("、") || "（无）"}
+                        {" · 行业："}
+                        {row.workbench_manifest.required_industry || "—"}
+                      </div>
+                      <div>
+                        行业模板：{row.workbench_manifest.industry_template_refs.length} 项
+                        {" · 评测集："}
+                        {row.workbench_manifest.eval_suite_refs.length} 套
+                      </div>
+                      <div className="muted">
+                        岗位卡：
+                        {row.workbench_manifest.hq_card_keys.length
+                          ? row.workbench_manifest.hq_card_keys.join("、")
+                          : "未装配（岗位卡待 OWNER 激活）"}
+                      </div>
+                    </dd>
+                  </>
+                ) : null}
               </dl>
             ) : null}
             {expanded === row.package_code &&

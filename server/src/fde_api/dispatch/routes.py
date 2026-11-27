@@ -31,6 +31,7 @@ from fde_api.dispatch.offer_service import (
 )
 from fde_api.dispatch.matching import match_package, override_required_level
 from fde_api.dispatch.packages import (
+    _workbench_manifest,
     accept_package,
     create_package,
     publish_package,
@@ -58,7 +59,13 @@ def _json_body() -> dict | None:
 def _whitelist_payload(session, package: DeliveryPackage) -> dict:
     solution = session.get(ProjectSolution, package.solution_id)
     project = session.get(Project, package.project_id)
-    return serialize_package_whitelist(package, solution=solution, project=project)
+    # B2 件 4：工位清单随白名单同面迁移（装配公式现算，见 packages._workbench_manifest）。
+    return serialize_package_whitelist(
+        package,
+        solution=solution,
+        project=project,
+        workbench_manifest=_workbench_manifest(session, package),
+    )
 
 
 @blueprint.get("/packages")
