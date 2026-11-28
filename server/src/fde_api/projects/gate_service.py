@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -284,6 +284,13 @@ def submit_gate_evidence(
                 raise GateServiceError(
                     "gate_already_decided", "该门禁已过门，不能再提交证据。", 409
                 )
+            # G8 重评机械闸（E-4③，2026-11-28）：G8 fail_exit 原文「证据不足→
+            # 延长时间盒（书面）或 stop；不允许无限『再跑跑看』」的代码强制。
+            # 仅域 G8——其余门 fail_exit 有「可随时重启」等出处，闸之即违背
+            # 方法论层。返回 True＝凭书面延长说明放行，事件留痕 timebox_extended。
+            timebox_extended = False
+            if gate.gate_key == "G8" and gate.status == "failed":
+                timebox_extended = _require_g8_reeval_discipline(session, gate, note)
             checklist = {
                 item["label"]: dict(item) for item in gate.evidence_checklist
             }
@@ -349,28 +356,27 @@ def submit_gate_evidence(
             gate.version += 1
             if skipped:
                 _record_precondition_skipped(session, actor, gate, "evidence")
-            record_event(
-                session,
-                actor,
-                "gate_evidence_submitted",
-                gate,
-                {
-                    "gate_key": gate.gate_key,
-                    "from_status": previous_status,
-                    "to_status": gate.status,
-                    "revision": gate.version,
-                    "items": [
-                        {
-                            "label": item["label"],
-                            "source_uri": item["source_uri"],
-                            "content_hash": item["content_hash"],
-                            "evidence_id": item["evidence_id"],
-                        }
-                        for item in items
-                    ],
-                    "note": note,
-                },
-            )
+            changes = {
+                "gate_key": gate.gate_key,
+                "from_status": previous_status,
+                "to_status": gate.status,
+                "revision": gate.version,
+                "items": [
+                    {
+                        "label": item["label"],
+                        "source_uri": item["source_uri"],
+                        "content_hash": item["content_hash"],
+                        "evidence_id": item["evidence_id"],
+                    }
+                    for item in items
+                ],
+                "note": note,
+            }
+            if timebox_extended:
+                # 书面延长留痕（E-4③ 机械闸审计面）：无此键＝窗内未触线正常重评；
+                # 有此键＝超窗或超次后凭非空 note 放行，复盘可区分两类重评。
+                changes["timebox_extended"] = True
+            record_event(session, actor, "gate_evidence_submitted", gate, changes)
             session.flush()
             templates = _template_index()
             sop_nodes = _sop_nodes_for_templates(session, templates)
@@ -732,6 +738,80 @@ def _record_precondition_skipped(
         "gate_write_precondition_skipped",
         gate,
         {"gate_key": gate.gate_key, "action": action, "revision": gate.version},
+    )
+
+
+def _require_g8_reeval_discipline(
+    session: Session, gate: Gate, note: str | None
+) -> bool:
+    """G8 重评机械闸（E-4③，2026-11-28）：把 seeds/gates.json G8 fail_exit 原文
+    「证据不足→延长时间盒（书面）或 stop；不允许无限『再跑跑看』」落成代码强制。
+
+    仅域 G8：其余门的 fail_exit（如 G4「可随时重启」）明示放开重评，闸之即与
+    方法论层冲突；G8 是唯一声明「不允许无限」的门。域内两条机制（任一命中即
+    触线）：
+    - 时间盒：status=failed ⇒ decided_at 即最近一次 fail 拍板时刻，距其超过
+      `gate_g8_reeval_window_days` 天仍未再提交＝时间盒用尽；
+    - 次数：累计 fail 拍板次数（`_count_gate_fail_decisions`）达
+      `gate_g8_reeval_max_fails` 后不再接受无书面记录的再评。
+
+    触线后提交必须随附非空 note（书面延长说明）——「书面」即该 note 的持久
+    审计留痕（operation_events），放行返回 True 由调用方在事件里落
+    timebox_extended；无 note 则 409 拒绝并给出 fail_exit 出路。
+    零迁移零路由：计数走既有事件表（行数有界），窗口走既有 decided_at 列。
+    """
+    settings = current_app.config["SETTINGS"]
+    window_days = settings.gate_g8_reeval_window_days
+    max_fails = settings.gate_g8_reeval_max_fails
+    fail_count = _count_gate_fail_decisions(session, gate)
+    decided_at = gate.decided_at
+    if decided_at is None:
+        # 状态机不变量（decide_gate 必落 decided_at）；被绕过写入的脏行按超窗
+        # 处理（fail-closed，不因数据异常打开闸口）。
+        window_expired = True
+    else:
+        window_expired = datetime.now(timezone.utc) > decided_at + timedelta(
+            days=window_days
+        )
+    if not window_expired and fail_count < max_fails:
+        return False
+    # note 已由 _optional_note 归一（None 或非空白字符串）——空白说明进不了本闸。
+    if not note:
+        if window_expired:
+            raise GateServiceError(
+                "gate_reeval_window_expired",
+                f"G8 重评时间盒已用尽（fail 拍板后 {window_days} 天）：按 SOP 须"
+                "「延长时间盒（书面）或 stop」——随附书面说明（note）重新提交即"
+                "完成延长留痕，或执行 stop。",
+                409,
+            )
+        raise GateServiceError(
+            "gate_reeval_cap_reached",
+            f"G8 已累计 {fail_count} 次 fail（上限 {max_fails}）：不允许无限"
+            "『再跑跑看』——再评须随附书面延长说明（note）留痕，或执行 stop。",
+            409,
+        )
+    return True
+
+
+def _count_gate_fail_decisions(session: Session, gate: Gate) -> int:
+    """本门禁行累计 fail 拍板次数（event_type=gate_decided 且 result=fail）。
+
+    只按 result=fail 过滤——pass/conditional_pass 是终态（终态后无提交路径），
+    但计数语义必须显式排除而非隐式依赖终态不变量。行数有界（每门事件少），
+    Python 侧过滤保持 DB 无关（不依赖 JSON 算子跨方言）。
+    """
+    changes_rows = session.scalars(
+        select(OperationEvent.changes).where(
+            OperationEvent.project_id == gate.project_id,
+            OperationEvent.target_id == gate.id,
+            OperationEvent.event_type == "gate_decided",
+        )
+    )
+    return sum(
+        1
+        for changes in changes_rows
+        if isinstance(changes, dict) and changes.get("result") == "fail"
     )
 
 

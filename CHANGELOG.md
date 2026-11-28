@@ -2,6 +2,14 @@
 
 本文件记录 FDE Workbench 开源版本的主要变化。版本号遵循语义化版本规范；首次公开源码版本为 `v0.1.0`。
 
+## [未发布] — G8 重评机械闸：时间盒＋次数上限的书面延长闸（FDU 对照 E-4③，2026-11-28）
+
+- **背景与拍板**：九席 party 评审 Splinter 席坐实 B8「闸门层不弱于 IBM」的 G8 半句此前是自夸——`seeds/gates.json` G8 fail_exit 原文写「证据不足→延长时间盒（书面）或 stop；不允许无限『再跑跑看』」，但代码层 `submit_gate_evidence` 只拦 passed/conditional_pass，failed 门禁可无限重提且无 deadline（主持人亲自核过）。会末拍板 **E-4③**＝机械闸挂账另轮，本轮落地。**域取自方法论原文**：G8 是九门中唯一声明「不允许无限」的门（G4 fail_exit 明写「可随时重启」，闸之即违背方法论层「工程层不得发明方法论层没有的东西」铁律）。
+- **落地（零迁移零路由零表，仅域 G8）**：①`gate_service.py` NEW `_require_g8_reeval_discipline`——挂在 `gate_already_decided` 之后，`gate_key=='G8' ∧ status=='failed'` 时生效，两条机制任一命中即触线：**时间盒**（距最近一次 fail 拍板超过 `gate_g8_reeval_window_days`，默认 14 天；decided_at 异常缺失按超窗 fail-closed）与**次数**（累计 fail 拍板达 `gate_g8_reeval_max_fails`，默认 3 次）；②触线后提交必须随附非空 note（书面延长说明）才放行，事件 `gate_evidence_submitted` 落 **`timebox_extended: True`**＋note 全文留痕（复盘可区分「窗内正常重评」与「书面延长重评」）；无 note 则 409 两分码拒绝（`gate_reeval_window_expired`／`gate_reeval_cap_reached`），消息给出 fail_exit 出路（书面延长或 stop）；③fail 计数走既有 `operation_events`（`gate_decided` 事件按门禁行过滤 `result=fail`，Python 侧过滤保持 DB 无关、行数有界）；④NEW Settings 两键 `gate_g8_reeval_window_days`（ge=1 le=365）／`gate_g8_reeval_max_fails`（ge=1 le=100）——env `FDE_GATE_G8_REEVAL_WINDOW_DAYS`／`FDE_GATE_G8_REEVAL_MAX_FAILS`，越界启动即炸（沿费率 Field 校验先例）。
+- **证据**：NEW `server/tests/test_gate_g8_reeval_gate.py` 12 例（首提不受影响／窗内重评基线零变化不留痕／超窗无 note 两分码 409／超窗带 note 放行＋旗标与 note 全文断言／三次 fail 触 cap 无 note 409／cap 后带 note 放行／**域钉**〔G4 超窗重评放行〕／机械闸不挡合法过门〔书面重评→pass/proceed→终态闸原样〕／fail 计数只认本门行 result=fail〔同门 pass 噪声×2＋他门 fail 噪声×2 不入计数〕／窗口配置覆写生效／空白 note 进不了闸〔归一层 400〕）；邻域门禁族 69 passed（gates_api＋candidates＋governance＋agent_gates＋workflow_gate）；**变异八连全杀**（M1 闸域摘除／M2 状态摘除／M3 时间盒摘除／M4 次数摘除／M5 书面闸摘除／M6 留痕摘除／M7 计数 result 过滤摘除／M8 计数 target 过滤摘除）＋字节级还原 sha256 逐位验证；迁移头钉＋gate_decided 事件消费方 41 passed；ruff 绿；mypy 基线 274/274 零新增。
+- **口径不变**：零迁移零路由零表零蓝图＝**577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`**。零桌面改动（不触发重打包——超窗/超次的桌面提交报错即显服务端 message，出路指引在文案内）。
+- **台账**：backlog `### T-FDU1` 追加 G8 实施小节并销 E-4③ 挂账（本节随轮）。
+
 ## [未发布] — B2 交付工位装配：随包走的工位清单公式（FDU 对照 B2，2026-11-28）
 
 - **背景与拍板**：FDU 对照分析识别「上下文装配缺随包走的工位」（B2）——SOP 段/行业模板/评测集/岗位卡散在各自模块且不随交付包冻结、不随交接迁移。B1 轮（E-1 定案）已落件 4 载体：发布快照 +1 键 `workbench_manifest`（键集一次定型，四键留作装配落点）。评审 Wildcard 席②拍定装配语义＝**「不存指针存取用公式」**：清单由真身表现算而非存死链指针——真身漂移在换手重建时与发布冻结的 `snapshot_hash` 失配当场炸出来（机械化消解 Yui 席「快照冻结、真身漂移 ⇒ 死链清单」风险）。
