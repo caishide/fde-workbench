@@ -1132,7 +1132,7 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **geo-optimizer 跑分复核回写（2026-11-26 第四轮追加）**：geo-optimizer-skill v4.30.1（MIT，rubric v5 九类 100 分）三家复扫；产物＝仓外真相层 `GEO优化器跑分诊断-20261126.md`，写回计划书 §8.7＋§9。排序与第三轮一致（XT-HB 62＞XT-HK 58＞XT-FH 40，全 foundation 档）。★XT-HB Applebot 连接层拦截（TCP 重置、六 UA 对照、两家 Applebot 200 ⇒ 独有；连接层非 robots.txt ⇒ 「robots.txt 合规≠实际可达」方法论）；★XT-HK Sitemap 声明写在 Baiduspider 组内（位置不合法，通用解析器读不到，回填首轮精度）；品牌名不统一获第三方量化（identity 1/5×2）；schema 0/14×3＋ai_discovery 0/3×3＋G-DATES/G-BYLINE 全不合格为共同零分项；XT-HB content 14/14＋技术信任 5/5 满分、负分 −5（含 hydrogen 密度 11.1% 堆砌判定）；XT-FH brand_entity 0/12＋信任栈 0/5＋无 viewport＋无 canonical；XT-HK 备案号隐藏文本＋知识页衰减 1,095 天。工具误报三例核伪留痕；geo fix 仅预览零写入；复测口径 rubric v5 跨版本不可直比。**库存不变**：573 路由／59 蓝图／172 表／102 迁移单头 `b8d2f6a0c4e8`；零代码零迁移零路由零桌面。
 - **第五拍：委托方口径回写（2026-11-26 晚追加）**：①XT-HK 亚马逊＝自营＋供货并存（委托方口径）——与第四行「公开面可归因自营店 A 级否定」并存不矛盾 ⇒ **自营店公开面不可归因＝新发现**（与主体零公开连接、官网/社媒零互链）；对外报告问题 3 改写为「请给自营店铺链接或店名」；②品牌归一锚点委托方倾向公司中文名对应拼音（本人不确定待企业确认）＋Amazon 无关同名拼音品牌（削皮器）撞名警示入报告问题 1；③拍板＝geo fix 正式包暂缓、先发三份诊断报告与问题清单（预览留仓外 D:/tmp、零修复文件落盘）。真相层：平台铺面补充调研回填注记＋XT-HK 调研附录 A11＋横向对照 §四行 9/10＋§十＋复核记录第五拍。**本拍零 GET 零写操作**。**库存不变**：573 路由／59 蓝图／172 表／102 迁移单头 `b8d2f6a0c4e8`；零代码零迁移零路由零桌面。
 
-### T-FDU1 IBM FDU 对照借鉴线（B3-1 产能证据链先行）— **✅ 已实施（B3-1 2026-11-27＋B1/B9-a 2026-11-28＋B2 2026-11-28 三轮；#605/#606 已合并 CI 四绿）**
+### T-FDU1 IBM FDU 对照借鉴线（B3-1 产能证据链先行）— **✅ 全收口零挂账（B3-1＋B1/B9-a＋B2＋G8 机械闸四轮 2026-11-27/28；#605–#608 已合并 CI 四绿）**
 
 #### ✅ 实施轮（2026-11-27，B3-1）
 
@@ -1161,4 +1161,12 @@ AI 执行状态读取 / 行业模板取消标记）登记于 §4-①~③，**不
 - **证据**：NEW `test_dispatch_workbench_manifest.py` 10 例＋B1 三钉换代不删钉＋p0_r3 白名单键集钉换代（27→28 键）；**变异五连全杀**（包前段排除/active 过滤/两跳交集/行业过滤/读面键）＋字节还原自证；dispatch 域 280 passed；静态钉 45 passed（架构纯净度＝`dispatch→simulation` 单向顶层 import 边合法）；桌面定向 8＋全量 **1286 passed**＋typecheck 零错；ruff 绿；mypy 274/274 零新增。
 - **口径不变**：577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`。
 - **挂账**：便携版 r63 重打包（涉桌面，合并轮消解）；G8 重评机械闸另轮（E-4③）。
+
+#### ✅ 实施轮（2026-11-28，G8 重评机械闸——E-4③ 销账，D-1 借项五件全收口）
+
+- **收口记录**：上轮两项挂账全消——便携版 **r63** 已随 PR **#608** `8425478a` 三源 bump 交付（asar `502efbe1…` 五 marker 双证）；**E-4③ 本批落地**。D-1 四借项（B3-1／B1／B9-a／B2）＋E-4③ 机械闸全部合并收口，T-FDU1 线零挂账。
+- **拍板依据**：九席评审 Splinter 席坐实 B8「闸门层不弱于 IBM」G8 半句自夸——G8 fail_exit 原文「证据不足→延长时间盒（书面）或 stop；不允许无限『再跑跑看』」在代码层零强制（`submit_gate_evidence:283-286` 只拦 passed/conditional_pass，failed 可无限重提无 deadline）；会末 **E-4③** 拍板机械闸另轮。**域取自方法论原文**：G8 是九门唯一声明「不允许无限」的门（G4「可随时重启」明写放开——闸之即违背「工程层不得发明方法论层没有的东西」铁律）。
+- **本批落地（零迁移零路由零表，仅域 G8）**：①`gate_service.py` NEW `_require_g8_reeval_discipline`（`gate_key=='G8' ∧ status=='failed'` 触发，两条机制任一命中即触线）：**时间盒**＝距最近 fail 拍板超 `gate_g8_reeval_window_days`（默认 14 天，decided_at 异常缺失 fail-closed）＋**次数**＝累计 fail 拍板达 `gate_g8_reeval_max_fails`（默认 3）；②触线后重评须随附非空 note（书面延长说明）放行，`gate_evidence_submitted` 事件落 `timebox_extended: True`＋note 全文（复盘可区分窗内正常重评与书面延长重评）；无 note → 409 两分码 `gate_reeval_window_expired`／`gate_reeval_cap_reached`（消息给 fail_exit 出路）；③fail 计数走既有 `operation_events`（`gate_decided` 按门禁行过滤 `result=fail`，Python 侧过滤 DB 无关行数有界）；④NEW Settings 两键（env `FDE_GATE_G8_REEVAL_WINDOW_DAYS`／`FDE_GATE_G8_REEVAL_MAX_FAILS`，Field ge/le 越界启动即炸）。
+- **证据**：NEW `test_gate_g8_reeval_gate.py` 12 例（首提不受影响／窗内基线零变化／超窗无 note 409／超窗带 note 放行＋旗标断言／cap 无 note 409／cap 带 note 放行／域钉 G4 超窗放行／书面重评→pass/proceed 全链可达／fail 计数双噪声钉〔同门 pass×2＋他门 fail×2 不入计数〕／窗口配置覆写／空白 note 归一层 400）；邻域门禁族 69 passed；**变异八连全杀**（闸域/状态/时间盒/次数/书面闸/留痕/计数 result 过滤/计数 target 过滤）＋字节还原自证；迁移头钉＋事件消费方 41 passed；ruff 绿；mypy 274/274 零新增。
+- **口径不变**：577 路由／59 蓝图／173 表／104 迁移单头 `f6e9c3a1d7b4`；零桌面零重打包。
 
